@@ -3,6 +3,7 @@ import base64
 import binascii
 import json
 import logging
+import re
 from typing import Any, cast
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -263,6 +264,65 @@ def _append_conversation_state_block(blocks, conv_id, cfg, shrink_tail):
             ))
     except Exception as st_err:  # noqa: BLE001 — best-effort
         logger.debug(f"Conversation state injection skipped: {st_err}")
+
+
+# Episodic "threads to pull" (Slice 2): the query shows the user wants to revisit a
+# past discussion. Hard-gated so we don't surface a leads menu every turn — only
+# when the phrasing implies episodic recall ("when did we…", "earlier we…", "you
+# said…"). The leads themselves are derived from provenance (no extra search).
+_EPISODIC_INTENT_RE = re.compile(
+    r"\b(when did|remember when|last time|earlier|previously|before|"
+    r"we (talked|spoke|discussed|decided|agreed|covered|went over)|"
+    r"you (said|mentioned|told|suggested|proposed)|"
+    r"(that|the) (discussion|conversation|thread|chat)|go back|recall|remind me)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_episodic_intent(query: str) -> bool:
+    return bool(_EPISODIC_INTENT_RE.search(query or ""))
+
+
+def _append_post_coverage_memory_blocks(
+    blocks, agent, memory_bundle, query, conv_id, cfg, shrink_tail, shrink_lines,
+):
+    """Register the memory blocks that go in AFTER JIT summary coverage: the
+    structured conversation state (Slice 1a) and the episodic thread leads (Slice 2).
+    Combined into one call so the chat-stream generator stays within pyright's
+    conditional-path budget."""
+    _append_conversation_state_block(blocks, conv_id, cfg, shrink_tail)
+    _append_thread_leads_block(blocks, agent, memory_bundle, query, conv_id, cfg, shrink_lines)
+
+
+def _append_thread_leads_block(blocks, agent, memory_bundle, query, conv_id, cfg, shrink_fn):
+    """Append the episodic thread-leads ledger block (Slice 2): lightweight POINTERS
+    to past discussions the matched facts came from, so the agent can `read_thread`
+    the verbatim detail on demand. Provenance-first (no extra search); gated on
+    episodic intent so it's not injected every turn. Low priority (dropped first).
+    Best-effort + conditional — lives here for the generator's path budget."""
+    from .agent.context_ledger import LedgerBlock
+
+    if not bool(cfg.get("memory.episodic_leads_enabled", True)):
+        return
+    if memory_bundle is None or not getattr(memory_bundle, "facts", None):
+        return
+    if agent.memory is None or not _has_episodic_intent(query):
+        return
+    try:
+        from .kit.agent_memory.models import render_thread_leads
+        leads = agent.memory.derive_thread_leads(
+            memory_bundle.facts, exclude_conversation_id=conv_id, top_k=5,
+        )
+        if not leads:
+            return
+        memory_bundle.thread_leads = leads
+        content = render_thread_leads(leads)
+        if content:
+            blocks.append(LedgerBlock(
+                key="thread_leads", priority=28, content=content, shrink_fn=shrink_fn,
+            ))
+    except Exception as tl_err:  # noqa: BLE001 — best-effort
+        logger.debug(f"Thread leads injection skipped: {tl_err}")
 
 
 async def _compose_plan_if_complex(message, messages, *, provider, model_id, agent, use_memory, emit):
@@ -1974,8 +2034,13 @@ async def agent_chat_stream(request):
             # working memory, ADDITIVE alongside the prose summary (below), rendered just
             # above it. Extracted to a helper to keep this generator within the type
             # checker's path budget.
+            # Structured conversation state (Slice 1a) + episodic thread leads (Slice 2),
+            # both registered after JIT coverage. One combined call for path budget.
             if not direct_mode:
-                _append_conversation_state_block(blocks, conv_id, _cfg, shrink_tail)
+                _append_post_coverage_memory_blocks(
+                    blocks, agent, memory_bundle, message, conv_id, _cfg,
+                    shrink_tail, shrink_lines_newest_n,
+                )
 
             # The (persisted) rolling summary covers turns older than the verbatim
             # budget — registered AFTER the JIT refresh so a summary created this

@@ -335,6 +335,35 @@ class EpisodicMemory:
             turn_data["conversation_id"] = record["conversation_id"]
             return convert_record_datetimes(turn_data)
 
+    def get_turns_around(
+        self,
+        conversation_id: str,
+        user_id: str,
+        center_index: int,
+        radius: int = 6,
+    ) -> list[dict[str, Any]]:
+        """Return turns whose index is within ``radius`` of ``center_index``, oldest
+        first — the window of discussion around a specific turn (Slice 2 `read_thread`).
+        User-scoped; radius bounded so a pull can't drag in an unbounded slice.
+        """
+        radius = max(0, min(int(radius), 20))
+        lo = max(0, int(center_index) - radius)
+        hi = int(center_index) + radius
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                MATCH (u:User {id: $user_id})-[:HAS_CONVERSATION]->(c:Conversation {id: $conv_id})
+                      -[:HAS_TURN]->(t:Turn)
+                WHERE t.index >= $lo AND t.index <= $hi
+                RETURN t
+                ORDER BY t.index ASC
+            """, user_id=user_id, conv_id=conversation_id, lo=lo, hi=hi)
+            turns = []
+            for record in result:
+                turn_data = dict(record["t"])
+                turn_data["conversation_id"] = conversation_id
+                turns.append(convert_record_datetimes(turn_data))
+            return turns
+
     def get_recent_turns(
         self,
         user_id: str,

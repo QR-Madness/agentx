@@ -5441,6 +5441,103 @@ class ModelDefaultResolutionTest(TestCase):
             get_agent.reset()
 
 
+class EpisodicLeadsTest(TestCase):
+    """Slice 2 — episodic "threads to pull": provenance-first leads + read_thread pull."""
+
+    def _fake_memory(self, turns_by_id):
+        from types import SimpleNamespace
+        ep = SimpleNamespace(get_turn_by_id=lambda tid, uid: turns_by_id.get(tid))
+        return SimpleNamespace(episodic=ep, user_id="u1")
+
+    def test_derive_leads_from_provenance(self):
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+
+        turns = {
+            "t1": {"conversation_id": "cA", "index": 5, "content": "Comparing venues for the offsite", "timestamp": "2026-07-01T00:00:00"},
+            "t2": {"conversation_id": "cB", "index": 9, "content": "Weighing the budget tradeoffs", "timestamp": "2026-07-02T00:00:00"},
+        }
+        mem = self._fake_memory(turns)
+        facts = [
+            {"claim": "the offsite should be downtown", "source_turn_id": "t1", "score": 0.9},
+            {"claim": "budget is capped", "source_turn_id": "t2", "score": 0.8},
+            {"claim": "no-provenance fact", "source_turn_id": None},
+        ]
+        leads = AgentMemory.derive_thread_leads(mem, facts, exclude_conversation_id=None, top_k=5)
+        self.assertEqual(len(leads), 2)  # the no-provenance fact is skipped
+        self.assertEqual(leads[0]["conversation_id"], "cA")
+        self.assertEqual(leads[0]["center_turn"], 5)
+        self.assertIn("offsite", leads[0]["one_line"])
+        self.assertTrue(leads[0]["title"])
+
+    def test_derive_dedupes_and_excludes_current(self):
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+
+        turns = {
+            "t1": {"conversation_id": "cA", "index": 5, "content": "first", "timestamp": "x"},
+            "t2": {"conversation_id": "cA", "index": 8, "content": "second", "timestamp": "y"},
+            "t3": {"conversation_id": "cur", "index": 2, "content": "current", "timestamp": "z"},
+        }
+        mem = self._fake_memory(turns)
+        facts = [
+            {"claim": "a", "source_turn_id": "t1"},
+            {"claim": "b", "source_turn_id": "t2"},  # same conversation → deduped
+            {"claim": "c", "source_turn_id": "t3"},  # current conversation → excluded
+        ]
+        leads = AgentMemory.derive_thread_leads(mem, facts, exclude_conversation_id="cur", top_k=5)
+        self.assertEqual([lead["conversation_id"] for lead in leads], ["cA"])
+
+    def test_derive_caps_at_top_k(self):
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+
+        turns = {f"t{i}": {"conversation_id": f"c{i}", "index": i, "content": f"x{i}", "timestamp": "t"} for i in range(10)}
+        mem = self._fake_memory(turns)
+        facts = [{"claim": f"f{i}", "source_turn_id": f"t{i}"} for i in range(10)]
+        leads = AgentMemory.derive_thread_leads(mem, facts, top_k=3)
+        self.assertEqual(len(leads), 3)
+
+    def test_render_leads_are_pointers_not_text(self):
+        from agentx_ai.kit.agent_memory.models import render_thread_leads
+
+        leads = [{
+            "conversation_id": "cA", "center_turn": 5, "title": "venue chat",
+            "one_line": "go downtown", "timestamp": "2026-07-01T12:00:00", "score": 0.9,
+        }]
+        block = render_thread_leads(leads)
+        self.assertIn("Threads you can pull", block)
+        self.assertIn("read_thread(conversation_id='cA', center_turn=5)", block)
+        self.assertEqual(render_thread_leads([]), "")  # empty → no block
+
+    def test_read_thread_center_uses_window(self):
+        from types import SimpleNamespace
+
+        from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
+
+        seen = {}
+
+        def _around(cid, uid, ctr, radius=6):
+            seen["args"] = (cid, ctr)
+            return [{"index": 4, "role": "user", "content": "hi", "timestamp": "t"}]
+
+        ep = SimpleNamespace(get_turns_around=_around, get_conversation_turns=lambda *a, **k: [])
+        mem = SimpleNamespace(episodic=ep, user_id="u1")
+        out = AgentMemory.read_thread(mem, "cA", center_turn=5)
+        self.assertEqual(seen["args"], ("cA", 5))
+        self.assertEqual(out[0]["content"], "hi")
+
+    def test_episodic_intent_gate(self):
+        from agentx_ai.views import _has_episodic_intent
+
+        self.assertTrue(_has_episodic_intent("when did we decide the budget?"))
+        self.assertTrue(_has_episodic_intent("remind me what you said earlier"))
+        self.assertFalse(_has_episodic_intent("what is the best structure for this argument?"))
+
+    def test_read_thread_tool_is_retrieval_gated(self):
+        from agentx_ai.mcp.internal_tools import find_internal_tool, is_retrieval_tool
+
+        self.assertTrue(is_retrieval_tool("read_thread"))
+        self.assertIsNotNone(find_internal_tool("read_thread"))
+
+
 class FactToolWiringTest(TestCase):
     """remember_this / forget internal tools route to AgentMemory correctly."""
 
