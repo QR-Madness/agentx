@@ -32,6 +32,15 @@ class AgentxAiConfig(AppConfig):
         if not (run_main or is_server):
             return
 
+        # Settings (config.json) is the source of truth for provider keys; seed
+        # it from `.env` once so every process reads from Settings, not `.env`
+        # (the consolidation worker seeds itself the same way in its command).
+        try:
+            from .config import get_config_manager
+            get_config_manager().seed_provider_keys_from_env()
+        except Exception as exc:  # noqa: BLE001 — never let seeding break boot
+            logger.warning(f"Provider key seed on startup failed: {exc}")
+
         try:
             from .background import start_worker
             start_worker()

@@ -249,6 +249,33 @@ ignored); `ModelFamilyCoverageTest` (three-bucket coverage + consolidation defau
 `ModelRolesEndpointTest` (incl. the adopt action). **Source:** settings overhaul D1 (user-locked:
 implicit tier) + Slice 0 model-family audit.
 
+### ADR-12 — Background jobs move to Procrastinate (Postgres queue); retire the hand-rolled worker (direction)
+**Decision:** the consolidation worker's bespoke machinery — a `while True: sleep(60)` interval loop,
+manual Redis heartbeats, `consolidation:active` single-flight, and stale-worker cleanup
+(`consolidation/worker.py`) — is replaced by **Procrastinate** (PostgreSQL-backed task queue:
+`LISTEN/NOTIFY` + `FOR UPDATE SKIP LOCKED`, async-first, periodic tasks, retries, locks, Django
+integration). It reuses the Postgres we already run (pgvector) — **no new broker** — and matches the
+already-async extraction/consolidation code. The API `/api/memory/consolidate/stream` endpoint and
+the worker stop being **two uncoordinated inline executors** (the bug that hid a whole failed cycle):
+the endpoint `defer()`s the same job the worker runs, single-flighted by the queue. The separate
+*process* stays (isolation + cloud single-instance) but is a Procrastinate worker, not a parallel
+runtime. **Interim (shipped, this ADR's Tier-1):** the worker now runs as `manage.py
+consolidation_worker` under `django.setup()`, so it inherits `.env`, the shared `ConfigManager`
+(Settings-as-source-of-truth, seeded from `.env`), and the `logging_kit` pipeline — closing the
+env-drift + no-logs gaps without the migration.
+**Why:** a separate worker process is the correct, universal pattern (Celery/RQ/Huey/Procrastinate
+and Django 6.0's own Tasks framework all run work outside the request cycle) — but *hand-rolling* the
+queue/scheduler/locking reimplemented, badly and without the Django bootstrap, what a library gives
+for free, and it silently drifted from the API (no env, no logs, no shared config). Postgres-as-queue
+keeps infra flat.
+**Follow-ups folded here:** the double-executor single-flight; and the `'target'` `KeyError` in
+`_batch_store_relationships` (`jobs.py:787-800`, hard-subscripts `rel["source"/"target"/"type"]`)
+that aborts a whole self-extraction batch — a small standalone hardening PR regardless of the queue.
+A *second* background worker exists (the in-process chat worker via `background.start_worker()`,
+`apps.py`); the migration should consider unifying both. **Source:** consolidation-worker log
+forensics (worker missed OpenRouter — key was `.env`-only, worker skipped `django.setup()`) + 2026-07
+task-queue research (Procrastinate vs Celery/Huey/RQ).
+
 ---
 
 ## Rejected — do not relitigate

@@ -10,6 +10,7 @@ Provides a centralized configuration system that:
 import json
 import logging
 import os
+import tempfile
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -390,8 +391,28 @@ class ConfigManager:
                 # Ensure directory exists
                 self.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-                with open(self.CONFIG_PATH, "w") as f:
-                    json.dump(self._config, f, indent=2)
+                # Atomic write: serialize to a unique temp file in the same dir,
+                # then os.replace() (atomic rename) into place. A reader always
+                # sees a complete old-or-new file, and two concurrent writers
+                # (e.g. API startup + worker startup both seeding on first boot)
+                # can't truncate/interleave into a corrupt config.json — they
+                # just race on the final rename (last complete write wins).
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=self.CONFIG_PATH.parent, prefix=".config.", suffix=".tmp"
+                )
+                try:
+                    with os.fdopen(fd, "w") as f:
+                        json.dump(self._config, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp_path, self.CONFIG_PATH)
+                except BaseException:
+                    # Don't leave the temp file behind on any failure.
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    raise
 
                 logger.info(f"Saved config to {self.CONFIG_PATH}")
                 return True
@@ -437,6 +458,41 @@ class ConfigManager:
                 return env_value
 
         return default
+
+    # Provider api_key → env var, mirroring registry.py's fallbacks. Settings
+    # (config.json) is the source of truth; `.env` only seeds it on first boot.
+    _PROVIDER_KEY_ENV = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "vercel": "AI_GATEWAY_API_KEY",
+    }
+
+    def seed_provider_keys_from_env(self) -> list[str]:
+        """Backfill provider api keys from env into config.json when Settings is
+        empty — so config.json (the source of truth) is populated once, and
+        every process (API + worker) reads keys from Settings rather than `.env`
+        at runtime. A key rotated in Settings is never overwritten from `.env`.
+
+        Idempotent + best-effort (logs and swallows failures). Returns the list
+        of providers seeded this call.
+        """
+        seeded: list[str] = []
+        try:
+            for provider, env_var in self._PROVIDER_KEY_ENV.items():
+                # Never clobber an existing Settings value (a rotated key wins).
+                if self.get(f"providers.{provider}.api_key"):
+                    continue
+                env_value = os.environ.get(env_var)
+                if env_value:
+                    self.set(f"providers.{provider}.api_key", env_value)
+                    seeded.append(provider)
+            if seeded:
+                self.save()
+                logger.info(f"Seeded provider keys from env into config: {', '.join(seeded)}")
+        except Exception as e:  # noqa: BLE001 — seeding must never break boot
+            logger.warning(f"Provider key seed from env failed: {e}")
+        return seeded
 
 
 # Global singleton instance
