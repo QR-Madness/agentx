@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.181 -->
+<!-- release-version: 0.21.182 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -67,6 +67,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Long-conversation coverage is tighter** — when older turns are compacted into the structured
+  state, their summary is now guaranteed to appear the same turn even if the cache read behind it
+  hiccups, closing a rare window where a just-compacted turn could momentarily go uncovered.
 - **Your chosen default model is finally respected** — agent profiles with no model set silently fell
   through to a local LM Studio model instead of the global default you picked in Settings, so turns
   hung or errored if LM Studio wasn't running; the configured default is now in the resolution chain
