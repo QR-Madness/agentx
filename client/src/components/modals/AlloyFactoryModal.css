@@ -1,11 +1,26 @@
 /* Full-screen Alloy Factory layout */
 
+/* Match the shell's own height so the shell body never scrolls — otherwise you
+   get a double scrollbar (shell body + .alloy-pane). The shell (.modal-dialog)
+   is capped at 85vh on desktop with a 1px border, so we take 85vh minus the
+   2px borders to fit its body exactly; the inner .alloy-pane is then the single
+   scroll region with the header pinned. (A % height can't be used: the shell's
+   height is a max-height, not a definite height, so % wouldn't resolve.) */
 .alloy-factory-modal.full {
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 90vh;
-  max-height: 90vh;
+  height: calc(85vh - 2px);
+  max-height: calc(85vh - 2px);
+  min-height: 0;
+}
+
+/* On phones the shell is a definite 100dvh, so % resolves — fill its body. */
+@media (max-width: 600px) {
+  .alloy-factory-modal.full {
+    height: 100%;
+    max-height: 100%;
+  }
 }
 
 .alloy-factory-modal .alloy-header {
@@ -13,7 +28,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-default);
   flex-shrink: 0;
 }
 
@@ -27,11 +42,12 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent-primary), var(--feedback-info));
+  background: linear-gradient(135deg, var(--accent-primary), var(--text-error));
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
+  flex-shrink: 0;
 }
 
 .alloy-factory-modal h2 {
@@ -54,10 +70,11 @@
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .alloy-factory-modal .alloy-close-btn:hover {
-  background: var(--bg-hover);
+  background: var(--surface-hover);
   color: var(--text-primary);
 }
 
@@ -71,8 +88,8 @@
 .alloy-sidebar {
   width: 280px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border-color);
-  background: var(--bg-card);
+  border-right: 1px solid var(--border-default);
+  background: var(--surface-raised);
   display: flex;
   flex-direction: column;
   padding: 1rem 0.75rem;
@@ -80,9 +97,14 @@
   overflow-y: auto;
 }
 
+/* Mobile master-detail: whichever view is shown fills the width. */
+.alloy-shell.is-mobile .alloy-sidebar {
+  width: 100%;
+  border-right: none;
+}
+
 .alloy-sidebar-new {
   width: 100%;
-  justify-content: center;
 }
 
 .alloy-sidebar-empty {
@@ -113,7 +135,7 @@
 }
 
 .alloy-sidebar-item:hover {
-  background: var(--bg-hover);
+  background: var(--surface-hover);
 }
 
 .alloy-sidebar-item.active {
@@ -168,8 +190,8 @@
 }
 
 .sidebar-item-delete:hover {
-  background: var(--feedback-error-tint);
-  color: var(--feedback-error);
+  background: color-mix(in srgb, var(--text-error) 14%, transparent);
+  color: var(--text-error);
 }
 
 /* Main pane */
@@ -183,17 +205,38 @@
   gap: 1.25rem;
 }
 
+.alloy-shell.is-mobile .alloy-pane {
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Mobile back-to-list button */
+.alloy-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  align-self: flex-start;
+  padding: 0.375rem 0.625rem 0.375rem 0.375rem;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.alloy-back-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
 .alloy-canvas-banner {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
   padding: 0.875rem 1rem;
   border: 1px dashed var(--accent-tint-strong);
-  background: linear-gradient(
-    135deg,
-    var(--accent-tint-faint),
-    var(--feedback-info-tint)
-  );
+  background: var(--accent-tint-faint);
   border-radius: 10px;
   color: var(--text-secondary);
   font-size: 0.8125rem;
@@ -273,39 +316,43 @@
   color: var(--text-secondary);
 }
 
-.alloy-form-row input[type="text"],
-.alloy-form-row select,
-.alloy-form-row textarea {
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-base, var(--bg-card));
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  font-family: inherit;
+/* Eyebrow + Members header */
+.alloy-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
 }
 
-.alloy-form-row input[type="text"]:focus,
-.alloy-form-row select:focus,
-.alloy-form-row textarea:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-}
-
-.alloy-form-row input[type="text"]:disabled,
-.alloy-form-row textarea:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-/* Specialists */
-.alloy-specialists {
+.alloy-members-head {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  max-height: 380px;
-  overflow-y: auto;
-  padding-right: 0.25rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.alloy-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 8px;
+  background: var(--accent-tint-soft);
+  border: 1px solid var(--accent-tint-medium);
+  color: var(--accent-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.alloy-add-btn:hover:not(:disabled) {
+  background: var(--accent-tint-medium);
+}
+
+.alloy-add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .alloy-list-empty {
@@ -313,105 +360,81 @@
   text-align: center;
   color: var(--text-secondary);
   font-size: 0.875rem;
-  border: 1px dashed var(--border-color);
+  border: 1px dashed var(--border-default);
   border-radius: 10px;
 }
 
-.alloy-specialist-row {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) 2fr;
-  gap: 0.75rem;
-  align-items: stretch;
-  padding: 0.625rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--bg-card);
-  transition: border-color 0.15s, background 0.15s;
+/* Member cards — no inner scroll; the pane is the single scroll region. */
+.alloy-members {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
 }
 
-.alloy-specialist-row.enabled {
-  border-color: var(--accent-tint-strong);
-  background: var(--accent-tint-faint);
+.alloy-member-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--surface-raised);
 }
 
-.alloy-specialist-row.is-supervisor {
-  opacity: 0.55;
-}
-
-.specialist-toggle {
+.alloy-member-top {
   display: flex;
   align-items: center;
   gap: 0.625rem;
-  cursor: pointer;
-  user-select: none;
 }
 
-.alloy-specialist-row.is-supervisor .specialist-toggle {
-  cursor: not-allowed;
-}
-
-.specialist-toggle input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+.alloy-avatar {
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
-  accent-color: var(--accent-primary);
-  cursor: pointer;
-}
-
-.alloy-specialist-row.is-supervisor .specialist-toggle input[type="checkbox"] {
-  cursor: not-allowed;
-}
-
-.specialist-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  min-width: 0;
-}
-
-.specialist-name {
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  font-weight: 500;
+  border-radius: 999px;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-}
-
-.specialist-badge {
-  font-size: 0.625rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.0625rem 0.375rem;
-  border-radius: 999px;
+  justify-content: center;
   background: var(--accent-tint-soft);
   color: var(--accent-primary);
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 
-.specialist-id {
-  font-size: 0.6875rem;
-  color: var(--text-secondary);
-  font-family: var(--font-mono, ui-monospace, monospace);
+.alloy-member-id-group {
+  flex: 1;
+  min-width: 0;
 }
 
-.specialist-hint {
-  padding: 0.5rem 0.625rem;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-base, var(--bg-card));
+.alloy-member-name {
+  font-size: 0.875rem;
+  font-weight: 600;
   color: var(--text-primary);
-  font-size: 0.8125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.specialist-hint:focus {
-  outline: none;
-  border-color: var(--accent-primary);
+.alloy-member-id {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.specialist-hint:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+.alloy-member-warn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--text-error);
+}
+
+.alloy-member-hint {
+  resize: vertical;
+  min-height: 2.5rem;
 }
 
 /* Actions / footer */
@@ -420,8 +443,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid var(--border-default);
   margin-top: auto;
   padding-top: 1rem;
 }
@@ -429,64 +451,197 @@
 .alloy-actions .alloy-actions-right {
   display: flex;
   gap: 0.5rem;
-}
-
-.alloy-btn {
-  padding: 0.5rem 0.875rem;
-  border-radius: 8px;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-primary);
-}
-
-.alloy-btn-primary {
-  background: linear-gradient(135deg, var(--accent-primary), var(--feedback-info));
-  color: white;
-  border-color: transparent;
-}
-
-.alloy-btn-primary:hover {
-  filter: brightness(1.1);
-}
-
-.alloy-btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.alloy-btn-secondary {
-  background: var(--bg-card);
-  border-color: var(--border-color);
-}
-
-.alloy-btn-secondary:hover {
-  background: var(--bg-hover);
+  flex-shrink: 0;
 }
 
 .alloy-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   padding: 0.625rem 0.875rem;
-  background: var(--feedback-error-tint);
-  border: 1px solid var(--feedback-error-border);
+  background: color-mix(in srgb, var(--text-error) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-error) 40%, transparent);
   border-radius: 8px;
-  color: rgb(239, 68, 68);
+  color: var(--text-error);
   font-size: 0.8125rem;
+}
+
+/* ===== Add-member picker (desktop dropdown / mobile sheet) ===== */
+.alloy-picker {
+  width: 320px;
+  max-width: min(320px, calc(100vw - 24px));
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+}
+
+.alloy-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.alloy-picker-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.alloy-picker-search {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.alloy-picker-search::placeholder {
+  color: var(--text-muted);
+}
+
+.alloy-picker-close {
+  padding: 0.25rem;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.alloy-picker-close:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.alloy-picker-list {
+  overflow-y: auto;
+  padding: 0.375rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.alloy-picker-empty {
+  padding: 1.25rem 0.75rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.alloy-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.5rem;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.alloy-picker-item:hover {
+  background: var(--surface-hover);
+}
+
+.alloy-picker-item-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+}
+
+.alloy-picker-item-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alloy-picker-item-id {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alloy-picker-item-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alloy-picker-item-add {
+  flex-shrink: 0;
+  color: var(--accent-primary);
+}
+
+/* Mobile bottom sheet */
+.alloy-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: alloy-sheet-fade 0.15s ease;
+}
+
+.alloy-picker--sheet {
+  width: 100%;
+  max-width: 100%;
+  max-height: 78vh;
+  border-radius: 16px 16px 0 0;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+  animation: alloy-sheet-up 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.alloy-picker--sheet .alloy-picker-item {
+  padding: 0.75rem 0.5rem;
+}
+
+@keyframes alloy-sheet-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes alloy-sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alloy-sheet-backdrop,
+  .alloy-picker--sheet { animation: none; }
 }
 
 /* Tighter at smaller widths */
 @media (max-width: 720px) {
   .alloy-form-grid {
     grid-template-columns: 1fr;
-  }
-  .alloy-specialist-row {
-    grid-template-columns: 1fr;
-  }
-  .alloy-sidebar {
-    width: 220px;
   }
 }
