@@ -42,10 +42,34 @@
   color: var(--text-secondary);
 }
 
+/* Manual refresh — trailing button in the search row (both sidebar + drawer). */
+.history-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background 0.15s, color 0.15s;
+}
+.history-refresh:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.history-refresh:disabled {
+  cursor: default;
+  color: var(--accent-color, var(--accent-primary));
+}
+
 .history-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0.5rem;
+  /* No top padding: sticky section labels sit flush at the scroll top. */
+  padding: 0 0.5rem 0.5rem;
 }
 
 .history-empty {
@@ -56,10 +80,12 @@
 }
 
 .history-item {
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.625rem;
+  margin-bottom: 1px;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
@@ -69,8 +95,21 @@
   background: var(--bg-hover);
 }
 
+/* Open (tab-backed) rows get a left accent rail via an inset shadow (no layout
+   shift, unlike border-left) so they read as "open" in any section. The active
+   row deepens the tint + rail; streaming rows tint the rail with the running
+   accent. */
+.history-item-open {
+  box-shadow: inset 2px 0 0 var(--accent-tint-medium, var(--accent-tint-soft));
+}
+
 .history-item.active {
   background: var(--accent-tint-soft);
+  box-shadow: inset 3px 0 0 var(--accent-color, var(--accent-primary));
+}
+
+.history-item-streaming {
+  box-shadow: inset 3px 0 0 var(--cosmic-cyan, var(--accent-primary));
 }
 
 .history-item-icon {
@@ -101,10 +140,18 @@
 .history-item-title {
   font-size: 0.8125rem;
   font-weight: 500;
+  line-height: 1.3;
   color: var(--text-primary);
-  white-space: nowrap;
+  /* Wrap to 2 lines instead of a single truncated line. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.history-item.active .history-item-title {
+  font-weight: 650;
 }
 
 .history-item-meta {
@@ -203,19 +250,6 @@
   color: var(--accent-primary);
 }
 
-/* "Open in a tab" indicator — a small accent dot shown on tab-backed rows in the
-   Pinned / group sections, where the section heading doesn't already imply it. */
-.history-item-openflag {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 5px;
-  vertical-align: 1px;
-  border-radius: 50%;
-  background: var(--accent-primary);
-  flex: none;
-}
-
 /* Section toggle (collapsible groups / archived) */
 .history-section-toggle {
   display: flex;
@@ -289,14 +323,28 @@
 }
 .conv-color-swatch.selected { border-color: var(--text-primary); }
 
-/* Section labels for Resume Running / Open / recency buckets */
+/* Section labels for Resume Running / Open / recency buckets.
+   Stickied to the top of the scroll so the current section stays visible while
+   scrolling a long list; the solid background covers rows passing underneath.
+   (.history-list drops its top padding so the sticky label meets the true top.) */
 .history-section-label {
-  padding: 0.375rem 0.75rem 0.25rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--text-tertiary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.6rem 0.35rem;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.055em;
+  /* Opaque sunken chip so it reads as a rounded header bar and cleanly occludes
+     rows scrolling underneath while stuck. */
+  background: var(--surface-sunken, var(--bg-tertiary, var(--bg-card)));
 }
 
 .history-item-server .history-item-icon,
@@ -320,11 +368,15 @@
 
 .history-item-preview {
   font-size: 0.6875rem;
+  line-height: 1.35;
   color: var(--text-tertiary);
-  white-space: nowrap;
+  /* Two lines of preview for more context, then clamp. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .history-item-loading {

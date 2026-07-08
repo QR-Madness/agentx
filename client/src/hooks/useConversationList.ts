@@ -119,15 +119,35 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   // Project (workspace) names for the sidebar's project sections + move menu.
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
 
+  // Manual refresh (header button) — re-pulls history + running/detached runs +
+  // project names. Matters most for detached runs, which only surface via
+  // `listChatRuns`. Guarded so overlapping clicks don't stack fetches, and it
+  // never re-steals focus into the search box (unlike the mount effect).
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshingRef = useRef(false);
+  const refresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refreshHistory(),
+        api.listChatRuns().then(r => setRuns(r.runs)).catch(() => setRuns([])),
+        api.listWorkspaces()
+          .then(r => setProjectNames(new Map(
+            r.workspaces.filter(w => w.id !== HOME_WORKSPACE_ID).map(w => [w.id, w.name]))))
+          .catch(() => setProjectNames(new Map())),
+      ]);
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }, [refreshHistory]);
+
   useEffect(() => {
-    refreshHistory();
-    api.listChatRuns().then(r => setRuns(r.runs)).catch(() => setRuns([]));
-    api.listWorkspaces()
-      .then(r => setProjectNames(new Map(
-        r.workspaces.filter(w => w.id !== HOME_WORKSPACE_ID).map(w => [w.id, w.name]))))
-      .catch(() => setProjectNames(new Map()));
+    void refresh();
     if (autoFocusSearch) searchRef.current?.focus();
-  }, [refreshHistory, autoFocusSearch]);
+  }, [refresh, autoFocusSearch]);
 
   const query = searchQuery.toLowerCase();
 
@@ -443,6 +463,7 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     // search + state
     searchQuery, setSearchQuery, searchRef, query,
     activeTabId, isLoadingHistory, restoringId, deletingId,
+    refresh, refreshing,
     editingKey, draftTitle, setDraftTitle: setDraft,
     // data
     pinned, projects, groups, openItems, pastByBucket, archived, filteredLiveRuns,

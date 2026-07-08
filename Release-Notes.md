@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.188 -->
+<!-- release-version: 0.21.189 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -78,6 +78,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   mobile. The Projects hub gets a roomier project list (no more clipped titles), a mobile
   master→detail flow, file cards that stack instead of cramping, a bigger instructions box, and
   full-screen file previews.
+- **A clearer, snappier conversation sidebar** — bolder rounded section headers that stick as you
+  scroll, open/active chats marked with an accent rail (not a tiny dot), conversation titles that
+  wrap to two lines with a longer preview, and a **refresh** button for detached/running chats. The
+  ⋯ actions menu opens instantly (dropped the modal machinery that stalled it), and the mobile
+  conversations drawer is now a proper full-screen page.
 
 ### Fixes
 

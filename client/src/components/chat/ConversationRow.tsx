@@ -35,15 +35,13 @@ interface ConversationRowProps {
   selectionMode: boolean;
   /** Only supplied (and only changing) for the row being renamed. */
   draftTitle?: string;
-  /** Flag a tab-backed row as currently open where the section doesn't imply it. */
-  showOpenBadge?: boolean;
   onOpenIconPicker: (key: string) => void;
   onNewGroup: (key: string) => void;
 }
 
 function ConversationRowImpl({
   item, handlers: h, isActive, editing, busy, checked, selectionMode,
-  draftTitle = '', showOpenBadge = false, onOpenIconPicker, onNewGroup,
+  draftTitle = '', onOpenIconPicker, onNewGroup,
 }: ConversationRowProps) {
   const { meta } = item;
   const color = conversationColorValue(meta.color);
@@ -61,7 +59,7 @@ function ConversationRowImpl({
 
   return (
     <div
-      className={`history-item ${isActive ? 'active' : ''} ${checked ? 'selected' : ''} ${item.kind === 'server' ? 'history-item-server' : ''}`}
+      className={`history-item ${isActive ? 'active' : ''} ${checked ? 'selected' : ''} ${item.kind === 'server' ? 'history-item-server' : ''} ${item.kind === 'tab' ? 'history-item-open' : ''} ${item.isStreaming ? 'history-item-streaming' : ''}`}
       onClick={onClick}
     >
       {selectionMode && (
@@ -92,7 +90,6 @@ function ConversationRowImpl({
         ) : (
           <span className="history-item-title" onDoubleClick={(e) => { e.stopPropagation(); h.startRename(item); }}>
             {meta.pinned && <Pin size={11} className="history-item-pinflag" />}
-            {showOpenBadge && <span className="history-item-openflag" title="Open in a tab" aria-label="Open in a tab" />}
             {item.title}
           </span>
         )}
@@ -112,7 +109,11 @@ function ConversationRowImpl({
                 <X size={12} />
               </button>
             )}
-            <DropdownMenu>
+            {/* modal={false}: the default modal menu pulls in RemoveScroll +
+                hideOthers (an aria-hidden walk over the whole document) on every
+                open — the lag opening this menu on the big chat-page DOM. The
+                menu is small; Escape/outside-click dismissal still works. */}
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <button className="history-item-action" onClick={(e) => e.stopPropagation()} title="More" aria-label="Conversation actions">
                   <MoreHorizontal size={14} />

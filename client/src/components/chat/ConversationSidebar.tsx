@@ -13,10 +13,11 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
-import { Plus, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Plus, PanelLeftClose, PanelLeftOpen, MessageSquare } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { AgentAvatar } from '../common/AgentAvatar';
+import { getMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { ConversationList } from './ConversationList';
 import './ConversationSidebar.css';
 
@@ -33,6 +34,7 @@ function clampWidth(w: number): number {
 export function ConversationSidebar() {
   const { tabs, activeTabId, switchTab, addTab } = useConversation();
   const { profiles } = useAgentProfile();
+  useConversationMeta();  // re-render the rail when a conversation's icon changes
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { return false; }
   });
@@ -79,6 +81,11 @@ export function ConversationSidebar() {
         </button>
         <div className="conv-rail-tabs">
           {tabs.map(tab => {
+            // Icon precedence mirrors the expanded ConversationRow: the
+            // conversation's own icon, then the agent avatar, then a neutral
+            // MessageSquare — never the generic default-agent Sparkles, which a
+            // restored/delegation tab (profileId === null) used to fall back to.
+            const iconAvatar = getMeta(tab.sessionId ?? tab.id).icon ?? avatarFor(tab.profileId);
             return (
               <button
                 key={tab.id}
@@ -86,7 +93,9 @@ export function ConversationSidebar() {
                 onClick={() => switchTab(tab.id)}
                 title={tab.title}
               >
-                <AgentAvatar avatar={avatarFor(tab.profileId)} size={16} fill />
+                {iconAvatar
+                  ? <AgentAvatar avatar={iconAvatar} size={16} fill />
+                  : <MessageSquare size={16} />}
                 {tab.isStreaming && <span className="conv-rail-streaming" />}
               </button>
             );

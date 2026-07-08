@@ -9,7 +9,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Search, X, Loader2, Radio, ChevronDown, ChevronRight,
-  Pin, Archive, Trash2, CheckSquare, Star, FolderKanban, PanelRight,
+  Pin, Archive, Trash2, CheckSquare, Star, FolderKanban, PanelRight, RefreshCw,
 } from 'lucide-react';
 import { useConversationList, type ConversationItem } from '../../hooks/useConversationList';
 import { ConversationRow } from './ConversationRow';
@@ -42,9 +42,9 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
 
   // Render one row with its per-row state flattened to primitive props so the
   // memoized `ConversationRow` only re-renders when its own flags change.
-  // `showOpenBadge` marks tab-backed rows as open in the Pinned/group sections
-  // (where the section heading doesn't already imply it).
-  const renderRow = (it: ConversationItem, showOpenBadge = false) => (
+  // Tab-backed (open) rows carry their own accent rail from the row itself, so
+  // they read as "open" in any section without a per-section flag.
+  const renderRow = (it: ConversationItem) => (
     <ConversationRow
       key={it.key}
       item={it}
@@ -55,7 +55,6 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
       checked={c.selected.has(it.key)}
       selectionMode={c.selectionMode}
       draftTitle={c.editingKey === it.key ? c.draftTitle : undefined}
-      showOpenBadge={showOpenBadge && it.kind === 'tab'}
       onOpenIconPicker={setIconPickerKey}
       onNewGroup={onNewGroup}
     />
@@ -92,6 +91,15 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
           {c.searchQuery && (
             <button className="clear-search" onClick={() => c.setSearchQuery('')}><X size={12} /></button>
           )}
+          <button
+            className="history-refresh"
+            onClick={() => void c.refresh()}
+            disabled={c.refreshing}
+            title="Refresh conversations & running chats"
+            aria-label="Refresh conversations"
+          >
+            <RefreshCw size={13} className={c.refreshing ? 'spin' : undefined} />
+          </button>
         </div>
       )}
 
@@ -114,7 +122,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
         {c.pinned.length > 0 && (
           <>
             <div className="history-section-label"><Star size={11} /> Pinned</div>
-            {c.pinned.map(it => renderRow(it, true))}
+            {c.pinned.map(it => renderRow(it))}
           </>
         )}
 
@@ -137,7 +145,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
                   <PanelRight size={12} />
                 </button>
               </div>
-              {!collapsed && project.items.map(it => renderRow(it, true))}
+              {!collapsed && project.items.map(it => renderRow(it))}
             </div>
           );
         })}
@@ -150,7 +158,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
               <button className="history-section-label history-section-toggle" onClick={() => c.toggleGroupCollapse(group)}>
                 {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />} {group} <span className="history-section-count">{convs.length}</span>
               </button>
-              {!collapsed && convs.map(it => renderRow(it, true))}
+              {!collapsed && convs.map(it => renderRow(it))}
             </div>
           );
         })}
