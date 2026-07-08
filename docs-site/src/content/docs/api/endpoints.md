@@ -857,8 +857,10 @@ returns `201`; `400` on validation failure. To run a workflow, pass `workflow_id
 ## Conversations
 
 ```
-GET /api/conversations                          # ?limit= (max 100) &offset= &channel=
-GET /api/conversations/{conversation_id}/messages
+GET   /api/conversations                          # ?limit= (max 100) &offset= &channel=
+GET   /api/conversations/{conversation_id}/messages
+GET   /api/conversations/{conversation_id}/state   # structured working memory (goals/decisions/open_threads/artifacts/narrative)
+PATCH /api/conversations/{conversation_id}/state   # {slot, entries[]} — replace a slot (user edit; author=user)
 ```
 
 **Response (list):** conversations summarized from `conversation_logs`.

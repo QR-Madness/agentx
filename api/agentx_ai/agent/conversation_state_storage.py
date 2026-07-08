@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -122,6 +122,48 @@ def apply_update(
     return updated
 
 
+def set_slot(
+    state: ConversationState,
+    slot: str,
+    entries: list[Any],
+) -> ConversationState:
+    """Return a new state with ``slot`` set to exactly ``entries`` (pure — no I/O).
+
+    The **user-edit primitive** (Slice 1b), distinct from :func:`apply_update` (the
+    agent's append/replace-with-strings tool). Accepts full entry objects
+    (``StateEntry`` or ``{text, author?, source_turn?}`` dicts) so a client can
+    round-trip existing provenance while adding/editing/removing entries in one
+    PATCH. ``updated_at`` is re-stamped now; blanks are dropped; each entry is
+    truncated to the slot's char cap; the slot is bounded to the newest
+    ``MAX_ENTRIES_PER_SLOT``. Unknown authors coerce to ``user`` (a user-driven
+    edit doesn't get to mint an agent-authored entry).
+    """
+    if slot not in SLOTS:
+        raise ValueError(f"Unknown conversation-state slot: {slot!r} (valid: {', '.join(SLOTS)})")
+
+    now = datetime.now(UTC).isoformat()
+    cap_chars = _entry_cap(slot)
+    out: list[StateEntry] = []
+    for raw in entries:
+        if isinstance(raw, StateEntry):
+            text, author, source_turn = raw.text, raw.author, raw.source_turn
+        elif isinstance(raw, dict):
+            text = str(raw.get("text", ""))
+            author = raw.get("author", "user")
+            source_turn = raw.get("source_turn")
+        else:
+            text, author, source_turn = str(raw), "user", None
+        text = text.strip()[:cap_chars]
+        if not text:
+            continue
+        author = author if author in ("user", "agent") else "user"
+        out.append(StateEntry(text=text, author=author, source_turn=source_turn, updated_at=now))
+
+    updated = state.model_copy(deep=True)
+    setattr(updated, slot, out[-MAX_ENTRIES_PER_SLOT:])
+    return updated
+
+
 def render_state(state: ConversationState) -> str:
     """Format the state object as a system-prompt block, or "" if empty."""
     if state.is_empty():
@@ -199,6 +241,13 @@ def update_slot(
         source_turn=source_turn,
         replace=replace,
     )
+    save_state(conversation_id, state)
+    return state
+
+
+def replace_slot(conversation_id: str, slot: str, entries: list[Any]) -> ConversationState:
+    """Get→set→save a full-slot user edit (Slice 1b). Returns the persisted state."""
+    state = set_slot(get_state(conversation_id), slot, entries)
     save_state(conversation_id, state)
     return state
 

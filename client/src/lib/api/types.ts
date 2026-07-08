@@ -356,6 +356,43 @@ export interface ConversationMessagesResponse {
   message_count: number;
 }
 
+// === Conversation State (structured working memory — Slice 1a/1b) ===
+
+export type ConversationStateSlot =
+  | 'goals'
+  | 'decisions'
+  | 'open_threads'
+  | 'artifacts'
+  | 'narrative';
+
+export interface StateEntry {
+  text: string;
+  author: 'user' | 'agent';
+  source_turn: number | null;
+  updated_at: string;
+}
+
+/** What the client sends on a PATCH: text is required; provenance is round-tripped
+ * for existing entries and defaulted server-side (author=user) for new ones. */
+export interface StateEntryInput {
+  text: string;
+  author?: 'user' | 'agent';
+  source_turn?: number | null;
+}
+
+export interface ConversationState {
+  goals: StateEntry[];
+  decisions: StateEntry[];
+  open_threads: StateEntry[];
+  artifacts: StateEntry[];
+  narrative: StateEntry[];
+}
+
+export interface ConversationStateResponse {
+  conversation_id: string;
+  state: ConversationState;
+}
+
 // === Prompt Types ===
 
 export interface PromptSection {

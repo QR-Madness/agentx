@@ -1,0 +1,155 @@
+.conv-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5, 20px);
+  padding: var(--space-5, 20px);
+  overflow-y: auto;
+  height: 100%;
+}
+
+.conv-state-loading {
+  color: var(--text-secondary);
+  padding: var(--space-4, 16px);
+}
+
+.conv-state-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 4px);
+}
+
+.conv-state-eyebrow {
+  font-size: var(--text-2xs, 11px);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted, var(--text-secondary));
+}
+
+.conv-state-title {
+  font-size: var(--text-xl, 20px);
+  font-weight: 650;
+  margin: 0;
+}
+
+.conv-state-sub {
+  font-size: var(--text-sm, 13px);
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.conv-state-slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: var(--space-4, 16px);
+  border: 1px solid var(--border-line, var(--border));
+  border-radius: var(--radius-lg, 12px);
+  background: var(--surface-raised, var(--surface));
+}
+
+.conv-state-slot-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.conv-state-slot-icon {
+  color: var(--accent, var(--text-secondary));
+}
+
+.conv-state-slot-label {
+  font-size: var(--text-sm, 14px);
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+}
+
+.conv-state-slot-count {
+  font-size: var(--text-2xs, 11px);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--surface-sunken, rgba(127, 127, 127, 0.12));
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.conv-state-slot-hint {
+  font-size: var(--text-xs, 12px);
+  color: var(--text-muted, var(--text-secondary));
+  margin: 0;
+}
+
+.conv-state-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+}
+
+.conv-state-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2, 8px);
+}
+
+.conv-state-input {
+  flex: 1;
+  resize: vertical;
+}
+
+.conv-state-row-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1, 4px);
+  padding-top: 2px;
+}
+
+.conv-state-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, var(--text-secondary));
+  border: 1px solid var(--border-line, var(--border));
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+.conv-state-empty {
+  font-size: var(--text-xs, 12px);
+  color: var(--text-muted, var(--text-secondary));
+  font-style: italic;
+  margin: 0;
+}
+
+.conv-state-slot-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2, 8px);
+  margin-top: var(--space-1, 4px);
+}
+
+/* Composer indicator (lives in the input-stats line beside the context chip). */
+.conv-state-chip {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.conv-state-chip:hover {
+  color: var(--accent, var(--text-fg, inherit));
+  text-decoration: underline;
+}
+.conv-state-chip.flash {
+  color: var(--accent, currentColor);
+  animation: conv-state-flash 1.2s ease;
+}
+@keyframes conv-state-flash {
+  0%, 100% { color: inherit; }
+  20% { color: var(--accent, currentColor); }
+}

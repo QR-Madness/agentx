@@ -5164,6 +5164,31 @@ class ConversationStateTest(MockRedisTestBase):
         with self.assertRaises(ValueError):
             apply_update(ConversationState(), "bogus", ["x"])
 
+    def test_set_slot_replaces_and_preserves_provenance(self):
+        from agentx_ai.agent.conversation_state_storage import ConversationState, set_slot
+
+        state = set_slot(ConversationState(), "decisions", [
+            {"text": "keep this", "author": "agent", "source_turn": 5},
+            {"text": "user note"},  # author omitted → defaults to user
+        ])
+        self.assertEqual(len(state.decisions), 2)
+        self.assertEqual(state.decisions[0].author, "agent")
+        self.assertEqual(state.decisions[0].source_turn, 5)
+        self.assertEqual(state.decisions[1].author, "user")
+        self.assertTrue(all(e.updated_at for e in state.decisions))
+
+    def test_set_slot_coerces_unknown_author_to_user(self):
+        from agentx_ai.agent.conversation_state_storage import ConversationState, set_slot
+
+        state = set_slot(ConversationState(), "goals", [{"text": "x", "author": "root"}])
+        self.assertEqual(state.goals[0].author, "user")
+
+    def test_set_slot_rejects_unknown_slot(self):
+        from agentx_ai.agent.conversation_state_storage import ConversationState, set_slot
+
+        with self.assertRaises(ValueError):
+            set_slot(ConversationState(), "bogus", [])
+
     def test_render_empty_is_blank(self):
         from agentx_ai.agent.conversation_state_storage import ConversationState, render_state
 
@@ -5257,6 +5282,113 @@ class ConversationStateTest(MockRedisTestBase):
         self.assertIsNotNone(info)
         assert info is not None
         self.assertIn("narrative", info.input_schema["properties"]["slot"]["enum"])
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class ConversationStateEndpointTest(MockRedisTestBase):
+    """GET/PATCH /api/conversations/<id>/state — the editable state surface (Slice 1b)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from django.test import Client
+        self.client = Client()
+        self.mock_redis.get.return_value = None  # start from an empty stored state
+
+    def test_get_returns_empty_state(self):
+        resp = self.client.get("/api/conversations/conv-1/state")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["conversation_id"], "conv-1")
+        self.assertEqual(data["state"]["decisions"], [])
+
+    def test_patch_replaces_slot_as_user(self):
+        resp = self.client.patch(
+            "/api/conversations/conv-1/state",
+            data=json.dumps({"slot": "decisions", "entries": ["go additive first"]}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        decisions = resp.json()["state"]["decisions"]
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(decisions[0]["text"], "go additive first")
+        self.assertEqual(decisions[0]["author"], "user")  # user edit is user-authored
+        self.assertTrue(self.mock_redis.set.called)
+
+    def test_patch_round_trips_provenance(self):
+        resp = self.client.patch(
+            "/api/conversations/conv-1/state",
+            data=json.dumps({"slot": "open_threads", "entries": [
+                {"text": "verify episodic join", "author": "agent", "source_turn": 2},
+                {"text": "user-added note", "author": "user"},
+            ]}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        threads = resp.json()["state"]["open_threads"]
+        self.assertEqual(threads[0]["author"], "agent")   # agent provenance preserved
+        self.assertEqual(threads[0]["source_turn"], 2)
+        self.assertEqual(threads[1]["author"], "user")
+
+    def test_patch_rejects_unknown_slot(self):
+        resp = self.client.patch(
+            "/api/conversations/conv-1/state",
+            data=json.dumps({"slot": "bogus", "entries": []}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_patch_rejects_non_list_entries(self):
+        resp = self.client.patch(
+            "/api/conversations/conv-1/state",
+            data=json.dumps({"slot": "goals", "entries": "nope"}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_post_not_allowed(self):
+        resp = self.client.post("/api/conversations/conv-1/state")
+        self.assertEqual(resp.status_code, 405)
+
+
+class ModelDefaultResolutionTest(TestCase):
+    """The configured global default (`preferences.default_model`) must win over the
+    offline-first `lmstudio:llama3.2` dataclass fallback when no request/profile model
+    is set — otherwise every turn silently routes to LM Studio (regression guard)."""
+
+    def test_get_agent_prefers_configured_default_over_lmstudio(self):
+        import os
+        from unittest.mock import patch
+
+        from agentx_ai.views import get_agent
+
+        get_agent.reset()
+        try:
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("DEFAULT_MODEL", None)
+                with patch("agentx_ai.config.get_config_manager") as gcm:
+                    gcm.return_value.get.return_value = "openrouter:minimax/minimax-m3"
+                    agent = get_agent()
+            self.assertEqual(agent.config.default_model, "openrouter:minimax/minimax-m3")
+            self.assertNotIn("lmstudio", agent.config.default_model)
+        finally:
+            get_agent.reset()
+
+    def test_get_agent_falls_back_to_lmstudio_only_when_nothing_configured(self):
+        import os
+        from unittest.mock import patch
+
+        from agentx_ai.views import get_agent
+
+        get_agent.reset()
+        try:
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("DEFAULT_MODEL", None)
+                with patch("agentx_ai.config.get_config_manager") as gcm:
+                    gcm.return_value.get.return_value = ""  # nothing configured
+                    agent = get_agent()
+            self.assertEqual(agent.config.default_model, "lmstudio:llama3.2")
+        finally:
+            get_agent.reset()
 
 
 class FactToolWiringTest(TestCase):

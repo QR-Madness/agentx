@@ -1,5 +1,11 @@
 import { request as apiRequest } from './core';
-import type { ConversationListResponse, ConversationMessagesResponse } from './types';
+import type {
+  ConversationListResponse,
+  ConversationMessagesResponse,
+  ConversationStateResponse,
+  ConversationStateSlot,
+  StateEntryInput,
+} from './types';
 
 export const historyApi = {
   // === Conversation History ===
@@ -19,6 +25,24 @@ export const historyApi = {
 
   async getConversationMessages(conversationId: string): Promise<ConversationMessagesResponse> {
     return apiRequest(`/api/conversations/${encodeURIComponent(conversationId)}/messages`);
+  },
+
+  // === Conversation State (structured working memory) ===
+
+  async getConversationState(conversationId: string): Promise<ConversationStateResponse> {
+    return apiRequest(`/api/conversations/${encodeURIComponent(conversationId)}/state`);
+  },
+
+  /** Replace a whole slot (add/edit/remove in one call). A user edit is authoritative. */
+  async updateConversationState(
+    conversationId: string,
+    slot: ConversationStateSlot,
+    entries: StateEntryInput[],
+  ): Promise<ConversationStateResponse> {
+    return apiRequest(`/api/conversations/${encodeURIComponent(conversationId)}/state`, {
+      method: 'PATCH',
+      body: JSON.stringify({ slot, entries }),
+    });
   },
 
   async deleteConversation(conversationId: string): Promise<{ message: string; deleted: Record<string, number> }> {

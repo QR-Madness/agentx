@@ -120,6 +120,7 @@ urlpatterns = [
     # Conversation history endpoints
     path("conversations", views.conversations_list, name="conversations-list"),
     path("conversations/<str:conversation_id>/messages", views.conversations_messages, name="conversations-messages"),
+    path("conversations/<str:conversation_id>/state", views.conversation_state, name="conversation-state"),
     # Memory channel management endpoints
     path("memory/channels", views.memory_channels, name="memory-channels"),
     path("memory/channels/<str:name>", views.memory_channel_delete, name="memory-channel-delete"),

@@ -24,6 +24,7 @@ import {
   MemoryStats,
   UsageMetrics,
   CheckpointsResponse,
+  ConversationStateResponse,
   EntityGraph,
   ConsolidateResult,
   MemoryExport,
@@ -414,6 +415,25 @@ export function useCheckpoints(conversationId: string | null | undefined) {
     error,
     refresh,
   };
+}
+
+export function useConversationState(conversationId: string | null | undefined) {
+  const { data, loading, error, refresh } = useApi<ConversationStateResponse>(
+    () => api.getConversationState(conversationId as string),
+    [conversationId],
+    { enabled: !!conversationId },
+  );
+  const state = data?.state;
+  const counts = {
+    goals: state?.goals.length ?? 0,
+    decisions: state?.decisions.length ?? 0,
+    open_threads: state?.open_threads.length ?? 0,
+    artifacts: state?.artifacts.length ?? 0,
+    narrative: state?.narrative.length ?? 0,
+  };
+  const total =
+    counts.goals + counts.decisions + counts.open_threads + counts.artifacts + counts.narrative;
+  return { state, counts, total, loading, error, refresh };
 }
 
 // === Memory Mutation Hooks ===

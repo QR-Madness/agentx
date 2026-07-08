@@ -60,6 +60,8 @@ interface UseChatStreamOpts {
   onRunMissing?: () => void;
   /** Fired when the agent autonomously saves a `checkpoint` mid-stream. */
   onCheckpointSaved?: () => void;
+  /** Fired when the agent writes conversation state (`update_conversation_state`) mid-stream. */
+  onConversationStateSaved?: () => void;
   /** Stored media fell back to a workspace (Home) — the conversation can durably attach. */
   onWorkspaceAttached?: (workspaceId: string) => void;
 }
@@ -281,6 +283,9 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         });
         if (handle.toolName === 'checkpoint' && data.success) {
           optsRef.current.onCheckpointSaved?.();
+        }
+        if (handle.toolName === 'update_conversation_state' && data.success) {
+          optsRef.current.onConversationStateSaved?.();
         }
         activeToolCallsRef.current.delete(data.tool_call_id);
         dispatch({ type: 'tool_call_resolved', toolCallId: data.tool_call_id });
