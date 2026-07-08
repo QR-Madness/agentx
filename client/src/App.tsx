@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ModalProvider } from './contexts/ModalContext';
 import { ConversationProvider } from './contexts/ConversationContext';
+import { ConsolidationProvider } from './contexts/ConsolidationContext';
 import { AmbassadorProvider } from './contexts/AmbassadorContext';
 import { AmbassadorDockProvider } from './contexts/AmbassadorDockContext';
 import { PlansProvider } from './contexts/PlansContext';
@@ -105,8 +106,9 @@ function App() {
                       <AmbassadorProvider>
                        <PlansProvider>
                         <ModalProvider>
-                         <AmbassadorDockProvider>
-                          <UIChromeProvider>
+                         <ConsolidationProvider>
+                          <AmbassadorDockProvider>
+                           <UIChromeProvider>
                             <ConfirmProvider>
                               <ErrorBoundary>
                                 <RootLayout />
@@ -118,8 +120,9 @@ function App() {
                               <ConnectorAuthNudge />
                               {showWindowControls && <ResizeHandles />}
                             </ConfirmProvider>
-                          </UIChromeProvider>
-                         </AmbassadorDockProvider>
+                           </UIChromeProvider>
+                          </AmbassadorDockProvider>
+                         </ConsolidationProvider>
                         </ModalProvider>
                        </PlansProvider>
                       </AmbassadorProvider>

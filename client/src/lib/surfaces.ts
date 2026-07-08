@@ -14,6 +14,7 @@ export type SurfaceKey =
   | 'tools'
   | 'memory'
   | 'sources'
+  | 'consolidation'
   | 'ambassador'
   | 'ambassadorDeck'
   | 'plans'
@@ -32,6 +33,7 @@ export const SURFACES: Record<SurfaceKey, ModalConfig> = {
   tools: { id: 'toolkit', type: 'modal', component: 'tools', size: 'full' },
   memory: { id: 'memory-drawer', type: 'drawer', component: 'memory', position: 'right', size: 'xxl' },
   sources: { id: 'sources-drawer', type: 'drawer', component: 'sources', position: 'right', size: 'xxl' },
+  consolidation: { id: 'consolidation-drawer', type: 'drawer', component: 'consolidation', position: 'right', size: 'lg' },
   ambassador: { id: 'ambassador-drawer', type: 'drawer', component: 'ambassador', position: 'right', size: 'xxl' },
   // The standalone, conversation-less command deck — full-screen, app-wide.
   ambassadorDeck: { id: 'ambassador-deck', type: 'modal', component: 'ambassadorDeck', size: 'full' },

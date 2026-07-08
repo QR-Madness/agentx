@@ -345,6 +345,29 @@ select {
   animation: shimmer 1.5s infinite;
 }
 
+/* Indeterminate progress: a fill segment sweeps left→right. */
+@keyframes ax-progress-sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.ax-progress-shimmer {
+  animation: ax-progress-sweep 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ax-progress-shimmer {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
 /* === Scrollbar Styling === */
 ::-webkit-scrollbar {
   width: 8px;
