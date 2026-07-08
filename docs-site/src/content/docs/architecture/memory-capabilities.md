@@ -34,6 +34,8 @@ each one and how it feeds the others.
 | Structured conversation state | working | shipped | `conversation_state_storage.py`; `update_conversation_state` tool + `GET/PATCH /api/conversations/{id}/state` | conversation |
 | Conversation context ledger | context | shipped | `assemble_ledger` (`agent/context_ledger.py`) — priority blocks + verbatim budget | per turn |
 | State compaction (rolling digest) | context | shipped | `SessionManager.maybe_compact_to_state` → `ConversationState.digest`; `_ensure_summary_coverage` (INV-CTX-1) | conversation |
+| Memory-tool coaching | prompts | shipped | `memory-tools` built-in prompt layer (`prompts/layers.py`) — ASSUME INTERRUPTION, recall-gating, leads-vs-transcript, untrusted content | — |
+| Poisoning defense (single-writer + provenance) | security | shipped | INV-8; `_coerce_author` (no forged `system` author), no auto-ingest of tool/web output; guard `MemoryPoisoningTest` | conversation state |
 | Project memory scoping | channels | shipped | `_resolve_project_channel_workspace` (`views.py`) → `AgentConfig.memory_channel = _project_{ws_id}` | `_project_{workspace_id}` (opt-out: `memory.project_channels`) |
 | Cross-channel promotion | lifecycle | shipped | `promote_to_global` | → `_global` |
 | Salience decay | lifecycle | shipped | decay job (`consolidation/`) | all |
