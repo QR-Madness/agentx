@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.177 -->
+<!-- release-version: 0.21.178 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -38,9 +38,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Hardened self-hosting**: token gateway; safe no-env boots.
 - **Memory brain upgrade**: windowed extraction, an `eval_recall` harness, and
   **two-stage recall** (+20pp MRR).
-- **Conversations keep structured state** — agents now maintain a slot-based working record
-  (goals, decisions, open threads, artifacts, plus a freeform narrative) that survives context
-  compression, so long chats stay coherent. Default-on; opt out in settings.
+- **Conversations keep structured state, and now you can see and edit it** — agents maintain a
+  slot-based working record (goals, decisions, open threads, artifacts, plus a freeform narrative)
+  that survives context compression; a composer indicator shows it at a glance and opens a drawer to
+  add, edit, or remove entries (your edits win, and the agent reads them next turn). Default-on; opt
+  out in settings.
 - **Reasoning models think out loud** on OpenAI-compatible providers.
 - **Sign in to remote MCP servers** — OAuth 2.1 with automatic client registration;
   connect opens your browser, tokens are stored and refreshed server-side.
@@ -55,6 +57,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Your chosen default model is finally respected** — agent profiles with no model set silently fell
+  through to a local LM Studio model instead of the global default you picked in Settings, so turns
+  hung or errored if LM Studio wasn't running; the configured default is now in the resolution chain
+  everywhere (chat, plan resume, background agent).
 - **Memory consolidation now follows your model roles** — its stages shipped pinned
   to a specific model instead of your Fast Utility / Deep Reasoning choice (the ambassador
   aide is now role-aware too); fresh installs inherit the role, and existing installs get a

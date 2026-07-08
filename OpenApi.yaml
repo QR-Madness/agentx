@@ -3492,6 +3492,64 @@ paths:
                     items:
                       $ref: '#/components/schemas/Message'
 
+  /conversations/{conversation_id}/state:
+    get:
+      tags: [Conversations]
+      operationId: conversationStateGet
+      summary: Get the structured conversation-state object
+      description: >
+        The agent's structured working memory for the conversation
+        (goals/decisions/open_threads/artifacts/narrative), each entry
+        provenance-stamped. Empty slots for a conversation with no state yet.
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Conversation state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationStateResponse'
+    patch:
+      tags: [Conversations]
+      operationId: conversationStatePatch
+      summary: Replace one conversation-state slot (user edit)
+      description: >
+        Replaces the whole slot with the given entries (add/edit/remove in one
+        call). A user edit is authoritative; entries may round-trip existing
+        provenance, and new entries default to author=user.
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot, entries]
+              properties:
+                slot:
+                  type: string
+                  enum: [goals, decisions, open_threads, artifacts, narrative]
+                entries:
+                  type: array
+                  items:
+                    type: object
+                    required: [text]
+                    properties:
+                      text: { type: string }
+                      author: { type: string, enum: [user, agent] }
+                      source_turn: { type: integer, nullable: true }
+      responses:
+        '200':
+          description: Updated conversation state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationStateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /memory/channels:
     get:
       tags: [Memory]
@@ -5630,6 +5688,39 @@ components:
         timestamp:
           type: string
           format: date-time
+
+    StateEntry:
+      type: object
+      properties:
+        text:
+          type: string
+        author:
+          type: string
+          enum: [user, agent]
+        source_turn:
+          type: integer
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+
+    ConversationState:
+      type: object
+      description: Slot-based structured working memory for a conversation.
+      properties:
+        goals: { type: array, items: { $ref: '#/components/schemas/StateEntry' } }
+        decisions: { type: array, items: { $ref: '#/components/schemas/StateEntry' } }
+        open_threads: { type: array, items: { $ref: '#/components/schemas/StateEntry' } }
+        artifacts: { type: array, items: { $ref: '#/components/schemas/StateEntry' } }
+        narrative: { type: array, items: { $ref: '#/components/schemas/StateEntry' } }
+
+    ConversationStateResponse:
+      type: object
+      properties:
+        conversation_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/ConversationState'
 
     MemoryChannel:
       type: object

@@ -22,6 +22,7 @@ export type SurfaceKey =
   | 'toolOutputBrowser'
   | 'profileEditor'
   | 'conversations'
+  | 'conversationState'
   | 'workspaces'
   | 'teams'
   | 'changePassword';
@@ -40,6 +41,9 @@ export const SURFACES: Record<SurfaceKey, ModalConfig> = {
   toolOutputBrowser: { id: 'tool-output-browser', type: 'drawer', component: 'toolOutputBrowser', position: 'right', size: 'xxl' },
   profileEditor: { id: 'profile-editor', type: 'modal', component: 'unifiedProfileEditor', size: 'full' },
   conversations: { id: 'conversations-drawer', type: 'drawer', component: 'conversations', position: 'right', size: 'md' },
+  // Opened with a `conversationId` prop (the active tab's) — the editable
+  // structured working-memory surface for that conversation.
+  conversationState: { id: 'conversation-state-drawer', type: 'drawer', component: 'conversationState', position: 'right', size: 'lg' },
   workspaces: { id: 'workspaces-drawer', type: 'drawer', component: 'workspaces', position: 'right', size: 'xxl' },
   // User-facing name: "Agent Teams" (internal: Alloy) — precedent: Workspaces→Projects.
   teams: { id: 'alloy-factory', type: 'modal', component: 'alloyFactory', size: 'full' },

@@ -32,6 +32,7 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   alloyRunTrace: lazy(() => import('../alloy/AlloyRunTraceModal').then(m => ({ default: m.AlloyRunTraceModal as ComponentType<ModalComponentProps> }))),
   changePassword: lazy(() => import('./ChangePasswordModal').then(m => ({ default: m.ChangePasswordModal }))),
   conversations: lazy(() => import('./stubs').then(m => ({ default: m.ConversationsDrawerContent }))),
+  conversationState: lazy(() => import('../chat/ConversationStateDrawer').then(m => ({ default: m.ConversationStateDrawer as unknown as ComponentType<ModalComponentProps> }))),
   logs: lazy(() => import('./stubs').then(m => ({ default: m.LogsDrawerContent }))),
   toolOutputBrowser: lazy(() => import('./stubs').then(m => ({ default: m.ToolOutputBrowserContent }))),
   workspaces: lazy(() => import('./stubs').then(m => ({ default: m.WorkspacesDrawerContent }))),

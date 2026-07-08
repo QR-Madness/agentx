@@ -1231,9 +1231,16 @@ def get_agent():
     """Get or create Agent instance lazily."""
     import os
     from .agent import Agent, AgentConfig
+    from .config import get_config_manager
 
-    # Offline-first: default to local model via LM Studio
-    default_model = os.environ.get("DEFAULT_MODEL", "lmstudio:llama3.2")
+    # Priority: DEFAULT_MODEL env > configured global default (Settings) > LM Studio
+    # (offline-first last resort). Previously this skipped the configured default, so
+    # the non-chat agent always ran on LM Studio regardless of the model chosen.
+    default_model = (
+        os.environ.get("DEFAULT_MODEL")
+        or get_config_manager().get("preferences.default_model")
+        or "lmstudio:llama3.2"
+    )
 
     agent = Agent(AgentConfig(
         default_model=default_model,
@@ -1503,10 +1510,17 @@ async def agent_chat_stream(request):
             "enable_memory": use_memory,
         }
 
-        # Model: request > profile > None (use agent default)
+        # Model: request > profile > global default (settings) > agent dataclass default.
+        # The user's global default lives in `preferences.default_model` (set in
+        # Settings). Without it here, a profile with no model set silently fell through
+        # to the AgentConfig dataclass default (`lmstudio:llama3.2`) — so every turn hit
+        # LM Studio regardless of the model chosen in settings. Empty strings coerce to
+        # None so a blank profile/request value can't outrank the configured default.
+        from .config import get_config_manager as _get_cfg
         resolved_model = resolve_with_priority(
-            model,
-            agent_profile.default_model if agent_profile else None,
+            model or None,
+            (agent_profile.default_model or None) if agent_profile else None,
+            _get_cfg().get("preferences.default_model") or None,
         )
         if resolved_model:
             config_kwargs["default_model"] = resolved_model
@@ -3621,8 +3635,14 @@ async def agent_plan_resume(request, plan_id):
             )
 
             config_kwargs: dict = {"enable_memory": use_memory}
+            # request > profile > global default (settings) > agent dataclass default —
+            # see agent_chat_stream: without the settings default an unset profile falls
+            # to the LM Studio dataclass default.
+            from .config import get_config_manager as _get_cfg
             resolved_model = resolve_with_priority(
-                model, agent_profile.default_model if agent_profile else None,
+                model or None,
+                (agent_profile.default_model or None) if agent_profile else None,
+                _get_cfg().get("preferences.default_model") or None,
             )
             if resolved_model:
                 config_kwargs["default_model"] = resolved_model
@@ -4963,6 +4983,50 @@ def conversations_messages(request, conversation_id):
     except Exception as e:
         logger.error(f"Error fetching conversation messages: {e}")
         return json_error(str(e), status=500)
+
+
+@csrf_exempt
+@require_methods("GET", "PATCH")
+def conversation_state(request, conversation_id):
+    """
+    GET   /api/conversations/<id>/state - the structured conversation-state object.
+    PATCH /api/conversations/<id>/state - user edit of one slot (author=user).
+
+    The state object (goals/decisions/open_threads/artifacts/narrative) is the
+    Claude-like structured working memory introduced in Slice 1a; this endpoint
+    makes it user-editable (Slice 1b). PATCH body: ``{"slot": <name>, "entries":
+    [{"text", "author"?, "source_turn"?} | "text", ...]}`` — replaces the whole
+    slot (add/edit/remove in one call). A user edit is authoritative ("user wins")
+    and the agent re-reads the state fresh each turn.
+    """
+    from .agent.conversation_state_storage import SLOTS, get_state, replace_slot
+
+    if request.method == "GET":
+        state = get_state(conversation_id)
+        return JsonResponse({"conversation_id": conversation_id, "state": state.model_dump()})
+
+    # PATCH
+    try:
+        body = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        return json_error("Invalid JSON body", status=400)
+
+    slot = body.get("slot")
+    entries = body.get("entries")
+    if slot not in SLOTS:
+        return json_error(f"Unknown slot {slot!r}. Valid slots: {', '.join(SLOTS)}.", status=400)
+    if not isinstance(entries, list):
+        return json_error("`entries` must be a list.", status=400)
+
+    try:
+        state = replace_slot(conversation_id, slot, entries)
+    except ValueError as e:
+        return json_error(str(e), status=400)
+    except Exception as e:  # pragma: no cover - Redis offline
+        logger.error(f"Error updating conversation state: {e}")
+        return json_error(str(e), status=500)
+
+    return JsonResponse({"conversation_id": conversation_id, "state": state.model_dump()})
 
 
 @csrf_exempt

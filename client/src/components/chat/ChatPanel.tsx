@@ -28,6 +28,7 @@ import {
 import { api } from '../../lib/api';
 import { contextChipState } from '../../lib/contextChip';
 import { MessageImages } from './MessageImages';
+import { ConversationStateBadge } from './ConversationStateBadge';
 import type { ChatImageRef } from '../../lib/api/types';
 import { RelayMenu } from './relay/RelayMenu';
 import { MessageContent } from './MessageContent';
@@ -212,6 +213,9 @@ export function ChatPanel() {
   // Bumped each time the agent saves a checkpoint mid-stream; the badge
   // watches this to refetch + flash.
   const [checkpointSignal, setCheckpointSignal] = useState(0);
+  // Bumped each time the agent writes conversation state mid-stream; the composer
+  // state badge watches this to refetch + flash.
+  const [stateSignal, setStateSignal] = useState(0);
   // When armed (via Relay), the next send routes to the background queue.
   const [bgArmed, setBgArmed] = useState(false);
   // Vision input: images attached to the next message (uploaded to Home as refs),
@@ -314,6 +318,7 @@ export function ChatPanel() {
       if (activeTab?.sessionId) restoreConversation(activeTab.sessionId).catch(() => {});
     },
     onCheckpointSaved: () => setCheckpointSignal(n => n + 1),
+    onConversationStateSaved: () => setStateSignal(n => n + 1),
     onWorkspaceAttached: attachStoredMediaWorkspace,
   });
 
@@ -1316,6 +1321,7 @@ export function ChatPanel() {
               {' · '}{contextChip.label}
             </span>
           )}
+          <ConversationStateBadge conversationId={activeTab?.sessionId} flashSignal={stateSignal} />
         </div>
       </div>
 
