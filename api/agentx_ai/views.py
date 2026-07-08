@@ -242,6 +242,29 @@ def _append_corpus_awareness_blocks(blocks, workspace_id, conv_id, shrink_tail):
         logger.debug(f"Conversation image awareness skipped: {ci_err}")
 
 
+def _append_conversation_state_block(blocks, conv_id, cfg, shrink_tail):
+    """Append the structured conversation-state ledger block (Slice 1a): model-authored,
+    slot-based working memory (goals/decisions/open_threads/artifacts/narrative), rendered
+    just above the prose summary. Additive this slice — it does NOT yet replace the summary
+    as the compaction target (Slice 1c). Default-on with a settings opt-out. Best-effort +
+    conditional, so it lives here to keep the chat-stream generator within pyright's path
+    budget."""
+    from .agent.context_ledger import LedgerBlock
+
+    if not bool(cfg.get("context.conversation_state_enabled", True)):
+        return
+    try:
+        from .agent.conversation_state_storage import render_state_block
+        state_block = render_state_block(conv_id)
+        if state_block:
+            blocks.append(LedgerBlock(
+                key="conversation_state", priority=68, content=state_block,
+                shrink_fn=shrink_tail,
+            ))
+    except Exception as st_err:  # noqa: BLE001 — best-effort
+        logger.debug(f"Conversation state injection skipped: {st_err}")
+
+
 async def _compose_plan_if_complex(message, messages, *, provider, model_id, agent, use_memory, emit):
     """Compose a structured plan with the main agent model when the turn looks complex
     enough to warrant it; otherwise return None.
@@ -1918,6 +1941,13 @@ async def agent_chat_stream(request):
                         content=_digest,
                         shrink_fn=shrink_lines_newest_n,
                     ))
+
+            # Structured conversation state (Slice 1a) — model-authored, slot-based
+            # working memory, ADDITIVE alongside the prose summary (below), rendered just
+            # above it. Extracted to a helper to keep this generator within the type
+            # checker's path budget.
+            if not direct_mode:
+                _append_conversation_state_block(blocks, conv_id, _cfg, shrink_tail)
 
             # The (persisted) rolling summary covers turns older than the verbatim
             # budget — registered AFTER the JIT refresh so a summary created this
