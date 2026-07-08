@@ -1142,6 +1142,10 @@ class _ConvExtraction:
     relationships: list[dict[str, Any]] = field(default_factory=list)
     corrections_applied: int = 0
     extraction_failed: bool = False
+    # Turn ids that were successfully poured over (window extracted cleanly,
+    # relevant OR not). These are marked ``t.consolidated`` so they are never
+    # re-processed; turns of a *failed* window are omitted so they retry.
+    processed_turn_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1179,10 +1183,14 @@ def _fetch_pending_conversations(
     # Only extract from user turns (not assistant/system/tool responses)
     # ``responder_agent_id`` (the agent that produced the immediately following turn)
     # resolves "you"/"your" per user turn in multi-agent conversations.
+    # Turn-level idempotency: a turn is consolidated exactly once. Discover only
+    # user turns not yet marked ``t.consolidated`` and collect only those — an
+    # already-fully-consolidated conversation yields no rows, so an idempotent
+    # re-sweep is a no-op (no re-pouring old turns; dedup is not the safety net).
     result = session.run("""
         MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
-        WHERE (c.consolidated IS NULL OR c.consolidated < datetime() - duration('PT15M'))
-          AND t.role = 'user'
+        WHERE t.role = 'user'
+          AND t.consolidated IS NULL
           AND ($only IS NULL OR c.id = $only)
         OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
         OPTIONAL MATCH (t)-[:FOLLOWED_BY]->(resp:Turn)
@@ -1397,6 +1405,9 @@ async def _extract_windowed(
             out.extraction_failed = True
             logger.warning(f"Extraction failed for window in {conv_id}: {result.error}")
             return
+        # The window extracted cleanly (relevant or not) → its turns are poured
+        # over exactly once; mark them so they're never re-consolidated.
+        out.processed_turn_ids.extend(t["id"] for t in window if t.get("id"))
         if result.is_relevant:
             out.relevant_turns.extend(window)
             metrics.turns_relevant += len(window)
@@ -1466,6 +1477,10 @@ async def _extract_per_turn(
             out.extraction_failed = True
             logger.warning(f"Extraction failed for turn in {conv_id}: {combined_result.error}")
             continue  # Skip this turn but continue with others
+
+        # Extracted cleanly (relevant or not) → mark it processed-once.
+        if turn.get("id"):
+            out.processed_turn_ids.append(turn["id"])
 
         if combined_result.is_relevant:
             out.relevant_turns.append(turn)
@@ -1750,6 +1765,19 @@ def _link_facts_and_relationships(
     return rel_count
 
 
+def _mark_turns_consolidated(session, turn_ids: list[str], prop: str) -> None:
+    """Stamp ``t.<prop> = datetime()`` on the given turns so they are never
+    re-consolidated. ``prop`` is ``consolidated`` (user turns) or
+    ``self_consolidated`` (assistant turns). No-op on an empty list.
+    """
+    if not turn_ids:
+        return
+    session.run(
+        f"UNWIND $ids AS tid MATCH (t:Turn {{id: tid}}) SET t.{prop} = datetime()",
+        ids=turn_ids,
+    )
+
+
 async def _consolidate_user_conversation(
     record, conv_idx, total, session, memory_cache,
     extraction_service, metrics, errors, progress_callback,
@@ -1793,16 +1821,21 @@ async def _consolidate_user_conversation(
         conv_id, metrics, errors, roster=roster, default_agent_id=agent_id,
     )
 
+    # Mark every successfully-poured-over turn (relevant or not) so it is never
+    # re-consolidated — independent of storage below, and of whether OTHER
+    # windows failed (those turns are simply absent from processed_turn_ids and
+    # retry next sweep). Keep c.consolidated as a coarse "last-touched" marker.
+    _mark_turns_consolidated(session, extracted.processed_turn_ids, "consolidated")
+    if extracted.processed_turn_ids:
+        session.run(
+            "MATCH (c:Conversation {id: $conv_id}) SET c.consolidated = datetime()",
+            conv_id=conv_id,
+        )
+
     if not extracted.relevant_turns:
         logger.debug(f"No relevant turns in conversation {conv_id}, skipping extraction")
-        # Only mark as consolidated if extraction didn't fail
-        if not extracted.extraction_failed:
-            session.run("""
-                MATCH (c:Conversation {id: $conv_id})
-                SET c.consolidated = datetime()
-            """, conv_id=conv_id)
-        else:
-            logger.warning(f"Not marking {conv_id} as consolidated due to extraction failures")
+        if extracted.extraction_failed:
+            logger.warning(f"Some windows in {conv_id} failed extraction; those turns will retry")
         return
 
     logger.debug(
@@ -1864,15 +1897,9 @@ async def _consolidate_user_conversation(
         f"{entity_count} entities, {fact_result.fact_count} facts, {rel_count} relationships{extras_msg}"
     )
 
-    # Only mark as consolidated if extraction succeeded
-    # This ensures failed conversations will be retried
-    if not extracted.extraction_failed:
-        session.run("""
-            MATCH (c:Conversation {id: $conv_id})
-            SET c.consolidated = datetime()
-        """, conv_id=conv_id)
-    else:
-        logger.warning(f"Not marking {conv_id} as consolidated due to extraction failures")
+    # Turn-level marking + the coarse c.consolidated stamp already happened right
+    # after extraction (above) — gated on which turns were actually poured over,
+    # so a partial-window failure retries only its own turns next sweep.
 
 
 async def _consolidate_assistant_conversation(
@@ -1898,7 +1925,10 @@ async def _consolidate_assistant_conversation(
     if roster:
         _ensure_agent_entities(session, self_memory_cache, user_id, roster)
 
-    self_extraction_failed = False
+    # Assistant turns marked ``self_consolidated`` (once), so they never re-process:
+    # a deterministic skip (no agent / too short) or a clean extraction; a failed
+    # extraction is omitted so the turn retries next sweep.
+    processed_ids: list[str] = []
 
     for turn in a_turns:
         content = turn["content"]
@@ -1909,6 +1939,8 @@ async def _consolidate_assistant_conversation(
         # conversation's agent for legacy turns missing per-turn attribution.
         turn_agent_id = turn.get("agent_id") or conv_agent_id
         if not turn_agent_id:
+            if turn_id:
+                processed_ids.append(turn_id)  # nothing to extract → handled
             continue
         self_channel = f"_self_{turn_agent_id}"
         memory = _get_or_create_memory(
@@ -1922,6 +1954,8 @@ async def _consolidate_assistant_conversation(
 
         # Skip short responses (greetings, acknowledgments)
         if len(content.strip()) < 100:
+            if turn_id:
+                processed_ids.append(turn_id)  # deterministic skip → handled
             continue
 
         try:
@@ -1941,13 +1975,15 @@ async def _consolidate_assistant_conversation(
             )
         except Exception as e:
             logger.warning(f"Assistant extraction failed for turn in {conv_id}: {e}")
-            self_extraction_failed = True
             errors.append(f"assistant_extraction:{conv_id}:{e}")
-            continue
+            continue  # leave unmarked → retries next sweep
 
         if not result.success:
-            self_extraction_failed = True
-            continue
+            continue  # leave unmarked → retries next sweep
+
+        # Extracted cleanly → this assistant turn is poured over exactly once.
+        if turn_id:
+            processed_ids.append(turn_id)
 
         if not result.is_relevant:
             continue
@@ -2024,12 +2060,15 @@ async def _consolidate_assistant_conversation(
             except Exception as e:
                 logger.warning(f"Self-extraction relationship storage failed: {e}")
 
-    # Mark conversation as self-consolidated
-    if not self_extraction_failed:
-        session.run("""
-            MATCH (c:Conversation {id: $conv_id})
-            SET c.self_consolidated = datetime()
-        """, conv_id=conv_id)
+    # Mark the processed assistant turns (never re-consolidated); a failed turn is
+    # omitted and retries next sweep. c.self_consolidated is a coarse last-touched
+    # marker, no longer the gate.
+    _mark_turns_consolidated(session, processed_ids, "self_consolidated")
+    if processed_ids:
+        session.run(
+            "MATCH (c:Conversation {id: $conv_id}) SET c.self_consolidated = datetime()",
+            conv_id=conv_id,
+        )
 
 
 async def consolidate_episodic_to_semantic(
@@ -2108,10 +2147,12 @@ async def consolidate_episodic_to_semantic(
     self_memory_cache: dict[str, AgentMemory] = {}
 
     with Neo4jConnection.session() as session:
+        # Turn-level idempotency (assistant self-knowledge): only assistant turns
+        # not yet marked ``t.self_consolidated``; collect only those.
         assistant_result = session.run("""
             MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
-            WHERE (c.self_consolidated IS NULL OR c.self_consolidated < datetime() - duration('PT15M'))
-              AND t.role = 'assistant'
+            WHERE t.role = 'assistant'
+              AND t.self_consolidated IS NULL
               AND c.agent_id IS NOT NULL
               AND ($only IS NULL OR c.id = $only)
             OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
@@ -2719,16 +2760,26 @@ def reset_consolidation(delete_memories: bool = False) -> dict[str, Any]:
     memories_deleted = 0
 
     with Neo4jConnection.session() as session:
-        # Reset consolidation timestamps
+        # Reset consolidation timestamps (conversation-level coarse markers)
         result = session.run("""
             MATCH (c:Conversation)
-            WHERE c.consolidated IS NOT NULL
-            REMOVE c.consolidated
+            WHERE c.consolidated IS NOT NULL OR c.self_consolidated IS NOT NULL
+            REMOVE c.consolidated, c.self_consolidated
             RETURN count(c) AS reset_count
         """)
 
         record = result.single()
         reset_count = record["reset_count"] if record else 0
+
+        # Turn-level markers are the real gate now — clear them (batched) so the
+        # next sweep actually re-consolidates every turn. Without this, reset is a
+        # no-op (turns stay marked → nothing reprocesses).
+        session.run("""
+            MATCH (t:Turn)
+            WHERE t.consolidated IS NOT NULL OR t.self_consolidated IS NOT NULL
+            CALL { WITH t REMOVE t.consolidated, t.self_consolidated }
+            IN TRANSACTIONS OF 10000 ROWS
+        """)
 
         if delete_memories:
             # Delete all Facts
