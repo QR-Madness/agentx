@@ -11,10 +11,21 @@ import type { BubbleProps } from './types';
 
 export function ExhibitBubble({ message, busy, onSubmitChoice }: BubbleProps<'exhibit'>) {
   const { exhibit } = message;
+  // Citation-only exhibits (e.g. auto-captured web_search sources) render as a
+  // slim collapsed row directly in the flow — no card chrome — so they don't
+  // stack as disruptive full-width cards. Everything else keeps its card.
+  const citationOnly =
+    exhibit.elements.length > 0 && exhibit.elements.every((el) => el.type === 'citation');
   return (
     <div className="message-bubble exhibit">
-      <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface-raised p-3">
-        {exhibit.title && (
+      <div
+        className={
+          citationOnly
+            ? 'flex flex-col gap-2'
+            : 'flex flex-col gap-2 rounded-lg border border-line bg-surface-raised p-3'
+        }
+      >
+        {!citationOnly && exhibit.title && (
           <div className="text-sm font-medium text-fg">{exhibit.title}</div>
         )}
         <div className="flex flex-col gap-3">
@@ -29,6 +40,7 @@ export function ExhibitBubble({ message, busy, onSubmitChoice }: BubbleProps<'ex
                   answeredValue={message.answeredValue}
                   busy={busy}
                   onSubmitChoice={onSubmitChoice}
+                  containerTitle={citationOnly ? exhibit.title : undefined}
                 />
               );
             }

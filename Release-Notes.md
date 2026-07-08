@@ -64,6 +64,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   single-agent. ("Agent Alloy" workflows are now **Teams** — a lead who delegates to
   members.) Ad-hoc delegation ships enabled, but the roster starts empty (profiles are
   now opt-in, so nothing delegates until you add teammates).
+- **Sources stay out of the way** — cited sources no longer stack as full-width cards mid-chat;
+  they collapse into a slim, tool-call-style row (icon + count + a host hint) that expands on
+  click, and the Sources drawer got a lighter, icon-led restyle.
 
 ### Fixes
 
