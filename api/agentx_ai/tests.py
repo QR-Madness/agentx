@@ -5102,6 +5102,163 @@ class ScratchpadToolTest(MockRedisTestBase):
         self.assertFalse(result["success"])
 
 
+class ConversationStateTest(MockRedisTestBase):
+    """Structured conversation-state object: pure transforms + Redis round-trip + tool."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Default to an empty stored state so append/round-trip stay deterministic.
+        self.mock_redis.get.return_value = None
+
+    # --- pure transforms (no Redis) ---
+    def test_apply_update_appends_and_stamps_provenance(self):
+        from agentx_ai.agent.conversation_state_storage import ConversationState, apply_update
+
+        state = apply_update(
+            ConversationState(), "decisions", ["ship additive first"],
+            author="agent", source_turn=3,
+        )
+        self.assertEqual(len(state.decisions), 1)
+        entry = state.decisions[0]
+        self.assertEqual(entry.text, "ship additive first")
+        self.assertEqual(entry.author, "agent")
+        self.assertEqual(entry.source_turn, 3)
+        self.assertTrue(entry.updated_at)  # iso timestamp stamped
+
+    def test_apply_update_replace_supersedes_slot(self):
+        from agentx_ai.agent.conversation_state_storage import ConversationState, apply_update
+
+        state = apply_update(ConversationState(), "open_threads", ["a", "b"])
+        state = apply_update(state, "open_threads", ["c"], replace=True)
+        self.assertEqual([e.text for e in state.open_threads], ["c"])
+
+    def test_apply_update_bounds_slot_to_newest(self):
+        from agentx_ai.agent.conversation_state_storage import (
+            MAX_ENTRIES_PER_SLOT,
+            ConversationState,
+            apply_update,
+        )
+
+        many = [f"item {i}" for i in range(MAX_ENTRIES_PER_SLOT + 5)]
+        state = apply_update(ConversationState(), "narrative", many)
+        self.assertEqual(len(state.narrative), MAX_ENTRIES_PER_SLOT)
+        self.assertEqual(state.narrative[-1].text, many[-1])  # newest kept
+        self.assertEqual(state.narrative[0].text, many[5])    # oldest 5 dropped
+
+    def test_apply_update_truncates_and_drops_blank(self):
+        from agentx_ai.agent.conversation_state_storage import (
+            MAX_ENTRY_CHARS,
+            ConversationState,
+            apply_update,
+        )
+
+        state = apply_update(
+            ConversationState(), "goals", ["   ", "x" * (MAX_ENTRY_CHARS + 50)],
+        )
+        self.assertEqual(len(state.goals), 1)  # blank dropped
+        self.assertEqual(len(state.goals[0].text), MAX_ENTRY_CHARS)  # truncated
+
+    def test_apply_update_rejects_unknown_slot(self):
+        from agentx_ai.agent.conversation_state_storage import ConversationState, apply_update
+
+        with self.assertRaises(ValueError):
+            apply_update(ConversationState(), "bogus", ["x"])
+
+    def test_render_empty_is_blank(self):
+        from agentx_ai.agent.conversation_state_storage import ConversationState, render_state
+
+        self.assertEqual(render_state(ConversationState()), "")
+
+    def test_render_shows_slots_and_user_marker(self):
+        from agentx_ai.agent.conversation_state_storage import (
+            ConversationState,
+            apply_update,
+            render_state,
+        )
+
+        state = apply_update(ConversationState(), "goals", ["make memory stateful"], author="agent")
+        state = apply_update(state, "decisions", ["prefer a narrative catch-all"], author="user")
+        block = render_state(state)
+        self.assertIn("Conversation State", block)
+        self.assertIn("Goals", block)
+        self.assertIn("make memory stateful", block)
+        self.assertIn("[user]", block)  # user-authored entry is flagged
+        self.assertNotIn("make memory stateful [user]", block)  # agent entry is not
+
+    # --- Redis round-trip ---
+    def test_update_slot_round_trips_through_render(self):
+        from agentx_ai.agent.conversation_state_storage import render_state_block, update_slot
+
+        update_slot("conv-1", "artifacts", ["draft plan v1"])
+        payload = self.mock_redis.set.call_args[0][1]
+        self.assertIn("draft plan v1", payload)
+        self.mock_redis.expire.assert_called()  # 30-day TTL applied
+
+        # Feed the persisted payload back for the render read.
+        self.mock_redis.get.return_value = payload.encode()
+        block = render_state_block("conv-1")
+        self.assertIn("Artifacts", block)
+        self.assertIn("draft plan v1", block)
+
+    # --- internal tool ---
+    def _with_ctx(self, fn):
+        from agentx_ai.mcp.internal_context import (
+            InternalToolContext,
+            reset_context,
+            set_context,
+        )
+
+        token = set_context(InternalToolContext(
+            user_id="u1", channel="_default", agent_id=None, conversation_id="conv-1",
+        ))
+        try:
+            return fn()
+        finally:
+            reset_context(token)
+
+    def test_tool_writes_slot(self):
+        from agentx_ai.mcp.internal_tools import update_conversation_state
+
+        result = self._with_ctx(
+            lambda: update_conversation_state(slot="open_threads", entries=["verify episodic join"])
+        )
+        self.assertTrue(result["success"])
+        self.assertEqual(result["slot"], "open_threads")
+        self.assertTrue(self.mock_redis.set.called)
+
+    def test_tool_rejects_unknown_slot(self):
+        from agentx_ai.mcp.internal_tools import update_conversation_state
+
+        result = self._with_ctx(lambda: update_conversation_state(slot="bogus", entries=["x"]))
+        self.assertFalse(result["success"])
+
+    def test_tool_rejects_empty_entries(self):
+        from agentx_ai.mcp.internal_tools import update_conversation_state
+
+        result = self._with_ctx(lambda: update_conversation_state(slot="goals", entries=["  "]))
+        self.assertFalse(result["success"])
+
+    def test_tool_requires_conversation_context(self):
+        from agentx_ai.mcp.internal_context import reset_context, set_context
+        from agentx_ai.mcp.internal_tools import update_conversation_state
+
+        token = set_context(None)
+        try:
+            result = update_conversation_state(slot="goals", entries=["orphaned"])
+        finally:
+            reset_context(token)
+        self.assertFalse(result["success"])
+
+    def test_tool_is_registered(self):
+        from agentx_ai.mcp.internal_tools import find_internal_tool, is_internal_tool
+
+        self.assertTrue(is_internal_tool("update_conversation_state"))
+        info = find_internal_tool("update_conversation_state")
+        self.assertIsNotNone(info)
+        assert info is not None
+        self.assertIn("narrative", info.input_schema["properties"]["slot"]["enum"])
+
+
 class FactToolWiringTest(TestCase):
     """remember_this / forget internal tools route to AgentMemory correctly."""
 
