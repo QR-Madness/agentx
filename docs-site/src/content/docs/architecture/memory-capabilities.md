@@ -30,6 +30,9 @@ each one and how it feeds the others.
 | Two-stage rerank | recall | shipped | `RecallLayer._cross_encoder_stage` — 50-candidate pool → post-fusion cross-encoder, bounded demotion (cap 2); default-ON | `[active, _self_, _global]` |
 | Stable salient core | recall | shipped | `AgentMemory.get_salient_core` → `get_salient_facts`/`get_salient_entities` (`memory/semantic.py`); injected as the prio-70 ledger block (`agent/context_ledger.py`) | `[active, _self_, _global]` |
 | Context gating | context | shipped | `ToolOutputCompressor`, `tool_output_chunker`, trajectory compression | active |
+| Structured conversation state | working | shipped | `conversation_state_storage.py`; `update_conversation_state` tool + `GET/PATCH /api/conversations/{id}/state` | conversation |
+| Conversation context ledger | context | shipped | `assemble_ledger` (`agent/context_ledger.py`) — priority blocks + verbatim budget | per turn |
+| State compaction (rolling digest) | context | shipped | `SessionManager.maybe_compact_to_state` → `ConversationState.digest`; `_ensure_summary_coverage` (INV-CTX-1) | conversation |
 | Project memory scoping | channels | shipped | `_resolve_project_channel_workspace` (`views.py`) → `AgentConfig.memory_channel = _project_{ws_id}` | `_project_{workspace_id}` (opt-out: `memory.project_channels`) |
 | Cross-channel promotion | lifecycle | shipped | `promote_to_global` | → `_global` |
 | Salience decay | lifecycle | shipped | decay job (`consolidation/`) | all |
@@ -64,6 +67,65 @@ graph TD
     PC -->|distill_procedures| PROC[(Procedures<br/>trigger + body)]
     PROC -->|reflex core: top-strength| AGENT
 ```
+
+## Conversation context lifecycle (per turn)
+
+The model is **stateless between turns** — every turn the server rebuilds the whole prompt
+from scratch within a token budget (`assemble_ledger`, `agent/context_ledger.py`). Blocks
+compete by priority: the system prompt is mandatory, then memory (salient facts + the
+structured Conversation State), then the verbatim recent transcript, then the new message;
+low-priority blocks (query-driven recall) are dropped first under pressure.
+
+<svg width="100%" viewBox="0 0 680 460" role="img" xmlns="http://www.w3.org/2000/svg" style="max-width:760px;height:auto;font-family:inherit">
+<title>Per-turn context assembly and compaction</title>
+<desc>The full conversation splits into recent turns kept verbatim and older turns compacted into the conversation-state digest; both feed the turn's prompt within the token budget, while every raw turn stays durable in Postgres.</desc>
+<defs>
+<marker id="cl-ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+<path d="M0,0 L7,3 L0,6 Z" fill="var(--color-text-dim)"/>
+</marker>
+</defs>
+<rect x="40" y="20" width="600" height="44" rx="8" fill="var(--color-surface-2)" stroke="var(--color-border-2)" stroke-width="1.5"/>
+<text x="340" y="47" text-anchor="middle" fill="var(--color-text)" font-size="15" font-weight="600">Full conversation — every turn, oldest → newest</text>
+<path d="M220,64 L190,118" fill="none" stroke="var(--color-text-dim)" stroke-width="1.6" marker-end="url(#cl-ah)"/>
+<path d="M460,64 L490,118" fill="none" stroke="var(--color-text-dim)" stroke-width="1.6" marker-end="url(#cl-ah)"/>
+<rect x="40" y="122" width="290" height="66" rx="8" fill="var(--color-surface-2)" stroke="var(--color-warning)" stroke-width="1.5"/>
+<text x="185" y="150" text-anchor="middle" fill="var(--color-text)" font-size="14.5" font-weight="600">Older turns → Compaction</text>
+<text x="185" y="171" text-anchor="middle" fill="var(--color-text-muted)" font-size="12.5">one pass, rolled into the state digest</text>
+<rect x="350" y="122" width="290" height="66" rx="8" fill="var(--color-surface-2)" stroke="var(--color-accent)" stroke-width="1.5"/>
+<text x="495" y="150" text-anchor="middle" fill="var(--color-text)" font-size="14.5" font-weight="600">Newest turns → kept verbatim</text>
+<text x="495" y="171" text-anchor="middle" fill="var(--color-text-muted)" font-size="12.5">the recent tail that fits the budget</text>
+<path d="M185,188 L300,254" fill="none" stroke="var(--color-text-dim)" stroke-width="1.6" marker-end="url(#cl-ah)"/>
+<path d="M495,188 L380,254" fill="none" stroke="var(--color-text-dim)" stroke-width="1.6" marker-end="url(#cl-ah)"/>
+<rect x="40" y="258" width="600" height="72" rx="8" fill="var(--color-surface-3)" stroke="var(--color-accent)" stroke-width="1.5"/>
+<text x="340" y="284" text-anchor="middle" fill="var(--color-text)" font-size="15" font-weight="600">This turn's prompt · fits ≈ 90% of the model window</text>
+<text x="340" y="308" text-anchor="middle" fill="var(--color-text-muted)" font-size="12.5">System prompt · Memory (facts + Conversation State + digest) · Verbatim tail · Message</text>
+<path d="M340,330 L340,356" fill="none" stroke="var(--color-text-dim)" stroke-width="1.6" marker-end="url(#cl-ah)"/>
+<rect x="40" y="360" width="600" height="72" rx="8" fill="var(--color-surface-2)" stroke="var(--color-ok)" stroke-width="1.5"/>
+<text x="340" y="386" text-anchor="middle" fill="var(--color-text)" font-size="15" font-weight="600">Durability &amp; the contract (INV-CTX-1)</text>
+<text x="340" y="408" text-anchor="middle" fill="var(--color-text-muted)" font-size="12.5">Every raw turn is also saved to Postgres — durable and searchable.</text>
+<text x="340" y="424" text-anchor="middle" fill="var(--color-text-muted)" font-size="12.5">A turn leaves the live window only once the digest (or a deterministic fallback) covers it.</text>
+</svg>
+
+**What "aged out" means.** Before assembly, `_ensure_summary_coverage` walks the transcript
+newest→oldest, keeping the recent tail that fits the budget (always ≥ `recent_floor`). Older
+turns beyond that tail are *aged out* — dropped from the live window, but never from durable
+storage (`conversation_logs` in Postgres).
+
+**Compaction (Slice 1c, INV-CTX-1).** Aged-out turns are folded, in exactly one pass, into
+`ConversationState.digest` — a **rolling** summary re-summarized in place each time (bounded
+without dropping old coverage), rendered in the state block every turn
+(`SessionManager.maybe_compact_to_state`). A turn leaves the window only once the digest —
+or a deterministic `history_digest` fallback, if the summarizer is unavailable — covers it.
+Two triggers: a post-turn pre-warm (`context.summary_trigger_ratio`, 0.85) and a just-in-time
+backstop (`context.verbatim_budget_ratio`, 0.9). One pass runs per over-budget turn (state
+compaction by default; the legacy prose summary is the flag-off fallback — no double-compression).
+
+**Why rolling, not per-conversation.** Re-summarizing only the newly-aged-out turns (rather
+than re-summarizing the whole window at a checkpoint) keeps compaction incremental, and —
+because the digest lives beside the goals / decisions / open-threads slots — it preserves the
+conversation's **active working state**, not just a narrative recap. The tradeoff is mild
+summary drift over very long runs, hedged by rolling the prior digest in and by keeping the
+raw turns durable.
 
 ## Capabilities by area
 
