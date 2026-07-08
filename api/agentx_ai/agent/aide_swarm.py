@@ -26,6 +26,7 @@ import logging
 from typing import Any
 
 from ..config import get_config_manager
+from ..model_roles import resolve_member_model
 from ..providers.base import Message, MessageRole
 from ..providers.registry import ProviderRegistry, get_registry
 
@@ -62,7 +63,10 @@ class AideService:
         c = get_config_manager()
         return {
             "enabled": c.get("ambassador.aide.enabled", True),
-            "model": c.get("ambassador.aide.model", "") or _AIDE_FLOOR_MODEL,
+            # Model-family aware: an unset aide model follows the `fast_utility`
+            # role (this is a cheap map tier), then the haiku floor. An explicit
+            # `ambassador.aide.model` still wins. See model_roles.ROLE_MEMBERS["aide"].
+            "model": resolve_member_model("aide", c.get("ambassador.aide.model", "")) or _AIDE_FLOOR_MODEL,
             "temperature": c.get("ambassador.aide.temperature", 0.2),
             "max_tokens": c.get("ambassador.aide.max_tokens", 220),
             "max_input_chars": c.get("ambassador.aide.max_input_chars", 6000),

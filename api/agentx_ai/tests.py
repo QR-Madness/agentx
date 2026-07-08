@@ -7472,6 +7472,97 @@ class ModelRolesTest(TestCase):
             self.assertIsNone(note)  # resolving the role's own model is not a swap
 
 
+class ModelFamilyCoverageTest(TestCase):
+    """Model-family coverage invariant (Slice 0).
+
+    Every general-purpose LLM feature-model setting must resolve through a family
+    (a ROLE_MEMBERS `source`) OR sit on one of two documented escape-hatch lists:
+    INHERITS_AGENT_MODEL (bucket b — falls through to the calling agent's model)
+    or EXEMPT_SPECIALIZED (bucket c — not a general-purpose text LLM, or a paired
+    constraint). This guard fails when a NEW `*_model` setting is added without a
+    bucket — the human must consciously classify it, so nothing silently bypasses
+    the family system.
+    """
+
+    def _buckets(self):
+        from agentx_ai.model_roles import (
+            EXEMPT_SPECIALIZED,
+            INHERITS_AGENT_MODEL,
+            ROLE_MEMBERS,
+        )
+        family = {m["source"] for m in ROLE_MEMBERS.values()}
+        return family, set(INHERITS_AGENT_MODEL), set(EXEMPT_SPECIALIZED)
+
+    def test_buckets_are_disjoint(self):
+        family, inherits, exempt = self._buckets()
+        self.assertEqual(family & inherits, set(),
+                         "a setting is both family-wired and inherits-agent-model")
+        self.assertEqual(family & exempt, set(),
+                         "a setting is both family-wired and exempt")
+        self.assertEqual(inherits & exempt, set(),
+                         "a setting is both inherits-agent-model and exempt")
+
+    def test_every_memory_model_setting_is_classified(self):
+        """Auto-discovery: every `*_model` field on the memory Settings model
+        must be in exactly one bucket. Adding a new one without classifying it
+        fails here — the point of the guard."""
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        family, inherits, exempt = self._buckets()
+        classified = family | inherits | exempt
+        memory_model_fields = {
+            name for name in Settings.model_fields if name.endswith("_model")
+        }
+        # Sanity: discovery actually found the known fields (guards against a
+        # rename silently emptying the set and making the assert vacuous).
+        self.assertIn("extraction_model", memory_model_fields)
+        self.assertIn("embedding_model", memory_model_fields)
+        unclassified = memory_model_fields - classified
+        self.assertEqual(
+            unclassified, set(),
+            f"unclassified `*_model` settings (add to a family or a bucket in "
+            f"model_roles.py): {sorted(unclassified)}")
+
+    def test_config_kind_and_agent_settings_are_classified(self):
+        """Non-memory model settings (ConfigManager dot-paths + AgentConfig/
+        SpeculativeConfig fields) are enumerated here — kept in sync by hand
+        since there's no single registry to introspect."""
+        family, inherits, exempt = self._buckets()
+        classified = family | inherits | exempt
+        # The known non-memory model settings across the codebase.
+        known = {
+            "session.rolling_summary.model", "compression.model",
+            "trajectory_compression.model", "prompt_enhancement.model",
+            "ambassador.aide.model", "ambassador.model", "planner.model",
+            "preferences.default_model", "images.default_model",
+            "reasoning_model", "drafting_model", "draft_model", "target_model",
+        }
+        unclassified = known - classified
+        self.assertEqual(
+            unclassified, set(),
+            f"unclassified non-memory `*_model` settings: {sorted(unclassified)}")
+
+    def test_aide_is_wired_to_fast_utility(self):
+        from agentx_ai.model_roles import ROLE_MEMBERS
+        self.assertIn("aide", ROLE_MEMBERS)
+        self.assertEqual(ROLE_MEMBERS["aide"]["role"], "fast_utility")
+        self.assertEqual(ROLE_MEMBERS["aide"]["source"], "ambassador.aide.model")
+
+    def test_consolidation_stage_defaults_inherit_the_family(self):
+        """Fresh installs must not shadow the family with a concrete per-stage
+        model — the reported consolidation bug."""
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        defaults = Settings()
+        for field in ("extraction_model", "relevance_filter_model",
+                      "contradiction_model", "correction_model",
+                      "entity_linking_model", "combined_extraction_model",
+                      "procedural_distill_model"):
+            self.assertEqual(
+                getattr(defaults, field), "inherit",
+                f"{field} default shadows its model role (should be 'inherit')")
+
+
 @override_settings(AGENTX_AUTH_ENABLED=False)
 class ModelRolesEndpointTest(TestCase):
     """GET /api/models/roles + the config_update models.roles handler."""
@@ -7523,6 +7614,27 @@ class ModelRolesEndpointTest(TestCase):
                     data=json.dumps({"models": {"roles": {"summarizer": bad}}}),
                     content_type="application/json")
             self.assertEqual(resp.status_code, 400, f"{bad!r} accepted")
+
+    def test_adopt_resets_consolidation_stages_to_inherit(self):
+        """POST /api/models/roles/adopt clears the 7 consolidation stage models
+        to 'inherit' via save_memory_settings — and touches nothing else."""
+        with patch("agentx_ai.kit.agent_memory.config.save_memory_settings") as save:
+            resp = self.client.post("/api/models/roles/adopt")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertTrue(body["success"])
+        (saved,), _ = save.call_args
+        self.assertEqual(set(saved.keys()), {
+            "extraction_model", "relevance_filter_model", "contradiction_model",
+            "correction_model", "entity_linking_model", "combined_extraction_model",
+            "procedural_distill_model"})
+        self.assertTrue(all(v == "inherit" for v in saved.values()))
+        # recall/workspace-summary members are NOT reset (keep their own defaults)
+        self.assertNotIn("recall_hyde_model", saved)
+        self.assertNotIn("workspace_summary_model", saved)
+
+    def test_adopt_rejects_get(self):
+        self.assertEqual(self.client.get("/api/models/roles/adopt").status_code, 405)
 
 
 class SettingsManifestTest(TestCase):

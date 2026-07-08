@@ -14,11 +14,19 @@ import { api } from '../../../lib/api';
 import type { ModelRoleMember, ModelRoleName } from '../../../lib/api';
 import { useApi } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
-import { Badge, SectionHeader } from '../../ui';
+import { Badge, Button, SectionHeader } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
 import { SettingsSection } from '../../settings/fields';
 
 const ROLE_ORDER: ModelRoleName[] = ['fast_utility', 'deep_reasoning', 'summarizer'];
+
+// Consolidation-stage members that "Adopt roles" resets to inherit (mirrors the
+// server's _CONSOLIDATION_STAGE_MODEL_KEYS). Used to decide whether to offer the
+// action — a fresh install has none pinned, so the button stays hidden.
+const CONSOLIDATION_MEMBER_KEYS = new Set([
+  'extraction', 'relevance_filter', 'contradiction', 'correction',
+  'entity_linking', 'combined_extraction', 'procedural_distill',
+]);
 
 /** Human-readable tail of a provider:model id. */
 function shortModel(id: string): string {
@@ -54,8 +62,9 @@ function MemberChip({ member }: { member: ModelRoleMember }) {
 }
 
 export default function ModelRolesSection() {
-  const { notifyError } = useNotify();
+  const { notifyError, notifySuccess } = useNotify();
   const [saving, setSaving] = useState<ModelRoleName | null>(null);
+  const [adopting, setAdopting] = useState(false);
   const { data, loading, refresh } = useApi(() => api.getModelRoles(), [], {
     onError: err => notifyError(err, 'Model roles'),
   });
@@ -69,6 +78,25 @@ export default function ModelRolesSection() {
       notifyError(err, 'Failed to update the model role');
     } finally {
       setSaving(null);
+    }
+  };
+
+  // A consolidation stage is "pinned" when it follows an explicit per-stage
+  // model instead of its role — the only case where Adopt does anything.
+  const pinnedStages = (data?.members ?? []).filter(
+    m => CONSOLIDATION_MEMBER_KEYS.has(m.member) && m.following === 'explicit'
+  );
+
+  const adoptRoles = async () => {
+    setAdopting(true);
+    try {
+      await api.adoptModelRoles();
+      await refresh();
+      notifySuccess('Consolidation stages now follow their model roles.');
+    } catch (err) {
+      notifyError(err, 'Failed to adopt roles for consolidation stages');
+    } finally {
+      setAdopting(false);
     }
   };
 
@@ -108,6 +136,25 @@ export default function ModelRolesSection() {
               </SettingsSection>
             );
           })}
+
+          {pinnedStages.length > 0 && (
+            <div className="mt-4 p-3 rounded-lg border border-line bg-surface-sunken">
+              <p className="text-sm text-fg-secondary mb-2">
+                {pinnedStages.length} memory consolidation{' '}
+                {pinnedStages.length === 1 ? 'stage is' : 'stages are'} pinned to a
+                specific model and won&apos;t follow their role. Adopt roles to clear
+                those overrides so consolidation tracks Fast Utility / Deep Reasoning.
+              </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void adoptRoles()}
+                disabled={adopting}
+              >
+                {adopting ? 'Adopting…' : 'Adopt roles for all consolidation stages'}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

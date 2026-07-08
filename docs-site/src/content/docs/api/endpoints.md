@@ -368,6 +368,12 @@ The three model roles (`fast_utility`, `deep_reasoning`, `summarizer`) with thei
 
 `following` is `explicit` (member's own value wins), `role` (inheriting the role's model), or `fallback` (neither set — the provider fallback chain decides). Set roles via `POST /api/config/update` with `{"models": {"roles": {"summarizer": "provider:model"}}}` — `""` clears a role; `role:` refs and non-`provider:model` strings are rejected.
 
+```
+POST /api/models/roles/adopt
+```
+
+Resets the memory **consolidation** stage models (extraction, relevance, contradiction, correction, entity-linking, combined extraction, procedural distillation) to `inherit` so each follows its model role. Fresh installs already ship these as `inherit`; this one-click action lets an existing install adopt the family without hand-clearing each stage. Recall and document-summary members keep their own fast defaults and are not touched. Returns `{"success": true, "adopted": [...]}`.
+
 ---
 
 ## Agent

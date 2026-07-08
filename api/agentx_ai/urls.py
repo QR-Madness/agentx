@@ -38,6 +38,7 @@ urlpatterns = [
     path("providers/health", views.providers_health, name="providers-health"),
     # Model roles (settings overhaul D1)
     path("models/roles", views.models_roles, name="models-roles"),
+    path("models/roles/adopt", views.models_roles_adopt, name="models-roles-adopt"),
     # Settings Manifest v1 (settings-agent substrate)
     path("settings/manifest", views.settings_manifest, name="settings-manifest"),
     # Agent endpoints

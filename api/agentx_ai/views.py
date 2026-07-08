@@ -4540,9 +4540,11 @@ async def prompts_enhance(request):
         return JsonResponse({'error': 'Prompt enhancement is disabled'}, status=400)
 
     from .model_roles import resolve_member_model
-    explicit_model = config.get("prompt_enhancement.model", "claude-3-5-haiku-latest")
-    # An empty explicit value follows the `summarizer` model role.
-    model = resolve_member_model("prompt_enhancement", explicit_model) or explicit_model
+    explicit_model = config.get("prompt_enhancement.model", "")
+    # An empty explicit value follows the `summarizer` model role, then the haiku
+    # floor (the floor sits AFTER the role so a set role isn't shadowed — matches
+    # the aide/compression members).
+    model = resolve_member_model("prompt_enhancement", explicit_model) or "claude-3-5-haiku-latest"
     temperature = config.get("prompt_enhancement.temperature", 0.7)
     max_tokens = config.get("prompt_enhancement.max_tokens", 1000)
     system_prompt = config.get("prompt_enhancement.system_prompt", "")
@@ -6755,6 +6757,46 @@ def models_roles(request):
         return JsonResponse({"roles": roles, "members": members})
     except Exception as e:
         logger.error(f"Error building model roles view: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+# Memory consolidation stages whose model settings this action resets to
+# "inherit" (mirrors ExtractionService._STAGE_MEMBERS). Recall/workspace-summary
+# members are intentionally NOT reset — those keep their own fast defaults.
+_CONSOLIDATION_STAGE_MODEL_KEYS: tuple[str, ...] = (
+    "extraction_model",
+    "relevance_filter_model",
+    "contradiction_model",
+    "correction_model",
+    "entity_linking_model",
+    "combined_extraction_model",
+    "procedural_distill_model",
+)
+
+
+@csrf_exempt
+def models_roles_adopt(request):
+    """
+    POST /api/models/roles/adopt - Clear concrete consolidation-stage model
+    overrides so every stage follows its model role (fast_utility/deep_reasoning).
+
+    Fresh installs already ship these stages as "inherit"; this one-click action
+    lets an EXISTING install (whose data/memory_settings.json still holds concrete
+    per-stage models) adopt the family without hand-clearing each field.
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        from .kit.agent_memory.config import save_memory_settings
+
+        updates = dict.fromkeys(_CONSOLIDATION_STAGE_MODEL_KEYS, "inherit")
+        save_memory_settings(updates)
+        return JsonResponse({"success": True, "adopted": list(updates.keys())})
+    except Exception as e:
+        logger.error(f"Error adopting roles for consolidation stages: {e}")
         return JsonResponse({"error": str(e)}, status=500)
 
 
