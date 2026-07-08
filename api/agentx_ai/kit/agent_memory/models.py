@@ -241,6 +241,10 @@ class MemoryBundle(BaseModel):
     procedures: list[dict[str, Any]] = Field(default_factory=list)
     active_goals: list[dict[str, Any]] = Field(default_factory=list)
     user_context: dict[str, Any] = Field(default_factory=dict)
+    # Episodic "threads to pull" (Slice 2): lightweight POINTERS to past
+    # discussions (never full text) — the agent calls `read_thread` to load one.
+    # Each: {conversation_id, center_turn, title, one_line, timestamp, score}.
+    thread_leads: list[dict[str, Any]] = Field(default_factory=list)
 
     def to_context_string(
         self,
@@ -318,3 +322,27 @@ class MemoryBundle(BaseModel):
             )
 
         return "\n\n".join(sections)
+
+
+def render_thread_leads(leads: list[dict[str, Any]], *, max_leads: int = 5) -> str:
+    """Render episodic thread leads as POINTERS (never full text) — Slice 2.
+
+    Each lead is a hook back to a past discussion; the agent calls ``read_thread``
+    to pull the verbatim turns on demand. Kept deliberately terse so the block
+    stays small and the model treats it as a menu, not context to reason over.
+    """
+    if not leads:
+        return ""
+    lines = [
+        "## Threads you can pull",
+        "Past discussions related to this — call `read_thread` to see what was actually said:",
+    ]
+    for lead in leads[:max_leads]:
+        cid = lead.get("conversation_id")
+        center = lead.get("center_turn")
+        when = str(lead.get("timestamp") or "")[:10]
+        one = (lead.get("one_line") or "").strip()
+        title = (lead.get("title") or "a past conversation").strip()
+        arg = f", center_turn={center}" if center is not None else ""
+        lines.append(f"- [{when}] {title}: {one} — `read_thread(conversation_id='{cid}'{arg})`")
+    return "\n".join(lines)

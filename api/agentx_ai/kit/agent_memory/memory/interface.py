@@ -483,6 +483,85 @@ class AgentMemory:
                 }
         return result
 
+    def derive_thread_leads(
+        self,
+        facts: list[dict[str, Any]],
+        *,
+        exclude_conversation_id: str | None = None,
+        top_k: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Turn already-matched facts into episodic **leads** — pointers back to the
+        past discussions those facts were learned in (Slice 2, "threads to pull").
+
+        Provenance-first: follows each fact's ``source_turn_id`` to its origin turn
+        (spreading activation from the semantic hit — no second corpus-wide search;
+        cost is O(matched facts)). Leads are deduped per conversation (highest-ranked
+        fact wins), the current conversation is excluded (a lead is for *past*
+        discussion), and the recall order is preserved (already relevance-ranked).
+        Returns lightweight dicts — never verbatim text; the agent pulls a thread
+        with ``read_thread``.
+        """
+        leads: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for fact in facts or []:
+            if len(leads) >= top_k:
+                break
+            stid = fact.get("source_turn_id") if isinstance(fact, dict) else None
+            if not stid:
+                continue
+            try:
+                turn = self.episodic.get_turn_by_id(stid, self.user_id)
+            except Exception as e:  # noqa: BLE001 — provenance is best-effort
+                logger.debug(f"lead provenance lookup failed for {stid}: {e}")
+                continue
+            if not turn:
+                continue
+            conv_id = turn.get("conversation_id")
+            if not conv_id or conv_id == exclude_conversation_id or conv_id in seen:
+                continue
+            seen.add(conv_id)
+            content = (turn.get("content") or "").strip()
+            title = content.split("\n", 1)[0][:60] or "a past conversation"
+            leads.append({
+                "conversation_id": conv_id,
+                "center_turn": turn.get("index"),
+                "title": title,
+                "one_line": (fact.get("claim") or "").strip()[:160],
+                "timestamp": str(turn.get("timestamp") or ""),
+                "score": fact.get("score", 0.0),
+            })
+        return leads
+
+    def read_thread(
+        self,
+        conversation_id: str,
+        *,
+        center_turn: int | None = None,
+        radius: int = 6,
+        limit: int = 15,
+    ) -> list[dict[str, Any]]:
+        """Load the verbatim turns of a past thread on demand (Slice 2 pull). When
+        ``center_turn`` is given, returns the window of turns around it; otherwise
+        the most recent ``limit`` turns of that conversation. User-scoped."""
+        if center_turn is not None:
+            turns = self.episodic.get_turns_around(
+                conversation_id, self.user_id, int(center_turn), radius=radius,
+            )
+        else:
+            turns = self.episodic.get_conversation_turns(
+                conversation_id, self.user_id, limit=limit, order="desc",
+            )
+            turns = list(reversed(turns))
+        out: list[dict[str, Any]] = []
+        for t in turns:
+            out.append({
+                "index": t.get("index"),
+                "role": t.get("role"),
+                "timestamp": str(t.get("timestamp") or ""),
+                "content": (t.get("content") or "")[:1500],
+            })
+        return out
+
     def update_entity(
         self,
         entity_id: str,

@@ -44,6 +44,7 @@ RETRIEVAL_TOOL_NAMES: frozenset[str] = frozenset({
     "tool_output_path",
     "read_user_message",
     "recall_user_history",
+    "read_thread",
     "project_search",
     "workspace_search",  # legacy alias of project_search (pre-Projects rename)
     "document_query",
@@ -508,6 +509,53 @@ def recall_user_history(
         "user_turns": user_turns,
         "facts": facts,
         "turn_count": len(user_turns),
+        "success": True,
+    }
+
+
+@register_tool(
+    name="read_thread",
+    description=(
+        "Pull the verbatim turns of a PAST conversation — use it to see what was "
+        "actually said in a thread surfaced under 'Threads you can pull'. Pass the "
+        "`conversation_id` from a lead (and its `center_turn` to focus on the "
+        "relevant part). Returns the real turns (both sides), not a summary. Use "
+        "sparingly — at most a couple of pulls per turn; read the one-line lead "
+        "first and pull only when the specifics matter."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "conversation_id": {
+                "type": "string",
+                "description": "The conversation to pull, from a 'Threads you can pull' lead.",
+            },
+            "center_turn": {
+                "type": "integer",
+                "description": "Optional turn index (from the lead) to center the window on.",
+            },
+        },
+        "required": ["conversation_id"],
+    },
+)
+def read_thread(conversation_id: str, center_turn: int | None = None) -> dict[str, Any]:
+    """Load a past thread's verbatim turns on demand (episodic pull)."""
+    if not conversation_id or not conversation_id.strip():
+        return {"error": "conversation_id is required", "success": False}
+
+    memory, err = _memory_for_ctx()
+    if memory is None:
+        return err or {"error": "Memory system unavailable", "success": False}
+
+    try:
+        turns = memory.read_thread(conversation_id.strip(), center_turn=center_turn)
+    except Exception as e:  # noqa: BLE001 — a tool error never breaks the turn
+        return {"error": f"read_thread failed: {e}", "success": False}
+
+    return {
+        "conversation_id": conversation_id,
+        "turns": turns,
+        "turn_count": len(turns),
         "success": True,
     }
 
