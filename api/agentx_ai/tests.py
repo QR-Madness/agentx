@@ -8095,6 +8095,40 @@ class ModelFamilyCoverageTest(TestCase):
                 getattr(defaults, field), "inherit",
                 f"{field} default shadows its model role (should be 'inherit')")
 
+    def test_every_family_member_default_follows_its_role(self):
+        """EVERY role member — memory Settings field or ConfigManager dot-path —
+        must ship an empty/'inherit' default so it follows its family. A concrete
+        `provider:model` default silently bypasses the model-roles overlay (the
+        recap → Anthropic haiku, HyDE/self-query → local Gemma, and compression
+        leaks). This guards the whole class, not one stage."""
+        from agentx_ai.model_roles import ROLE_MEMBERS
+        from agentx_ai.kit.agent_memory.config import Settings
+        from agentx_ai.config import DEFAULT_CONFIG
+
+        def walk(data, dotted):
+            cur = data
+            for k in dotted.split("."):
+                if isinstance(cur, dict) and k in cur:
+                    cur = cur[k]
+                else:
+                    return None  # absent ⇒ follows the role
+            return cur
+
+        memory_defaults = Settings()
+        offenders = []
+        for member, meta in ROLE_MEMBERS.items():
+            source, kind = meta["source"], meta["kind"]
+            value = (getattr(memory_defaults, source, "") if kind == "memory"
+                     else walk(DEFAULT_CONFIG, source))
+            # "", None (absent), and the "inherit" sentinel all follow the role;
+            # anything else is a concrete model that shadows it.
+            if value not in ("", None, "inherit"):
+                offenders.append(f"{member} ({source})={value!r}")
+        self.assertEqual(
+            offenders, [],
+            "role-member defaults shadow their family (set to ''/'inherit'): "
+            + ", ".join(offenders))
+
 
 @override_settings(AGENTX_AUTH_ENABLED=False)
 class ModelRolesEndpointTest(TestCase):

@@ -183,12 +183,12 @@ class Settings(BaseSettings):
 
     # --- HyDE Settings (only used if recall_enable_hyde=True) ---
     # Models use provider:model format (e.g., "lmstudio:google/gemma-3-4b")
-    recall_hyde_model: str = "lmstudio:google/gemma-3-4b"
+    recall_hyde_model: str = "inherit"  # → fast_utility role (see extraction_model)
     recall_hyde_temperature: float = 0.7
     recall_hyde_max_tokens: int = 150
 
     # --- Self-Query Settings (only used if recall_enable_self_query=True) ---
-    recall_self_query_model: str = "lmstudio:google/gemma-3-4b"
+    recall_self_query_model: str = "inherit"  # → fast_utility role (see extraction_model)
     recall_self_query_temperature: float = 0.2
     recall_self_query_max_tokens: int = 200
 
@@ -649,7 +649,7 @@ def get_consolidation_settings() -> dict[str, Any]:
 _TRAJECTORY_COMPRESSION_KEYS: dict[str, Any] = {
     # ui_key: (config_path, default)
     "trajectory_compression_enabled": ("trajectory_compression.enabled", True),
-    "trajectory_compression_model": ("trajectory_compression.model", "anthropic:claude-haiku-4-5-20251001"),
+    "trajectory_compression_model": ("trajectory_compression.model", ""),  # empty ⇒ summarizer role
     "trajectory_compression_temperature": ("trajectory_compression.temperature", 0.2),
     "trajectory_compression_max_tokens": ("trajectory_compression.max_tokens", 1500),
     "trajectory_compression_threshold_ratio": ("trajectory_compression.threshold_ratio", 0.75),
