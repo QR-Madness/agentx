@@ -11,6 +11,7 @@ import {
   Radio,
   Send,
   Sparkles,
+  WandSparkles,
   X,
 } from 'lucide-react';
 import { api } from '../../../lib/api';
@@ -45,6 +46,10 @@ interface RelayMenuProps {
   /** Name of the conversation's project, if it belongs to one. */
   projectName?: string;
   hasProject?: boolean;
+  /** Auto-title the active conversation (LLM). */
+  onAutoTitle?: () => void;
+  canAutoTitle?: boolean;
+  titling?: boolean;
 }
 
 export function RelayMenu({
@@ -66,6 +71,9 @@ export function RelayMenu({
   onOpenProject,
   projectName,
   hasProject,
+  onAutoTitle,
+  canAutoTitle,
+  titling,
 }: RelayMenuProps) {
   const isMobile = useIsMobile();
   const [jobs, setJobs] = useState<BackgroundChatJob[]>([]);
@@ -247,6 +255,20 @@ export function RelayMenu({
             </span>
             <span className="relay-item-hint">
               Rewrite the current draft using the prompt enhancer.
+            </span>
+          </div>
+        </button>
+        <button
+          className={`relay-item ${titling ? 'active' : ''}`}
+          onClick={() => { onAutoTitle?.(); onClose(); }}
+          disabled={!onAutoTitle || !canAutoTitle || titling}
+          title="Generate a concise title for this conversation from its content"
+        >
+          <WandSparkles size={14} />
+          <div className="relay-item-body">
+            <span className="relay-item-label">{titling ? 'Titling…' : 'Auto-title this chat'}</span>
+            <span className="relay-item-hint">
+              Name this conversation from its state and messages.
             </span>
           </div>
         </button>

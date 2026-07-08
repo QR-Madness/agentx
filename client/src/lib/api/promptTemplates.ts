@@ -223,4 +223,16 @@ export const promptTemplatesApi = {
   async getFeaturePromptDefaults(): Promise<FeaturePromptDefaults> {
     return apiRequest('/api/prompts/feature-defaults');
   },
+
+  /** Generate a concise conversation title from compact inputs (state + first/last
+   *  message, all pre-truncated). Any subset may be provided. */
+  async generateTitle(input: { state?: string; first?: string; last?: string }): Promise<{
+    title: string;
+    model: string;
+  }> {
+    return apiRequest('/api/prompts/title', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
 };

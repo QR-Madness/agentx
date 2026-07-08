@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.189 -->
+<!-- release-version: 0.21.190 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -83,6 +83,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   wrap to two lines with a longer preview, and a **refresh** button for detached/running chats. The
   ⋯ actions menu opens instantly (dropped the modal machinery that stalled it), and the mobile
   conversations drawer is now a proper full-screen page.
+- **Name your chats, fast** — **Auto-title** any conversation (from the ⋯ menu or the Relay) and it
+  generates a concise title from the conversation's state + first and last message; **tap the chat
+  title** to rename it inline; and a **Close others** button clears every open tab except the current
+  one (it glows a deeper red the more tabs you have open).
 
 ### Fixes
 

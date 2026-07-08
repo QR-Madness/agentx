@@ -16,6 +16,7 @@ import { useNotify } from '../contexts/NotificationContext';
 import { useConfirm } from '../components/ui/ConfirmDialog';
 import { orphanedRuns } from '../contexts/conversation/orphanedRuns';
 import { api, type ActiveChatRun } from '../lib/api';
+import { generateTitleFor } from '../lib/conversationTitle';
 import {
   type ConversationMeta,
   useConversationMeta, getMeta, patchMeta, setTitleOverride, listGroups,
@@ -45,6 +46,7 @@ export interface RowHandlers {
   startRename: (it: ConversationItem) => void;
   commitRename: (it: ConversationItem) => void;
   renameKeyDown: (e: React.KeyboardEvent<HTMLInputElement>, it: ConversationItem) => void;
+  autoTitle: (it: ConversationItem) => void | Promise<void>;
   setDraftTitle: (v: string) => void;
   togglePin: (it: ConversationItem) => void;
   toggleArchive: (it: ConversationItem) => void;
@@ -101,6 +103,7 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   const [searchQuery, setSearchQuery] = useState('');
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [titlingKey, setTitlingKey] = useState<string | null>(null);
   const [runs, setRuns] = useState<ActiveChatRun[]>([]);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -370,6 +373,34 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     else if (e.key === 'Escape') { e.preventDefault(); setEditingKey(null); }
   }, [commitRename]);
 
+  // --- Auto-title (LLM) — generate a title from state + first/last message ---
+  const autoTitle = useCallback(async (it: ConversationItem) => {
+    setTitlingKey(it.key);
+    try {
+      const local = it.kind === 'tab' && it.tabId
+        ? tabs.find(t => t.id === it.tabId)?.messages
+        : undefined;
+      const title = await generateTitleFor(it.conversationId ?? it.key, local);
+      if (!title) {
+        notifyError(new Error('The model returned an empty title'), 'Could not auto-title');
+        return;
+      }
+      if (it.kind === 'tab' && it.tabId) renameTab(it.tabId, title);
+      else setTitleOverride(it.key, title);
+    } catch (err) {
+      notifyError(err, 'Could not auto-title');
+    } finally {
+      setTitlingKey(null);
+    }
+  }, [tabs, renameTab, notifyError]);
+
+  // Close every open tab except the active one (non-destructive — conversations
+  // stay on the server, so no confirm).
+  const closeOthers = useCallback(() => {
+    const keep = activeTabId;
+    for (const t of [...tabs]) if (t.id !== keep) closeTab(t.id);
+  }, [tabs, activeTabId, closeTab]);
+
   // --- Management mutators (patchMeta is module-level, so these are stable) ---
   const togglePin = useCallback((it: ConversationItem) => patchMeta(it.key, { pinned: !it.meta.pinned }), []);
   const toggleArchive = useCallback((it: ConversationItem) => patchMeta(it.key, { archived: !it.meta.archived }), []);
@@ -449,21 +480,21 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   // (not on every parent render during streaming).
   const rowHandlers = useMemo<RowHandlers>(() => ({
     openItem, closeOpenTab, deleteItem,
-    startRename, commitRename, renameKeyDown, setDraftTitle: setDraft,
+    startRename, commitRename, renameKeyDown, setDraftTitle: setDraft, autoTitle,
     togglePin, toggleArchive, setGroup, setProject, setColor,
     toggleSelect, enterSelection,
     existingGroups, existingProjects, formatDate,
   }), [
     openItem, closeOpenTab, deleteItem, startRename, commitRename, renameKeyDown,
-    setDraft, togglePin, toggleArchive, setGroup, setProject, setColor, toggleSelect,
+    setDraft, autoTitle, togglePin, toggleArchive, setGroup, setProject, setColor, toggleSelect,
     enterSelection, existingGroups, existingProjects, formatDate,
   ]);
 
   return {
     // search + state
     searchQuery, setSearchQuery, searchRef, query,
-    activeTabId, isLoadingHistory, restoringId, deletingId,
-    refresh, refreshing,
+    activeTabId, isLoadingHistory, restoringId, deletingId, titlingKey,
+    refresh, refreshing, closeOthers,
     editingKey, draftTitle, setDraftTitle: setDraft,
     // data
     pinned, projects, groups, openItems, pastByBucket, archived, filteredLiveRuns,

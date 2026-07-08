@@ -99,6 +99,7 @@ describe('api facade', () => {
         "fetchMediaBlob",
         "forgetMemoryFact",
         "generateAvatar",
+        "generateTitle",
         "getAgentProfile",
         "getAgentStatus",
         "getAlloyWorkflow",

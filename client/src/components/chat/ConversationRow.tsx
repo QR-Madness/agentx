@@ -15,6 +15,7 @@ import { memo } from 'react';
 import {
   MessageSquare, Download, Radio, Loader2, X, MoreHorizontal, Pin, PinOff, Archive,
   ArchiveRestore, Pencil, Trash2, Palette, Image, FolderInput, FolderKanban, CheckSquare, Check,
+  WandSparkles,
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -128,6 +129,12 @@ function ConversationRowImpl({
               >
                 <DropdownMenuItem onSelect={() => h.startRename(item)}>
                   <Pencil size={14} /> Rename
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => h.autoTitle(item)}
+                  disabled={item.messageCount === 0}
+                >
+                  <WandSparkles size={14} /> Auto-title
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => h.togglePin(item)}>
                   {meta.pinned ? <><PinOff size={14} /> Unpin</> : <><Pin size={14} /> Pin</>}

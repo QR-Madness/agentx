@@ -3410,6 +3410,39 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /prompts/title:
+    post:
+      tags: [Prompt Templates]
+      operationId: promptsTitle
+      summary: Generate a concise conversation title via the LLM
+      description: >-
+        Generate a short title from compact, high-signal inputs — the
+        conversation state plus the first and latest message (all optional and
+        pre-truncated by the client). Uses the summarizer-role utility model.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                state:
+                  type: string
+                first:
+                  type: string
+                last:
+                  type: string
+      responses:
+        '200':
+          description: Generated title
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /prompts/feature-defaults:
     get:
       tags: [Prompt Templates]

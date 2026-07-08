@@ -1061,6 +1061,7 @@ Reusable prompt snippets with tags, plus an LLM-backed prompt enhancer.
 | `/api/prompts/templates/{template_id}` | GET / PUT / DELETE | Get, update, or delete a template |
 | `/api/prompts/templates/{template_id}/reset` | POST | Reset a template to its default |
 | `/api/prompts/enhance` | POST | Rewrite/enhance a prompt via the LLM |
+| `/api/prompts/title` | POST | Generate a concise conversation title (state + first/last message) via the LLM |
 | `/api/prompts/feature-defaults` | GET | Shipped defaults for the overridable feature prompts (extraction, relevance, planner, enhancement) |
 
 ---

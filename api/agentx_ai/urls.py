@@ -116,6 +116,7 @@ urlpatterns = [
     path("prompts/templates/<str:template_id>", views.prompts_template_detail, name="prompts-template-detail"),
     path("prompts/templates/<str:template_id>/reset", views.prompts_template_reset, name="prompts-template-reset"),
     path("prompts/enhance", views.prompts_enhance, name="prompts-enhance"),
+    path("prompts/title", views.prompts_title, name="prompts-title"),
     path("prompts/feature-defaults", views.prompts_feature_defaults, name="prompts-feature-defaults"),
     # Conversation history endpoints
     path("conversations", views.conversations_list, name="conversations-list"),

@@ -68,6 +68,7 @@ import {
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useModal } from '../../contexts/ModalContext';
 import { useIsMobile, useApi } from '../../lib/hooks';
+import { generateTitleFor } from '../../lib/conversationTitle';
 import { SURFACES } from '../../lib/surfaces';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { useOpenAmbassador } from '../../hooks/useOpenAmbassador';
@@ -96,6 +97,7 @@ export function ChatPanel() {
     updateTab,
     restoreConversation,
     registerRelay,
+    renameTab,
   } = useConversation();
   const { activeProfile, profiles, getAgentName, getProfileById } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
@@ -208,6 +210,10 @@ export function ChatPanel() {
     highlight: number;
   }>({ open: false, query: '', span: null, highlight: 0 });
   const [isEnhancing, setIsEnhancing] = useState(false);
+  const [titling, setTitling] = useState(false);
+  // Inline rename of the chat-header title (tap the title to edit).
+  const [renamingTitle, setRenamingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
   const [showAgentSelector, setShowAgentSelector] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   // `isPinned` tracks whether the user is scrolled to (or near) the bottom
@@ -761,6 +767,27 @@ export function ChatPanel() {
     }
   };
 
+  const commitTitleRename = () => {
+    const next = titleDraft.trim();
+    if (next && activeTab) renameTab(activeTab.id, next);
+    setRenamingTitle(false);
+  };
+
+  // Auto-title the active conversation from its state + first/last message.
+  const handleAutoTitle = async () => {
+    if (!activeTab || titling) return;
+    setTitling(true);
+    try {
+      const title = await generateTitleFor(activeTab.sessionId, activeTab.messages);
+      if (title) renameTab(activeTab.id, title);
+      else notifyError(new Error('The model returned an empty title'), 'Could not auto-title');
+    } catch (err) {
+      notifyError(err, 'Could not auto-title');
+    } finally {
+      setTitling(false);
+    }
+  };
+
   // Steer the running turn: fold the typed message into the in-flight run
   // instead of starting a new one. The steer bubble is appended when the server
   // echoes the `steer` event back, so we just clear the composer here.
@@ -954,7 +981,30 @@ export function ChatPanel() {
               <PanelLeftOpen size={18} />
             </button>
           )}
-          <span className="chat-panel-title">{activeTab.title}</span>
+          {renamingTitle ? (
+            <input
+              className="chat-panel-title-input"
+              value={titleDraft}
+              autoFocus
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={commitTitleRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); commitTitleRename(); }
+                else if (e.key === 'Escape') { e.preventDefault(); setRenamingTitle(false); }
+              }}
+              aria-label="Rename conversation"
+            />
+          ) : (
+            <button
+              type="button"
+              className="chat-panel-title"
+              onClick={() => { setTitleDraft(activeTab.title); setRenamingTitle(true); }}
+              title="Rename conversation"
+            >
+              {activeTab.title}
+            </button>
+          )}
           {/* Context usage moved to the composer context chip (one indicator). */}
           <CheckpointsBadge
             conversationId={activeTab.sessionId}
@@ -1258,6 +1308,9 @@ export function ChatPanel() {
             onOpenProject={() => openModal(SURFACES.workspaces)}
             projectName={projectName}
             hasProject={!!attachedWorkspaceId}
+            onAutoTitle={handleAutoTitle}
+            canAutoTitle={(activeTab?.messages.length ?? 0) > 0}
+            titling={titling}
           />
           <textarea
             ref={textareaRef}

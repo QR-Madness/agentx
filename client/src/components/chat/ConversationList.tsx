@@ -6,10 +6,10 @@
  * input. All logic lives in `useConversationList`.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, type CSSProperties } from 'react';
 import {
   Search, X, Loader2, Radio, ChevronDown, ChevronRight,
-  Pin, Archive, Trash2, CheckSquare, Star, FolderKanban, PanelRight, RefreshCw,
+  Pin, Archive, Trash2, CheckSquare, Star, FolderKanban, PanelRight, RefreshCw, XCircle,
 } from 'lucide-react';
 import { useConversationList, type ConversationItem } from '../../hooks/useConversationList';
 import { ConversationRow } from './ConversationRow';
@@ -51,7 +51,7 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
       handlers={c.rowHandlers}
       isActive={it.kind === 'tab' && it.tabId === c.activeTabId}
       editing={c.editingKey === it.key}
-      busy={c.deletingId === it.key || c.restoringId === it.key}
+      busy={c.deletingId === it.key || c.restoringId === it.key || c.titlingKey === it.key}
       checked={c.selected.has(it.key)}
       selectionMode={c.selectionMode}
       draftTitle={c.editingKey === it.key ? c.draftTitle : undefined}
@@ -220,6 +220,16 @@ export function ConversationList({ onActivated, autoFocusSearch = true }: Conver
           <button className="conv-select-toggle" onClick={() => c.enterSelection()}>
             <CheckSquare size={12} /> Select
           </button>
+          {c.openCount > 1 && (
+            <button
+              className="conv-close-others"
+              style={{ '--close-intensity': Math.min(1, (c.openCount - 1) / 6) } as CSSProperties}
+              onClick={c.closeOthers}
+              title="Close all conversations except this one"
+            >
+              <XCircle size={12} /> Close others
+            </button>
+          )}
           <span>{c.openCount} open</span>
         </div>
       )}

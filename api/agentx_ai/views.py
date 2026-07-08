@@ -4757,6 +4757,93 @@ async def prompts_enhance(request):
         return JsonResponse({'error': f'Enhancement failed: {str(e)}'}, status=500)
 
 
+def _clean_title(raw: str, *, limit: int = 60) -> str:
+    """Normalize an LLM-generated title: collapse whitespace, strip wrapping
+    quotes and a trailing period, and clamp on a word boundary (mirrors
+    ``ambassador_storage.derive_title``)."""
+    text = " ".join((raw or "").split()).strip().strip('"\'“”').rstrip(".").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip() or text[:limit].rstrip()
+    return cut + "…"
+
+
+@csrf_exempt
+async def prompts_title(request):
+    """
+    Generate a concise conversation title via the utility (summarizer-role) model.
+
+    POST: Title a conversation from compact, high-signal inputs (all optional and
+        pre-truncated by the client — the conversation state plus the first and
+        latest message are the intended inputs).
+        Body: {"state": "...", "first": "...", "last": "..."}
+    Returns: {"title": "Concise Title"}
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Only POST requests allowed'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except json.JSONDecodeError as e:
+        return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+
+    state = (data.get("state") or "").strip()
+    first = (data.get("first") or "").strip()
+    last = (data.get("last") or "").strip()
+    if not (state or first or last):
+        return JsonResponse({'error': 'Provide at least one of: state, first, last'}, status=400)
+
+    from .config import get_config_manager
+    config = get_config_manager()
+
+    # Follow the same utility model as the prompt enhancer: the `summarizer` role,
+    # then the haiku floor (floor after the role so a set role isn't shadowed).
+    from .model_roles import resolve_member_model
+    explicit_model = config.get("prompt_enhancement.model", "")
+    model = resolve_member_model("prompt_enhancement", explicit_model) or "claude-3-5-haiku-latest"
+
+    sections = []
+    if state:
+        sections.append(f"Conversation state:\n{state}")
+    if first:
+        sections.append(f"First message:\n{first}")
+    if last:
+        sections.append(f"Latest message:\n{last}")
+    user_content = "\n\n".join(sections)
+
+    system_prompt = (
+        "You name conversations. Generate a concise, specific title of 3-6 words that "
+        "captures what this conversation is about. Output ONLY the title — no quotes, no "
+        "trailing punctuation, no preamble."
+    )
+
+    try:
+        from .providers.registry import get_registry
+        from .providers.base import Message, MessageRole
+
+        registry = get_registry()
+        messages = [
+            Message(role=MessageRole.SYSTEM, content=system_prompt),
+            Message(role=MessageRole.USER, content=user_content),
+        ]
+        result = await registry.complete_with_fallback(
+            model, messages, temperature=0.3, max_tokens=24,
+        )
+        return JsonResponse({"title": _clean_title(result.content), "model": result.model or model})
+
+    except AgentXError as e:
+        logger.warning(f"Title generation provider error: {e}")
+        return error_response(e)
+    except ValueError as e:
+        logger.warning(f"Title generation provider error: {e}")
+        return JsonResponse({'error': f'Provider error: {str(e)}'}, status=500)
+    except Exception as e:
+        logger.error(f"Title generation failed: {e}")
+        return JsonResponse({'error': f'Title generation failed: {str(e)}'}, status=500)
+
+
 # ============== Memory Channel Endpoints ==============
 
 @csrf_exempt

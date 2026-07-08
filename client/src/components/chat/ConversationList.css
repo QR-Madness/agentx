@@ -238,6 +238,29 @@
 }
 .conv-select-toggle:hover { background: var(--bg-hover); color: var(--text-secondary); }
 
+/* Close all but the current tab. Rich-but-subtle red whose intensity ramps with
+   the open-tab count (--close-intensity, 0→1): faint at a couple of tabs, bold
+   when many are open. Opacity ramp keeps it reliable in the Tauri webview. */
+.conv-close-others {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 5px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--feedback-error);
+  background: var(--feedback-error-tint, rgba(220, 38, 38, 0.1));
+  border: 1px solid var(--feedback-error-border, rgba(220, 38, 38, 0.3));
+  opacity: calc(0.5 + 0.5 * var(--close-intensity, 0));
+  transition: opacity 0.2s ease, background 0.15s ease, filter 0.15s ease;
+}
+.conv-close-others:hover {
+  opacity: 1;
+  filter: brightness(1.1);
+}
+
 /* Selected (multi-select) + active */
 .history-item.selected { background: var(--accent-tint-soft); }
 .history-item .history-item-icon[style] { border: 1px solid transparent; }
