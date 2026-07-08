@@ -296,6 +296,50 @@
   .relay-live-dot { animation: none; }
 }
 
+/* === Mobile bottom sheet === */
+.relay-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: relay-sheet-fade 0.15s ease;
+}
+
+.relay-menu--sheet {
+  width: 100%;
+  max-width: 100%;
+  max-height: 78vh;
+  border-radius: 16px 16px 0 0;
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+  padding: 10px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+  animation: relay-sheet-up 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.relay-menu--sheet .relay-item {
+  padding: 12px 10px;
+}
+
+@keyframes relay-sheet-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes relay-sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-sheet-backdrop,
+  .relay-menu--sheet { animation: none; }
+}
+
 /* === Trigger === */
 .relay-trigger {
   position: relative;
@@ -307,8 +351,17 @@
   border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease;
   flex-shrink: 0;
+}
+
+/* The Orbit icon carries a faint idle glow that becomes purposeful, ambient
+   status: a violet pulse when the next send is armed for the background, an
+   amber pulse when the inbox has unread runs. Flat/light themes zero the glow
+   tokens (NO_GLOW), so this degrades to a plain icon there. */
+.relay-trigger svg {
+  filter: drop-shadow(0 0 3px var(--border-glow, transparent));
+  transition: filter 0.2s ease, transform 0.2s ease;
 }
 
 .relay-trigger:hover {
@@ -319,6 +372,41 @@
 .relay-trigger.active {
   color: var(--cosmic-violet, var(--accent-primary));
   background: var(--accent-tint-soft);
+}
+
+.relay-trigger.active svg,
+.relay-trigger:hover svg {
+  filter: drop-shadow(0 0 6px var(--border-glow, transparent));
+}
+
+.relay-trigger.armed {
+  color: var(--cosmic-violet, var(--accent-primary));
+}
+
+.relay-trigger.armed svg {
+  animation: relay-glow-violet 1.8s ease-in-out infinite;
+}
+
+.relay-trigger.alerting {
+  color: var(--cosmic-amber, var(--feedback-warning));
+}
+
+.relay-trigger.alerting svg {
+  animation: relay-glow-amber 1.8s ease-in-out infinite;
+}
+
+@keyframes relay-glow-violet {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(139, 92, 246, 0.35)); }
+  50% { filter: drop-shadow(0 0 9px rgba(139, 92, 246, 0.75)); transform: scale(1.06); }
+}
+
+@keyframes relay-glow-amber {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.35)); }
+  50% { filter: drop-shadow(0 0 9px rgba(245, 158, 11, 0.7)); transform: scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-trigger svg { animation: none !important; }
 }
 
 .relay-trigger-badge {

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, Pencil, Printer } from 'lucide-react';
 import { api, apiErrorMessage, toApiError, type WorkspaceDocument } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
+import { useIsMobile } from '../../lib/hooks';
 import { Badge, Button, Textarea } from '../ui';
 import { ModalDialog } from '../modals/ModalDialog';
 import MessageContent from '../chat/MessageContent';
@@ -60,6 +61,7 @@ export function DocumentPreviewModal({
   onDocumentUpdated?: (doc: WorkspaceDocument) => void;
 }) {
   const notify = useNotify();
+  const isMobile = useIsMobile();
   // Track the live row locally: saves bump sha/status without reopening.
   const [doc, setDoc] = useState(initialDoc);
   const kind = useMemo(() => kindOf(doc), [doc]);
@@ -141,18 +143,19 @@ export function DocumentPreviewModal({
 
   return (
     <ModalDialog size="xl" onClose={onClose}>
-      <div className="flex h-[80vh] min-h-0 flex-col">
-        <header className="flex items-center gap-2 border-b border-line px-4 py-3 pr-12">
-          <span className="truncate text-sm font-semibold">{doc.filename}</span>
+      <div className={`flex min-h-0 flex-col ${isMobile ? 'h-full flex-1' : 'h-[80vh]'}`}>
+        <header className={`flex items-center gap-2 border-b border-line py-3 pr-12 ${isMobile ? 'flex-wrap px-3' : 'px-4'}`}>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{doc.filename}</span>
           <Badge
             size="sm"
+            className="shrink-0"
             variant={doc.status === 'ready' ? 'success' : doc.status === 'pending' ? 'warning' : 'danger'}
           >
             {doc.status === 'pending' && <Loader2 size={10} className="animate-spin" />}
             {doc.status === 'pending' ? 're-indexing' : doc.status}
           </Badge>
-          <span className="font-mono text-2xs text-fg-muted">{formatBytes(doc.size_bytes)}</span>
-          <div className="ml-auto flex items-center gap-1.5">
+          <span className="shrink-0 font-mono text-2xs text-fg-muted">{formatBytes(doc.size_bytes)}</span>
+          <div className={`flex items-center gap-1.5 ${isMobile ? 'basis-full justify-end' : 'ml-auto'}`}>
             {editable && !editing && (
               <Button size="sm" variant="ghost" onClick={() => { setDraft(text ?? ''); setEditing(true); }}>
                 <Pencil size={13} /> Edit
@@ -198,7 +201,7 @@ export function DocumentPreviewModal({
           ) : kind === 'markdown' ? (
             text === null
               ? <Loader2 size={18} className="m-6 animate-spin text-accent" />
-              : <div className="doc-print-area p-4"><MessageContent content={text} /></div>
+              : <div className={`doc-print-area ${isMobile ? 'px-3 py-3' : 'p-4'}`}><MessageContent content={text} /></div>
           ) : kind === 'text' ? (
             text === null
               ? <Loader2 size={18} className="m-6 animate-spin text-accent" />

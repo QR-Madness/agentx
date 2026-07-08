@@ -724,7 +724,13 @@ select {
   .card {
     border-radius: 12px;
   }
+}
 
+/* Tablets / small desktops only. Scoped to >600px so it doesn't override the
+   phone rule above (@media max-width:600px), which makes modals full-screen —
+   without the min-width, this later-in-source block won the cascade at phone
+   widths and shrank modals back to 95vw/90vh. */
+@media (min-width: 601px) and (max-width: 1024px) {
   .modal-dialog {
     width: 95vw;
     max-height: 90vh;

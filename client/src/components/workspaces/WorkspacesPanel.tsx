@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Check, FilePlus2, FileText, FolderKanban, Home, Link2, Link2Off, Loader2, MessageSquare,
+  Check, ChevronLeft, FilePlus2, FileText, FolderKanban, Home, Link2, Link2Off, Loader2, MessageSquare,
   MessageSquarePlus, Pencil, Plus, RotateCcw, Terminal, Trash2, Upload, X,
 } from 'lucide-react';
 import { api, toApiError, type ConversationSummary, type Workspace, type WorkspaceDocument } from '../../lib/api';
@@ -19,6 +19,7 @@ import { useNotify } from '../../contexts/NotificationContext';
 import { useConversation } from '../../contexts/ConversationContext';
 import { getDisplayTitle, getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { useConfirm } from '../ui/ConfirmDialog';
+import { useIsMobile } from '../../lib/hooks';
 import { Badge, Button, IconButton, Input, SegmentedControl, Textarea } from '../ui';
 import { WorkspaceContainerCard } from './WorkspaceContainerCard';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
@@ -89,6 +90,7 @@ export function WorkspacesPanel({
 }) {
   const notify = useNotify();
   const confirm = useConfirm();
+  const isMobile = useIsMobile();
   const { activeTab, tabs, addTab, switchTab, restoreConversation, refreshHistory } = useConversation();
   useConversationMeta();  // re-render when the conversation↔project tag changes
   const convKey = activeTab ? (activeTab.sessionId ?? activeTab.id) : null;
@@ -428,7 +430,16 @@ export function WorkspacesPanel({
           <FolderKanban size={18} className="text-accent" /> Projects
         </h2>
         <div className="flex items-center gap-1.5">
-          <Button size="sm" onClick={() => { setCreating(true); setDraftName(''); }}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setCreating(true);
+              setDraftName('');
+              // The create form lives in the rail; on mobile the rail is hidden
+              // in detail view, so drop back to the list to reveal it.
+              if (isMobile) setSelectedId(null);
+            }}
+          >
             <Plus size={15} /> New
           </Button>
           {onClose && (
@@ -440,8 +451,16 @@ export function WorkspacesPanel({
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* Project rail — sunken so the detail column reads as the raised page */}
-        <aside className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-line-subtle bg-surface-sunken/50 p-2">
+        {/* Project rail — sunken so the detail column reads as the raised page.
+            Mobile collapses to a single column (master→detail): the rail *is*
+            the screen until a project is picked, then the hub takes over. */}
+        <aside
+          className={`flex flex-col overflow-y-auto border-line-subtle bg-surface-sunken/50 p-2 ${
+            isMobile
+              ? `w-full border-r-0 ${selected ? 'hidden' : ''}`
+              : 'w-72 shrink-0 border-r'
+          }`}
+        >
           {creating && (
             <form
               onSubmit={e => { e.preventDefault(); void createWorkspace(); }}
@@ -472,13 +491,20 @@ export function WorkspacesPanel({
               projects.map(ws => (
                 <div
                   key={ws.id}
-                  className={`group flex items-center justify-between rounded-md px-2.5 py-2 text-sm transition-colors ${
+                  className={`group relative rounded-md text-sm transition-colors ${
                     ws.id === selectedId
                       ? 'bg-[var(--accent-tint-soft)]'
                       : 'hover:bg-surface-hover'
                   }`}
                 >
-                  <button onClick={() => setSelectedId(ws.id)} className="min-w-0 flex-1 bg-transparent text-left">
+                  {/* Full-width hit target; the title gets the whole rail width
+                      and only truncates on genuinely long names. The delete
+                      button floats over the trailing edge, revealed on hover
+                      (always visible on touch, where there's no hover). */}
+                  <button
+                    onClick={() => setSelectedId(ws.id)}
+                    className="w-full min-w-0 bg-transparent px-2.5 py-2 pr-9 text-left"
+                  >
                     <span className="flex items-center gap-1.5">
                       <span className={`truncate font-medium ${ws.id === selectedId ? 'text-accent' : 'text-fg'}`}>
                         {ws.name}
@@ -493,7 +519,7 @@ export function WorkspacesPanel({
                     aria-label={`Delete ${ws.name}`}
                     size="xs"
                     tone="danger"
-                    className="ml-1 opacity-0 group-hover:opacity-100"
+                    className={`absolute right-1.5 top-1.5 ${isMobile ? '' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}
                     onClick={() => void deleteWorkspace(ws)}
                   >
                     <Trash2 size={14} />
@@ -525,15 +551,26 @@ export function WorkspacesPanel({
           )}
         </aside>
 
-        {/* Project hub */}
-        <section className="flex min-w-0 flex-1 flex-col">
+        {/* Project hub — hidden on mobile until a project is picked (the rail
+            fills the screen instead; picking one swaps to this detail view). */}
+        <section className={`flex min-w-0 flex-1 flex-col ${isMobile && !selected ? 'hidden' : ''}`}>
           {!selected ? (
             <div className="flex flex-1 items-center justify-center text-sm text-fg-muted">
               Select or create a project.
             </div>
           ) : (
             <>
-              <div className="flex items-start justify-between gap-2 border-b border-line px-3 py-2">
+              <div className={`flex items-start justify-between gap-2 border-b border-line px-3 py-2 ${isMobile ? 'flex-wrap' : ''}`}>
+                {isMobile && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(null)}
+                    className="mt-0.5 flex shrink-0 items-center gap-0.5 bg-transparent py-1 pr-1 text-sm font-medium text-accent"
+                    aria-label="Back to projects"
+                  >
+                    <ChevronLeft size={18} /> Projects
+                  </button>
+                )}
                 <div className="min-w-0 flex-1">
                   {renaming ? (
                     <form
@@ -588,7 +625,7 @@ export function WorkspacesPanel({
                     </button>
                   ))}
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className={`flex shrink-0 items-center gap-1.5 ${isMobile ? 'basis-full flex-wrap justify-end' : ''}`}>
                   <Button
                     variant="secondary"
                     size="sm"
@@ -665,10 +702,10 @@ export function WorkspacesPanel({
                     <Textarea
                       value={instrDraft}
                       maxLength={INSTRUCTIONS_MAX}
-                      rows={instrDraft ? 5 : 2}
+                      rows={instrDraft ? 8 : 4}
                       placeholder="Standing guidance the agent follows in every conversation of this project — tone, goals, constraints, what the files are for…"
                       onChange={e => onInstructionsChange(selected.id, e.target.value)}
-                      className="ax-field--sm resize-y"
+                      className="resize-y min-h-36 text-sm leading-relaxed"
                     />
                   </div>
                 )}
@@ -756,12 +793,16 @@ export function WorkspacesPanel({
                                 type="button"
                                 onClick={() => setPreview({ doc, edit: false })}
                                 title={`Preview ${doc.filename}`}
-                                className="min-w-0 flex-1 bg-transparent text-left"
+                                // Base resets buttons to display:flex — force a column so
+                                // the name / summary / size stack vertically instead of
+                                // laying out side-by-side (which cramped hard on mobile).
+                                className="flex min-w-0 flex-1 flex-col items-start gap-0.5 bg-transparent text-left"
                               >
-                                <div className="flex items-center gap-2">
-                                  <span className="truncate text-sm font-medium">{leafName(doc.filename, group.folder)}</span>
+                                <div className="flex w-full min-w-0 items-center gap-2">
+                                  <span className="min-w-0 truncate text-sm font-medium">{leafName(doc.filename, group.folder)}</span>
                                   <Badge
                                     size="sm"
+                                    className="shrink-0"
                                     variant={doc.status === 'ready' ? 'success' : doc.status === 'pending' ? 'warning' : 'danger'}
                                   >
                                     {doc.status === 'pending' && <Loader2 size={10} className="animate-spin" />}

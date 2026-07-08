@@ -282,9 +282,11 @@ to `UserMessage.images`. **Multi-turn re-feed (bounded):** `conversation_history
 **K** image-bearing user turns (`config.vision.refeed_recent_turns`, default 2) — re-feeding base64 every
 turn is expensive, and a ref-only Message under-estimates the ledger budget, so the K-cap is the real guard.
 Back-compat: the reader tolerates 2-tuple custom readers (ambassador, tests). Client: `MessageImages`
-(thumbnails via `resolveMediaImage`), composer attach button (click-to-browse — Tauri drag-drop is broken),
-a pre-warning when the active model lacks `supports_vision` (shared `fetchModelsOnce`), and a Settings →
-Images "vision input" opt-out. Out of scope: Alloy/ambassador vision (no composer entry), backend downscale.
+(thumbnails via `resolveMediaImage`), image attach via the **Relay menu** (`relay/RelayMenu.tsx` "Attach
+image" — the standalone composer image button was folded in, v0.21.188) plus **paste-to-attach** on the
+composer textarea (click-to-browse + paste only — Tauri HTML5 drag-drop is broken), a pre-warning when the
+active model lacks `supports_vision` (shared `fetchModelsOnce`), and a Settings → Images "vision input"
+opt-out. Out of scope: Alloy/ambassador vision (no composer entry), backend downscale.
 
 **On-demand image viewing — `view_image` (v0.21.135).** Vision input above only covers *composer*
 attachments; this lets an agent *see* an image already in the conversation/workspace (a generated image,

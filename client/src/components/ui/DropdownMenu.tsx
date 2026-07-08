@@ -48,8 +48,11 @@ const DropdownMenuSubContent = React.forwardRef<
       ref={ref}
       className={cn(
         'z-[1100] min-w-[8rem] overflow-hidden rounded-xl p-1.5',
+        // Opaque surface, no backdrop-blur: the blur is a heavy WebKitGTK/Tauri
+        // paint cost (felt as lag opening the conversation ⋯ menu + submenus)
+        // and adds ~nothing over the already-opaque raised surface.
         'bg-[var(--surface-raised)] border border-[var(--border-default)]',
-        'shadow-lg backdrop-blur-sm',
+        'shadow-lg',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
@@ -77,8 +80,9 @@ const DropdownMenuContent = React.forwardRef<
         // Above the legacy app modals (z-1000/1001) so a dropdown opened from
         // inside a full-screen modal (e.g. the profile editor) isn't trapped behind it.
         'z-[1100] min-w-[12rem] overflow-hidden rounded-xl p-1.5',
+        // Opaque surface, no backdrop-blur — see SubContent note (WebKitGTK jank).
         'bg-[var(--surface-raised)] border border-[var(--border-default)]',
-        'shadow-lg backdrop-blur-sm',
+        'shadow-lg',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',

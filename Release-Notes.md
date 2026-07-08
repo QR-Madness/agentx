@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.187 -->
+<!-- release-version: 0.21.188 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -72,9 +72,19 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Sources stay out of the way** — cited sources no longer stack as full-width cards mid-chat;
   they collapse into a slim, tool-call-style row (icon + count + a host hint) that expands on
   click, and the Sources drawer got a lighter, icon-led restyle.
+- **A sharper chat composer, and Projects that work on a phone** — the composer's Relay hub (new
+  glowing **Orbit** icon) is now the single home for image + document + **project** actions (paste
+  an image straight in), grows taller as you type, and opens as a thumb-reachable bottom sheet on
+  mobile. The Projects hub gets a roomier project list (no more clipped titles), a mobile
+  master→detail flow, file cards that stack instead of cramping, a bigger instructions box, and
+  full-screen file previews.
 
 ### Fixes
 
+- **Modals are full-screen on phones again, and menus feel snappier** — a stray tablet breakpoint
+  was overriding the phone rule, so dialogs (like the file preview) opened as a small floating box
+  instead of filling the screen; and conversation ⋯ menus dropped a heavy backdrop-blur that made
+  them stutter to open on the desktop app.
 - **Internal utility models now honor your Model Roles** — recall (HyDE / self-query), rolling
   summaries, recaps, and tool/trajectory compression shipped pinned to a hardcoded Anthropic (or
   local LM Studio) model that silently overrode your Fast Utility / Summarizer role, so an

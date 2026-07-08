@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Box,
+  FolderOpen,
+  Image as ImageIcon,
   Inbox,
   Mic,
   Paperclip,
@@ -15,6 +18,7 @@ import type { ActiveChatRun, BackgroundChatJob } from '../../../lib/api';
 import { useConversation } from '../../../contexts/ConversationContext';
 import { orphanedRuns } from '../../../contexts/conversation/orphanedRuns';
 import { DropdownPortal } from '../../ui/DropdownPortal';
+import { useIsMobile } from '../../../lib/hooks';
 import './RelayMenu.css';
 
 interface RelayMenuProps {
@@ -31,6 +35,16 @@ interface RelayMenuProps {
   /** Open the document picker — attaches files to the conversation's workspace (RAG). */
   onAttachFile?: () => void;
   attachingFile?: boolean;
+  /** Open the image picker — attaches images to the next message (vision input). */
+  onAttachImage?: () => void;
+  uploadingImage?: boolean;
+  /** Whether the active model/profile supports vision (gates the image item). */
+  visionEnabled?: boolean;
+  /** Open the Projects hub for this conversation's project. */
+  onOpenProject?: () => void;
+  /** Name of the conversation's project, if it belongs to one. */
+  projectName?: string;
+  hasProject?: boolean;
 }
 
 export function RelayMenu({
@@ -46,7 +60,14 @@ export function RelayMenu({
   onJobsChanged,
   onAttachFile,
   attachingFile,
+  onAttachImage,
+  uploadingImage,
+  visionEnabled,
+  onOpenProject,
+  projectName,
+  hasProject,
 }: RelayMenuProps) {
+  const isMobile = useIsMobile();
   const [jobs, setJobs] = useState<BackgroundChatJob[]>([]);
   const [runs, setRuns] = useState<ActiveChatRun[]>([]);
   const [loading, setLoading] = useState(false);
@@ -113,17 +134,18 @@ export function RelayMenu({
     setJobs(prev => prev.filter(j => j.job_id !== jobId));
   };
 
-  return (
-    <DropdownPortal
-      isOpen={isOpen}
-      onClose={onClose}
-      anchorRef={anchorRef}
-      preferredSide="top"
-      align="start"
-      estimatedHeight={520}
-    >
+  // On mobile the menu renders as a bottom sheet (its own portal), so it needs
+  // its own Escape-to-close — the desktop path gets this from DropdownPortal.
+  useEffect(() => {
+    if (!isOpen || !isMobile) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen, isMobile, onClose]);
+
+  const body = (
     <div
-      className="relay-menu"
+      className={`relay-menu${isMobile ? ' relay-menu--sheet' : ''}`}
       role="dialog"
       aria-label="Relay Module"
     >
@@ -132,6 +154,58 @@ export function RelayMenu({
         <span>Relay</span>
         <button className="relay-close" onClick={onClose} aria-label="Close">
           <X size={14} />
+        </button>
+      </div>
+
+      <div className="relay-section">
+        <div className="relay-section-title">Project</div>
+        <button
+          className="relay-item"
+          onClick={() => { onOpenProject?.(); onClose(); }}
+          disabled={!onOpenProject}
+          title={hasProject ? 'Open this conversation’s project' : 'Browse projects and attach one'}
+        >
+          <FolderOpen size={14} />
+          <div className="relay-item-body">
+            <span className="relay-item-label">
+              {hasProject ? (projectName || 'Open project') : 'Projects'}
+            </span>
+            <span className="relay-item-hint">
+              {hasProject
+                ? 'Open this conversation’s project — files, instructions, chats.'
+                : 'Browse projects, or attach files below to start one.'}
+            </span>
+          </div>
+        </button>
+        {visionEnabled && (
+          <button
+            className={`relay-item ${uploadingImage ? 'active' : ''}`}
+            onClick={() => { onAttachImage?.(); onClose(); }}
+            disabled={!onAttachImage || uploadingImage}
+            title="Attach an image to the next message (vision input) — or just paste one into the composer"
+          >
+            <ImageIcon size={14} />
+            <div className="relay-item-body">
+              <span className="relay-item-label">{uploadingImage ? 'Uploading…' : 'Attach image'}</span>
+              <span className="relay-item-hint">
+                Add a PNG / JPEG / WebP / GIF for the model to see. Paste works too.
+              </span>
+            </div>
+          </button>
+        )}
+        <button
+          className={`relay-item ${attachingFile ? 'active' : ''}`}
+          onClick={() => { onAttachFile?.(); onClose(); }}
+          disabled={!onAttachFile || attachingFile}
+          title="Attach a document to this conversation's project — the agent can search it (Document RAG)"
+        >
+          <Paperclip size={14} />
+          <div className="relay-item-body">
+            <span className="relay-item-label">{attachingFile ? 'Attaching…' : 'Attach file'}</span>
+            <span className="relay-item-hint">
+              Add a PDF / text / code file to this conversation's project.
+            </span>
+          </div>
         </button>
       </div>
 
@@ -185,23 +259,6 @@ export function RelayMenu({
           <div className="relay-item-body">
             <span className="relay-item-label">Voice input</span>
             <span className="relay-item-hint">Coming soon.</span>
-          </div>
-        </button>
-        <button
-          className={`relay-item ${attachingFile ? 'active' : ''}`}
-          onClick={() => {
-            onAttachFile?.();
-            onClose();
-          }}
-          disabled={!onAttachFile || attachingFile}
-          title="Attach a document to this conversation's workspace — the agent can search it (Document RAG)"
-        >
-          <Paperclip size={14} />
-          <div className="relay-item-body">
-            <span className="relay-item-label">{attachingFile ? 'Attaching…' : 'Attach file'}</span>
-            <span className="relay-item-hint">
-              Add a PDF / text / code file to this conversation's workspace.
-            </span>
           </div>
         </button>
       </div>
@@ -279,6 +336,30 @@ export function RelayMenu({
         )}
       </div>
     </div>
+  );
+
+  // Mobile: a thumb-reachable bottom sheet with a dimming backdrop. Desktop:
+  // the anchor-positioned dropdown above the composer.
+  if (isMobile) {
+    if (!isOpen) return null;
+    return createPortal(
+      <div className="relay-sheet-backdrop" onClick={onClose}>
+        <div onClick={(e) => e.stopPropagation()}>{body}</div>
+      </div>,
+      document.body,
+    );
+  }
+
+  return (
+    <DropdownPortal
+      isOpen={isOpen}
+      onClose={onClose}
+      anchorRef={anchorRef}
+      preferredSide="top"
+      align="start"
+      estimatedHeight={520}
+    >
+      {body}
     </DropdownPortal>
   );
 }

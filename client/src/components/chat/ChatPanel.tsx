@@ -14,13 +14,13 @@ import {
   Workflow as WorkflowIcon,
   Crown,
   Box,
+  Orbit,
   Database,
   DatabaseZap,
   Cpu,
   X,
   ArrowRightLeft,
   PanelLeftOpen,
-  Image as ImageIcon,
   AlertTriangle,
   Users,
   UserX,
@@ -67,7 +67,7 @@ import {
 } from '../../lib/planResume';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useModal } from '../../contexts/ModalContext';
-import { useIsMobile } from '../../lib/hooks';
+import { useIsMobile, useApi } from '../../lib/hooks';
 import { SURFACES } from '../../lib/surfaces';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { useOpenAmbassador } from '../../hooks/useOpenAmbassador';
@@ -109,6 +109,14 @@ export function ChatPanel() {
   const attachedWorkspaceId = activeTab
     ? getMeta(activeTab.sessionId ?? activeTab.id).workspaceId
     : undefined;
+  // Resolve the project name for the Relay menu — only fetched when the
+  // conversation actually belongs to a project (guarded by `enabled`).
+  const { data: projectData } = useApi(
+    () => api.getWorkspace(attachedWorkspaceId as string),
+    [attachedWorkspaceId],
+    { enabled: !!attachedWorkspaceId },
+  );
+  const projectName = projectData?.workspace.name;
 
   // Stored media (a generated/uploaded image) falls back to the personal Home
   // workspace when the conversation has none — durably attach it, notifying once.
@@ -721,9 +729,12 @@ export function ChatPanel() {
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
+    // Cap the grow height; on phones use a viewport-relative ceiling so a long
+    // draft can expand but never swallow the screen (CSS max-height mirrors this).
+    const cap = isMobile ? Math.round(window.innerHeight * 0.4) : 200;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
-  }, []);
+    el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
+  }, [isMobile]);
 
   useEffect(() => {
     autoResize();
@@ -1213,28 +1224,19 @@ export function ChatPanel() {
               e.target.value = '';
             }}
           />
-          {visionEnabled && (
-            <button
-              className="attach-trigger"
-              onClick={() => imageInputRef.current?.click()}
-              title="Attach image"
-              aria-label="Attach image"
-              disabled={isTyping}
-            >
-              <ImageIcon size={18} />
-            </button>
-          )}
           <button
             ref={relayButtonRef}
-            className={`relay-trigger ${showRelay ? 'active' : ''}`}
+            className={`relay-trigger ${showRelay ? 'active' : ''} ${
+              !showRelay && bgArmed ? 'armed' : !showRelay && hasUnreadBgJobs ? 'alerting' : ''
+            }`}
             onClick={() => {
               setShowRelay(v => !v);
               if (!showRelay) setHasUnreadBgJobs(false);
             }}
-            title="Relay Module"
+            title="Relay — attach, project, background & inbox"
             aria-label="Open Relay menu"
           >
-            <Box size={18} />
+            <Orbit size={18} />
             {hasUnreadBgJobs && !showRelay && <span className="relay-trigger-badge" />}
           </button>
           <RelayMenu
@@ -1250,6 +1252,12 @@ export function ChatPanel() {
             onJobsChanged={() => setHasUnreadBgJobs(false)}
             onAttachFile={() => docInputRef.current?.click()}
             attachingFile={attachingFile}
+            onAttachImage={() => imageInputRef.current?.click()}
+            uploadingImage={uploadingImages > 0}
+            visionEnabled={visionEnabled}
+            onOpenProject={() => openModal(SURFACES.workspaces)}
+            projectName={projectName}
+            hasProject={!!attachedWorkspaceId}
           />
           <textarea
             ref={textareaRef}
@@ -1260,6 +1268,19 @@ export function ChatPanel() {
             }}
             onClick={(e) => refreshMention(input, e.currentTarget.selectionStart ?? input.length)}
             onKeyDown={handleKeyDown}
+            onPaste={(e) => {
+              // Paste-to-attach: route pasted images straight into the composer
+              // (Tauri's webview doesn't deliver HTML5 file drops, so paste +
+              // click-to-browse are the two attach paths). Text paste is untouched.
+              const files = e.clipboardData?.files;
+              if (
+                visionEnabled && files && files.length > 0 &&
+                Array.from(files).some(f => IMAGE_TYPES.includes(f.type))
+              ) {
+                e.preventDefault();
+                void handlePickImages(files);
+              }
+            }}
             placeholder={
               isTyping
                 ? 'Steer the running agent... (Shift+Enter for new line)'
