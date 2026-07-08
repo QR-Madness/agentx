@@ -1821,21 +1821,26 @@ async def _consolidate_user_conversation(
         conv_id, metrics, errors, roster=roster, default_agent_id=agent_id,
     )
 
-    # Mark every successfully-poured-over turn (relevant or not) so it is never
-    # re-consolidated — independent of storage below, and of whether OTHER
-    # windows failed (those turns are simply absent from processed_turn_ids and
-    # retry next sweep). Keep c.consolidated as a coarse "last-touched" marker.
-    _mark_turns_consolidated(session, extracted.processed_turn_ids, "consolidated")
-    if extracted.processed_turn_ids:
-        session.run(
-            "MATCH (c:Conversation {id: $conv_id}) SET c.consolidated = datetime()",
-            conv_id=conv_id,
-        )
+    def _finalize_turns() -> None:
+        # Mark every successfully-poured-over turn (relevant or not) so it is
+        # never re-consolidated. Called AFTER storage (below) — not before — so a
+        # storage-phase exception leaves these turns unmarked and they retry next
+        # sweep instead of being skipped with their facts lost. Turns of a *failed*
+        # window are already absent from processed_turn_ids and retry regardless.
+        # Keep c.consolidated as a coarse "last-touched" marker.
+        _mark_turns_consolidated(session, extracted.processed_turn_ids, "consolidated")
+        if extracted.processed_turn_ids:
+            session.run(
+                "MATCH (c:Conversation {id: $conv_id}) SET c.consolidated = datetime()",
+                conv_id=conv_id,
+            )
 
     if not extracted.relevant_turns:
         logger.debug(f"No relevant turns in conversation {conv_id}, skipping extraction")
         if extracted.extraction_failed:
             logger.warning(f"Some windows in {conv_id} failed extraction; those turns will retry")
+        # No storage on this path — safe to mark the poured-over (irrelevant) turns now.
+        _finalize_turns()
         return
 
     logger.debug(
@@ -1897,9 +1902,10 @@ async def _consolidate_user_conversation(
         f"{entity_count} entities, {fact_result.fact_count} facts, {rel_count} relationships{extras_msg}"
     )
 
-    # Turn-level marking + the coarse c.consolidated stamp already happened right
-    # after extraction (above) — gated on which turns were actually poured over,
-    # so a partial-window failure retries only its own turns next sweep.
+    # Storage succeeded — now mark the poured-over turns (never re-consolidated).
+    # Doing it here, not before storage, means a storage-phase throw leaves them
+    # unmarked → retried, so no turn is skipped with its facts unstored.
+    _finalize_turns()
 
 
 async def _consolidate_assistant_conversation(
