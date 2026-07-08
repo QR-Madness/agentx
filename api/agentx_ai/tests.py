@@ -5251,14 +5251,45 @@ class ConversationStateTest(MockRedisTestBase):
         with patch("agentx_ai.agent.context.ContextManager._summarize_messages",
                    new=AsyncMock(return_value="ROLLED DIGEST")):
             none = asyncio.run(mgr.maybe_compact_to_state("conv-1", token_threshold=10_000_000, recent_floor=4))
-            self.assertFalse(none)  # high threshold → nothing aged out
+            self.assertIsNone(none)  # high threshold → nothing aged out → None
             did = asyncio.run(mgr.maybe_compact_to_state("conv-1", token_threshold=300, recent_floor=4))
 
-        self.assertTrue(did)
+        # Returns the digest it wrote (the caller uses it as INV-CTX-1 coverage).
+        self.assertEqual(did, "ROLLED DIGEST")
         self.assertEqual(len(s.messages), 4)  # trimmed to the recent floor
         self.assertFalse(s.summary)  # prose summary NOT written (no double-compression)
         payload = self.mock_redis.set.call_args[0][1]
         self.assertIn("ROLLED DIGEST", payload)  # digest persisted to the state object
+
+    def test_state_block_surfaces_fresh_digest_when_read_empty(self):
+        """INV-CTX-1 fix: if compaction just wrote a digest but the state block's Redis
+        read comes back empty (hiccup/miss), the in-hand `fresh_digest` still renders —
+        so the just-evicted turns are covered THIS turn, not lost until the next."""
+        from types import SimpleNamespace
+
+        from agentx_ai.agent.context_ledger import shrink_tail
+        from agentx_ai.views import _append_conversation_state_block
+
+        self.mock_redis.get.return_value = None  # empty state from Redis
+        cfg = SimpleNamespace(get=lambda key, default=None: True)
+        blocks: list = []
+        _append_conversation_state_block(blocks, "conv-1", cfg, shrink_tail, fresh_digest="EVICTED-COVERAGE")
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0].key, "conversation_state")
+        self.assertIn("EVICTED-COVERAGE", blocks[0].content)
+        self.assertIn("Summary of earlier turns", blocks[0].content)
+
+    def test_state_block_empty_read_no_fresh_digest_is_skipped(self):
+        from types import SimpleNamespace
+
+        from agentx_ai.agent.context_ledger import shrink_tail
+        from agentx_ai.views import _append_conversation_state_block
+
+        self.mock_redis.get.return_value = None
+        cfg = SimpleNamespace(get=lambda key, default=None: True)
+        blocks: list = []
+        _append_conversation_state_block(blocks, "conv-1", cfg, shrink_tail, fresh_digest=None)
+        self.assertEqual(blocks, [])  # nothing to cover → no block
 
     # --- Redis round-trip ---
     def test_update_slot_round_trips_through_render(self):
@@ -5592,7 +5623,10 @@ class EpisodicLeadsTest(TestCase):
 
         self.assertTrue(_has_episodic_intent("when did we decide the budget?"))
         self.assertTrue(_has_episodic_intent("remind me what you said earlier"))
+        self.assertTrue(_has_episodic_intent("go back to the discussion where we compared options"))
         self.assertFalse(_has_episodic_intent("what is the best structure for this argument?"))
+        # Tightened: bare "before" no longer over-matches a non-episodic instruction.
+        self.assertFalse(_has_episodic_intent("before you answer, think it through step by step"))
 
     def test_read_thread_tool_is_retrieval_gated(self):
         from agentx_ai.mcp.internal_tools import find_internal_tool, is_retrieval_tool
@@ -8614,7 +8648,7 @@ class ConversationContextTest(TestCase):
                 # Slice 1c: state compaction is the default path; the prose summary
                 # path stays for the flag-off case. Both mocked so tests can assert
                 # which one fired.
-                maybe_compact_to_state=AsyncMock(return_value=True),
+                maybe_compact_to_state=AsyncMock(return_value="STATE-DIGEST"),
                 maybe_update_summary=AsyncMock(return_value=True),
             ),
         )
@@ -8625,13 +8659,16 @@ class ConversationContextTest(TestCase):
     def _run_coverage(self, session, history, blocks, agent, cfg, *, window, reserved=100):
         import asyncio
         from agentx_ai.views import _ensure_summary_coverage
-        return asyncio.run(_ensure_summary_coverage(
+        # Coverage returns (history, history_digest, state_digest); the state_digest is
+        # exercised separately, so collapse to the (history, digest) these tests assert on.
+        out, digest, _state_digest = asyncio.run(_ensure_summary_coverage(
             agent, session, blocks, history,
             new_message_content="the new question",
             context_window=window,
             reserved_tokens=reserved,
             cfg=cfg,
         ))
+        return out, digest
 
     def test_jit_coverage_noop_under_budget(self):
         """History fits → no summary call, no digest, history unchanged."""
@@ -8674,7 +8711,8 @@ class ConversationContextTest(TestCase):
         from unittest.mock import AsyncMock
 
         session, history, blocks, agent, cfg = self._coverage_fixture()
-        agent._session_manager.maybe_compact_to_state = AsyncMock(return_value=False)
+        # New contract: state compaction returns the digest str, or None on failure/no-op.
+        agent._session_manager.maybe_compact_to_state = AsyncMock(return_value=None)
         before = len(session.messages)
         out, digest = self._run_coverage(session, history, blocks, agent, cfg, window=1000)
         self.assertIs(out, history)

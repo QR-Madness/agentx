@@ -100,8 +100,11 @@ the flag-off/legacy fallback), **never both** (no double-compression); (b) the d
 rolling field re-summarized in place**, NOT the append-capped `narrative` slot — so it stays bounded
 without the newest-N cap ever dropping old coverage; (c) the prose `session.summary` block stays only
 as **read-back for pre-1c conversations**; (d) the `history_digest` deterministic fallback still fires
-whenever the structured pass fails. **Guard:** `ConversationContextTest` JIT-coverage tests +
-`ConversationStateTest` digest/compaction tests (`tests.py`).
+whenever the structured pass fails; (e) **coverage flows from the value, not a re-read** (v0.21.182) —
+`maybe_compact_to_state` returns the digest it wrote, and `_ensure_summary_coverage` hands it to the
+`conversation_state` block as `fresh_digest`, so a Redis read hiccup right after the write can't leave
+the just-evicted turns uncovered *this* turn. **Guard:** `ConversationContextTest` JIT-coverage tests +
+`ConversationStateTest` digest/compaction/fresh-digest tests (`tests.py`).
 
 ---
 

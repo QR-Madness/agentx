@@ -243,23 +243,29 @@ def _append_corpus_awareness_blocks(blocks, workspace_id, conv_id, shrink_tail):
         logger.debug(f"Conversation image awareness skipped: {ci_err}")
 
 
-def _append_conversation_state_block(blocks, conv_id, cfg, shrink_tail):
-    """Append the structured conversation-state ledger block (Slice 1a): model-authored,
-    slot-based working memory (goals/decisions/open_threads/artifacts/narrative), rendered
-    just above the prose summary. Additive this slice — it does NOT yet replace the summary
-    as the compaction target (Slice 1c). Default-on with a settings opt-out. Best-effort +
-    conditional, so it lives here to keep the chat-stream generator within pyright's path
-    budget."""
+def _append_conversation_state_block(blocks, conv_id, cfg, shrink_tail, fresh_digest=None):
+    """Append the structured conversation-state ledger block (Slice 1a/1c): model-authored
+    slots + the rolling compaction ``digest``. Default-on with a settings opt-out. Best-effort
+    + conditional, so it lives here to keep the chat-stream generator within pyright's path
+    budget.
+
+    ``fresh_digest`` is the digest a state-compaction pass just wrote this turn (from
+    ``_ensure_summary_coverage``). If Redis didn't surface it (a read hiccup right after the
+    write), we inject it so the just-evicted turns are still covered **this** turn — INV-CTX-1
+    coverage flows from the value, not a second read."""
     from .agent.context_ledger import LedgerBlock
 
     if not bool(cfg.get("context.conversation_state_enabled", True)):
         return
     try:
-        from .agent.conversation_state_storage import render_state_block
-        state_block = render_state_block(conv_id)
-        if state_block:
+        from .agent.conversation_state_storage import get_state, render_state
+        state = get_state(conv_id)  # swallows Redis errors → empty state, never raises
+        if fresh_digest and not state.digest:
+            state.digest = fresh_digest
+        content = render_state(state)
+        if content:
             blocks.append(LedgerBlock(
-                key="conversation_state", priority=68, content=state_block,
+                key="conversation_state", priority=68, content=content,
                 shrink_fn=shrink_tail,
             ))
     except Exception as st_err:  # noqa: BLE001 — best-effort
@@ -271,10 +277,11 @@ def _append_conversation_state_block(blocks, conv_id, cfg, shrink_tail):
 # when the phrasing implies episodic recall ("when did we…", "earlier we…", "you
 # said…"). The leads themselves are derived from provenance (no extra search).
 _EPISODIC_INTENT_RE = re.compile(
-    r"\b(when did|remember when|last time|earlier|previously|before|"
+    r"\b(when did|when were|remember when|last time|earlier (we|you|i|on)|"
     r"we (talked|spoke|discussed|decided|agreed|covered|went over)|"
     r"you (said|mentioned|told|suggested|proposed)|"
-    r"(that|the) (discussion|conversation|thread|chat)|go back|recall|remind me)\b",
+    r"(that|the) (discussion|conversation|thread|chat) (where|about|we)|"
+    r"go back to|recall|remind me)\b",
     re.IGNORECASE,
 )
 
@@ -285,12 +292,13 @@ def _has_episodic_intent(query: str) -> bool:
 
 def _append_post_coverage_memory_blocks(
     blocks, agent, memory_bundle, query, conv_id, cfg, shrink_tail, shrink_lines,
+    *, fresh_digest=None,
 ):
     """Register the memory blocks that go in AFTER JIT summary coverage: the
-    structured conversation state (Slice 1a) and the episodic thread leads (Slice 2).
-    Combined into one call so the chat-stream generator stays within pyright's
-    conditional-path budget."""
-    _append_conversation_state_block(blocks, conv_id, cfg, shrink_tail)
+    structured conversation state (Slice 1a/1c, carrying ``fresh_digest`` coverage) and
+    the episodic thread leads (Slice 2). Combined into one call so the chat-stream
+    generator stays within pyright's conditional-path budget."""
+    _append_conversation_state_block(blocks, conv_id, cfg, shrink_tail, fresh_digest=fresh_digest)
     _append_thread_leads_block(blocks, agent, memory_bundle, query, conv_id, cfg, shrink_lines)
 
 
@@ -452,10 +460,12 @@ async def _ensure_summary_coverage(
     turn dropped history with zero coverage; a cold rehydrate before any
     summary persisted lost it entirely.
 
-    Returns ``(history, digest_content)``: ``history`` refreshed when the
-    session was trimmed by the summarizer; ``digest_content`` is the
-    deterministic never-lose fallback (summarizer unavailable) to register
-    as a ``history_digest`` block. No cost on the fits-already path.
+    Returns ``(history, digest_content, state_digest)``: ``history`` refreshed
+    when the session was trimmed; ``digest_content`` is the deterministic
+    never-lose ``history_digest`` fallback (summarizer unavailable); ``state_digest``
+    is the digest the state-compaction pass just wrote — the caller hands it to the
+    ``conversation_state`` block so the evicted turns are covered **this** turn even
+    if that block's Redis read hiccups (INV-CTX-1). No cost on the fits-already path.
     Factored out of the chat-stream generator (pyright path budget).
     """
     from .tokens import estimate_messages
@@ -463,11 +473,11 @@ async def _ensure_summary_coverage(
     from .providers.base import MessageRole
 
     if not bool(cfg.get("context.preassembly_summary_enabled", True)):
-        return history, None
+        return history, None, None
 
     non_system = [m for m in history if m.role != MessageRole.SYSTEM]
     if not non_system:
-        return history, None
+        return history, None, None
     input_budget = min(
         int(context_window * float(cfg.get("context.verbatim_budget_ratio", 0.9))),
         context_window - reserved_tokens,
@@ -475,7 +485,7 @@ async def _ensure_summary_coverage(
     blocks_tokens = sum(estimate_text_tokens(b.content) for b in blocks)
     history_budget = input_budget - estimate_text_tokens(new_message_content or "") - blocks_tokens
     if history_budget <= 0 or estimate_messages(non_system) <= history_budget:
-        return history, None
+        return history, None, None
 
     # Over budget: fold the elder turns into the rolling summary NOW. Target
     # slightly under the budget — maybe_update_summary keeps turns until the
@@ -492,11 +502,14 @@ async def _ensure_summary_coverage(
     )
     threshold = max(1, int(history_budget * 0.9))
     recent_floor = int(cfg.get("context.recent_floor", 4))
+    state_digest: str | None = None
     try:
         if use_state:
-            updated = await agent._session_manager.maybe_compact_to_state(
+            # Returns the digest it wrote (INV-CTX-1 coverage), or None on no-op/fail.
+            state_digest = await agent._session_manager.maybe_compact_to_state(
                 session.id, token_threshold=threshold, recent_floor=recent_floor,
             )
+            updated = state_digest is not None
         else:
             updated = await agent._session_manager.maybe_update_summary(
                 session.id, token_threshold=threshold, recent_floor=recent_floor,
@@ -505,9 +518,11 @@ async def _ensure_summary_coverage(
         logger.warning(f"JIT compaction failed for {session.id}: {e}")
         updated = False
     if updated:
-        # Session messages were trimmed to the kept tail; re-derive the
-        # history (still excluding the just-added user message).
-        return session.get_messages()[:-1], None
+        # Session messages were trimmed to the kept tail; re-derive the history
+        # (still excluding the just-added user message). `state_digest` (when the
+        # state path ran) is handed to the conversation_state block as guaranteed
+        # coverage of the just-evicted turns.
+        return session.get_messages()[:-1], None, state_digest
 
     # Never-lose fallback: a deterministic compact digest of the turns the
     # ledger is about to drop (newest→oldest fill mirrors fit_history).
@@ -522,7 +537,7 @@ async def _ensure_summary_coverage(
         keep += 1
     dropped = non_system[: len(non_system) - keep]
     if not dropped:
-        return history, None
+        return history, None, None
     lines = [
         shrink_tail(f"{getattr(m.role, 'value', m.role)}: {m.content}", 120)
         for m in dropped
@@ -535,7 +550,7 @@ async def _ensure_summary_coverage(
         "JIT summary unavailable for %s — emitting history_digest for %d turn(s)",
         session.id, len(dropped),
     )
-    return history, digest
+    return history, digest, None
 
 
 def index(request):
@@ -2014,8 +2029,9 @@ async def agent_chat_stream(request):
             # summary is no longer only reactive (post-turn). On summarizer
             # failure a deterministic history_digest block stands in.
             _cfg = get_config_manager()
+            _state_digest: str | None = None
             if not direct_mode:
-                context, _digest = await _ensure_summary_coverage(
+                context, _digest, _state_digest = await _ensure_summary_coverage(
                     agent, session, blocks, context,
                     new_message_content=message_for_context,
                     context_window=context_window,
@@ -2030,16 +2046,15 @@ async def agent_chat_stream(request):
                         shrink_fn=shrink_lines_newest_n,
                     ))
 
-            # Structured conversation state (Slice 1a) — model-authored, slot-based
-            # working memory, ADDITIVE alongside the prose summary (below), rendered just
-            # above it. Extracted to a helper to keep this generator within the type
-            # checker's path budget.
             # Structured conversation state (Slice 1a) + episodic thread leads (Slice 2),
-            # both registered after JIT coverage. One combined call for path budget.
+            # both registered after JIT coverage. `_state_digest` (when state compaction
+            # ran this turn) is the guaranteed INV-CTX-1 coverage of the just-evicted
+            # turns — passed so the block surfaces it even if its Redis read hiccups.
+            # One combined call keeps the generator within the type checker's path budget.
             if not direct_mode:
                 _append_post_coverage_memory_blocks(
                     blocks, agent, memory_bundle, message, conv_id, _cfg,
-                    shrink_tail, shrink_lines_newest_n,
+                    shrink_tail, shrink_lines_newest_n, fresh_digest=_state_digest,
                 )
 
             # The (persisted) rolling summary covers turns older than the verbatim
