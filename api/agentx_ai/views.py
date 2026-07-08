@@ -421,14 +421,28 @@ async def _ensure_summary_coverage(
     # slightly under the budget — maybe_update_summary keeps turns until the
     # threshold is crossed, so the kept tail lands within the ledger's fit.
     emit_status("composing", "Compressing older turns…")
+    # Slice 1c: the structured conversation-state object is the compaction target —
+    # aged-out turns roll into its `digest` (rendered by the `conversation_state`
+    # block, registered right after this call). Falls back to the legacy prose
+    # rolling summary when conversation state or its compaction is disabled. Only
+    # ONE pass runs (no double-compression).
+    use_state = (
+        bool(cfg.get("context.conversation_state_enabled", True))
+        and bool(cfg.get("context.conversation_state_compaction_enabled", True))
+    )
+    threshold = max(1, int(history_budget * 0.9))
+    recent_floor = int(cfg.get("context.recent_floor", 4))
     try:
-        updated = await agent._session_manager.maybe_update_summary(
-            session.id,
-            token_threshold=max(1, int(history_budget * 0.9)),
-            recent_floor=int(cfg.get("context.recent_floor", 4)),
-        )
+        if use_state:
+            updated = await agent._session_manager.maybe_compact_to_state(
+                session.id, token_threshold=threshold, recent_floor=recent_floor,
+            )
+        else:
+            updated = await agent._session_manager.maybe_update_summary(
+                session.id, token_threshold=threshold, recent_floor=recent_floor,
+            )
     except Exception as e:
-        logger.warning(f"JIT summary refresh failed for {session.id}: {e}")
+        logger.warning(f"JIT compaction failed for {session.id}: {e}")
         updated = False
     if updated:
         # Session messages were trimmed to the kept tail; re-derive the

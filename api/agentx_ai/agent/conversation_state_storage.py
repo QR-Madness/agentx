@@ -71,12 +71,17 @@ class ConversationState(BaseModel):
     open_threads: list[StateEntry] = Field(default_factory=list)
     artifacts: list[StateEntry] = Field(default_factory=list)
     narrative: list[StateEntry] = Field(default_factory=list)
+    # Rolling summary of turns aged out of the verbatim window (Slice 1c). Unlike
+    # the append-capped `narrative` slot, this is a SINGLE field re-summarized in
+    # place each compaction, so it stays bounded WITHOUT dropping old coverage —
+    # it is the compaction target that lets the state object cover INV-CTX-1.
+    digest: str = ""
 
     def entries(self, slot: str) -> list[StateEntry]:
         return getattr(self, slot)
 
     def is_empty(self) -> bool:
-        return not any(self.entries(s) for s in SLOTS)
+        return not self.digest and not any(self.entries(s) for s in SLOTS)
 
 
 def _entry_cap(slot: str) -> int:
@@ -180,6 +185,11 @@ def render_state(state: ConversationState) -> str:
             # user themselves put on the record.
             marker = " [user]" if e.author == "user" else ""
             lines.append(f"- {e.text}{marker}")
+    # The rolling digest of aged-out turns comes last — it's background continuity
+    # for turns no longer in the verbatim window (the INV-CTX-1 coverage surface).
+    if state.digest:
+        lines.append("### Summary of earlier turns")
+        lines.append(state.digest)
     return "\n".join(lines)
 
 
@@ -248,6 +258,14 @@ def update_slot(
 def replace_slot(conversation_id: str, slot: str, entries: list[Any]) -> ConversationState:
     """Get→set→save a full-slot user edit (Slice 1b). Returns the persisted state."""
     state = set_slot(get_state(conversation_id), slot, entries)
+    save_state(conversation_id, state)
+    return state
+
+
+def update_digest(conversation_id: str, digest: str) -> ConversationState:
+    """Replace the rolling compaction digest (Slice 1c). Returns the persisted state."""
+    state = get_state(conversation_id)
+    state.digest = (digest or "").strip()
     save_state(conversation_id, state)
     return state
 

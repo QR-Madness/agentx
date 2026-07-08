@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.178 -->
+<!-- release-version: 0.21.179 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -41,8 +41,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Conversations keep structured state, and now you can see and edit it** — agents maintain a
   slot-based working record (goals, decisions, open threads, artifacts, plus a freeform narrative)
   that survives context compression; a composer indicator shows it at a glance and opens a drawer to
-  add, edit, or remove entries (your edits win, and the agent reads them next turn). Default-on; opt
-  out in settings.
+  add, edit, or remove entries (your edits win, and the agent reads them next turn). When older turns
+  age out of the window they're now compacted **into this structured state** (a rolling summary that
+  stays bounded) instead of a separate lossy prose blob, so long conversations stay coherent.
+  Default-on; opt out in settings.
 - **Reasoning models think out loud** on OpenAI-compatible providers.
 - **Sign in to remote MCP servers** — OAuth 2.1 with automatic client registration;
   connect opens your browser, tokens are stored and refreshed server-side.

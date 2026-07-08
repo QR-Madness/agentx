@@ -68,15 +68,28 @@ searches `[active_channel, _self_{agent_id}, _global]`.
 is a known hazard — Memory-Roadmap §1.4 `ChannelRef` is the fix.*
 
 ### INV-CTX-1 — No silent context loss
-A turn may leave the model's verbatim view **only when covered** by the persisted rolling summary;
-the JIT pre-assembly refresh (`views.py::_ensure_summary_coverage`) sizes the summary to the turns
+A turn may leave the model's verbatim view **only when covered** by the persisted compaction target;
+the JIT pre-assembly refresh (`views.py::_ensure_summary_coverage`) sizes that compaction to the turns
 `fit_history` is about to drop, **before** assembly. When the summarizer is unavailable, the dropped
 turns must instead appear in the deterministic `history_digest` block that same turn (no model call,
 never silence). Rehydration surfaces coverage gaps (`session.metadata["history_overflow"]` when the
 row cap is hit with no restored summary) rather than truncating silently. The verbatim ceiling
 (`context.verbatim_budget_ratio`, 0.9) and the post-turn summary trigger
 (`context.summary_trigger_ratio`, 0.85) are **separate knobs** — the old 0.7 double duty is gone.
-**Guard:** `ConversationContextTest` JIT-coverage tests (`tests.py`).
+
+**Single compaction target (Slice 1c, v0.21.179).** The compaction target is now the structured
+**conversation-state object**, not the prose rolling summary: `_ensure_summary_coverage` calls
+`SessionManager.maybe_compact_to_state`, which rolls aged-out turns into `ConversationState.digest`
+(rendered by the `conversation_state` ledger block, priority 68 — registered right **after** the
+coverage call, and above the legacy summary's 65, so coverage is retained longer). Rules that must
+not drift: (a) **exactly one** compaction pass runs per over-budget turn — state-compaction OR the
+legacy prose summary (`context.conversation_state_compaction_enabled`, default ON; the prose path is
+the flag-off/legacy fallback), **never both** (no double-compression); (b) the digest is a **single
+rolling field re-summarized in place**, NOT the append-capped `narrative` slot — so it stays bounded
+without the newest-N cap ever dropping old coverage; (c) the prose `session.summary` block stays only
+as **read-back for pre-1c conversations**; (d) the `history_digest` deterministic fallback still fires
+whenever the structured pass fails. **Guard:** `ConversationContextTest` JIT-coverage tests +
+`ConversationStateTest` digest/compaction tests (`tests.py`).
 
 ---
 

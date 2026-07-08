@@ -276,6 +276,93 @@ class SessionManager:
             logger.debug(f"summary persist skipped: {e}")
         return True
 
+    async def maybe_compact_to_state(
+        self,
+        session_id: str,
+        *,
+        token_threshold: int,
+        recent_floor: int = 4,
+    ) -> bool:
+        """Compact aged-out turns into the structured conversation-state object's
+        rolling ``digest`` (Slice 1c) — the state object, not the prose summary, is
+        the compaction target.
+
+        Same newest→oldest budget walk as :meth:`maybe_update_summary`, but the
+        older overflow is folded into ``ConversationState.digest`` via ONE LLM pass
+        that rolls the prior digest in (so it's re-summarized in place, never
+        appended-and-truncated — no silent loss). The digest renders inside the
+        ``conversation_state`` ledger block, which is registered after the JIT
+        coverage call, so it covers exactly the turns ``fit_history`` drops
+        (INV-CTX-1). ``session_id`` is the conversation id (the chat path keys them
+        identically). Returns True if the state digest was updated.
+        """
+        from ..config import get_config_manager
+
+        cfg = get_config_manager()
+        if not cfg.get("session.rolling_summary.enabled", True):
+            return False
+
+        session = self.sessions.get(session_id)
+        if session is None:
+            return False
+
+        non_system = [m for m in session.messages if m.role != MessageRole.SYSTEM]
+        if len(non_system) <= recent_floor:
+            return False
+
+        used = 0
+        keep = 0
+        for m in reversed(non_system):
+            used += estimate_tokens(m.content)
+            keep += 1
+            if keep >= recent_floor and used >= token_threshold:
+                break
+        if keep >= len(non_system):
+            return False
+        aged_out = non_system[: len(non_system) - keep]
+        if not aged_out:
+            return False
+
+        from .context import ContextConfig, ContextManager
+        from .conversation_state_storage import get_state, update_digest
+        from ..model_roles import resolve_member_model
+
+        explicit_model = cfg.get(
+            "session.rolling_summary.model",
+            "anthropic:claude-haiku-4-5-20251001",
+        )
+        summary_model = resolve_member_model("rolling_summary", explicit_model) or explicit_model
+        manager = ContextManager(ContextConfig(summary_model=summary_model))
+
+        # Roll the prior digest in so it stays bounded (re-summarized, not appended).
+        prior = get_state(session_id).digest
+        to_summarize: list[Message] = []
+        if prior:
+            to_summarize.append(Message(
+                role=MessageRole.SYSTEM,
+                content=f"Summary of the conversation so far: {prior}",
+            ))
+        to_summarize.extend(aged_out)
+
+        try:
+            new_digest = await manager._summarize_messages(to_summarize)
+        except Exception as e:
+            logger.warning(f"State compaction failed for {session_id}: {e}")
+            return False
+
+        if not new_digest:
+            return False
+
+        # Persist the digest to the state object, then trim the live session to the
+        # recent tail (durable copy of the turns stays in conversation_logs).
+        try:
+            update_digest(session_id, new_digest)
+        except Exception as e:  # pragma: no cover - Redis offline
+            logger.warning(f"State digest persist failed for {session_id}: {e}")
+            return False
+        session.messages = non_system[len(non_system) - keep:]
+        return True
+
     def _cleanup_old_sessions(self) -> int:
         """Remove expired sessions."""
         now = time.time()
