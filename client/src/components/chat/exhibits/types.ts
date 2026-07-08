@@ -18,4 +18,6 @@ export interface ElementRenderProps {
   busy?: boolean;
   /** Submit a choice selection (sent as the next user turn). */
   onSubmitChoice?: (value: string, messageId: string) => void;
+  /** Owning exhibit's title — passed for card-less renderers (e.g. citation-only). */
+  containerTitle?: string;
 }

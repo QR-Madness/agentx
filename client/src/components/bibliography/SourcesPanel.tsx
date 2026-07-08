@@ -9,6 +9,7 @@ import { BookMarked, ExternalLink } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { buildBibliography } from '../../lib/bibliography';
 import { isHttpUrl, urlHost } from '../../lib/links';
+import { sourceIcon } from '../../lib/sources';
 
 export function SourcesPanel() {
   const { activeTab } = useConversation();
@@ -31,38 +32,44 @@ export function SourcesPanel() {
           or cites references.
         </p>
       ) : (
-        <ol className="flex flex-col gap-2">
-          {entries.map((e) => (
-            <li
-              key={e.n}
-              className="flex items-start gap-2 rounded-md border border-line bg-surface-raised p-2.5 text-sm"
-            >
-              <span className="shrink-0 font-mono text-xs text-fg-muted">[{e.n}]</span>
-              <div className="flex min-w-0 flex-1 flex-col">
-                {isHttpUrl(e.url) ? (
-                  <a
-                    href={e.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 truncate font-medium text-accent hover:underline"
-                  >
-                    <span className="truncate">{e.label}</span>
-                    <ExternalLink size={12} className="shrink-0" />
-                  </a>
-                ) : (
-                  <span className="truncate font-medium text-fg">{e.label}</span>
-                )}
-                {isHttpUrl(e.url) && (
-                  <span className="truncate text-xs text-fg-muted">{urlHost(e.url)}</span>
-                )}
-              </div>
-              {e.kind === 'active' && (
-                <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                  active
+        <ol className="flex flex-col divide-y divide-line-subtle">
+          {entries.map((e) => {
+            const Icon = sourceIcon({ source_type: e.sourceType });
+            return (
+              <li
+                key={e.n}
+                className="flex items-start gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors hover:bg-surface-hover"
+              >
+                <span className="shrink-0 pt-0.5 font-mono text-xs text-fg-muted tabular-nums">
+                  [{e.n}]
                 </span>
-              )}
-            </li>
-          ))}
+                <Icon size={14} className="mt-0.5 shrink-0 text-fg-muted" />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  {isHttpUrl(e.url) ? (
+                    <a
+                      href={e.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 truncate font-medium text-accent hover:underline"
+                    >
+                      <span className="truncate">{e.label}</span>
+                      <ExternalLink size={12} className="shrink-0" />
+                    </a>
+                  ) : (
+                    <span className="truncate font-medium text-fg">{e.label}</span>
+                  )}
+                  {isHttpUrl(e.url) && (
+                    <span className="truncate text-xs text-fg-muted">{urlHost(e.url)}</span>
+                  )}
+                </div>
+                {e.kind === 'active' && (
+                  <span className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                    quoted
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ol>
       )}
     </div>
