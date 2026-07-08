@@ -230,7 +230,14 @@ class MemoryImporter:
                 t.user_id = $user_id,
                 t.agent_id = row.agent_id,
                 t.timestamp = CASE WHEN row.timestamp IS NULL
-                    THEN coalesce(t.timestamp, datetime()) ELSE datetime(row.timestamp) END
+                    THEN coalesce(t.timestamp, datetime()) ELSE datetime(row.timestamp) END,
+                // Preserve turn-level consolidation state so a re-imported bundle
+                // resumes where it left off instead of re-consolidating everything.
+                // Absent in pre-0.21 exports → keep any existing value.
+                t.consolidated = CASE WHEN row.consolidated IS NULL
+                    THEN t.consolidated ELSE datetime(row.consolidated) END,
+                t.self_consolidated = CASE WHEN row.self_consolidated IS NULL
+                    THEN t.self_consolidated ELSE datetime(row.self_consolidated) END
             MERGE (c)-[:HAS_TURN]->(t)
             RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
         """, rows=rows, user_id=self.user_id))

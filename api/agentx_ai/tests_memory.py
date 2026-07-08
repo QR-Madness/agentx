@@ -964,9 +964,10 @@ class ConsolidationPipelineTest(TestCase):
 
         def _run(query, **params):
             res = MagicMock()
-            if "self_consolidated IS NULL" in query:
+            # Discovery now gates on turn-level markers (idempotency fix).
+            if "t.self_consolidated IS NULL" in query:
                 res.__iter__ = MagicMock(return_value=iter(list(assistant_records)))
-            elif "c.consolidated IS NULL" in query:
+            elif "t.consolidated IS NULL" in query:
                 res.__iter__ = MagicMock(return_value=iter(list(user_records)))
             else:
                 res.__iter__ = MagicMock(return_value=iter([]))
@@ -1058,7 +1059,7 @@ class ConsolidationPipelineTest(TestCase):
             "conversation_id": "conv-1",
             "user_id": "default",
             "channel": "_default",
-            "turns": [{"content": "Acme Corp raised a Series A funding round."}],
+            "turns": [{"id": "turn-u1", "content": "Acme Corp raised a Series A funding round."}],
         }
 
     @staticmethod
@@ -1085,30 +1086,40 @@ class ConsolidationPipelineTest(TestCase):
         )
 
         memory.learn_fact.assert_called_once()
+        # The poured-over turn is marked (never re-consolidated) + the coarse marker.
+        self.assertTrue(self._ran(session, "SET t.consolidated"))
         self.assertTrue(self._ran(session, "SET c.consolidated"))
         self.assertEqual(result["facts"], 1)
         self.assertEqual(result["entities"], 1)
         self.assertGreaterEqual(result["items_processed"], 1)
 
-    def test_extraction_failure_skips_consolidated_mark(self) -> None:
-        """A failed extraction must NOT mark the conversation consolidated (retry guarantee)."""
+    def test_extraction_failure_leaves_turns_unmarked(self) -> None:
+        """A failed window must NOT mark its turns (so they retry next sweep)."""
         combined = self._combined(success=False, is_relevant=False)
         result, session, memory = self._run_job(
             user_records=[self._user_record()], combined=combined,
         )
 
         memory.learn_fact.assert_not_called()
+        self.assertFalse(self._ran(session, "SET t.consolidated"))
         self.assertFalse(self._ran(session, "SET c.consolidated"))
 
-    def test_no_relevant_turns_marks_consolidated(self) -> None:
-        """No relevant turns (but no failure) → still marked consolidated, nothing stored."""
+    def test_no_relevant_turns_still_marks_turns(self) -> None:
+        """Processed-but-irrelevant turns are marked (poured over once), nothing stored."""
         combined = self._combined(success=True, is_relevant=False, reason="heuristic_skip")
         result, session, memory = self._run_job(
             user_records=[self._user_record()], combined=combined,
         )
 
         memory.learn_fact.assert_not_called()
-        self.assertTrue(self._ran(session, "SET c.consolidated"))
+        self.assertTrue(self._ran(session, "SET t.consolidated"))
+
+    def test_discovery_gates_on_unconsolidated_turns(self) -> None:
+        """Discovery selects only turns not yet marked — the idempotency gate."""
+        _result, session, _memory = self._run_job(user_records=[self._user_record()])
+        self.assertTrue(self._ran(session, "t.consolidated IS NULL"))
+        # The old time-based conversation re-qualification is gone.
+        self.assertFalse(self._ran(session, "PT15M"))
 
     def test_hash_duplicate_fact_skipped(self) -> None:
         """A hash-duplicate fact is skipped and counted, but the conversation still consolidates."""
@@ -1138,6 +1149,7 @@ class ConsolidationPipelineTest(TestCase):
         memory.learn_fact.assert_called_once()
         _, kwargs = memory.learn_fact.call_args
         self.assertEqual(kwargs.get("source"), "self_extraction")
+        self.assertTrue(self._ran(session, "SET t.self_consolidated"))
         self.assertTrue(self._ran(session, "SET c.self_consolidated"))
         self.assertEqual(result["metrics"]["assistant_facts_stored"], 1)
 
