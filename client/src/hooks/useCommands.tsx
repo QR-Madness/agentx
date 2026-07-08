@@ -79,6 +79,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'open-tools', group: 'Workspace', label: 'Open Tools', icon: <Wrench size={16} />, keywords: ['toolkit', 'mcp', 'servers'], run: open('tools') },
       { id: 'open-memory', group: 'Workspace', label: 'Open Memory', icon: <Database size={16} />, keywords: ['facts', 'entities', 'recall', 'memories'], run: open('memory') },
       { id: 'open-sources', group: 'Workspace', label: 'Open Sources', icon: <BookMarked size={16} />, keywords: ['citations', 'bibliography', 'references', 'links'], run: open('sources') },
+      { id: 'open-consolidation', group: 'Workspace', label: 'Memory Consolidation', icon: <Zap size={16} />, keywords: ['consolidate', 'memory', 'extract', 'facts', 'entities', 'lightning'], run: open('consolidation') },
       { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel', 'ambassadors'], run: () => { onNavigate('agentx'); openAmbassador(); onClose(); } },
       { id: 'open-ambassador-deck', group: 'Workspace', label: 'Open Command Deck', icon: <LayoutDashboard size={16} />, keywords: ['ambassador', 'deck', 'agents', 'overview', 'survey', 'roster', 'discovered'], run: open('ambassadorDeck') },
       { id: 'open-plans', group: 'Workspace', label: 'Open Plans', icon: <ListChecks size={16} />, keywords: ['tasks', 'subtasks', 'progress'], run: open('plans') },

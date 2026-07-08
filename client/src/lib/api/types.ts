@@ -1227,6 +1227,12 @@ export interface ConsolidationProgressEvent extends ConsolidationStreamEvent {
   relationships_stored?: number;
   conversations_processed?: number;
   duration_ms?: number;
+  // Live running-totals snapshot (backend `metrics.live_snapshot()`), merged into
+  // processing/storing/complete details so the drawer can show live counters.
+  turns_processed?: number;
+  llm_calls?: number;
+  tokens?: number;
+  errors_count?: number;
 }
 
 export interface ConsolidationJobDoneEvent extends ConsolidationStreamEvent {

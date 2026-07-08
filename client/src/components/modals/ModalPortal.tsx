@@ -20,6 +20,7 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   memory: lazy(() => import('./stubs').then(m => ({ default: m.MemoryModalContent }))),
   plans: lazy(() => import('./stubs').then(m => ({ default: m.PlansModalContent }))),
   sources: lazy(() => import('./stubs').then(m => ({ default: m.SourcesDrawerContent }))),
+  consolidation: lazy(() => import('../consolidation/ConsolidationDrawer').then(m => ({ default: m.ConsolidationDrawer as unknown as ComponentType<ModalComponentProps> }))),
   ambassador: lazy(() => import('./stubs').then(m => ({ default: m.AmbassadorDrawerContent }))),
   ambassadorDeck: lazy(() => import('./stubs').then(m => ({ default: m.AmbassadorDeckContent }))),
   tools: lazy(() => import('./stubs').then(m => ({ default: m.ToolsModalContent }))),

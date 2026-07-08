@@ -114,6 +114,23 @@ class ConsolidationMetrics:
             return 0.0
         return self.facts_extracted / self.extraction_calls
 
+    def live_snapshot(self) -> dict[str, int]:
+        """Cheap running-totals snapshot for mid-run progress UI.
+
+        ``total_llm_calls`` is only assembled at the end, so sum the live
+        component counters here. Safe to call at any point during a run.
+        """
+        return {
+            "turns_processed": self.turns_total + self.assistant_turns_total,
+            "llm_calls": (
+                self.relevance_calls
+                + self.extraction_calls
+                + self.correction_calls
+                + self.contradiction_calls
+            ),
+            "tokens": self.total_tokens_used,
+        }
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         d = asdict(self)

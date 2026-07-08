@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.185 -->
+<!-- release-version: 0.21.186 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,6 +21,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
+- **Memory consolidation has a real progress drawer** — the ⚡ icon now opens an animated drawer
+  with a genuinely moving progress bar (per-conversation, with a trickle so it never looks frozen),
+  live counters (turns · LLM calls · tokens), rotating status messages, surfaced issues, and a clean
+  Start. When there's nothing new it says so ("Memory's up to date"), and it re-attaches to a run
+  started in the background.
 - **Run AgentX from a browser** — an installable **PWA** build (ideal for iPhone/Android
   and anywhere the desktop app can't go, auto-updating with no store), plus shareable
   **connection links**: send someone a link and they connect to your server by opening it

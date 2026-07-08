@@ -1798,6 +1798,8 @@ async def _consolidate_user_conversation(
             "conversation": f"{conv_idx + 1} of {total}",
             "conversation_id": conv_id,
             "turns": len(turns),
+            **metrics.live_snapshot(),
+            "errors_count": len(errors),
         })
 
     # Get or create memory instance for this user/channel
@@ -1860,6 +1862,8 @@ async def _consolidate_user_conversation(
             "entities": len(extracted.entities),
             "facts": len(extracted.facts),
             "relationships": len(extracted.relationships),
+            **metrics.live_snapshot(),
+            "errors_count": len(errors),
         })
 
     entity_count = _store_conversation_entities(
@@ -2207,6 +2211,8 @@ async def consolidate_episodic_to_semantic(
             "relationships_stored": metrics.relationships_stored,
             "conversations_processed": len(records),
             "duration_ms": metrics.total_latency_ms,
+            **metrics.live_snapshot(),
+            "errors_count": len(errors),
         })
 
     # Log summary

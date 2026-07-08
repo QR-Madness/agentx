@@ -7,7 +7,6 @@
  * palette — the old TopBar conversation switchers were removed.
  */
 
-import { useState, useRef } from 'react';
 import {
   Home,
   LayoutDashboard,
@@ -23,8 +22,8 @@ import { useModal } from '../contexts/ModalContext';
 import { usePlans } from '../contexts/PlansContext';
 import { useUIChrome } from '../contexts/UIChromeContext';
 import { SURFACES } from '../lib/surfaces';
-import { useConsolidationStatus, useIsMobile } from '../lib/hooks';
-import { ConsolidationMenu } from '../components/chat/ConsolidationMenu';
+import { useIsMobile } from '../lib/hooks';
+import { useConsolidation } from '../contexts/ConsolidationContext';
 import { WindowControls } from './WindowControls';
 import { showWindowControls, isMac } from '../lib/platform';
 import './TopBar.css';
@@ -45,7 +44,7 @@ const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
 export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const { openModal } = useModal();
   const { livePlans } = usePlans();
-  const consolidation = useConsolidationStatus();
+  const consolidation = useConsolidation();
 
   const activePlanCount = Array.from(livePlans.values()).filter(
     p => p.status === 'running',
@@ -53,9 +52,6 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const { focusMode, toggleFocusMode } = useUIChrome();
   const isMobile = useIsMobile();
 
-  const [showConsolidationMenu, setShowConsolidationMenu] = useState(false);
-
-  const lightningButtonRef = useRef<HTMLButtonElement>(null);
 
   const openPalette = () =>
     window.dispatchEvent(new CustomEvent('agentx:toggle-command-palette'));
@@ -102,24 +98,14 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
 
       {/* Right: live indicators + ⌘K + Focus + Workspace menu + window controls */}
       <div className="top-bar-right">
-        {/* Consolidation lightning — pulses as a live indicator when active */}
-        <div className="consolidation-trigger-container">
-          <button
-            ref={lightningButtonRef}
-            className={`toolbar-icon toolbar-icon-lightning ${consolidation.isActive ? 'pulsing' : ''}`}
-            onClick={() => setShowConsolidationMenu(prev => !prev)}
-            title="Memory consolidation"
-          >
-            <Zap size={18} />
-          </button>
-
-          <ConsolidationMenu
-            isOpen={showConsolidationMenu}
-            onClose={() => setShowConsolidationMenu(false)}
-            anchorRef={lightningButtonRef}
-            consolidation={consolidation}
-          />
-        </div>
+        {/* Consolidation lightning — pulses as a live indicator when active; opens the drawer */}
+        <button
+          className={`toolbar-icon toolbar-icon-lightning ${consolidation.isActive ? 'pulsing' : ''}`}
+          onClick={() => openModal(SURFACES.consolidation)}
+          title="Memory consolidation"
+        >
+          <Zap size={18} />
+        </button>
 
         {/* Plans: live indicator only while plans are running */}
         {activePlanCount > 0 && (
