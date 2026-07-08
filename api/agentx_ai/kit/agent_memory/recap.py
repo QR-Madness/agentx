@@ -120,11 +120,14 @@ async def build_and_cache_user_recap(
     from ...config import get_config_manager
     from ...model_roles import resolve_member_model
 
-    explicit_model = get_config_manager().get(
-        "session.rolling_summary.model", "anthropic:claude-haiku-4-5-20251001"
+    explicit_model = get_config_manager().get("session.rolling_summary.model", "")
+    # An empty explicit value follows the `summarizer` model role; the concrete
+    # model is a last-resort floor only when neither an explicit value nor the
+    # role is configured.
+    model = (
+        resolve_member_model("rolling_summary", explicit_model)
+        or "anthropic:claude-haiku-4-5-20251001"
     )
-    # An empty explicit value follows the `summarizer` model role.
-    model = resolve_member_model("rolling_summary", explicit_model) or explicit_model
     try:
         provider, model_id, _ = get_registry().resolve_with_fallback(model)
     except Exception as e:  # noqa: BLE001 — no provider configured

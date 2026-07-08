@@ -94,7 +94,7 @@ DEFAULT_CONFIG = {
     },
     "compression": {
         "enabled": True,
-        "model": "anthropic:claude-haiku-4-5-20251001",
+        "model": "",  # empty ⇒ summarizer role (see model_roles.py); reader floors to haiku
         "temperature": 0.2,
         "max_tokens": 1000,
         "max_summary_chars": 2000,
@@ -103,14 +103,14 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "threshold_ratio": 0.75,       # Compress when context > 75% of limit
         "preserve_recent_rounds": 2,   # Keep last N tool-call rounds intact
-        "model": "anthropic:claude-haiku-4-5-20251001",
+        "model": "",  # empty ⇒ summarizer role (see model_roles.py); reader floors
         "temperature": 0.2,
         "max_tokens": 1500,
         "max_knowledge_chars": 3000,
     },
     "prompt_enhancement": {
         "enabled": True,
-        "model": "anthropic:claude-haiku-4-5-20251001",
+        "model": "",  # empty ⇒ summarizer role (see model_roles.py); reader floors to haiku
         "temperature": 0.7,
         "max_tokens": 1000,
         "system_prompt": "",  # Empty = use default hardcoded prompt
@@ -192,7 +192,7 @@ DEFAULT_CONFIG = {
             # Now a *floor*: always keep at least this many recent turns verbatim,
             # even under context-budget pressure (was a hard message-count cap).
             "recent_window": 8,
-            "model": "anthropic:claude-haiku-4-5-20251001",
+            "model": "",  # empty ⇒ summarizer role (see model_roles.py); readers floor to haiku
         },
     },
     "context": {

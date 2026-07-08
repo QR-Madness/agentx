@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.186 -->
+<!-- release-version: 0.21.187 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -75,6 +75,12 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Internal utility models now honor your Model Roles** — recall (HyDE / self-query), rolling
+  summaries, recaps, and tool/trajectory compression shipped pinned to a hardcoded Anthropic (or
+  local LM Studio) model that silently overrode your Fast Utility / Summarizer role, so an
+  OpenRouter-only setup still fired Claude Haiku (and local Gemma) behind your back — most visibly a
+  Haiku recap on every consolidation run. These now follow the configured role (or your explicit
+  override); a guard test keeps any future setting from re-pinning a role.
 - **Memory consolidation no longer redoes finished work** — it now tracks what's been consolidated
   per **turn**, so a re-run only processes genuinely new turns instead of re-pouring every
   conversation (and burning LLM calls) on a fixed timer. Idempotent runs are now near-instant; a

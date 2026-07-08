@@ -239,12 +239,13 @@ class SessionManager:
         from .context import ContextManager, ContextConfig
         from ..model_roles import resolve_member_model
 
-        explicit_model = cfg.get(
-            "session.rolling_summary.model",
-            "anthropic:claude-haiku-4-5-20251001",
+        explicit_model = cfg.get("session.rolling_summary.model", "")
+        # Empty ⇒ follow the `summarizer` model role; the concrete model is a
+        # last-resort floor only when neither an explicit value nor the role is set.
+        summary_model = (
+            resolve_member_model("rolling_summary", explicit_model)
+            or "anthropic:claude-haiku-4-5-20251001"
         )
-        # An empty explicit value follows the `summarizer` model role.
-        summary_model = resolve_member_model("rolling_summary", explicit_model) or explicit_model
         manager = ContextManager(ContextConfig(summary_model=summary_model))
 
         # Roll the previous summary into the new one so the summary stays bounded.
@@ -330,11 +331,13 @@ class SessionManager:
         from .conversation_state_storage import get_state, update_digest
         from ..model_roles import resolve_member_model
 
-        explicit_model = cfg.get(
-            "session.rolling_summary.model",
-            "anthropic:claude-haiku-4-5-20251001",
+        explicit_model = cfg.get("session.rolling_summary.model", "")
+        # Empty ⇒ follow the `summarizer` model role; the concrete model is a
+        # last-resort floor only when neither an explicit value nor the role is set.
+        summary_model = (
+            resolve_member_model("rolling_summary", explicit_model)
+            or "anthropic:claude-haiku-4-5-20251001"
         )
-        summary_model = resolve_member_model("rolling_summary", explicit_model) or explicit_model
         manager = ContextManager(ContextConfig(summary_model=summary_model))
 
         # Roll the prior digest in so it stays bounded (re-summarized, not appended).
