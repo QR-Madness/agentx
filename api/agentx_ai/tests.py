@@ -5210,6 +5210,56 @@ class ConversationStateTest(MockRedisTestBase):
         self.assertIn("[user]", block)  # user-authored entry is flagged
         self.assertNotIn("make memory stateful [user]", block)  # agent entry is not
 
+    # --- rolling compaction digest (Slice 1c) ---
+    def test_render_includes_digest(self):
+        from agentx_ai.agent.conversation_state_storage import ConversationState, render_state
+
+        block = render_state(ConversationState(digest="We chose approach A and shipped step one."))
+        self.assertIn("Summary of earlier turns", block)
+        self.assertIn("approach A", block)
+
+    def test_digest_alone_is_not_empty(self):
+        from agentx_ai.agent.conversation_state_storage import ConversationState
+
+        self.assertTrue(ConversationState().is_empty())
+        self.assertFalse(ConversationState(digest="x").is_empty())  # digest counts as content
+
+    def test_update_digest_persists(self):
+        from agentx_ai.agent.conversation_state_storage import render_state_block, update_digest
+
+        update_digest("conv-1", "rolling digest text")
+        payload = self.mock_redis.set.call_args[0][1]
+        self.assertIn("rolling digest text", payload)
+        self.mock_redis.get.return_value = payload.encode()
+        self.assertIn("rolling digest text", render_state_block("conv-1"))
+
+    def test_maybe_compact_to_state_rolls_digest_and_trims(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from agentx_ai.agent.session import SessionManager
+        from agentx_ai.providers.base import Message, MessageRole
+
+        mgr = SessionManager()
+        s = mgr.create(session_id="conv-1")
+        for i in range(12):
+            s.add_message(Message(
+                role=MessageRole.USER if i % 2 == 0 else MessageRole.ASSISTANT,
+                content="y" * 400,
+            ))
+
+        with patch("agentx_ai.agent.context.ContextManager._summarize_messages",
+                   new=AsyncMock(return_value="ROLLED DIGEST")):
+            none = asyncio.run(mgr.maybe_compact_to_state("conv-1", token_threshold=10_000_000, recent_floor=4))
+            self.assertFalse(none)  # high threshold → nothing aged out
+            did = asyncio.run(mgr.maybe_compact_to_state("conv-1", token_threshold=300, recent_floor=4))
+
+        self.assertTrue(did)
+        self.assertEqual(len(s.messages), 4)  # trimmed to the recent floor
+        self.assertFalse(s.summary)  # prose summary NOT written (no double-compression)
+        payload = self.mock_redis.set.call_args[0][1]
+        self.assertIn("ROLLED DIGEST", payload)  # digest persisted to the state object
+
     # --- Redis round-trip ---
     def test_update_slot_round_trips_through_render(self):
         from agentx_ai.agent.conversation_state_storage import render_state_block, update_slot
@@ -8400,7 +8450,13 @@ class ConversationContextTest(TestCase):
         history = session.get_messages()[:-1]
         blocks = [SimpleNamespace(content="system block " * 10)]
         agent = SimpleNamespace(
-            _session_manager=SimpleNamespace(maybe_update_summary=AsyncMock(return_value=True)),
+            _session_manager=SimpleNamespace(
+                # Slice 1c: state compaction is the default path; the prose summary
+                # path stays for the flag-off case. Both mocked so tests can assert
+                # which one fired.
+                maybe_compact_to_state=AsyncMock(return_value=True),
+                maybe_update_summary=AsyncMock(return_value=True),
+            ),
         )
         store = {}
         cfg = SimpleNamespace(get=lambda key, default=None: store.get(key, default))
@@ -8423,6 +8479,7 @@ class ConversationContextTest(TestCase):
         out, digest = self._run_coverage(session, history, blocks, agent, cfg, window=1_000_000)
         self.assertIs(out, history)
         self.assertIsNone(digest)
+        agent._session_manager.maybe_compact_to_state.assert_not_called()
         agent._session_manager.maybe_update_summary.assert_not_called()
 
     def test_jit_coverage_sized_to_history_budget(self):
@@ -8442,9 +8499,11 @@ class ConversationContextTest(TestCase):
             - estimate_text_tokens("the new question")
             - estimate_text_tokens(blocks[0].content)
         )
-        call = agent._session_manager.maybe_update_summary.call_args
+        # Default path (Slice 1c) compacts into the state object.
+        call = agent._session_manager.maybe_compact_to_state.call_args
         self.assertEqual(call.args, ("cv",))
         self.assertEqual(call.kwargs["token_threshold"], max(1, int(expected_budget * 0.9)))
+        agent._session_manager.maybe_update_summary.assert_not_called()
         # Session wasn't actually trimmed by the mock, so the refreshed history
         # is everything except the just-added user message.
         self.assertEqual(len(out), len(session.get_messages()) - 1)
@@ -8455,7 +8514,7 @@ class ConversationContextTest(TestCase):
         from unittest.mock import AsyncMock
 
         session, history, blocks, agent, cfg = self._coverage_fixture()
-        agent._session_manager.maybe_update_summary = AsyncMock(return_value=False)
+        agent._session_manager.maybe_compact_to_state = AsyncMock(return_value=False)
         before = len(session.messages)
         out, digest = self._run_coverage(session, history, blocks, agent, cfg, window=1000)
         self.assertIs(out, history)
@@ -8463,6 +8522,16 @@ class ConversationContextTest(TestCase):
         self.assertIn("compact fallback", digest)
         self.assertIn("turn-0", digest)          # the oldest turn is covered
         self.assertEqual(len(session.messages), before)  # nothing trimmed
+
+    def test_jit_coverage_flag_off_uses_prose_summary(self):
+        """With state compaction disabled, the legacy prose rolling summary path runs."""
+        session, history, blocks, agent, cfg = self._coverage_fixture()
+        from types import SimpleNamespace
+        store = {"context.conversation_state_compaction_enabled": False}
+        cfg = SimpleNamespace(get=lambda key, default=None: store.get(key, default))
+        self._run_coverage(session, history, blocks, agent, cfg, window=1000)
+        agent._session_manager.maybe_update_summary.assert_called_once()
+        agent._session_manager.maybe_compact_to_state.assert_not_called()
 
     def test_jit_coverage_respects_disable_flag(self):
         session, history, blocks, agent, cfg = self._coverage_fixture()
