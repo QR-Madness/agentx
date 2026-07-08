@@ -22,7 +22,6 @@ from .jobs import (
     distill_procedures,
 )
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -219,8 +218,3 @@ class ConsolidationWorker:
             time.sleep(60)
 
         logger.info(f"Consolidation worker stopped (id={self.worker_id}, jobs_run={self.jobs_run_count})")
-
-
-if __name__ == "__main__":
-    worker = ConsolidationWorker()
-    worker.run()

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.182 -->
+<!-- release-version: 0.21.184 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -67,6 +67,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Background memory consolidation reliably sees your providers** — the consolidation worker now
+  boots the full app stack, so provider keys follow Settings (seeded once from `.env`) instead of
+  going stale on rotation, and the worker's own logs are captured like the API's rather than
+  vanishing to stdout. Previously a provider key set only in `.env` (e.g. OpenRouter) was invisible
+  to the worker and its failures left no trace.
 - **Long-conversation coverage is tighter** — when older turns are compacted into the structured
   state, their summary is now guaranteed to appear the same turn even if the cache read behind it
   hiccups, closing a rare window where a just-compacted turn could momentarily go uncovered.

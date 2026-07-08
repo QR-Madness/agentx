@@ -114,7 +114,7 @@ tasks:
       - bunx concurrently -n "API,CLIENT,WORKER" -c "blue.bold,magenta.bold,green.bold"
           "cd api && uv run uvicorn agentx_api.asgi:application --host 127.0.0.1 --port 12319 --reload"
           "cd client && bun run tauri dev"
-          "cd api && uv run python -m agentx_ai.kit.agent_memory.consolidation.worker"
+          "cd api && uv run python manage.py consolidation_worker"
 
   dev:api:
     desc: "Start only the API server (assumes Docker running)"
@@ -151,7 +151,7 @@ tasks:
       - |
         # 1) By command signature — whole uvicorn reload tree (no respawn) + portless worker.
         pkill -f "uvicorn agentx_api.asgi:application"  2>/dev/null || true
-        pkill -f "agentx_ai.kit.agent_memory.consolidation.worker"  2>/dev/null || true
+        pkill -f "manage.py consolidation_worker"  2>/dev/null || true
         # 2) Port backstop — anything still holding an app port.
         for port in 12319 1420 1421; do
           PIDS=$(lsof -ti ":$port" 2>/dev/null) || true
@@ -177,7 +177,7 @@ tasks:
     silent: true
     cmds:
       - |
-        powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'uvicorn agentx_api.asgi|agentx_ai.kit.agent_memory.consolidation.worker' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; foreach ($p in 12319,1420,1421) { Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -Expand OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }; Write-Host 'dev reaped; ports clear'"
+        powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'uvicorn agentx_api.asgi|manage.py consolidation_worker' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; foreach ($p in 12319,1420,1421) { Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -Expand OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }; Write-Host 'dev reaped; ports clear'"
 
 # ============================================================================
 # INSTALLATION
@@ -486,7 +486,7 @@ tasks:
     env:
       DJANGO_SETTINGS_MODULE: agentx_api.settings
     cmds:
-      - uv run python -m agentx_ai.kit.agent_memory.consolidation.worker
+      - uv run python manage.py consolidation_worker
 
   memory:distill-procedures:
     desc: "Distill pending procedure candidates into scoped Procedures (Slice 1, on-demand)"

@@ -438,6 +438,41 @@ class ConfigManager:
 
         return default
 
+    # Provider api_key → env var, mirroring registry.py's fallbacks. Settings
+    # (config.json) is the source of truth; `.env` only seeds it on first boot.
+    _PROVIDER_KEY_ENV = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "vercel": "AI_GATEWAY_API_KEY",
+    }
+
+    def seed_provider_keys_from_env(self) -> list[str]:
+        """Backfill provider api keys from env into config.json when Settings is
+        empty — so config.json (the source of truth) is populated once, and
+        every process (API + worker) reads keys from Settings rather than `.env`
+        at runtime. A key rotated in Settings is never overwritten from `.env`.
+
+        Idempotent + best-effort (logs and swallows failures). Returns the list
+        of providers seeded this call.
+        """
+        seeded: list[str] = []
+        try:
+            for provider, env_var in self._PROVIDER_KEY_ENV.items():
+                # Never clobber an existing Settings value (a rotated key wins).
+                if self.get(f"providers.{provider}.api_key"):
+                    continue
+                env_value = os.environ.get(env_var)
+                if env_value:
+                    self.set(f"providers.{provider}.api_key", env_value)
+                    seeded.append(provider)
+            if seeded:
+                self.save()
+                logger.info(f"Seeded provider keys from env into config: {', '.join(seeded)}")
+        except Exception as e:  # noqa: BLE001 — seeding must never break boot
+            logger.warning(f"Provider key seed from env failed: {e}")
+        return seeded
+
 
 # Global singleton instance
 _config_manager: ConfigManager | None = None
