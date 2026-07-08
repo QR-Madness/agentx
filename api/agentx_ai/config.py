@@ -10,6 +10,7 @@ Provides a centralized configuration system that:
 import json
 import logging
 import os
+import tempfile
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -390,8 +391,28 @@ class ConfigManager:
                 # Ensure directory exists
                 self.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-                with open(self.CONFIG_PATH, "w") as f:
-                    json.dump(self._config, f, indent=2)
+                # Atomic write: serialize to a unique temp file in the same dir,
+                # then os.replace() (atomic rename) into place. A reader always
+                # sees a complete old-or-new file, and two concurrent writers
+                # (e.g. API startup + worker startup both seeding on first boot)
+                # can't truncate/interleave into a corrupt config.json — they
+                # just race on the final rename (last complete write wins).
+                fd, tmp_path = tempfile.mkstemp(
+                    dir=self.CONFIG_PATH.parent, prefix=".config.", suffix=".tmp"
+                )
+                try:
+                    with os.fdopen(fd, "w") as f:
+                        json.dump(self._config, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    os.replace(tmp_path, self.CONFIG_PATH)
+                except BaseException:
+                    # Don't leave the temp file behind on any failure.
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    raise
 
                 logger.info(f"Saved config to {self.CONFIG_PATH}")
                 return True

@@ -330,8 +330,8 @@ memory.close()
 The background consolidation worker should run as a separate process:
 
 ```bash
-# Development
-python -m agentx_ai.kit.agent_memory.consolidation.worker
+# Development (run from the api/ directory — it's a Django management command)
+cd api && python manage.py consolidation_worker
 
 # Production (with supervisor/systemd)
 # See deployment section below
@@ -534,8 +534,8 @@ Create `/etc/supervisor/conf.d/agentx-memory-worker.conf`:
 
 ```ini
 [program:agentx-memory-worker]
-command=/path/to/venv/bin/python -m agentx_ai.kit.agent_memory.consolidation.worker
-directory=/path/to/agentx-source
+command=/path/to/venv/bin/python manage.py consolidation_worker
+directory=/path/to/agentx-source/api
 user=agentx
 autostart=true
 autorestart=true
@@ -556,9 +556,9 @@ After=network.target
 [Service]
 Type=simple
 User=agentx
-WorkingDirectory=/path/to/agentx-source
+WorkingDirectory=/path/to/agentx-source/api
 Environment="PATH=/path/to/venv/bin"
-ExecStart=/path/to/venv/bin/python -m agentx_ai.kit.agent_memory.consolidation.worker
+ExecStart=/path/to/venv/bin/python manage.py consolidation_worker
 Restart=always
 
 [Install]
