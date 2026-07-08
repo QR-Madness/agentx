@@ -88,6 +88,18 @@ def _entry_cap(slot: str) -> int:
     return MAX_NARRATIVE_CHARS if slot == "narrative" else MAX_ENTRY_CHARS
 
 
+def _coerce_author(author: str, default: Author = "agent") -> Author:
+    """Only ``user`` or ``agent`` may author state — never ``system``/``tool``/``web``
+    (Slice 4 hardening). A forged or injected author coerces to a safe default so a
+    poisoned entry can never masquerade as an authoritative system instruction; every
+    entry stays attributable to a human or the agent."""
+    if author == "user":
+        return "user"
+    if author == "agent":
+        return "agent"
+    return default
+
+
 def apply_update(
     state: ConversationState,
     slot: str,
@@ -109,6 +121,7 @@ def apply_update(
 
     now = datetime.now(UTC).isoformat()
     cap_chars = _entry_cap(slot)
+    author = _coerce_author(author)
     fresh = [
         StateEntry(
             text=t.strip()[:cap_chars],
@@ -161,8 +174,12 @@ def set_slot(
         text = text.strip()[:cap_chars]
         if not text:
             continue
-        author = author if author in ("user", "agent") else "user"
-        out.append(StateEntry(text=text, author=author, source_turn=source_turn, updated_at=now))
+        # A user-driven edit defaults unknown/forged authors to `user` — it can't
+        # mint an agent-authored (or system-authored) entry.
+        out.append(StateEntry(
+            text=text, author=_coerce_author(str(author), "user"),
+            source_turn=source_turn, updated_at=now,
+        ))
 
     updated = state.model_copy(deep=True)
     setattr(updated, slot, out[-MAX_ENTRIES_PER_SLOT:])
