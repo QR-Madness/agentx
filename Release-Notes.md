@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.175 -->
+<!-- release-version: 0.21.176 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -52,6 +52,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Memory consolidation now follows your model roles** — its stages shipped pinned
+  to a specific model instead of your Fast Utility / Deep Reasoning choice (the ambassador
+  aide is now role-aware too); fresh installs inherit the role, and existing installs get a
+  one-click **Adopt roles for all consolidation stages**.
 - **Delegated agents can show their work** — images and exhibits produced by a teammate
   during delegation now render in the chat (they were silently dropped, leaving empty
   replies and broken image links), survive reloads, and are correctly attributed.

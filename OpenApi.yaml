@@ -773,6 +773,34 @@ paths:
                           type: string
                           enum: [explicit, role, fallback]
 
+  /models/roles/adopt:
+    post:
+      tags: [Providers]
+      operationId: modelsRolesAdopt
+      summary: Clear consolidation-stage model overrides so each follows its role
+      description: >-
+        Resets the memory consolidation stage models (extraction, relevance,
+        contradiction, correction, entity-linking, combined extraction,
+        procedural distillation) to "inherit" so every stage follows its model
+        role (fast_utility / deep_reasoning). Fresh installs already ship these
+        as "inherit"; this lets an existing install adopt the family without
+        hand-clearing each stage. Recall and document-summary members keep their
+        own defaults and are not touched.
+      responses:
+        '200':
+          description: Stages reset to inherit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  adopted:
+                    type: array
+                    items:
+                      type: string
+
   /agent/run:
     post:
       tags: [Agent]

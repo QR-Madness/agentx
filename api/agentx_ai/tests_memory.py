@@ -2960,13 +2960,16 @@ class CombinedExtractionConfigTest(TestCase):
         self.assertGreater(settings.confidence_implied, settings.confidence_inferred)
         self.assertGreater(settings.confidence_inferred, settings.confidence_uncertain)
 
-    def test_default_model_is_reasoning_model(self) -> None:
-        """Default combined extraction model should be reasoning model."""
+    def test_default_model_inherits_deep_reasoning_role(self) -> None:
+        """Combined extraction ships as "inherit" so it follows the
+        deep_reasoning model role rather than a pinned concrete model (v0.21.176
+        — a pinned default silently shadowed the family). Its role membership is
+        deep_reasoning, so a set role drives it."""
+        from agentx_ai.model_roles import ROLE_MEMBERS
 
         settings = Settings()
-
-        # Should default to lmstudio:nvidia/nemotron-3-nano or similar reasoning model
-        self.assertIn("nemotron", settings.combined_extraction_model.lower())
+        self.assertEqual(settings.combined_extraction_model, "inherit")
+        self.assertEqual(ROLE_MEMBERS["combined_extraction"]["role"], "deep_reasoning")
 
 
 class CombinedExtractionPromptTest(TestCase):

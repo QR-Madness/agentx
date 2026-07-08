@@ -203,11 +203,11 @@ class ExtractionService:
         dm = get_config_manager().get("preferences.default_model")
         if dm:
             return str(dm)
-        # Still nothing — fall back to the bulk extraction model (a concrete,
-        # sensible memory default) rather than leaking the "inherit"/"role:"
-        # sentinels to the registry (they aren't valid provider:model strings).
-        return resolve_model_pref(
-            getattr(self.settings, "combined_extraction_model", "")) or ""
+        # Still nothing (no role, no feature default, no global default model).
+        # Return "" rather than leaking the "inherit"/"role:" sentinels — the
+        # registry's own fallback chain appends the default chat model, and an
+        # install with no default model at all is misconfigured regardless.
+        return ""
 
     async def check_relevance(self, text: str) -> RelevanceResult:
         """

@@ -49,6 +49,15 @@ export const configApi = {
     });
   },
 
+  /**
+   * Clear concrete per-stage consolidation model overrides so every stage
+   * follows its model role. For existing installs whose memory settings still
+   * pin a specific model per stage (fresh installs already ship "inherit").
+   */
+  async adoptModelRoles(): Promise<{ success: boolean; adopted?: string[] }> {
+    return apiRequest('/api/models/roles/adopt', { method: 'POST' });
+  },
+
   async getContextLimits(): Promise<{
     lmstudio: { context_window: number; max_output_tokens: number };
     models: Record<string, { context_window: number; max_output_tokens: number }>;

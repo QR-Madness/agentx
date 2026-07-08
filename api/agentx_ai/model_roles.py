@@ -52,11 +52,12 @@ ROLES: dict[str, dict[str, str]] = {
     },
 }
 
-# Membership v1 (conservative). `kind` says where the member's explicit value
-# lives: "memory" = a kit Settings field, "config" = a ConfigManager dot-path.
-# Deliberately EXCLUDED: planner, ambassador, aide, images — for those, empty
-# means "follow the agent model", a different semantic than "inherit a role"
-# (they can still be set to `role:<name>` explicitly).
+# Membership. `kind` says where the member's explicit value lives: "memory" = a
+# kit Settings field, "config" = a ConfigManager dot-path.
+# Deliberately EXCLUDED (bucket b — see INHERITS_AGENT_MODEL): planner,
+# ambassador answerer, images — for those, empty means "follow the agent model",
+# a different semantic than "inherit a role" (they can still be set to
+# `role:<name>` explicitly).
 ROLE_MEMBERS: dict[str, dict[str, str]] = {
     # fast_utility
     "extraction": {
@@ -86,6 +87,10 @@ ROLE_MEMBERS: dict[str, dict[str, str]] = {
     "recall_self_query": {
         "role": "fast_utility", "label": "Recall — self-query",
         "kind": "memory", "source": "recall_self_query_model",
+    },
+    "aide": {
+        "role": "fast_utility", "label": "Ambassador aide digests",
+        "kind": "config", "source": "ambassador.aide.model",
     },
     # deep_reasoning
     "combined_extraction": {
@@ -117,6 +122,39 @@ ROLE_MEMBERS: dict[str, dict[str, str]] = {
         "role": "summarizer", "label": "Prompt enhancement",
         "kind": "config", "source": "prompt_enhancement.model",
     },
+}
+
+
+# --- Model-family coverage invariant (enforced by test_model_family_coverage) --
+#
+# Every general-purpose LLM feature-model setting must resolve through a family
+# (a ROLE_MEMBERS `source` above). There are exactly two documented escape
+# hatches; a `*_model` setting that is in NEITHER a family NOR one of these lists
+# fails the guard. Keys are the setting's identifier — a memory Settings field
+# name, a ConfigManager dot-path, or an `AgentConfig`/`SpeculativeConfig` field.
+
+# Bucket (b): falls through to the *calling agent/profile's own model*
+# (`complete_with_fallback`, Foundation #4). Empty here means "use the active
+# agent model", NOT "inherit a role" — so these are intentionally family-less
+# (they can still be pointed at a role explicitly via `role:<name>`).
+INHERITS_AGENT_MODEL: dict[str, str] = {
+    "preferences.default_model": "the primary agent model itself (the inheritance root)",
+    "feature_default_model": "bulk memory root; empty → the default chat model",
+    "planner.model": "the chat planner runs on the active agent's model",
+    "ambassador.model": "the ambassador answers on its own profile's model",
+    "reasoning_model": "AgentConfig: `reasoning_model or default_model`",
+    "drafting_model": "AgentConfig: `drafting_model or default_model`",
+}
+
+# Bucket (c): not a general-purpose text LLM (a family can't describe it), or a
+# paired constraint a single family can't express.
+EXEMPT_SPECIALIZED: dict[str, str] = {
+    "embedding_model": "embeddings (OpenAI) — not a chat model",
+    "local_embedding_model": "embeddings (local sentence-transformers)",
+    "cross_encoder_model": "cross-encoder reranker — not a chat model",
+    "images.default_model": "image-generation model — not a text LLM",
+    "draft_model": "speculative draft — matched pair with target_model",
+    "target_model": "speculative target — matched pair with draft_model",
 }
 
 

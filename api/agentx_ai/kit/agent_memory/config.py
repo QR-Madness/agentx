@@ -207,7 +207,11 @@ class Settings(BaseSettings):
 
     # --- Extraction (main fact/entity extraction) ---
     extraction_enabled: bool = True
-    extraction_model: str = "lmstudio:google/gemma-3-4b"  # Gemma 3 4B - good at structured output
+    # "inherit" → follows the model-family tier (fast_utility role) → feature_default_model
+    # → default chat model. Fresh installs let the role drive consolidation instead of
+    # assuming a specific local model. Existing memory_settings keep their saved value;
+    # use "Adopt roles for all stages" to clear a concrete override and inherit.
+    extraction_model: str = "inherit"
     extraction_temperature: float = 0.2  # Lower for more consistent extraction
     extraction_max_tokens: int = 2000
     extraction_timeout: float = 30.0
@@ -217,7 +221,7 @@ class Settings(BaseSettings):
 
     # --- Relevance Filter (skip "thanks", "ok" turns) ---
     relevance_filter_enabled: bool = True
-    relevance_filter_model: str = "lmstudio:google/gemma-3-4b"
+    relevance_filter_model: str = "inherit"  # → fast_utility role (see extraction_model)
     relevance_filter_temperature: float = 0.1  # Low temp for consistent YES/NO
     relevance_filter_max_tokens: int = 500  # Reasoning models need more tokens
     # Custom relevance prompt (empty = use default hardcoded prompt)
@@ -225,7 +229,7 @@ class Settings(BaseSettings):
 
     # --- Contradiction Detection (check new facts vs existing) ---
     contradiction_detection_enabled: bool = True  # Three-layer pipeline: fast gate → semantic search → LLM
-    contradiction_model: str = "lmstudio:google/gemma-3-4b"
+    contradiction_model: str = "inherit"  # → fast_utility role (see extraction_model)
     contradiction_temperature: float = 0.2
     contradiction_max_tokens: int = 500
     # Layer 1: Semantic duplicate threshold (cosine similarity)
@@ -242,12 +246,14 @@ class Settings(BaseSettings):
 
     # --- User Correction Handling (detect "actually...", "no I meant...") ---
     correction_detection_enabled: bool = True  # Implicit corrections caught at extraction time
-    correction_model: str = "lmstudio:google/gemma-3-4b"
+    correction_model: str = "inherit"  # → fast_utility role (see extraction_model)
     correction_temperature: float = 0.2
     correction_max_tokens: int = 500
 
     # --- Combined Relevance + Extraction (reduces LLM calls by ~75%) ---
-    combined_extraction_model: str = "lmstudio:nvidia/nemotron-3-nano"  # Reasoning model for better quality
+    # "inherit" → deep_reasoning role (a reasoning model gives better quality here)
+    # → feature_default_model → default chat model. See extraction_model.
+    combined_extraction_model: str = "inherit"
     combined_extraction_temperature: float = 0.3  # Slightly higher for reasoning
     combined_extraction_max_tokens: int = 2000
 
@@ -285,7 +291,7 @@ class Settings(BaseSettings):
     # corpus for a later adjudicator), never auto-merged.
     entity_linking_similarity_threshold: float = 0.75
     entity_linking_use_llm_disambiguation: bool = False  # Use LLM when ambiguous
-    entity_linking_model: str = "lmstudio:google/gemma-3-4b"
+    entity_linking_model: str = "inherit"  # → fast_utility role (see extraction_model)
     # Max orphan facts scanned per backfill run (full-history; bounds memory/time).
     entity_linking_max_facts: int = 5000
     # Longest entity name (in words) the claim n-gram matcher will consider.

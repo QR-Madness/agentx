@@ -43,6 +43,7 @@ describe('api facade', () => {
     expect(Object.keys(api).sort()).toMatchInlineSnapshot(`
       [
         "acknowledgePromptLayer",
+        "adoptModelRoles",
         "ambassadorPersonaDefaults",
         "askAmbassador",
         "attachChatRun",
