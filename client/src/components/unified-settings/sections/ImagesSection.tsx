@@ -1,5 +1,5 @@
 /**
- * ImagesSection — image-generation settings (avatars first; multi-modal pipelines later).
+ * ImagesSection — image-generation settings (avatars + in-conversation image generation).
  *
  * OpenRouter-only today: a model picker (default flux.2-klein-4b), the app-level avatar
  * STYLE prompt (the per-profile SUBJECT prompt is appended at generation time), and an
@@ -62,7 +62,7 @@ export default function ImagesSection() {
       <SectionHeader
         icon={<ImageIcon size={20} />}
         title="Images"
-        description="Generate agent avatars (and, soon, images in conversations) — via OpenRouter."
+        description="Generate agent avatars and images in conversations — via OpenRouter."
         actions={<SaveStatusChip status={status} />}
       />
 
@@ -89,7 +89,7 @@ export default function ImagesSection() {
             checked={settings.enabled}
             onChange={enabled => update({ enabled })}
             label="Enable image generation"
-            hint={'When off, the avatar "Generate" tab is unavailable.'}
+            hint={'Lets agents generate images in a conversation (the `generate_image` tool and image-output models) and powers the avatar "Generate" tab. When off, both are unavailable.'}
           />
 
           <ToggleField

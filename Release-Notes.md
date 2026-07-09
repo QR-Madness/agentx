@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.195 -->
+<!-- release-version: 0.21.196 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -108,6 +108,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Image settings copy caught up** — the Images settings no longer says in-conversation image
+  generation is "coming soon" (it's here), and the enable toggle now notes it gates the
+  `generate_image` tool, not just the avatar "Generate" tab.
 - **Projects hub fills the screen, and Home avatars make sense** — the Projects drawer no longer
   stops short with dead space at the bottom (it inherited a centered-dialog height); and in Home,
   each avatar image is badged with the agent that uses it, with a **Delete unused** button to clear
