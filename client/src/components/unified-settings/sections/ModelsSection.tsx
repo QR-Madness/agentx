@@ -1,19 +1,18 @@
 /**
- * ModelsSection — global default model + local model context limits.
+ * ModelsSection ("Model Limits") — local model context limits + compaction.
  *
- * The default-model picker saves immediately (optimistic, with revert).
  * Context limits are built on the settings field kit + autosave
  * (useSettingsAutosave); the diff is top-level-key based, so nested edits
- * replace the whole `lmstudio` object.
+ * replace the whole `lmstudio` object. (The global default model lives in the
+ * Model Roles section.)
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Layers,
   Server,
   RefreshCw,
   AlertTriangle,
-  Sparkles,
   Gauge,
   Trash2,
 } from 'lucide-react';
@@ -49,44 +48,7 @@ const NEW_OVERRIDE_WINDOW = 200_000;
 const NEW_OVERRIDE_MAX_OUTPUT = 8_192;
 
 export default function ModelsSection() {
-  const { notifyError, notifySuccess } = useNotify();
-
-  // Global default model (preferences.default_model) — the fallback floor when an
-  // agent profile doesn't pin its own model. Empty = use the agent profile's model.
-  const [defaultModel, setDefaultModel] = useState<string>('');
-  const [savingDefaultModel, setSavingDefaultModel] = useState(false);
-
-  useEffect(() => {
-    fetchDefaultModel();
-  }, []);
-
-  const fetchDefaultModel = async () => {
-    try {
-      const config = await api.getConfig();
-      const prefs = (config.preferences ?? {}) as { default_model?: string | null };
-      setDefaultModel(prefs.default_model ?? '');
-    } catch {
-      // Non-fatal: the picker just starts on "System default".
-    }
-  };
-
-  const handleDefaultModelChange = async (modelId: string) => {
-    const previous = defaultModel;
-    setDefaultModel(modelId);  // optimistic
-    setSavingDefaultModel(true);
-    try {
-      await api.updateConfig({ preferences: { default_model: modelId } });
-      notifySuccess(
-        modelId ? 'Default model updated' : 'Default model cleared',
-        'Models',
-      );
-    } catch (error) {
-      setDefaultModel(previous);  // revert on failure
-      notifyError(error, 'Failed to update the default model');
-    } finally {
-      setSavingDefaultModel(false);
-    }
-  };
+  const { notifyError } = useNotify();
 
   // Context limits — autosave (baseline-diff on top-level keys, so edits
   // replace the whole `lmstudio` object).
@@ -156,29 +118,6 @@ export default function ModelsSection() {
 
   return (
     <div className="settings-section fade-in">
-      <SectionHeader
-        icon={<Sparkles size={20} />}
-        title="Default Model"
-        description="The model new agents and ad-hoc requests fall back to when a profile doesn't pin its own"
-      />
-      <div className="providers-list">
-        <Card className="provider-card">
-          <ModelPickerField
-            value={defaultModel}
-            onChange={handleDefaultModelChange}
-            showDefault
-            label="Global default model"
-            hint={
-              savingDefaultModel
-                ? 'Saving…'
-                : defaultModel
-                  ? 'Used when an agent profile has no model of its own.'
-                  : 'No global default — each agent uses its profile model.'
-            }
-          />
-        </Card>
-      </div>
-
       <SectionHeader
         icon={<Layers size={20} />}
         title="Model Context Limits"

@@ -8,7 +8,7 @@
  * the live resolution (`GET /api/models/roles`) so there's no guessing.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Boxes, RefreshCw } from 'lucide-react';
 import { api } from '../../../lib/api';
 import type { ModelRoleMember, ModelRoleName } from '../../../lib/api';
@@ -69,6 +69,41 @@ export default function ModelRolesSection() {
     onError: err => notifyError(err, 'Model roles'),
   });
 
+  // Global default model (preferences.default_model) — the fallback floor when an
+  // agent profile doesn't pin its own model. Lives here (not Model Limits) so all
+  // "which model for what" controls sit together.
+  const [defaultModel, setDefaultModel] = useState<string>('');
+  const [savingDefaultModel, setSavingDefaultModel] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const config = await api.getConfig();
+        const prefs = (config.preferences ?? {}) as { default_model?: string | null };
+        if (!cancelled) setDefaultModel(prefs.default_model ?? '');
+      } catch {
+        // Non-fatal: the picker just starts on "System default".
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleDefaultModelChange = async (modelId: string) => {
+    const previous = defaultModel;
+    setDefaultModel(modelId);  // optimistic
+    setSavingDefaultModel(true);
+    try {
+      await api.updateConfig({ preferences: { default_model: modelId } });
+      notifySuccess(modelId ? 'Default model updated' : 'Default model cleared', 'Models');
+    } catch (error) {
+      setDefaultModel(previous);  // revert on failure
+      notifyError(error, 'Failed to update the default model');
+    } finally {
+      setSavingDefaultModel(false);
+    }
+  };
+
   const setRole = async (role: ModelRoleName, model: string) => {
     setSaving(role);
     try {
@@ -107,6 +142,25 @@ export default function ModelRolesSection() {
         title="Model Roles"
         description="Set one model per workload — features left on their default follow their role automatically. An explicit per-feature model always wins."
       />
+
+      <SettingsSection
+        title="Global Default Model"
+        description="The model new agents and ad-hoc requests fall back to when a profile doesn't pin its own."
+      >
+        <ModelPickerField
+          value={defaultModel}
+          onChange={model => void handleDefaultModelChange(model)}
+          showDefault
+          placeholder="System default — each agent uses its profile model"
+          hint={
+            savingDefaultModel
+              ? 'Saving…'
+              : defaultModel
+                ? 'Used when an agent profile has no model of its own.'
+                : 'No global default — each agent uses its profile model.'
+          }
+        />
+      </SettingsSection>
 
       {loading || !data ? (
         <div className="loading-state">

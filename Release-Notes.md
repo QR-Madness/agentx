@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.199 -->
+<!-- release-version: 0.21.200 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -35,6 +35,12 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   list+detail canvas, a **channel filter** to scope every area, an **Overview** home with per-channel
   totals, and a smoother, search-driven **Explore** graph. Editing entities/facts is no longer cramped,
   and it's genuinely usable on mobile.
+- **Provider settings tell the truth about capability** — providers are now grouped by tier
+  (**OpenRouter = Recommended** and the one that powers images + voice today; **Anthropic / OpenAI /
+  Vercel = Beta**; **LM Studio = Local**, and it's disabled with a note when you're on a remote cluster
+  where its localhost server can't be reached). New read-only **On-device** tiles show the locked local
+  engines — **BGE-M3** embeddings and **NLLB-200** translation — and whether they're running on **CUDA
+  or CPU**. The global default model moved out of Model Limits into **Model Roles**.
 - **New themes** — Ugentx, Tango, Blackhawk.
 - **Workspaces grew into Projects**: files + per-project **instructions** +
   conversations with scoped memory.

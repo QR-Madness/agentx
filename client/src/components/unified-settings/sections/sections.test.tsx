@@ -75,6 +75,13 @@ vi.mock('../../../lib/api', () => ({
     updateContextLimits: vi.fn().mockResolvedValue({}),
     getModelRoles: (...args: unknown[]) => mockGetModelRoles(...args),
     updateModelRoles: (...args: unknown[]) => mockUpdateModelRoles(...args),
+    // ProvidersSection's on-device tiles read /api/health via useHealth.
+    health: vi.fn().mockResolvedValue({
+      status: 'healthy',
+      compute: { device: 'cpu', cuda_available: false },
+      embeddings: { provider: 'local', model: 'BAAI/bge-m3', dimensions: 1024 },
+      translation: { status: 'not_loaded', models: {} },
+    }),
   },
 }));
 
@@ -102,9 +109,12 @@ describe('ProvidersSection', () => {
     for (const name of ['LM Studio', 'Anthropic', 'OpenAI', 'OpenRouter', 'Vercel AI Gateway']) {
       expect(screen.getByText(name)).toBeInTheDocument();
     }
-    // Tinted badge pills survived the primitive swap.
-    expect(screen.getByText('High-Reasoning')).toBeInTheDocument();
-    expect(screen.getByText('Cloud Router')).toBeInTheDocument();
+    // Capability-tier badges (OpenRouter primary, Anthropic/OpenAI/Vercel beta,
+    // LM Studio local). "Beta"/"Local" also appear as tier group eyebrows, so
+    // count tolerantly (3 beta badges + eyebrow; 1 local badge + eyebrow).
+    expect(screen.getByText('Recommended')).toBeInTheDocument();
+    expect(screen.getAllByText('Beta').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText('Local').length).toBeGreaterThanOrEqual(1);
     // Save button is a real <button> via the Button primitive, and starts
     // disabled because the form matches the last-loaded state (not dirty).
     const save = screen.getByRole('button', { name: /save to server/i });
@@ -166,6 +176,8 @@ describe('ModelRolesSection', () => {
     expect(await screen.findByText('Fast Utility')).toBeInTheDocument();
     expect(screen.getByText('Deep Reasoning')).toBeInTheDocument();
     expect(screen.getByText('Summarizer')).toBeInTheDocument();
+    // The global default model now lives here (moved from Model Limits).
+    expect(screen.getByText('Global Default Model')).toBeInTheDocument();
     // Member chips reflect the live resolution chain.
     expect(screen.getByText('following role')).toBeInTheDocument();
     expect(screen.getByText('custom')).toBeInTheDocument();
@@ -178,10 +190,10 @@ describe('ModelRolesSection', () => {
 });
 
 describe('ModelsSection', () => {
-  it('renders the default-model picker, header and the LM Studio limits card', async () => {
+  it('renders the context-limits header and the LM Studio limits card', async () => {
     render(<ModelsSection />);
-    expect(screen.getByText('Default Model')).toBeInTheDocument();
-    expect(screen.getByText('Global default model')).toBeInTheDocument();
+    // The global default model moved to Model Roles — it is no longer here.
+    expect(screen.queryByText('Global default model')).toBeNull();
     expect(screen.getByText('Model Context Limits')).toBeInTheDocument();
     // getContextLimits resolves → the limits card appears with kit NumberFields.
     expect(await screen.findByText('Local')).toBeInTheDocument();

@@ -5138,6 +5138,15 @@ components:
         translation:
           type: object
           additionalProperties: true
+        compute:
+          type: object
+          description: Resolved compute device (device, cuda_available).
+          additionalProperties: true
+        embeddings:
+          type: object
+          nullable: true
+          description: Embedding engine (provider, model, dimensions).
+          additionalProperties: true
         memory:
           type: object
           description: Present only when include_memory=true.

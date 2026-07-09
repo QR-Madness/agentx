@@ -53,6 +53,8 @@ export interface HealthResponse {
   min_client_version?: string;
   cluster?: string;
   api: { status: string };
+  compute?: { device: string; cuda_available: boolean };
+  embeddings?: { provider: string; model: string; dimensions: number } | null;
   translation?: { status: string; models?: Record<string, unknown> };
   memory?: {
     neo4j?: { status: string };

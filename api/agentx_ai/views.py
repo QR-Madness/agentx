@@ -570,6 +570,24 @@ def health(request):
     except Exception:
         compute_status = {"device": "unknown", "cuda_available": False}
 
+    # Embedding engine — a cheap settings read (never loads the model). Locked to
+    # local BGE-M3 unless configured otherwise; surfaced so the Providers UI can
+    # show "BGE-M3 on CUDA/CPU".
+    try:
+        from .kit.agent_memory.config import get_settings as _get_memory_settings
+        _mem = _get_memory_settings()
+        embeddings_status = {
+            "provider": _mem.embedding_provider,
+            "model": (
+                _mem.local_embedding_model
+                if _mem.embedding_provider == "local"
+                else _mem.embedding_model
+            ),
+            "dimensions": _mem.embedding_dimensions,
+        }
+    except Exception:
+        embeddings_status = None
+
     response = {
         "status": "healthy",
         "version": VERSION,
@@ -579,6 +597,7 @@ def health(request):
         "api": {"status": "healthy"},
         "compute": compute_status,
         "translation": translation_status,
+        "embeddings": embeddings_status,
     }
 
     if memory_status:

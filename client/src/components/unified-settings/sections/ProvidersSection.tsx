@@ -6,9 +6,13 @@ import {
   EyeOff,
   AlertTriangle,
   Upload,
+  Cpu,
+  Boxes,
+  Languages,
 } from 'lucide-react';
 import { useServer } from '../../../contexts/ServerContext';
 import { useNotify } from '../../../contexts/NotificationContext';
+import { useHealth } from '../../../lib/hooks';
 import { api, ConfigUpdate } from '../../../lib/api';
 import { Button, Card, Badge, SectionHeader, Input } from '../../ui';
 import type { BadgeProps } from '../../ui';
@@ -20,64 +24,85 @@ import lmstudioIcon from '../../../assets/providers/lmstudio.svg';
 import vercelIcon from '../../../assets/providers/vercel.svg';
 
 type ProviderKey = 'lmstudio' | 'anthropic' | 'openai' | 'openrouter' | 'vercel';
+type ProviderTier = 'primary' | 'beta' | 'local';
 
 interface ProviderDef {
   key: ProviderKey;
   name: string;
   description: string;
   icon: ReactNode;
-  /** Tile gradient variant. */
+  /** Tile gradient variant (icon chip only). */
   tile: 'local' | 'cloud' | 'experimental';
+  /** Capability tier — drives grouping + the badge. */
+  tier: ProviderTier;
   badge: { label: string; variant: BadgeProps['variant'] };
+  /** Optional capability note under the description. */
+  note?: string;
   placeholder: string;
 }
 
+// Ordered by capability tier: OpenRouter is the de-facto primary (most features
+// resolve there first + image/voice are OpenRouter-only today); Anthropic/OpenAI/
+// Vercel are Beta; LM Studio is local/offline.
 const PROVIDERS: ProviderDef[] = [
   {
-    key: 'lmstudio',
-    name: 'LM Studio',
-    description: 'Local model server (OpenAI-compatible) — recommended for sensitive data',
-    icon: <img src={lmstudioIcon} alt="" width={20} height={20} />,
-    tile: 'local',
-    badge: { label: 'Offline', variant: 'neutral' },
-    placeholder: 'http://192.168.x.x:1234/v1',
+    key: 'openrouter',
+    name: 'OpenRouter',
+    description: 'Unified access to many providers and orgs through one key.',
+    icon: <img src={openrouterIcon} alt="" width={20} height={20} />,
+    tile: 'cloud',
+    tier: 'primary',
+    badge: { label: 'Recommended', variant: 'accent' },
+    note: 'Powers image generation & voice today; most features resolve here first.',
+    placeholder: 'sk-or-...',
   },
   {
     key: 'anthropic',
     name: 'Anthropic',
-    description: 'Claude models — best for complex reasoning tasks',
+    description: 'Claude models — best for complex reasoning tasks.',
     icon: <img src={anthropicIcon} alt="" width={20} height={20} />,
     tile: 'cloud',
-    badge: { label: 'High-Reasoning', variant: 'accent' },
+    tier: 'beta',
+    badge: { label: 'Beta', variant: 'warning' },
     placeholder: 'sk-ant-...',
   },
   {
     key: 'openai',
     name: 'OpenAI',
-    description: 'GPT models — day-to-day operations and offloading',
+    description: 'GPT models — day-to-day operations and offloading.',
     icon: <img src={openaiIcon} alt="" width={20} height={20} />,
     tile: 'experimental',
-    badge: { label: 'Cloud', variant: 'neutral' },
+    tier: 'beta',
+    badge: { label: 'Beta', variant: 'warning' },
     placeholder: 'sk-...',
-  },
-  {
-    key: 'openrouter',
-    name: 'OpenRouter',
-    description: 'Unified access to many providers and orgs through one key',
-    icon: <img src={openrouterIcon} alt="" width={20} height={20} />,
-    tile: 'cloud',
-    badge: { label: 'Cloud Router', variant: 'accent' },
-    placeholder: 'sk-or-...',
   },
   {
     key: 'vercel',
     name: 'Vercel AI Gateway',
-    description: 'Vercel-hosted gateway — day-to-day operations and offloading',
+    description: 'Vercel-hosted gateway — day-to-day operations and offloading.',
     icon: <img src={vercelIcon} alt="" width={20} height={20} />,
     tile: 'cloud',
-    badge: { label: 'Cloud', variant: 'neutral' },
+    tier: 'beta',
+    badge: { label: 'Beta', variant: 'warning' },
     placeholder: 'vck_...',
   },
+  {
+    key: 'lmstudio',
+    name: 'LM Studio',
+    description: 'Local model server (OpenAI-compatible).',
+    icon: <img src={lmstudioIcon} alt="" width={20} height={20} />,
+    tile: 'local',
+    tier: 'local',
+    badge: { label: 'Local', variant: 'neutral' },
+    note: 'Recommended for sensitive / offline processing.',
+    placeholder: 'http://192.168.x.x:1234/v1',
+  },
+];
+
+const TIERS: { tier: ProviderTier; label: string }[] = [
+  { tier: 'primary', label: 'Primary' },
+  { tier: 'beta', label: 'Beta' },
+  { tier: 'local', label: 'Local' },
 ];
 
 type ProviderSettings = Record<ProviderKey, string>;
@@ -90,10 +115,26 @@ const EMPTY_SETTINGS: ProviderSettings = {
   vercel: '',
 };
 
+/** Human-readable compute device for the on-device tiles. */
+function deviceLabel(device?: string): string {
+  if (!device) return '—';
+  if (device === 'cpu') return 'CPU';
+  if (device.startsWith('cuda')) return 'CUDA (GPU)';
+  return device;
+}
+
 export default function ProvidersSection() {
   const { activeServer, activeMetadata, updateMetadata } = useServer();
   const { notifyError, notifySuccess } = useNotify();
   const confirm = useConfirm();
+  // On-device engine status (device + locked models). Read-only; degrades to the
+  // known locked model ids when health is loading/unavailable.
+  const { data: health } = useHealth(false, false);
+
+  // The client reaches the API through the cluster's Nginx gateway when a gateway
+  // token is set — i.e. a remote cluster, where LM Studio's localhost server
+  // isn't reachable (no link-connection support yet).
+  const onRemoteCluster = !!activeServer?.gatewayToken;
 
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
   const [providerSettings, setProviderSettings] = useState<ProviderSettings>(EMPTY_SETTINGS);
@@ -165,6 +206,63 @@ export default function ProvidersSection() {
     }
   };
 
+  const renderProviderCard = (provider: ProviderDef) => {
+    const clusterBlocked = provider.key === 'lmstudio' && onRemoteCluster;
+    return (
+      <Card key={provider.key} className="provider-card">
+        <div className="provider-header">
+          <div className="provider-info">
+            <div className={`provider-icon ${provider.tile}`}>{provider.icon}</div>
+            <div>
+              <h3 className="provider-name">
+                {provider.name}
+                <Badge variant={provider.badge.variant} size="sm">
+                  {provider.badge.label}
+                </Badge>
+              </h3>
+              <p className="provider-description">{provider.description}</p>
+              {clusterBlocked ? (
+                <p className="provider-note warning">
+                  Local connection only — not available on this remote cluster yet.
+                </p>
+              ) : (
+                provider.note && <p className="provider-note">{provider.note}</p>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="api-key-input">
+          <Input
+            type={showApiKeys[provider.key] ? 'text' : 'password'}
+            value={providerSettings[provider.key]}
+            onChange={(e) => handleProviderSettingChange(provider.key, e.target.value)}
+            placeholder={provider.placeholder}
+            disabled={clusterBlocked}
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="visibility-toggle"
+            onClick={() => toggleApiKeyVisibility(provider.key)}
+            aria-label={showApiKeys[provider.key] ? 'Hide value' : 'Show value'}
+            disabled={clusterBlocked}
+          >
+            {showApiKeys[provider.key] ? <EyeOff size={16} /> : <Eye size={16} />}
+          </Button>
+        </div>
+      </Card>
+    );
+  };
+
+  const device = deviceLabel(health?.compute?.device);
+  const embeddingModel = health?.embeddings?.model ?? 'BAAI/bge-m3';
+  const embeddingProvider = health?.embeddings?.provider ?? 'local';
+  const embeddingDims = health?.embeddings?.dimensions;
+  const translationModel =
+    (health?.translation?.models?.translation as string | undefined) ??
+    'facebook/nllb-200-distilled-600M';
+  const translationLoaded = health?.translation?.status === 'healthy';
+
   return (
     <div className="settings-section fade-in">
       <SectionHeader
@@ -198,43 +296,71 @@ export default function ProvidersSection() {
           <p>Select a server first to configure API keys</p>
         </Card>
       ) : (
-        <div className="providers-list">
-          {PROVIDERS.map(provider => (
-            <Card key={provider.key} className="provider-card">
+        <>
+          {TIERS.map(({ tier, label }) => {
+            const group = PROVIDERS.filter(p => p.tier === tier);
+            if (group.length === 0) return null;
+            return (
+              <div key={tier} className="provider-tier">
+                <div className="provider-tier-eyebrow">{label}</div>
+                <div className="providers-list">
+                  {group.map(renderProviderCard)}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* On-device engines — read-only, locked models. */}
+          <SectionHeader
+            icon={<Cpu size={20} />}
+            title="On-device processing"
+            description="Local embedding + translation engines. Locked models; run on GPU when CUDA is available."
+          />
+          <div className="providers-list">
+            <Card className="provider-card ondevice-card">
               <div className="provider-header">
                 <div className="provider-info">
-                  <div className={`provider-icon ${provider.tile}`}>{provider.icon}</div>
+                  <div className="provider-icon local"><Boxes size={20} /></div>
                   <div>
                     <h3 className="provider-name">
-                      {provider.name}
-                      <Badge variant={provider.badge.variant} size="sm">
-                        {provider.badge.label}
-                      </Badge>
+                      Embeddings
+                      <Badge variant="neutral" size="sm">Local · Locked</Badge>
                     </h3>
-                    <p className="provider-description">{provider.description}</p>
+                    <p className="provider-description">Semantic memory storage &amp; recall.</p>
+                    <p className="provider-note">Cloud/PaaS embeddings (still BGE-M3) coming later.</p>
                   </div>
                 </div>
               </div>
-              <div className="api-key-input">
-                <Input
-                  type={showApiKeys[provider.key] ? 'text' : 'password'}
-                  value={providerSettings[provider.key]}
-                  onChange={(e) => handleProviderSettingChange(provider.key, e.target.value)}
-                  placeholder={provider.placeholder}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="visibility-toggle"
-                  onClick={() => toggleApiKeyVisibility(provider.key)}
-                  aria-label={showApiKeys[provider.key] ? 'Hide value' : 'Show value'}
-                >
-                  {showApiKeys[provider.key] ? <EyeOff size={16} /> : <Eye size={16} />}
-                </Button>
+              <div className="ondevice-meta">
+                <span><b>Model</b> {embeddingModel}</span>
+                <span><b>Provider</b> {embeddingProvider}</span>
+                {embeddingDims != null && <span><b>Dimensions</b> {embeddingDims}</span>}
+                <span><b>Device</b> {device}</span>
               </div>
             </Card>
-          ))}
-        </div>
+
+            <Card className="provider-card ondevice-card">
+              <div className="provider-header">
+                <div className="provider-info">
+                  <div className="provider-icon local"><Languages size={20} /></div>
+                  <div>
+                    <h3 className="provider-name">
+                      Translation
+                      <Badge variant="neutral" size="sm">Local · Locked</Badge>
+                    </h3>
+                    <p className="provider-description">NLLB-200 distilled — 200+ languages.</p>
+                    <p className="provider-note">Cloud translation TBD.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="ondevice-meta">
+                <span><b>Model</b> {translationModel}</span>
+                <span><b>Device</b> {device}</span>
+                <span><b>Status</b> {translationLoaded ? 'loaded' : 'loads on first use'}</span>
+              </div>
+            </Card>
+          </div>
+        </>
       )}
     </div>
   );

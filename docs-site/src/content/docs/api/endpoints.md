@@ -25,13 +25,14 @@ GET /api/health
 GET /api/health?include_memory=true
 ```
 
-Returns API, translation, and (optionally) memory system health.
+Returns API, compute device, translation, embedding engine, and (optionally) memory system health.
 
 **Response:**
 ```json
 {
   "status": "healthy",
   "api": {"status": "healthy"},
+  "compute": {"device": "cuda", "cuda_available": true},
   "translation": {
     "status": "healthy",
     "models": {
@@ -39,6 +40,7 @@ Returns API, translation, and (optionally) memory system health.
       "translation": "facebook/nllb-200-distilled-600M"
     }
   },
+  "embeddings": {"provider": "local", "model": "BAAI/bge-m3", "dimensions": 1024},
   "memory": {
     "neo4j": {"status": "healthy"},
     "postgres": {"status": "healthy"},
@@ -47,7 +49,7 @@ Returns API, translation, and (optionally) memory system health.
 }
 ```
 
-Translation status is `"not_loaded"` if models haven't been initialized yet. Memory section only appears when `include_memory=true`.
+Translation status is `"not_loaded"` if models haven't been initialized yet. `compute.device` is `cuda`/`cpu`; `embeddings` reports the (locked, local by default) embedding engine. Memory section only appears when `include_memory=true`.
 
 ---
 

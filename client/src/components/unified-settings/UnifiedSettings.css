@@ -540,6 +540,56 @@
   margin: 0;
 }
 
+.provider-note {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  margin: 4px 0 0;
+}
+.provider-note.warning {
+  color: var(--feedback-warning);
+}
+
+/* Capability-tier groups (Primary / Beta / Local) */
+.provider-tier + .provider-tier {
+  margin-top: var(--space-lg);
+}
+.provider-tier-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-sm);
+}
+
+/* On-device engine tiles — read-only (locked models); no interactive hover. */
+.ondevice-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-sm) var(--space-lg);
+  font-size: 13px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+.ondevice-meta span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ondevice-meta b {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.ondevice-card:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-md);
+}
+
 /* API-key row */
 .api-key-input {
   display: flex;
