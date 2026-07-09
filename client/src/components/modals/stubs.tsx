@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, Copy, Check, MessagesSquare } from 'lucide-react';
-import { MemoryPanel } from '../memory/MemoryPanel';
+import { MemoryWorkbench } from '../memory/MemoryWorkbench';
 import { PlansPanel } from '../plans/PlansPanel';
 import { SourcesPanel } from '../bibliography/SourcesPanel';
 import { AmbassadorPanel } from '../ambassador/AmbassadorPanel';
@@ -28,16 +28,10 @@ interface ModalContentProps {
   onClose: () => void;
 }
 
-export function MemoryModalContent({ onClose: _onClose }: ModalContentProps) {
-  // Full-screen Memory explorer. Uses its own host (not the drawer-oriented
-  // .modal-content-wrapper, whose min-height:100vh overflows a centered modal);
-  // .memory-modal-content gives a definite height so the panel fills the dialog
-  // and scrolls internally (nav fixed, content scrolls).
-  return (
-    <div className="memory-modal-content">
-      <MemoryPanel />
-    </div>
-  );
+export function MemoryModalContent({ onClose }: ModalContentProps) {
+  // Full-screen immersive Memory Workbench (in FULLSCREEN_SURFACES + SELF_CLOSING):
+  // renders bare and owns its own backdrop + close, like UnifiedSettings.
+  return <MemoryWorkbench onClose={onClose} />;
 }
 
 export function PlansModalContent({ onClose: _onClose }: ModalContentProps) {

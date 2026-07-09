@@ -31,7 +31,8 @@ export type SurfaceKey =
 export const SURFACES: Record<SurfaceKey, ModalConfig> = {
   settings: { id: 'unified-settings', type: 'modal', component: 'unifiedSettings', size: 'full' },
   tools: { id: 'toolkit', type: 'modal', component: 'tools', size: 'full' },
-  memory: { id: 'memory-drawer', type: 'drawer', component: 'memory', position: 'right', size: 'xxl' },
+  // Full-screen immersive workbench (renders bare via FULLSCREEN_SURFACES; type/size cosmetic).
+  memory: { id: 'memory', type: 'modal', component: 'memory', position: 'center', size: 'full' },
   sources: { id: 'sources-drawer', type: 'drawer', component: 'sources', position: 'right', size: 'xxl' },
   consolidation: { id: 'consolidation-drawer', type: 'drawer', component: 'consolidation', position: 'right', size: 'lg' },
   ambassador: { id: 'ambassador-drawer', type: 'drawer', component: 'ambassador', position: 'right', size: 'xxl' },

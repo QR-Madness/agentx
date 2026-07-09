@@ -14,7 +14,10 @@ import {
 } from '../../lib/hooks';
 import type { MemoryFact, MemoryFactEntity, FactProvenance } from '../../lib/api';
 import { formatTimestamp } from './formatTimestamp';
-import { Button } from '../ui';
+import {
+  Button, Input, Textarea, Slider,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '../ui';
 
 // Searchable entity picker — mounts only while the user is adding a link, so
 // the entities fetch doesn't fire on every fact selection. Scoped to the fact's
@@ -35,8 +38,8 @@ function EntityPicker({
   return (
     <div className="entity-picker">
       <div className="entity-picker-search">
-        <Search size={14} />
-        <input
+        <Input
+          icon={<Search size={14} />}
           autoFocus
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -176,28 +179,35 @@ export function FactDetail({
         <div className="edit-form">
           <div>
             <label>Claim</label>
-            <textarea value={editClaim} onChange={e => setEditClaim(e.target.value)} rows={5} />
+            <Textarea value={editClaim} onChange={e => setEditClaim(e.target.value)} rows={5} />
           </div>
           <div>
             <label>Confidence: {editConfidence}%</label>
-            <input
-              type="range" min="0" max="100" value={editConfidence}
-              onChange={e => setEditConfidence(Number(e.target.value))}
-              style={{ accentColor: 'var(--cosmic-violet)', width: '100%' }}
+            <Slider
+              aria-label="Confidence"
+              min={0} max={100} step={1}
+              value={[editConfidence]}
+              onValueChange={([v]) => setEditConfidence(v)}
             />
           </div>
           <div>
             <label>Source</label>
-            <input value={editSource} onChange={e => setEditSource(e.target.value)} />
+            <Input value={editSource} onChange={e => setEditSource(e.target.value)} />
           </div>
           <div>
             <label>Temporal Context</label>
-            <select value={editTemporal} onChange={e => setEditTemporal(e.target.value)}>
-              <option value="">None</option>
-              <option value="current">Current</option>
-              <option value="past">Past</option>
-              <option value="future">Future</option>
-            </select>
+            <Select
+              value={editTemporal || 'none'}
+              onValueChange={v => setEditTemporal(v === 'none' ? '' : v)}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="current">Current</SelectItem>
+                <SelectItem value="past">Past</SelectItem>
+                <SelectItem value="future">Future</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="edit-actions">
             <Button variant="primary" onClick={handleSave} disabled={saving}>

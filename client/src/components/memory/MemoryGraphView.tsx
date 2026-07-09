@@ -5,7 +5,7 @@
 // single explorer surface.
 
 import { useState, useEffect, useMemo } from 'react';
-import { RefreshCw, GitBranch } from 'lucide-react';
+import { RefreshCw, GitBranch, Search } from 'lucide-react';
 import {
   ReactFlow, Background, Controls, Handle, Position,
   useNodesState, useEdgesState,
@@ -15,6 +15,7 @@ import '@xyflow/react/dist/style.css';
 import { useMemoryEntities, useEntityGraph, useMemoryProcedures } from '../../lib/hooks';
 import type { MemoryProcedure } from '../../lib/api';
 import { procedureHeadline } from './procedureLabel';
+import { Input } from '../ui';
 
 // Custom node (module-level to avoid re-creation on each render). `variant`
 // drives styling: entity / procedure (center) / scope / agent / conversation.
@@ -57,23 +58,25 @@ function radialLayout(
       y: Math.sin((i * 2 * Math.PI) / n) * 260,
     },
   }));
+  // No `animated` edges: the constant SVG dash repaint is the usual ReactFlow
+  // jank source. Static edges keep panning smooth even on low-end webviews.
   const edges: Edge[] = neighbors.map((nb, i) => ({
     id: `e-${i}`,
     source: centerId,
     target: nb.id,
     label: nb.edgeLabel,
-    animated: true,
   }));
   return { nodes, edges };
 }
 
-export function MemoryGraphView() {
+export function MemoryGraphView({ channel = '_all' }: { channel?: string }) {
   // Selection is mutually exclusive: an entity OR a procedure is centered.
   const [graphEntityId, setGraphEntityId] = useState<string | null>(null);
   const [graphProcedureId, setGraphProcedureId] = useState<string | null>(null);
+  const [entitySearch, setEntitySearch] = useState('');
 
-  const { entities, loading: entitiesLoading } = useMemoryEntities('_all', 1, '');
-  const { procedures, loading: proceduresLoading } = useMemoryProcedures('_all', 1);
+  const { entities, loading: entitiesLoading } = useMemoryEntities(channel, 1, entitySearch);
+  const { procedures, loading: proceduresLoading } = useMemoryProcedures(channel, 1);
   const { graph, loading: graphLoading } = useEntityGraph(graphEntityId);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -172,6 +175,14 @@ export function MemoryGraphView() {
   return (
     <div className="graph-view">
       <div className="graph-entity-list">
+        <div className="graph-search">
+          <Input
+            icon={<Search size={14} />}
+            placeholder="Search a topic or entity…"
+            value={entitySearch}
+            onChange={e => setEntitySearch(e.target.value)}
+          />
+        </div>
         <div className="graph-list-header">Entities</div>
         {entitiesLoading ? (
           <div className="graph-list-loading"><RefreshCw size={16} className="spin" /></div>
@@ -218,6 +229,10 @@ export function MemoryGraphView() {
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
             fitView
+            onlyRenderVisibleElements
+            minZoom={0.3}
+            maxZoom={1.6}
+            proOptions={{ hideAttribution: true }}
           >
             <Background />
             <Controls />

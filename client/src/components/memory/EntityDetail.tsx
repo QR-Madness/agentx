@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { RefreshCw, X, Edit2, Trash2, Check, AlertTriangle } from 'lucide-react';
 import { useEntityGraph, useUpdateMemoryEntity, useDeleteMemoryEntity } from '../../lib/hooks';
-import { Button } from '../ui';
+import { Button, Input, Textarea } from '../ui';
 
 export function EntityDetail({
   entityId, onClose, onDeleted, onRefreshList,
@@ -87,19 +87,19 @@ export function EntityDetail({
         <div className="edit-form">
           <div>
             <label>Name</label>
-            <input value={editName} onChange={e => setEditName(e.target.value)} />
+            <Input value={editName} onChange={e => setEditName(e.target.value)} />
           </div>
           <div>
             <label>Type</label>
-            <input value={editType} onChange={e => setEditType(e.target.value)} />
+            <Input value={editType} onChange={e => setEditType(e.target.value)} />
           </div>
           <div>
             <label>Description</label>
-            <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} rows={3} />
+            <Textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} rows={3} />
           </div>
           <div>
             <label>Aliases (comma-separated)</label>
-            <input value={editAliases} onChange={e => setEditAliases(e.target.value)} placeholder="alias1, alias2" />
+            <Input value={editAliases} onChange={e => setEditAliases(e.target.value)} placeholder="alias1, alias2" />
           </div>
           <div className="edit-actions">
             <Button variant="primary" onClick={handleSave} disabled={saving}>

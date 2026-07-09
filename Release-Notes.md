@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.198 -->
+<!-- release-version: 0.21.199 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -30,6 +30,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   and anywhere the desktop app can't go, auto-updating with no store), plus shareable
   **connection links**: send someone a link and they connect to your server by opening it
   and entering only a password.
+- **Memory got the room it deserves** — the explorer is now a full-screen **workbench**: a top tab
+  bar (Overview · Entities · Facts · Strategies · Procedures · Explore · History · Jobs) over a roomy
+  list+detail canvas, a **channel filter** to scope every area, an **Overview** home with per-channel
+  totals, and a smoother, search-driven **Explore** graph. Editing entities/facts is no longer cramped,
+  and it's genuinely usable on mobile.
 - **New themes** — Ugentx, Tango, Blackhawk.
 - **Workspaces grew into Projects**: files + per-project **instructions** +
   conversations with scoped memory.

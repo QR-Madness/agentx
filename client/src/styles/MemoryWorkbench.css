@@ -1,0 +1,359 @@
+/* ── Memory Workbench — full-screen immersive shell ────────────────────────── */
+/* Detail/list/graph internals live in MemoryPanel.css (reused). This file owns
+   the shell (backdrop + fixed surface), the top tab bar, the area grid, the
+   Overview home, and the mobile master→detail swap. Semantic tokens only. */
+
+.mem-workbench-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1999;
+  background: var(--glass-backdrop);
+}
+
+.mem-workbench {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  animation: memWorkbenchIn 0.18s ease;
+}
+
+@keyframes memWorkbenchIn {
+  from { opacity: 0; transform: scale(0.99); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mem-workbench { animation: none; }
+}
+
+/* ── Header ── */
+.mem-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.mem-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.mem-title-icon { color: var(--accent-primary); }
+
+.mem-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mem-channel-select {
+  width: auto;
+  min-width: 160px;
+  height: 38px;
+}
+
+/* ── Tab bar ── */
+.mem-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid var(--border-default);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  flex-shrink: 0;
+}
+.mem-tabs::-webkit-scrollbar { height: 6px; }
+.mem-tabs::-webkit-scrollbar-thumb { background: var(--surface-overlay); border-radius: 3px; }
+
+.mem-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.mem-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.mem-tab.active {
+  background: var(--accent-tint-soft);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+.mem-tab svg { flex-shrink: 0; }
+
+/* ── Transient banners (import / consolidate) ── */
+.mem-banners {
+  padding: var(--space-sm) var(--space-lg) 0;
+  flex-shrink: 0;
+}
+
+/* ── Body ── */
+.mem-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-lg);
+  overflow: hidden;
+}
+
+/* Full-bleed areas (graph / history / jobs) */
+.mem-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mem-fill.mem-scroll { overflow-y: auto; }
+.mem-fill > .graph-view { flex: 1 1 auto; min-height: 0; height: 100%; }
+.mem-fill > .memory-list-container { flex: 1 1 auto; min-height: 0; }
+
+/* ── Master / detail split ── */
+.mem-split {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-lg);
+  overflow: hidden;
+}
+.mem-split.detail-open {
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+}
+
+.mem-master {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-height: 0;
+  overflow: hidden;
+}
+.mem-master.is-mobile { flex: 1 1 auto; }
+.mem-master .memory-list-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.mem-master .pagination { flex-shrink: 0; }
+
+.mem-detail {
+  min-height: 0;
+  overflow-y: auto;
+  padding-left: var(--space-lg);
+  border-left: 1px solid var(--border-default);
+}
+.mem-detail.is-mobile {
+  flex: 1 1 auto;
+  border-left: none;
+  padding-left: 0;
+}
+
+.mem-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 4px 0;
+  margin-bottom: var(--space-sm);
+  cursor: pointer;
+}
+.mem-back:hover { color: var(--text-primary); }
+
+/* ── Filters ── */
+.mem-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.mem-filters .ax-fieldwrap,
+.mem-filters > .ax-field {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+.mem-confidence {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+  padding-right: var(--space-sm);
+}
+.mem-confidence label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ── Overview / stats home ── */
+.mem-overview {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.mem-overview-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-md);
+}
+.mem-stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--space-lg);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+}
+.mem-stat-icon { color: var(--accent-primary); }
+.mem-stat-value { font-size: 28px; font-weight: 700; line-height: 1; color: var(--text-primary); }
+.mem-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.mem-overview-heading {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-sm);
+}
+.mem-overview-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mem-channel-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.mem-channel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr));
+  gap: var(--space-sm);
+  align-items: center;
+  padding: 10px var(--space-md);
+  font-size: 13px;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  width: 100%;
+  font-family: inherit;
+}
+.mem-channel-row:last-child { border-bottom: none; }
+button.mem-channel-row { cursor: pointer; }
+button.mem-channel-row:hover { background: var(--surface-hover); color: var(--text-primary); }
+.mem-channel-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+}
+.mem-channel-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Procedures (grid columns + cells; mirrors Strategies) ── */
+.procedures-header,
+.procedure-row {
+  grid-template-columns: minmax(0, 2fr) 1fr 1.2fr 1.4fr 1fr;
+}
+.procedure-trigger { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.procedure-strength { display: flex; align-items: center; gap: 8px; }
+.procedure-body { font-size: 13px; line-height: 1.6; color: var(--text-secondary); margin: 0; }
+
+/* ── Explore graph search ── */
+.graph-search { padding: 8px 8px 4px; }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .mem-header {
+    padding: max(env(safe-area-inset-top), 12px) var(--space-md) var(--space-sm);
+    flex-wrap: wrap;
+  }
+  .mem-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .mem-channel-select { min-width: 130px; }
+  .mem-action-label { display: none; }
+  .mem-tabs { padding: var(--space-sm) var(--space-md); }
+  .mem-banners { padding: var(--space-sm) var(--space-md) 0; }
+  .mem-body {
+    padding: var(--space-md);
+    /* Clear the bottom-anchored TopBar + the home-indicator safe area. */
+    padding-bottom: calc(56px + max(env(safe-area-inset-bottom), 12px));
+  }
+
+  /* The reused list rows use a rigid 5-column grid that overflows 375px. On
+     mobile, stack each row: the primary field on its own line, meta wrapping
+     below — no horizontal scroll, no squeezed name column. */
+  .mem-body .memory-list-header { display: none; }
+  .mem-body .memory-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 12px 14px;
+  }
+  .mem-body .memory-row > span { font-size: 12px; }
+  .mem-body .memory-row > .entity-name,
+  .mem-body .memory-row > .fact-claim,
+  .mem-body .memory-row > .strategy-description,
+  .mem-body .memory-row > .procedure-trigger {
+    flex: 1 1 100%;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .mem-body .memory-row .salience-bar,
+  .mem-body .memory-row .confidence-bar,
+  .mem-body .memory-row .success-bar { display: none; }
+}

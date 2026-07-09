@@ -834,30 +834,17 @@
   margin-bottom: 4px;
 }
 
-.edit-form input,
-.edit-form textarea,
-.edit-form select {
+/* Edit forms now use the field primitives (Input/Textarea/Slider/Select); the
+   primitives carry their own chrome. Keep the width + textarea sizing only. */
+.edit-form .ax-field,
+.edit-form .ax-fieldwrap,
+.edit-form .ax-trigger {
   width: 100%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-input);
-  color: var(--text-primary);
-  font-size: 13px;
-  box-sizing: border-box;
 }
 
-.edit-form input:focus,
-.edit-form textarea:focus,
-.edit-form select:focus {
-  outline: none;
-  border-color: var(--cosmic-violet);
-}
-
-.edit-form textarea {
+.edit-form textarea.ax-field {
   resize: vertical;
   min-height: 80px;
-  font-family: inherit;
   line-height: 1.5;
 }
 
