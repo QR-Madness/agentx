@@ -349,6 +349,143 @@ async def _compose_plan_if_complex(message, messages, *, provider, model_id, age
     )
 
 
+def _research_active(research_mode: bool) -> bool:
+    """Whether Research Mode is effective this turn: requested AND enabled in config."""
+    if not research_mode:
+        return False
+    from .config import get_config_manager
+
+    return bool(get_config_manager().get("research.enabled", True))
+
+
+def _research_blocks(research_active: bool) -> list:
+    """Research Mode's per-turn system layer as ledger block(s) — empty when off.
+
+    Factored out of the chat-stream generator (like `_compose_plan_if_complex`) to
+    keep its conditional-path count within the type-checker's analysis budget.
+    """
+    if not research_active:
+        return []
+    from .agent.context_ledger import LedgerBlock
+    from .config import get_config_manager
+    from .prompts import get_prompt
+
+    depth = get_config_manager().get("research.default_depth", "auto") or "auto"
+    return [
+        LedgerBlock(
+            key="research",
+            priority=96,
+            mandatory=True,
+            content=get_prompt("research.system", default_depth=depth),
+        )
+    ]
+
+
+def _research_tool_rounds(research_active: bool, default: int) -> int:
+    """Elevated tool-round cap for a research turn, else the standard default."""
+    if not research_active:
+        return default
+    from .config import get_config_manager
+
+    return int(get_config_manager().get("research.max_tool_rounds", 40) or default)
+
+
+def _research_search_limit(research_active: bool) -> int | None:
+    """Elevated per-turn search-budget cap for a research turn (None ⇒ use the base
+    `search.per_turn_limit`; 0 ⇒ unlimited)."""
+    if not research_active:
+        return None
+    from .config import get_config_manager
+
+    return int(get_config_manager().get("search.research_per_turn_limit", 40) or 0)
+
+
+def _skip_planning(image_mode: bool, research_active: bool) -> bool:
+    """Whether to bypass planner decomposition for this turn. Image turns don't plan;
+    Research Mode forces the flat single-agent path (decomposition would bypass the
+    search-budget window). A helper (not an inline `or`) so the chat-stream generator
+    stays under the type-checker's flow-complexity budget."""
+    return image_mode or research_active
+
+
+def _research_finalize_nudge(research_active: bool) -> str | None:
+    """The delivery-guard nudge for a research turn (None when research is off).
+
+    Injected by the tool loop at most once when the turn is about to end with no
+    document written — the live failure mode this guards against."""
+    if not research_active:
+        return None
+    from .prompts import get_prompt
+
+    return get_prompt("research.finalize_nudge") or None
+
+
+def _research_min_output(research_active: bool, context_window: int, model_id: str) -> int | None:
+    """Research turns' output-budget floor (None when research is off).
+
+    A research turn must fit thinking + a full report in one completion — the
+    chat-sized adaptive budget starves it (live failure: 2048 tokens, all think,
+    zero visible report). Bounded downstream by the model's effective output cap.
+    Also warns when the resolved window smells like a capability catalog miss
+    (the 8192 default), which starves the whole turn — the fix is Settings →
+    Model Limits (`context_limits.models.{id}`)."""
+    if not research_active:
+        return None
+    if context_window <= 8192:
+        logger.warning(
+            "Research Mode on model %s resolved a context_window of %d — likely an "
+            "unresolved capability catalog entry; set Model Limits "
+            "(context_limits.models.%s) for usable research turns",
+            model_id, context_window, model_id,
+        )
+    from .config import get_config_manager
+
+    return int(get_config_manager().get("research.min_max_tokens", 16384) or 0) or None
+
+
+def _append_team_blocks(blocks: list, agent, active_workflow, session) -> None:
+    """Append multi-agent framing ledger blocks: the workflow supervisor prompt OR
+    participant awareness, plus the ad-hoc delegation roster. Factored out of the
+    chat-stream generator (like `_append_corpus_awareness_blocks`) to keep its
+    conditional-path count within the type-checker's analysis budget.
+    """
+    from .agent.context_ledger import LedgerBlock, shrink_tail
+
+    # A workflow layers the Alloy supervisor framing (mandatory — the run depends on
+    # it). Otherwise make this agent aware of others that have spoken (Phase 16.2);
+    # suppressed under a workflow, whose supervisor prompt already frames the team.
+    if active_workflow is not None:
+        from .alloy.prompts import build_supervisor_prompt
+        blocks.append(LedgerBlock(
+            key="supervisor",
+            priority=95,
+            mandatory=True,
+            content=build_supervisor_prompt(active_workflow),
+        ))
+    elif len(session.participants) > 1:
+        from .prompts.multi_agent import build_participants_block
+        participants_block = build_participants_block(agent.config.agent_id, session.participants)
+        if participants_block:
+            blocks.append(LedgerBlock(
+                key="participants",
+                priority=90,
+                content=participants_block,
+                shrink_fn=shrink_tail,
+            ))
+
+    # Ad-hoc delegation roster (Phase 16.4): outside a workflow, when `delegate_to`
+    # is on offer, tell the model who its teammates are. Non-mandatory — droppable
+    # under budget pressure (the tool description still lists targets).
+    roster_content = _build_delegation_roster_block(agent, active_workflow)
+    if roster_content:
+        blocks.append(LedgerBlock(
+            key="delegation_roster",
+            priority=85,
+            content=roster_content,
+            shrink_fn=shrink_tail,
+        ))
+
+
 async def _run_image_generation(
     prompt, *, provider, model_id, task_id, workspace_id, user_id, conversation_id, agent_id
 ):
@@ -1482,9 +1619,16 @@ async def agent_chat_stream(request):
         # Per-conversation Solo mode: suppress ad-hoc delegation for this turn
         # (tool + roster). Ignored under a workflow — a team run IS delegation.
         disable_delegation = bool(data.get("disable_delegation", False))
+        # Per-conversation Research Mode: elevated search budget + rigorous,
+        # evidence-grounded, self-reviewing research prompt (gated by research.enabled).
+        research_mode = bool(data.get("research_mode", False))
 
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
+
+    # Effective Research Mode for this turn (requested AND enabled in config).
+    # Computed once here; read-only inside generate_sse (closure capture).
+    research_active = _research_active(research_mode)
 
     async def generate_sse():
         """Async generator that yields SSE events."""
@@ -1867,56 +2011,26 @@ async def agent_chat_stream(request):
             # In direct mode every block built here is discarded (the ledger is
             # skipped below in favour of a bare user turn) — so we don't special-case
             # each contributor; we just bypass memory recall (its I/O) and the ledger.
+            # Research Mode layers a rigorous, evidence-grounded, self-reviewing research
+            # prompt on top of the persona (gated by research.enabled; `_research_blocks`
+            # returns [] when off, so no branch here). Scoped to this turn — never edits
+            # the durable persona stack. `research_active` also drives the elevated search
+            # budget + tool-round cap + flat-path forcing below (all via module-level
+            # helpers to keep this generator under the type-checker's complexity budget).
             blocks: list[LedgerBlock] = [
                 LedgerBlock(
                     key="base_prompt",
                     priority=100,
                     mandatory=True,  # the system prompt is never dropped
                     content=system_prompt or "You are a helpful AI assistant.",
-                )
+                ),
+                *_research_blocks(research_active),
             ]
 
-            # When a workflow is active, layer the Alloy supervisor framing on top
-            # of the profile's normal system prompt (mandatory — the workflow run
-            # depends on it). Otherwise, in a multi-agent (non-workflow)
-            # conversation, make this agent aware of the others that have spoken
-            # (Phase 16.2); suppressed under a workflow — the supervisor prompt
-            # already frames the team.
-            if active_workflow is not None:
-                from .alloy.prompts import build_supervisor_prompt
-                blocks.append(LedgerBlock(
-                    key="supervisor",
-                    priority=95,
-                    mandatory=True,
-                    content=build_supervisor_prompt(active_workflow),
-                ))
-            elif len(session.participants) > 1:
-                from .prompts.multi_agent import build_participants_block
-                participants_block = build_participants_block(
-                    agent.config.agent_id, session.participants
-                )
-                if participants_block:
-                    blocks.append(LedgerBlock(
-                        key="participants",
-                        priority=90,
-                        content=participants_block,
-                        shrink_fn=shrink_tail,
-                    ))
-
-            # Ad-hoc delegation roster (Phase 16.4 completion): outside a
-            # workflow, when `delegate_to` is on offer, tell the model who its
-            # teammates are and when handing off is worth it. Non-mandatory —
-            # droppable under budget pressure (the tool description still lists
-            # targets). May coexist with `participants` (who has spoken) — this
-            # block answers a different question (whom you may delegate to).
-            roster_content = _build_delegation_roster_block(agent, active_workflow)
-            if roster_content:
-                blocks.append(LedgerBlock(
-                    key="delegation_roster",
-                    priority=85,
-                    content=roster_content,
-                    shrink_fn=shrink_tail,
-                ))
+            # Multi-agent framing: workflow supervisor OR participant awareness, plus
+            # the ad-hoc delegation roster. Extracted to a helper (see its docstring)
+            # to keep this generator under the type-checker's complexity budget.
+            _append_team_blocks(blocks, agent, active_workflow, session)
 
             # Re-inject any model-authored checkpoints for this conversation. They
             # live in Redis and are appended fresh each turn so trajectory
@@ -2213,6 +2327,7 @@ async def agent_chat_stream(request):
                 max_output_tokens=max_output_tokens,
                 max_output_override=max_output_override,
                 supports_reasoning=caps.supports_reasoning,
+                min_output_override=_research_min_output(research_active, context_window, model_id),
             )
 
             # Stream tokens with tool-use loop
@@ -2223,7 +2338,9 @@ async def agent_chat_stream(request):
             # (GeneratorExit) handler can persist partial progress up to the stop.
             loop_result = None
             persisted = False  # Guard so turns are stored exactly once
-            max_tool_rounds = DEFAULT_MAX_TOOL_ROUNDS
+            # Research Mode gets a generous tool-round budget so the *search budget*
+            # (credits), not tool-rounds, governs research depth.
+            max_tool_rounds = _research_tool_rounds(research_active, DEFAULT_MAX_TOOL_ROUNDS)
             total_tokens_input = 0
             total_tokens_output = 0
             plan_summary = None  # Set on the plan-execution path; persisted on the assistant turn
@@ -2403,7 +2520,11 @@ async def agent_chat_stream(request):
             # MAIN agent model (full system prompt + memory + context) → structured JSON
             # plan, gated by a cheap local complexity heuristic. Skipped for an image turn
             # (an image model doesn't plan). See `_compose_plan_if_complex`.
-            plan = None if image_mode else await _compose_plan_if_complex(
+            # Research Mode forces the flat single-agent path: decomposition would
+            # route the turn through PlanExecutor, which bypasses streaming_tool_loop
+            # and its search-budget window (elevated cap + budget awareness would never
+            # fire). A single self-reviewing researcher is also the intended topology.
+            plan = None if _skip_planning(image_mode, research_active) else await _compose_plan_if_complex(
                 message, messages, provider=provider, model_id=model_id,
                 agent=agent, use_memory=use_memory, emit=emit_status,
             )
@@ -2514,6 +2635,8 @@ async def agent_chat_stream(request):
                     capture_tool_turns=True,
                     result=loop_result,
                     vision_capable=accepts_vision,
+                    search_limit_override=_research_search_limit(research_active),
+                    finalize_nudge=_research_finalize_nudge(research_active),
                 ):
                     yield event_str
 
@@ -7165,6 +7288,7 @@ def config_update(request):
     _SEARCH_KEYS = (
         "backend", "fallback_enabled", "max_results",
         "cache_ttl_seconds", "tavily_api_key", "brave_api_key",
+        "research_per_turn_limit",  # Research Mode's elevated per-turn search cap
     )
     search_settings = data.get("search", {})
     for key, value in search_settings.items():
@@ -7172,6 +7296,27 @@ def config_update(request):
             continue
         config.set(f"search.{key}", value)
         updated_keys.append(f"search.{key}")
+
+    # Update Research Mode settings. Elevated-budget + rigorous research prompt.
+    _RESEARCH_KEYS = ("enabled", "max_tool_rounds", "default_depth", "min_max_tokens")
+    research_settings = data.get("research", {})
+    for key, value in research_settings.items():
+        if key not in _RESEARCH_KEYS or value is None:
+            continue
+        config.set(f"research.{key}", value)
+        updated_keys.append(f"research.{key}")
+
+    # Update deep-research tool settings (Tavily agentic research).
+    _WEB_RESEARCH_KEYS = (
+        "enabled", "cache_ttl_seconds", "budget_weight",
+        "poll_timeout_seconds", "poll_interval_seconds",
+    )
+    web_research_settings = data.get("web_research", {})
+    for key, value in web_research_settings.items():
+        if key not in _WEB_RESEARCH_KEYS or value is None:
+            continue
+        config.set(f"web_research.{key}", value)
+        updated_keys.append(f"web_research.{key}")
 
     # Update Agent Alloy / multi-agent delegation settings (Track A/D).
     _ALLOY_KEYS = (

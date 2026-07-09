@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Users,
   UserX,
+  Telescope,
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { contextChipState } from '../../lib/contextChip';
@@ -264,6 +265,16 @@ export function ChatPanel() {
     },
     [activeTab, updateTab],
   );
+  // Research Mode chip: per-conversation toggle. Like Solo mode it's per-turn and
+  // never locks. Sent as `research_mode`; server elevates the search budget and
+  // layers the research prompt when research.enabled is on.
+  const researchMode = activeTab?.researchMode ?? false;
+  const setResearchMode = useCallback(
+    (next: boolean) => {
+      if (activeTab) updateTab(activeTab.id, { researchMode: next });
+    },
+    [activeTab, updateTab],
+  );
   const agentName = supervisorProfile?.name ?? getAgentName();
 
   // Vision pre-warning: when images are attached, check whether the effective model
@@ -276,6 +287,8 @@ export function ChatPanel() {
   // Global ad-hoc delegation gate — decides whether the Solo/Team chip shows at
   // all (read from the same one-shot config fetch as the vision flag).
   const [adhocDelegationEnabled, setAdhocDelegationEnabled] = useState(true);
+  // Global Research Mode gate — decides whether the Research chip shows at all.
+  const [researchEnabled, setResearchEnabled] = useState(true);
   useEffect(() => {
     let alive = true;
     api.getConfig()
@@ -285,6 +298,7 @@ export function ChatPanel() {
         setAdhocDelegationEnabled(
           (cfg.alloy as { allow_adhoc_delegation?: boolean })?.allow_adhoc_delegation ?? true,
         );
+        setResearchEnabled((cfg.research as { enabled?: boolean })?.enabled ?? true);
       })
       .catch(() => {});
     return () => { alive = false; };
@@ -600,6 +614,7 @@ export function ChatPanel() {
       model: activeTab.modelOverride || undefined,
       use_memory: useMemory,
       disable_delegation: soloMode || undefined,
+      research_mode: researchMode || undefined,
       workflow_id: activeTab.workflowId || undefined,
       workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       ...(imgs.length ? { images: imgs } : {}),
@@ -641,6 +656,7 @@ export function ChatPanel() {
               model: activeTab.modelOverride || undefined,
               use_memory: useMemory,
               disable_delegation: soloMode || undefined,
+              research_mode: researchMode || undefined,
               workflow_id: activeTab.workflowId || undefined,
               workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
             });
@@ -664,6 +680,7 @@ export function ChatPanel() {
         model: activeTab.modelOverride || undefined,
         use_memory: useMemory,
         disable_delegation: soloMode || undefined,
+        research_mode: researchMode || undefined,
         workflow_id: activeTab.workflowId || undefined,
         workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       });
@@ -696,6 +713,7 @@ export function ChatPanel() {
         model: activeTab.modelOverride || undefined,
         use_memory: useMemory,
         disable_delegation: soloMode || undefined,
+        research_mode: researchMode || undefined,
         workflow_id: activeTab.workflowId || undefined,
         workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       });
@@ -1235,6 +1253,25 @@ export function ChatPanel() {
             >
               {soloMode ? <UserX size={12} /> : <Users size={12} />}
               <span>{soloMode ? 'Solo' : 'Team'}</span>
+            </button>
+          )}
+
+          {/* Research Mode chip — per-conversation toggle for a rigorous, cited,
+              self-reviewing research engagement with an elevated search budget.
+              Shown when the feature is globally enabled and outside a workflow
+              (team runs are their own mode). Per-turn; never locks. */}
+          {!activeTab?.workflowId && researchEnabled && (
+            <button
+              className={`composer-chip ${researchMode ? 'active' : ''}`}
+              onClick={() => setResearchMode(!researchMode)}
+              title={
+                researchMode
+                  ? 'Research Mode on — deep, cited research with an elevated search budget; click to turn off'
+                  : 'Research Mode off — click to run a rigorous, cited research engagement'
+              }
+            >
+              <Telescope size={12} />
+              <span>Research</span>
             </button>
           )}
         </div>

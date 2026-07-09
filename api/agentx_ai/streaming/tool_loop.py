@@ -64,6 +64,9 @@ class ToolLoopResult:
     # The final round's finish reason ("stop", "length", …). "length" means the
     # answer was truncated by max_tokens — surfaced in the done event.
     finish_reason: str | None = None
+    # Successful document-write tool calls this turn (create/update/append/edit
+    # _document). Drives the research finalize nudge: no writes ⇒ nudge fires.
+    docs_written: int = 0
 
 
 def _prepare_round_context(
@@ -162,6 +165,27 @@ def _emit_exhibit_event(tc) -> list[str]:
 WEB_SEARCH_TOOL_NAME = "web_search"
 _AUTO_CITATION_TOOLS: frozenset[str] = frozenset({"web_search", "web_research"})
 _DOC_CITATION_TOOLS: frozenset[str] = frozenset({"document_query"})
+# Document-write tools: a successful call counts as "the deliverable was saved"
+# for the research finalize nudge (ToolLoopResult.docs_written).
+_DOC_WRITE_TOOLS: frozenset[str] = frozenset(
+    {"create_document", "update_document", "append_to_document", "edit_document"}
+)
+
+
+def _is_doc_write_success(tm) -> bool:
+    """Whether a doc-write tool message reports a genuine write.
+
+    Doc tools return JSON dicts; parse and require no error marker (the cheap
+    `startswith('{"error"')` heuristic misses `{"success": false, ...}` shapes,
+    and a false positive here would suppress a needed finalize nudge).
+    """
+    try:
+        payload = json.loads(tm.content)
+    except (ValueError, TypeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    return payload.get("success") is not False and not payload.get("error")
 
 
 def _emit_web_search_citation(tm) -> list[str]:
@@ -469,6 +493,9 @@ async def _execute_and_emit_tools(
 
     for tm in tool_messages:
         is_error = tm.content.startswith('{"error"') or tm.content.startswith("Error:")
+        # Count genuine document writes (drives the research finalize nudge).
+        if tm.name in _DOC_WRITE_TOOLS and _is_doc_write_success(tm):
+            result.docs_written += 1
         # Skip emitting a generic tool_result for delegations (the
         # delegation_complete event carries it) and for exhibits (the
         # `exhibit` event is the user-facing artifact).
@@ -574,6 +601,8 @@ async def streaming_tool_loop(
     result: ToolLoopResult | None = None,
     cancel_check: Callable[[], bool] | None = None,
     vision_capable: bool = False,
+    search_limit_override: int | None = None,
+    finalize_nudge: str | None = None,
 ) -> AsyncGenerator[str]:
     """
     Async generator running the streaming tool-use loop.
@@ -606,6 +635,11 @@ async def streaming_tool_loop(
         emit_trajectory_info: Yield an info event when trajectory is compressed
         truncate_on_overflow: Apply hard-limit truncation if over max_context_tokens
         capture_tool_turns: Capture tool call/result data for DB persistence
+        search_limit_override: Per-turn search-budget cap to use instead of
+            `search.per_turn_limit` (Research Mode passes the elevated cap; 0 = unlimited)
+        finalize_nudge: Optional one-shot user message injected when the turn is
+            about to end without a document write (Research Mode's delivery guard:
+            fires near round exhaustion or at a natural stop, at most once)
     """
     if result is None:
         result = ToolLoopResult()
@@ -622,7 +656,12 @@ async def streaming_tool_loop(
     from ..config import get_config_manager
     from ..agent.search_budget import search_budget_window
 
-    _search_limit = int(get_config_manager().get("search.per_turn_limit", 8) or 0)
+    # Research Mode passes an elevated cap via `search_limit_override`; otherwise
+    # use the standard per-turn limit. 0 = unlimited either way.
+    if search_limit_override is not None:
+        _search_limit = int(search_limit_override or 0)
+    else:
+        _search_limit = int(get_config_manager().get("search.per_turn_limit", 8) or 0)
     _conv_id = getattr(getattr(agent, "session", None), "id", None)
     _agent_id = getattr(agent, "agent_id", None)
     with search_budget_window(_search_limit, conversation_id=_conv_id, agent_id=_agent_id):
@@ -634,6 +673,7 @@ async def streaming_tool_loop(
             task_context=task_context, emit_trajectory_info=emit_trajectory_info,
             truncate_on_overflow=truncate_on_overflow, capture_tool_turns=capture_tool_turns,
             result=result, check_cancel=check_cancel, vision_capable=vision_capable,
+            finalize_nudge=finalize_nudge,
         ):
             yield _event
 
@@ -658,6 +698,7 @@ async def _run_tool_loop(
     result: ToolLoopResult,
     check_cancel: Callable[[], bool],
     vision_capable: bool = False,
+    finalize_nudge: str | None = None,
 ) -> AsyncGenerator[str]:
     """Inner loop body — runs inside the per-turn search-budget window."""
     from ..agent.output_parser import parse_output
@@ -669,6 +710,10 @@ async def _run_tool_loop(
     # output budget before the visible answer completes.
     auto_continue = bool(_get_cfg().get("chat.auto_continue_on_length", True))
     continues_used = 0
+    # Delivery guard (Research Mode): `finalize_nudge` fires at most once, when
+    # the turn is close to ending with no document written — proactively near
+    # round exhaustion, or reactively at a natural stop.
+    nudge_used = False
 
     for tool_round in range(max_tool_rounds + 1):
         round_tool_calls = []
@@ -770,6 +815,20 @@ async def _run_tool_loop(
                 # Still truncated (or auto-continue disabled) — surface it.
                 emit_status("truncated")
 
+            # Delivery guard, reactive trigger: the model is stopping without
+            # having written the deliverable document. Fold the partial in
+            # (thinking stripped — same shape as steer folding) and nudge once.
+            if finalize_nudge and not nudge_used and result.docs_written == 0:
+                nudge_used = True
+                folded = parse_output(round_content).content.strip() if round_content else ""
+                if folded:
+                    messages.append(Message(role=MessageRole.ASSISTANT, content=folded))
+                messages.append(Message(role=MessageRole.USER, content=finalize_nudge))
+                logger.info("finalize nudge: fired at natural stop (round %d, no doc written)",
+                            tool_round + 1)
+                emit_status("thinking", label="Finalizing report…")
+                continue
+
             result.final_content = round_content
             logger.debug(f"Stream loop complete after {tool_round + 1} round(s), no more tool calls")
             # Surface empty completions explicitly so downstream code
@@ -778,16 +837,21 @@ async def _run_tool_loop(
             # (not just round 0): after a delegation round the model sometimes
             # stops without synthesizing — fall back to the last specialist's
             # output so the bubble reads sensibly instead of rendering empty.
-            if not (result.content or "").strip():
+            # Checked on PARSED content: a think-only final is visibly empty
+            # even though the raw accumulation isn't (reasoning models); the
+            # fallback is appended (not overwritten) so thinking still persists.
+            if not parse_output(result.content or "").content.strip():
                 logger.warning(
-                    f"Empty completion from model={model_id} "
+                    f"Empty visible completion from model={model_id} "
                     f"(round {tool_round + 1}, delegations={len(result.delegations)})"
                 )
                 if result.delegations:
                     fallback = result.delegations[-1][:500].strip() or "[delegation completed]"
                 else:
                     fallback = "[empty response from model]"
-                result.content = fallback
+                result.content = (
+                    f"{result.content}\n\n{fallback}" if result.content.strip() else fallback
+                )
                 result.final_content = fallback
                 yield _sse("chunk", {"content": fallback})
             break
@@ -880,3 +944,74 @@ async def _run_tool_loop(
                 "content": sm, "round": tool_round,
                 "after_tools": round_tool_names, "phase": "tool_boundary",
             })
+
+        # Delivery guard, proactive trigger: rounds are nearly exhausted and no
+        # document has been written — nudge now, while tools are still on offer,
+        # so the model can save the deliverable before the budget closes.
+        if (
+            finalize_nudge and not nudge_used and result.docs_written == 0
+            and tool_round >= max(0, max_tool_rounds - 3)
+        ):
+            nudge_used = True
+            messages.append(Message(role=MessageRole.USER, content=finalize_nudge))
+            logger.info("finalize nudge: fired near round exhaustion (round %d/%d, no doc written)",
+                        tool_round + 1, max_tool_rounds + 1)
+    else:
+        # Round budget exhausted with the model still requesting tools on the
+        # final (tools-withheld) round — some models emit tool-call tokens
+        # anyway; those calls were executed above, but no final completion ever
+        # streamed, so without this floor the turn would end in silence
+        # (observed live: think-only output, finish_reason=tool_calls). Run one
+        # guaranteed text-only synthesis pass. An explicit instruction beats a
+        # silently-missing `tools` param, which this model class ignores.
+        logger.warning(
+            "Tool rounds exhausted (%d) with the model still calling tools "
+            "(model=%s) — running a forced synthesis pass",
+            max_tool_rounds + 1, model_id,
+        )
+        messages.append(Message(
+            role=MessageRole.USER,
+            content=(
+                "Tool budget is exhausted. Provide your complete final answer now, "
+                "based on everything gathered. Do not call tools."
+            ),
+        ))
+        emit_status("finalizing", label="Finalizing…")
+        synthesis_content = ""
+        async for chunk in provider.stream(
+            messages, model_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=None,
+            tool_choice=None,
+        ):
+            # Text-only by construction: any tool calls here are ignored, never
+            # executed — this pass exists to produce the answer, nothing else.
+            if chunk.usage:
+                result.tokens_in += chunk.usage.get("prompt_tokens", 0)
+                result.tokens_out += chunk.usage.get("completion_tokens", 0)
+            if chunk.finish_reason:
+                result.finish_reason = chunk.finish_reason
+            if chunk.content:
+                result.content += chunk.content
+                synthesis_content += chunk.content
+                yield _sse("chunk", {"content": chunk.content})
+        result.final_content = synthesis_content
+        # Mirror the natural-stop empty-final fallback so downstream never
+        # carries silently empty content (same shape as the in-loop guard).
+        # Parsed check: a think-only synthesis is visibly empty; append the
+        # fallback so thinking still persists.
+        if not parse_output(synthesis_content or "").content.strip():
+            logger.warning(
+                f"Empty visible synthesis from model={model_id} after round exhaustion "
+                f"(delegations={len(result.delegations)})"
+            )
+            if result.delegations:
+                fallback = result.delegations[-1][:500].strip() or "[delegation completed]"
+            else:
+                fallback = "[tool budget exhausted before a final answer was produced]"
+            result.content = (
+                f"{result.content}\n\n{fallback}" if result.content.strip() else fallback
+            )
+            result.final_content = fallback
+            yield _sse("chunk", {"content": fallback})

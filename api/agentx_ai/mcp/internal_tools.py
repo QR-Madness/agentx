@@ -1922,7 +1922,27 @@ def translate_text(text: str, target_language: str) -> dict[str, Any]:
 
 # Short-TTL in-process cache of identical queries: key -> (expiry_epoch, payload)
 _SEARCH_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+# Bound the cache so a long research turn can't grow it without limit. Expired
+# entries are only dropped lazily on read, so we also prune on insert.
+_SEARCH_CACHE_MAX = 256
 _SEARCH_TIMEOUT = 15.0  # default cap; overridable via `search.timeout`
+
+
+def _cache_put(key: str, expiry: float, payload: dict[str, Any]) -> None:
+    """Insert into the search cache, pruning to stay under ``_SEARCH_CACHE_MAX``.
+
+    Drops expired entries first, then the soonest-to-expire, so the cache can't
+    grow unbounded across a deep research turn.
+    """
+    _SEARCH_CACHE[key] = (expiry, payload)
+    if len(_SEARCH_CACHE) <= _SEARCH_CACHE_MAX:
+        return
+    now = time.time()
+    for k in [k for k, (exp, _) in _SEARCH_CACHE.items() if exp <= now]:
+        _SEARCH_CACHE.pop(k, None)
+    while len(_SEARCH_CACHE) > _SEARCH_CACHE_MAX:
+        oldest = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k][0])
+        _SEARCH_CACHE.pop(oldest, None)
 
 
 def _search_timeout() -> float:
@@ -2041,7 +2061,10 @@ SEARCH_CAPABILITIES: dict[str, dict[str, Any]] = {
         "label": "Brave",
         "tools": {
             "web_search": {
-                "summary": "safe-search level, a freshness window, and a result-type filter",
+                "summary": (
+                    "safe-search level, a freshness window, a result-type filter, "
+                    "and extra per-result snippets"
+                ),
                 "params": {
                     "safesearch": _enum(
                         ["off", "moderate", "strict"], "Adult-content filtering level."
@@ -2055,6 +2078,13 @@ SEARCH_CAPABILITIES: dict[str, dict[str, Any]] = {
                         "description": (
                             "Comma-separated result types to include "
                             "(e.g. 'web,news,discussions')."
+                        ),
+                    },
+                    "extra_snippets": {
+                        "type": "boolean",
+                        "description": (
+                            "Return up to 5 extra excerpts per result for richer "
+                            "grounding in one call (fewer follow-up extractions)."
                         ),
                     },
                 },
@@ -2272,6 +2302,8 @@ def _brave_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
         params["freshness"] = _FRESHNESS_MAP[opts["time_range"]]
     if opts.get("result_filter"):
         params["result_filter"] = opts["result_filter"]
+    if opts.get("extra_snippets"):
+        params["extra_snippets"] = "true"
     data = _http_get_json(
         "https://api.search.brave.com/res/v1/web/search",
         headers={"X-Subscription-Token": key, "Accept": "application/json"},
@@ -2284,6 +2316,7 @@ def _brave_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
             "url": r.get("url", ""),
             "snippet": r.get("description", ""),
             "published_date": r.get("page_age") or r.get("age"),
+            **({"extra_snippets": r["extra_snippets"]} if r.get("extra_snippets") else {}),
         }
         for r in web
     ]
@@ -2293,16 +2326,31 @@ def _brave_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
 _SEARCH_BACKENDS = {"tavily": _tavily_search, "brave": _brave_search}
 
 
-def _check_search_budget() -> dict[str, Any] | None:
-    """Charge one call against the per-turn search budget (Foundation #5).
+def _budget_block() -> dict[str, Any]:
+    """Budget + cost awareness to stamp onto a search result so the model can pace
+    itself by both remaining calls and estimated spend. ``limit`` 0 ⇒ unlimited."""
+    from ..agent.search_budget import snapshot
+
+    used, limit, remaining, cost_used = snapshot()
+    return {
+        "used": used,
+        "limit": limit,
+        "remaining": "unlimited" if remaining is None else remaining,
+        "est_cost_usd": round(cost_used, 4),
+    }
+
+
+def _check_search_budget(weight: int = 1) -> dict[str, Any] | None:
+    """Charge ``weight`` calls against the per-turn search budget (Foundation #5).
 
     Returns a budget-error dict when the turn's window is exhausted (caller must
     return it without hitting a backend), or ``None`` when the call may proceed.
-    No active window ⇒ unlimited.
+    No active window ⇒ unlimited. ``weight`` lets a costly call (deep web_research)
+    charge more than a basic web_search.
     """
     from ..agent.search_budget import consume
 
-    allowed, used, limit = consume(1)
+    allowed, used, limit = consume(weight)
     if allowed:
         return None
     return {
@@ -2310,26 +2358,35 @@ def _check_search_budget() -> dict[str, Any] | None:
         "count": 0,
         "success": False,
         "error": f"web-search budget exhausted for this turn ({used}/{limit} calls; "
-        "raise search.per_turn_limit or 0 to disable)",
+        "raise the research/search per-turn limit, or set it to 0 to disable)",
+        "budget": _budget_block(),
     }
 
 
 def _record_search_spend(backend: str, credits: int) -> None:
-    """Best-effort log of one search call to the usage ledger (source='search').
+    """Best-effort log of one search call to the usage ledger (source='search') and
+    charge its estimated cost to the active per-turn budget window.
 
-    Cost is an estimate (Tavily bills per credit); Brave's free tier carries no
-    per-credit cost so its rows record 0. Never raises — metering must not break
-    a turn (mirrors usage_ledger's own contract).
+    Tavily bills per credit; Brave bills per request. Both are estimates. Never
+    raises — metering must not break a turn (mirrors usage_ledger's own contract).
     """
     try:
         from ..config import get_config_manager
         from ..agent.usage_ledger import record_usage
-        from ..agent.search_budget import attribution
+        from ..agent.search_budget import attribution, charge_cost
 
-        per_credit = 0.0
-        if backend == "tavily":
-            per_credit = float(get_config_manager().get("search.cost_per_credit_usd", 0.008) or 0.0)
-        cost_total = round(per_credit * credits, 6)
+        cfg = get_config_manager()
+        if backend == "brave":
+            # Brave bills per request (~$5/1k); `credits` here counts requests.
+            per_unit = float(cfg.get("search.brave_cost_per_request_usd", 0.005) or 0.0)
+            units = {"queries": 1, "requests": credits}
+            pricing = {"per_request_usd": per_unit, "requests": credits}
+        else:  # tavily (and any Tavily-only tool)
+            per_unit = float(cfg.get("search.cost_per_credit_usd", 0.008) or 0.0)
+            units = {"queries": 1, "credits": credits}
+            pricing = {"per_credit_usd": per_unit, "credits": credits}
+        cost_total = round(per_unit * credits, 6)
+        charge_cost(cost_total)  # surface running spend to the model via _budget_block
         conv_id, agent_id = attribution()
         record_usage(
             source="search",
@@ -2337,9 +2394,8 @@ def _record_search_spend(backend: str, credits: int) -> None:
             provider=backend,
             conversation_id=conv_id,
             agent_id=agent_id,
-            units={"queries": 1, "credits": credits},
-            cost={"cost_total": cost_total, "currency": "USD",
-                  "pricing_snapshot": {"per_credit_usd": per_credit, "credits": credits}},
+            units=units,
+            cost={"cost_total": cost_total, "currency": "USD", "pricing_snapshot": pricing},
         )
     except Exception as e:  # noqa: BLE001 — metering is best-effort
         logger.debug(f"search usage_ledger record failed (backend={backend}): {e}")
@@ -2374,7 +2430,7 @@ def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[
     cached = _SEARCH_CACHE.get(cache_key)
     if cached and cached[0] > now:
         # A cache hit spends nothing, so it bypasses the budget gate.
-        return {**cached[1], "cached": True, "success": True}
+        return {**cached[1], "cached": True, "success": True, "budget": _budget_block()}
 
     # Per-turn budget gate (spend only — cached hits above are free).
     budget_error = _check_search_budget()
@@ -2415,8 +2471,10 @@ def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[
             cacheable = {k: response[k] for k in ("results", "count", "backend")}
             if "answer" in response:
                 cacheable["answer"] = response["answer"]
-            _SEARCH_CACHE[cache_key] = (now + ttl, cacheable)
+            _cache_put(cache_key, now + ttl, cacheable)
         _record_search_spend(name, credits)
+        # Stamp budget/cost AFTER recording spend so it reflects this call.
+        response["budget"] = _budget_block()
         return response
 
     return {
@@ -2424,6 +2482,7 @@ def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[
         "count": 0,
         "success": False,
         "error": "all search backends failed or returned no results: " + "; ".join(errors),
+        "budget": _budget_block(),
     }
 
 
@@ -2449,6 +2508,21 @@ def web_extract(
     if not urls:
         return {"error": "urls is required", "success": False}
 
+    depth = extract_depth if extract_depth in ("basic", "advanced") else "basic"
+    fmt = format if format in ("markdown", "text") else "markdown"
+
+    # Cache identical extractions: research turns re-read the same pages while
+    # verifying claims, and each re-extract re-bills (1 credit / 5 URLs). Pages
+    # are stable within a turn; cache hits are free (no budget/spend).
+    from ..config import get_config_manager
+
+    ttl = int(get_config_manager().get("search.cache_ttl_seconds", 300))
+    cache_key = f"extract:{depth}:{fmt}:{sorted(urls)!r}"
+    now = time.time()
+    cached = _SEARCH_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return {**cached[1], "cached": True, "success": True}
+
     try:
         client = _tavily_client()
     except RuntimeError as e:
@@ -2458,8 +2532,8 @@ def web_extract(
     # dict so the Literal-typed SDK params accept our (validated) strings.
     kwargs: dict[str, Any] = {
         "urls": urls,
-        "extract_depth": extract_depth if extract_depth in ("basic", "advanced") else "basic",
-        "format": format if format in ("markdown", "text") else "markdown",
+        "extract_depth": depth,
+        "format": fmt,
     }
     try:
         data = client.extract(**kwargs)
@@ -2470,12 +2544,21 @@ def web_extract(
         {"url": r.get("url", ""), "content": r.get("raw_content") or r.get("content", "")}
         for r in (data.get("results") or [])
     ]
-    return {
+    # Tavily bills extraction at 1 credit per 5 successful URLs.
+    if results:
+        _record_search_spend("tavily", (len(results) + 4) // 5)
+    response = {
         "results": results,
         "failed": data.get("failed_results") or [],
         "count": len(results),
         "success": True,
     }
+    # Bound cached-entry size: extracted pages can be large; don't let a few
+    # jumbo extractions dominate the in-process cache's memory.
+    if ttl > 0 and results and sum(len(r["content"]) for r in results) <= 200_000:
+        _cache_put(cache_key, now + ttl, {"results": results, "failed": response["failed"],
+                                          "count": len(results)})
+    return response
 
 
 @register_tool(
@@ -2501,6 +2584,9 @@ def web_map(url: str, max_depth: int = 1, limit: int = 50, **opts: Any) -> dict[
 
     found = data.get("results") or data.get("urls") or []
     found = found[:limit]
+    # Tavily bills map at 1 credit per 10 pages.
+    if found:
+        _record_search_spend("tavily", (len(found) + 9) // 10)
     return {"base_url": url, "urls": found, "count": len(found), "success": True}
 
 
@@ -2539,7 +2625,54 @@ def web_crawl(
         {"url": r.get("url", ""), "content": r.get("raw_content") or r.get("content", "")}
         for r in (data.get("results") or [])
     ][:limit]
+    # Tavily bills crawl at 1 credit per 10 pages.
+    if pages:
+        _record_search_spend("tavily", (len(pages) + 9) // 10)
     return {"base_url": url, "pages": pages, "count": len(pages), "success": True}
+
+
+def _poll_research(client: Any, request_id: str) -> dict[str, Any]:
+    """Poll Tavily ``get_research`` until the task completes/fails or the deadline hits.
+
+    Tavily's Research API is async — ``research()`` only initiates a task; the
+    report arrives by polling. Returns the completed payload, or an
+    ``{"error": ...}`` dict on failure/timeout/cancellation. Checks the ambient
+    run-cancel flag between polls (best-effort) so a user's Stop isn't blocked
+    for minutes; transient poll errors retry until the deadline.
+    """
+    from ..config import get_config_manager
+
+    cfg = get_config_manager()
+    # None-check, not `or`: an explicit 0 means "don't wait" (immediate timeout),
+    # and must not silently become the default.
+    _raw_timeout = cfg.get("web_research.poll_timeout_seconds", 240)
+    timeout_s = float(240 if _raw_timeout is None else _raw_timeout)
+    _raw_interval = cfg.get("web_research.poll_interval_seconds", 5)
+    interval_s = max(1.0, float(5 if _raw_interval is None else _raw_interval))
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:  # cancel check is best-effort — never let it break the poll
+            from ..streaming.tool_loop import _ambient_cancel_check
+            if _ambient_cancel_check():
+                return {"error": "Research cancelled (run stopped while waiting for the report)"}
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            data = client.get_research(request_id)
+        except Exception as e:  # noqa: BLE001 - transient poll failure → retry until deadline
+            logger.debug(f"web_research poll error (request_id={request_id}): {e}")
+            data = None
+        if isinstance(data, dict):
+            status = str(data.get("status") or "").lower()
+            if status == "completed":
+                return data
+            if status == "failed":
+                return {"error": f"Research task failed: {data.get('error') or 'provider reported failure'}"}
+        time.sleep(interval_s)
+    return {
+        "error": f"Research timed out after {int(timeout_s)}s (request_id={request_id}); "
+        "try depth='mini' or a narrower query"
+    }
 
 
 @register_tool(
@@ -2555,43 +2688,83 @@ def web_research(query: str, depth: str = "auto", **opts: Any) -> dict[str, Any]
     """
     from ..config import get_config_manager
 
+    cfg = get_config_manager()
     if not query or not query.strip():
         return {"error": "query is required", "success": False}
-    if not get_config_manager().get("web_research.enabled", True):
+    if not cfg.get("web_research.enabled", True):
         return {"error": "web_research is disabled (web_research.enabled)", "success": False}
 
-    # Per-turn budget gate (deep research is one call, but a costly one).
-    budget_error = _check_search_budget()
-    if budget_error is not None:
-        return {"error": budget_error["error"], "success": False}
-
     model = depth if depth in ("auto", "mini", "pro") else "auto"
+
+    # Cache identical (query, depth) research: a deep report costs 5–20 credits,
+    # so re-serving a repeated query is a big saver. Cache hits are free (no gate).
+    research_ttl = int(cfg.get("web_research.cache_ttl_seconds", 1800))
+    cache_key = f"research:{model}:{query.strip().lower()}"
+    now = time.time()
+    cached = _SEARCH_CACHE.get(cache_key)
+    if cached and cached[0] > now:
+        return {**cached[1], "cached": True, "success": True, "budget": _budget_block()}
+
+    # Per-turn budget gate — deep research is one call, but a costly one, so it
+    # charges a heavier weight against the budget.
+    weight = int(cfg.get("web_research.budget_weight", 3) or 1)
+    budget_error = _check_search_budget(weight)
+    if budget_error is not None:
+        return {"error": budget_error["error"], "success": False, "budget": budget_error["budget"]}
+
     try:
         client = _tavily_client()
     except RuntimeError as e:
         return {"error": f"web_research requires Tavily: {e}", "success": False}
 
+    # Initiate the async research task ({request_id, status, ...} in ~200ms —
+    # the `timeout` here is only the HTTP timeout on the initiation POST).
     try:
-        data = client.research(input=query, model=model, timeout=120)
-    except Exception as e:  # noqa: BLE001 - SDK/network/timeout failure
-        return {"error": f"Research failed: {e}", "success": False}
-
-    if not isinstance(data, dict):
+        init = client.research(input=query, model=model, timeout=_search_timeout())
+    except Exception as e:  # noqa: BLE001 - SDK/network failure
+        return {"error": f"Research failed to start: {e}", "success": False}
+    if not isinstance(init, dict):
         return {"error": "Research returned no structured result", "success": False}
 
-    # Normalize whatever citation-like list the report carries into {title, url}
-    # so the tool-loop auto-capture (shared with web_search) can record sources.
-    raw_sources = data.get("results") or data.get("citations") or data.get("sources") or []
+    # Deep research burns many credits; Tavily runs (and bills) the task
+    # server-side once initiated, so record spend now — not on completion.
+    _record_search_spend("tavily", {"mini": 5, "auto": 10, "pro": 20}.get(model, 10))
+
+    request_id = init.get("request_id")
+    if request_id:
+        data = _poll_research(client, str(request_id))
+        if data.get("error"):
+            return {"error": data["error"], "success": False, "budget": _budget_block()}
+    else:
+        # Defensive: an SDK/plan that returns the finished report inline.
+        data = init
+
+    # The completed payload carries the report in `content` (+ `sources`);
+    # older/alternate shapes are checked as fallbacks. Normalize citation-like
+    # entries into {title, url} so the tool-loop auto-capture records sources.
+    report = data.get("content") or data.get("answer") or data.get("report") or ""
+    raw_sources = data.get("sources") or data.get("results") or data.get("citations") or []
     results = []
     for s in raw_sources:
         if isinstance(s, dict):
             results.append({"title": s.get("title") or s.get("url", ""), "url": s.get("url", "")})
         elif isinstance(s, str):
             results.append({"title": s, "url": s})
-    report = data.get("answer") or data.get("report") or data.get("output") or ""
-    # Deep research burns many credits; estimate by model tier for the ledger.
-    _record_search_spend("tavily", {"mini": 5, "auto": 10, "pro": 20}.get(model, 10))
-    return {"report": report, "results": results, "count": len(results), "success": True}
+    if not str(report).strip():
+        # Never success:True with nothing — an empty report is a failure the
+        # model should react to, not silently accept.
+        return {
+            "error": "Research completed but returned an empty report — try a "
+            "narrower query or depth='mini'",
+            "success": False,
+            "budget": _budget_block(),
+        }
+    response = {"report": report, "results": results, "count": len(results), "success": True}
+    if research_ttl > 0:
+        _cache_put(cache_key, now + research_ttl, {"report": report, "results": results,
+                                                   "count": len(results)})
+    response["budget"] = _budget_block()
+    return response
 
 
 # =============================================================================

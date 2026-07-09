@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.200 -->
+<!-- release-version: 0.21.202 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,6 +21,14 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
+- **Research Mode** — a per-conversation toggle (the 🔭 chip in the composer) that turns a chat into
+  a rigorous research engagement: an elevated, cost-aware search budget, a preference for deep
+  research, and a self-reviewing prompt that gathers real, cited evidence (concrete stats + named
+  case studies — no invented sources), critiques its own draft, and lands a durable report in the
+  attached Project. Delivery is guaranteed: deep research now polls Tavily's async API for the real
+  report, a finalize guard makes the agent save the report document before its budget closes, and a
+  turn can never end silently mid-research. Tune budget, depth, and cost under **Settings →
+  Research Mode**; search spend is metered accurately (Brave + extraction included).
 - **Memory consolidation has a real progress drawer** — the ⚡ icon now opens an animated drawer
   with a genuinely moving progress bar (per-conversation, with a trickle so it never looks frozen),
   live counters (turns · LLM calls · tokens), rotating status messages, surfaced issues, and a clean

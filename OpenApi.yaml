@@ -909,6 +909,16 @@ paths:
                         Per-conversation "Solo" mode: suppress ad-hoc delegation for
                         this turn (no `delegate_to` tool, no roster prompt). Ignored
                         when `workflow_id` is set — a team run is delegation.
+                    research_mode:
+                      type: boolean
+                      default: false
+                      description: >-
+                        Per-conversation "Research Mode": elevated per-turn search
+                        budget (`search.research_per_turn_limit`), generous tool-round
+                        cap, and a rigorous, evidence-grounded, self-reviewing research
+                        prompt that lands a durable cited report in the attached Project.
+                        Forces the flat single-agent path (no planner decomposition).
+                        Gated server-side by `research.enabled`.
       responses:
         '200':
           description: SSE stream

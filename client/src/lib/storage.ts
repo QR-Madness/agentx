@@ -380,6 +380,10 @@ export interface ConversationTab {
   // Solo mode: suppress ad-hoc delegation for this conversation (no delegate_to
   // tool / roster prompt). Ignored while a workflow (team) is active on the tab.
   noDelegation?: boolean;
+  // Research Mode: elevated search budget + a rigorous, evidence-grounded,
+  // self-reviewing research prompt that lands a durable, cited report in the
+  // attached Project. Sent as `research_mode` on the stream request.
+  researchMode?: boolean;
   // Per-conversation model override (e.g. "openrouter:anthropic/claude-..."),
   // chosen from the composer's inline model chip. Falls back to the profile's
   // model when unset. Sent as `model` on the stream request.
@@ -430,6 +434,7 @@ export function getConversationTabs(serverId?: string): ConversationTab[] {
     workflowId: t.workflowId ?? null,
     noMemorization: t.noMemorization ?? false,
     noDelegation: t.noDelegation ?? false,
+    researchMode: t.researchMode ?? false,
     modelOverride: t.modelOverride ?? null,
   }));
 }

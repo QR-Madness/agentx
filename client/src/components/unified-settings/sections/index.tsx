@@ -26,6 +26,7 @@ import {
   ScrollText,
   Search,
   GitMerge,
+  Telescope,
 } from 'lucide-react';
 
 export interface Section {
@@ -110,6 +111,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         icon: <Radio size={18} />,
         component: lazy(() => import('./AmbassadorSection')),
         keywords: ['ambassador', 'briefing', 'summarize', 'parallel', 'interpreter', 'cc']
+      },
+      {
+        id: 'research',
+        label: 'Research Mode',
+        icon: <Telescope size={18} />,
+        component: lazy(() => import('./ResearchSection')),
+        keywords: ['research', 'deep research', 'report', 'search budget', 'citations', 'sources', 'web_research', 'cost']
       },
     ]
   },

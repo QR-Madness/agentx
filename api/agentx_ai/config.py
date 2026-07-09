@@ -245,9 +245,17 @@ DEFAULT_CONFIG = {
         # hitting the backend. Bounds a runaway tool loop's Tavily spend. 0 = unlimited.
         # A soft cap: high enough to never bite normal use, only clips loops.
         "per_turn_limit": 8,
+        # Elevated per-turn budget used when a conversation is in Research Mode
+        # (research_mode=true on the chat request). Bounded, not unlimited, by
+        # default; 0 = unlimited. Research turns need many searches + a few deep
+        # web_research calls; this cap (not tool-rounds) governs how deep research goes.
+        "research_per_turn_limit": 40,
         # Ledger cost estimate only (search spend is logged to usage_events).
         # Tavily bills per credit: a basic search = 1 credit, advanced = 2.
         "cost_per_credit_usd": 0.008,
+        # Brave Search bills ~$5 per 1,000 requests. Used to cost Brave-backend
+        # spend in the usage ledger (previously logged as free, which was wrong).
+        "brave_cost_per_request_usd": 0.005,
         # API keys (env fallback: TAVILY_API_KEY / BRAVE_API_KEY). Redacted on GET /api/config.
         "tavily_api_key": None,
         "brave_api_key": None,
@@ -257,6 +265,40 @@ DEFAULT_CONFIG = {
         # genuinely long research wants the background-job path. Off ⇒ the tool
         # returns a disabled error rather than blocking the turn.
         "enabled": True,
+        # TTL for caching identical deep-research (query, depth) results. Deep
+        # research burns 5–20 credits/call, so caching a repeated query is a big
+        # cost saver. Longer than web_search's cache (research is expensive + stable).
+        "cache_ttl_seconds": 1800,
+        # Tavily's Research API is async: research() only initiates a task
+        # ({request_id, status}); the report arrives via get_research(request_id)
+        # polling. These bound the poll: total wall-clock wait and per-poll gap.
+        # mini completes in ~30-60s, auto ~1-2min, pro can take minutes — on
+        # deadline the tool errors with advice to narrow the query or use mini.
+        "poll_timeout_seconds": 240,
+        "poll_interval_seconds": 5,
+        # How many units a single web_research call charges against the per-turn
+        # search budget. Deep research is "one call, but a costly one" (5–20
+        # credits), so it weighs more than a basic web_search (1).
+        "budget_weight": 3,
+    },
+    "research": {
+        # Research Mode (per-conversation `research_mode` flag on the chat request):
+        # elevated search budget + a rigorous, evidence-grounded, self-reviewing
+        # research prompt that lands a durable, cited report in the attached Project.
+        # Ship-experimental-on: enabled by default, opt-out in settings.
+        "enabled": True,
+        # Tool-round cap for a research turn (vs the standard DEFAULT_MAX_TOOL_ROUNDS).
+        # Generous on purpose: the *search budget*, not tool-rounds, should govern
+        # depth. If rounds bind first, the loop force-answers mid-research.
+        "max_tool_rounds": 40,
+        # Default web_research effort tier the prompt steers toward. The cost/quality
+        # dial: mini/auto/pro ≈ $0.04/$0.08/$0.16 per deep call at $0.008/credit.
+        "default_depth": "auto",
+        # Output-budget floor for a research turn's completions. A research turn
+        # must fit thinking + a full report in one call — the chat-sized adaptive
+        # budget starves it. Bounded by the model's effective output cap (set
+        # Model Limits for catalog-miss models to unlock the full floor).
+        "min_max_tokens": 16384,
     },
     "ambassador": {
         # Phase 16.6 — a dedicated agent that runs *parallel* to a conversation

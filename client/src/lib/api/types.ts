@@ -232,6 +232,9 @@ export interface ChatRequest {
   // Solo mode: suppress ad-hoc delegation for this turn (no delegate_to tool /
   // roster prompt). Ignored when workflow_id is set — a team run IS delegation.
   disable_delegation?: boolean;
+  // Research Mode: elevated search budget + rigorous, evidence-grounded,
+  // self-reviewing research prompt (gated server-side by research.enabled).
+  research_mode?: boolean;
   workflow_id?: string;  // Optional Agent Alloy workflow — supervisor takes over the chat
   workspace_id?: string;  // Optional attached document workspace (Document RAG)
   images?: ChatImageRef[];  // Vision input: refs to uploaded images the model should see

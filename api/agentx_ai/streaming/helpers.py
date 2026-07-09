@@ -48,6 +48,7 @@ def compute_adaptive_max_tokens(
     max_output_tokens: int,
     max_output_override: int | None,
     supports_reasoning: bool = False,
+    min_output_override: int | None = None,
 ) -> int:
     """Adaptive per-call output budget from context usage.
 
@@ -58,6 +59,13 @@ def compute_adaptive_max_tokens(
     make us request ~the whole window as output → provider 400); an explicit
     override is trusted as-is. The floor is raised for reasoning models, whose
     thinking spends output budget before the visible answer.
+
+    ``min_output_override`` lets a deliberate large-output caller (Research
+    Mode: think + a full multi-thousand-token report in one completion) raise
+    the floor above the chat-sized defaults. It is bounded by the effective
+    output cap so we never request more than the model accepts — on a model
+    whose capabilities are unresolved (catalog miss), set Model Limits
+    (`context_limits.models.{id}`) to unlock the full floor.
     """
     estimated_input = estimate_tokens(messages)
     estimated_tool_tokens = (
@@ -72,6 +80,8 @@ def compute_adaptive_max_tokens(
         else min(max_output_tokens, MAX_OUTPUT_TOKENS_CEILING)
     )
     min_output = REASONING_MIN_OUTPUT_TOKENS if supports_reasoning else MIN_OUTPUT_TOKENS
+    if min_output_override:
+        min_output = max(min_output, min(int(min_output_override), output_cap))
     adaptive = max(min(output_cap, available_for_output), min_output)
 
     logger.debug(

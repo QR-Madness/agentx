@@ -31,6 +31,10 @@ class _Window:
     conversation_id: str | None = None
     agent_id: str | None = None
     used: int = field(default=0)
+    # Running estimated USD spend for this turn's searches (best-effort; charged
+    # by ``charge_cost`` from the search spend recorder). Surfaced to the model via
+    # ``snapshot`` so it can pace by cost, not just call count.
+    cost_used: float = field(default=0.0)
 
 
 _window: ContextVar[_Window | None] = ContextVar("search_budget_window", default=None)
@@ -68,6 +72,35 @@ def consume(weight: int = 1) -> tuple[bool, int, int]:
         return False, win.used, win.limit
     win.used += weight
     return True, win.used, win.limit
+
+
+def charge_cost(usd: float) -> None:
+    """Add an estimated USD spend to the active window (best-effort, never raises).
+
+    No active window ⇒ no-op (background callers aren't metered against a turn).
+    """
+    win = _window.get()
+    if win is None:
+        return
+    try:
+        win.cost_used += max(0.0, float(usd))
+    except (TypeError, ValueError):
+        pass
+
+
+def snapshot() -> tuple[int, int, int | None, float]:
+    """Return ``(used, limit, remaining, cost_used)`` for the active window.
+
+    ``remaining`` is ``None`` when unlimited (no window, or ``limit == 0``).
+    Read-only — used to stamp budget/cost awareness onto tool results and to
+    gate the research anti-premature-stop nudge.
+    """
+    win = _window.get()
+    if win is None or win.limit <= 0:
+        used = win.used if win is not None else 0
+        cost = win.cost_used if win is not None else 0.0
+        return used, 0, None, cost
+    return win.used, win.limit, max(0, win.limit - win.used), win.cost_used
 
 
 def attribution() -> tuple[str | None, str | None]:

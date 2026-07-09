@@ -2843,6 +2843,7 @@ class WebSearchToolTest(TestCase):
         # Deterministic config; restore in tearDown.
         cfg = get_config_manager()
         self._orig_search = cfg.get("search")
+        self._orig_web_research = dict(cfg.get("web_research") or {})
         cfg.set("search", {
             "backend": "tavily",
             "fallback_enabled": True,
@@ -2864,6 +2865,7 @@ class WebSearchToolTest(TestCase):
         self._key_patch.stop()
         self.internal_tools._SEARCH_CACHE.clear()
         get_config_manager().set("search", self._orig_search)
+        get_config_manager().set("web_research", self._orig_web_research)
 
     def _fake_tavily(self, search):
         """A patch for `_tavily_client` whose `.search` is the given callable/Mock.
@@ -2973,6 +2975,262 @@ class WebSearchToolTest(TestCase):
         self.assertEqual(kwargs["source"], "search")
         self.assertEqual(kwargs["units"]["credits"], 1)
         self.assertIn("cost_total", kwargs["cost"])
+
+    # --- Research Mode: budget/cost awareness + metering + caching ----------
+
+    def test_budget_block_on_success_and_cache(self):
+        """web_search stamps a budget block (used/limit/remaining/est_cost_usd) on
+        both a live result and a cache hit so the model can pace by count and cost."""
+        from agentx_ai.agent.search_budget import search_budget_window
+
+        payload = {"results": [{"title": "T", "url": "https://a", "content": "c"}]}
+        with self._fake_tavily(payload), search_budget_window(40):
+            live = self.internal_tools.web_search("budget block q")
+            cached = self.internal_tools.web_search("budget block q")
+        for out in (live, cached):
+            self.assertIn("budget", out)
+            b = out["budget"]
+            self.assertEqual(b["limit"], 40)
+            self.assertEqual(b["remaining"], 40 - b["used"])
+            self.assertIn("est_cost_usd", b)
+        self.assertFalse(live["cached"])
+        self.assertTrue(cached["cached"])
+        # The live call spent 1; the cache hit is free (used unchanged).
+        self.assertEqual(live["budget"]["used"], 1)
+        self.assertEqual(cached["budget"]["used"], 1)
+
+    def test_budget_block_on_exhausted(self):
+        """The budget-exhausted error also carries the budget block."""
+        from agentx_ai.agent.search_budget import search_budget_window
+
+        payload = {"results": [{"title": "T", "url": "https://a", "content": "c"}]}
+        with self._fake_tavily(payload), search_budget_window(1):
+            self.internal_tools.web_search("q1")
+            blocked = self.internal_tools.web_search("q2")
+        self.assertFalse(blocked["success"])
+        self.assertIn("budget", blocked)
+        self.assertEqual(blocked["budget"]["remaining"], 0)
+
+    def test_unlimited_budget_block_reports_unlimited(self):
+        """No window (or limit 0) reports remaining='unlimited'."""
+        payload = {"results": [{"title": "T", "url": "https://a", "content": "c"}]}
+        with self._fake_tavily(payload):
+            out = self.internal_tools.web_search("unbounded budget block")
+        self.assertEqual(out["budget"]["remaining"], "unlimited")
+        self.assertEqual(out["budget"]["limit"], 0)
+
+    def test_brave_spend_is_costed_not_free(self):
+        """Brave-backend spend is costed via brave_cost_per_request_usd (not 0)."""
+        from unittest.mock import patch
+
+        brave_payload = {"web": {"results": [
+            {"title": "B", "url": "https://x", "description": "s"},
+        ]}}
+        with self._fake_tavily(RuntimeError("tavily down")), \
+             patch.object(self.internal_tools, "_http_get_json", return_value=brave_payload), \
+             patch("agentx_ai.agent.usage_ledger.record_usage") as mock_rec:
+            out = self.internal_tools.web_search("brave costed")
+        self.assertEqual(out["backend"], "brave")
+        cost = mock_rec.call_args.kwargs["cost"]["cost_total"]
+        self.assertGreater(cost, 0.0)
+
+    def test_web_extract_meters_credits(self):
+        """web_extract bills 1 credit per 5 successful URLs (ceil)."""
+        from unittest.mock import MagicMock, patch
+
+        client = MagicMock()
+        client.extract.return_value = {"results": [
+            {"url": f"https://p{i}", "raw_content": "x"} for i in range(6)
+        ]}
+        with patch.object(self.internal_tools, "_tavily_client", return_value=client), \
+             patch("agentx_ai.agent.usage_ledger.record_usage") as mock_rec:
+            out = self.internal_tools.web_extract([f"https://p{i}" for i in range(6)])
+        self.assertTrue(out["success"])
+        # 6 URLs → ceil(6/5) = 2 credits.
+        self.assertEqual(mock_rec.call_args.kwargs["units"]["credits"], 2)
+
+    def test_web_research_caches_and_weighs_budget(self):
+        """web_research caches by (query, depth), and a deep call charges its
+        configured budget_weight (>1) against the per-turn budget."""
+        from unittest.mock import MagicMock, patch
+
+        from agentx_ai.agent.search_budget import search_budget_window, snapshot
+        from agentx_ai.config import get_config_manager
+
+        get_config_manager().set("web_research.budget_weight", 3)
+        get_config_manager().set("web_research.cache_ttl_seconds", 300)
+        client = MagicMock()
+        client.research.return_value = {
+            "answer": "a report", "results": [{"title": "S", "url": "https://s"}],
+        }
+        with patch.object(self.internal_tools, "_tavily_client", return_value=client), \
+             search_budget_window(40):
+            first = self.internal_tools.web_research("deep q", depth="auto")
+            used_after_first = snapshot()[0]
+            second = self.internal_tools.web_research("deep q", depth="auto")
+        self.assertTrue(first["success"])
+        self.assertFalse(first.get("cached"))
+        self.assertTrue(second["cached"])
+        # Deep research charged weight 3; the cache hit charged nothing more.
+        self.assertEqual(used_after_first, 3)
+        self.assertEqual(client.research.call_count, 1)
+
+    def test_search_cache_is_bounded(self):
+        """_cache_put keeps the in-process cache under its max size."""
+        from agentx_ai.mcp import internal_tools
+
+        internal_tools._SEARCH_CACHE.clear()
+        cap = internal_tools._SEARCH_CACHE_MAX
+        for i in range(cap + 50):
+            internal_tools._cache_put(f"k{i}", 9e18, {"results": []})
+        self.assertLessEqual(len(internal_tools._SEARCH_CACHE), cap)
+
+    # --- v1.1: web_research initiate → poll (Tavily's async Research API) ---
+
+    def _fake_tavily_research(self, init, polls):
+        """Patch `_tavily_client` with a research/get_research mock pair.
+
+        `research()` (initiation) returns `init`; successive `get_research`
+        polls return items from `polls` — mirroring the real async contract.
+        """
+        from unittest.mock import MagicMock, patch
+
+        client = MagicMock()
+        client.research.return_value = init
+        client.get_research.side_effect = list(polls)
+        return patch.object(self.internal_tools, "_tavily_client", return_value=client)
+
+    def test_web_research_polls_until_complete(self):
+        """research() only initiates ({request_id}); the report arrives via
+        get_research polling — completed payload's `content`/`sources` are the
+        report. Spend is recorded once, at initiation. The result caches."""
+        from unittest.mock import patch
+
+        with self._fake_tavily_research(
+            {"request_id": "r1", "status": "pending"},
+            [{"status": "in_progress"},
+             {"status": "completed", "content": "deep report",
+              "sources": [{"title": "S", "url": "https://s"}]}],
+        ), patch("agentx_ai.agent.usage_ledger.record_usage") as rec, \
+             patch("time.sleep"):
+            out = self.internal_tools.web_research("poll q", depth="mini")
+            again = self.internal_tools.web_research("poll q", depth="mini")
+        self.assertTrue(out["success"])
+        self.assertEqual(out["report"], "deep report")
+        self.assertEqual(out["results"], [{"title": "S", "url": "https://s"}])
+        self.assertEqual(rec.call_count, 1)  # spend once, at initiation
+        self.assertTrue(again["cached"])     # (query, depth) cache serves the repeat
+
+    def test_web_research_failed_status(self):
+        """A failed research task surfaces as an error (with budget context)."""
+        from unittest.mock import patch
+
+        with self._fake_tavily_research(
+            {"request_id": "r2", "status": "pending"},
+            [{"status": "failed", "error": "boom"}],
+        ), patch("time.sleep"):
+            out = self.internal_tools.web_research("fail q")
+        self.assertFalse(out["success"])
+        self.assertIn("failed", out["error"].lower())
+        self.assertIn("budget", out)
+
+    def test_web_research_poll_timeout(self):
+        """Deadline exhaustion returns a timeout error advising mini/narrower."""
+        from unittest.mock import patch
+
+        from agentx_ai.config import get_config_manager
+
+        get_config_manager().set("web_research.poll_timeout_seconds", 0)
+        with self._fake_tavily_research({"request_id": "r3", "status": "pending"}, []), \
+             patch("time.sleep"):
+            out = self.internal_tools.web_research("slow q")
+        self.assertFalse(out["success"])
+        self.assertIn("timed out", out["error"])
+
+    def test_web_research_empty_report_fails(self):
+        """A completed task with an empty report is a failure — never
+        success:True with nothing (the live bug this guards against)."""
+        from unittest.mock import patch
+
+        with self._fake_tavily_research(
+            {"request_id": "r4", "status": "pending"},
+            [{"status": "completed", "content": "", "sources": []}],
+        ), patch("time.sleep"):
+            out = self.internal_tools.web_research("empty q")
+        self.assertFalse(out["success"])
+        self.assertIn("empty report", out["error"])
+
+    def test_web_extract_caches_and_bills_once(self):
+        """Identical re-extractions are served from cache — no second SDK call,
+        no second billing (research turns re-read pages while verifying)."""
+        from unittest.mock import MagicMock, patch
+
+        client = MagicMock()
+        client.extract.return_value = {"results": [
+            {"url": "https://p1", "raw_content": "page body"},
+        ]}
+        with patch.object(self.internal_tools, "_tavily_client", return_value=client), \
+             patch("agentx_ai.agent.usage_ledger.record_usage") as rec:
+            first = self.internal_tools.web_extract(["https://p1"])
+            second = self.internal_tools.web_extract(["https://p1"])
+        self.assertTrue(first["success"])
+        self.assertFalse(first.get("cached", False))
+        self.assertTrue(second["cached"])
+        self.assertEqual(client.extract.call_count, 1)
+        self.assertEqual(rec.call_count, 1)
+
+
+class SearchBudgetSnapshotTest(TestCase):
+    """The per-turn search-budget window's cost/awareness snapshot."""
+
+    def test_snapshot_tracks_calls_and_cost(self):
+        from agentx_ai.agent.search_budget import (
+            charge_cost, consume, search_budget_window, snapshot,
+        )
+
+        with search_budget_window(40):
+            consume(1)
+            consume(3)  # a deep-research-weighted call
+            charge_cost(0.088)
+            used, limit, remaining, cost = snapshot()
+        self.assertEqual((used, limit, remaining), (4, 40, 36))
+        self.assertAlmostEqual(cost, 0.088, places=4)
+
+    def test_snapshot_unlimited_without_window(self):
+        from agentx_ai.agent.search_budget import snapshot
+
+        used, limit, remaining, cost = snapshot()
+        self.assertEqual((used, limit, remaining, cost), (0, 0, None, 0.0))
+
+
+class ResearchPromptTest(TestCase):
+    """The Research Mode system prompt template."""
+
+    def test_research_prompt_renders(self):
+        from agentx_ai.prompts import get_prompt
+
+        prompt = get_prompt("research.system", default_depth="auto")
+        self.assertIn("RESEARCH MODE", prompt)
+        self.assertNotIn("{default_depth}", prompt)  # var substituted
+        self.assertIn("auto", prompt)
+        # The evidence bar + self-review loop are load-bearing.
+        self.assertIn("REAL references only", prompt)
+        self.assertIn("DEFINITION OF DONE", prompt)
+        # v1.1 delivery hardening: the doc write is a hard gate, verification is
+        # bounded, the loop must converge, and deep queries stay narrow (a broad
+        # everything-query times out and wastes credits — live failure).
+        self.assertIn("hard gate", prompt)
+        self.assertIn("FAILED turn", prompt)
+        self.assertIn("CONVERGE", prompt)
+        self.assertIn("single-topic", prompt)
+
+    def test_finalize_nudge_renders(self):
+        """The delivery-guard nudge template exists and names the doc tool."""
+        from agentx_ai.prompts import get_prompt
+
+        nudge = get_prompt("research.finalize_nudge")
+        self.assertTrue(nudge.strip())
+        self.assertIn("create_document", nudge)
 
 
 class IntentAwareRetrievalTest(TestCase):
@@ -3669,6 +3927,211 @@ class StreamingToolLoopTest(TestCase):
 
         self.assertEqual(provider._call, 2)
         self.assertEqual(result.finish_reason, "length")
+
+    # --- v1.1: round-exhaustion synthesis floor --------------------------
+
+    def test_round_exhaustion_synthesis_floor(self) -> None:
+        """A model that keeps calling tools through every round — including the
+        tools-withheld final round — gets one forced text-only synthesis pass,
+        so the turn never ends in silence (live failure: think-only output,
+        finish_reason=tool_calls, no final completion ever streamed)."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={"q": "a"})],
+                         finish_reason="tool_calls")],
+            [StreamChunk(tool_calls=[ToolCall(id="t2", name="search", arguments={"q": "b"})],
+                         finish_reason="tool_calls")],
+            [StreamChunk(content="the final answer", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        events, result = self._run(
+            provider, agent, messages, [{"name": "search"}], max_tool_rounds=1,
+        )
+
+        self.assertEqual(provider._call, 3)          # 2 rounds + 1 synthesis pass
+        self.assertEqual(len(agent.executed), 2)     # both rounds' calls executed (status quo)
+        self.assertTrue(
+            any(m.role == MessageRole.USER and "Tool budget is exhausted" in m.content
+                for m in messages)
+        )
+        self.assertEqual(result.final_content, "the final answer")
+        self.assertTrue(any("the final answer" in e for e in self._events_of(events, "chunk")))
+
+    def test_synthesis_pass_ignores_tool_calls(self) -> None:
+        """Tool calls emitted during the synthesis pass are never executed —
+        that pass is text-only by construction."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={})],
+                         finish_reason="tool_calls")],
+            [StreamChunk(tool_calls=[ToolCall(id="t2", name="search", arguments={})],
+                         finish_reason="tool_calls")],
+            [StreamChunk(content="answer", tool_calls=[ToolCall(id="t3", name="search", arguments={})],
+                         finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        _events, result = self._run(provider, agent, [], [{"name": "search"}], max_tool_rounds=1)
+
+        self.assertEqual(len(agent.executed), 2)     # t3 (synthesis round) never executed
+        self.assertEqual(result.final_content, "answer")
+
+    def test_synthesis_pass_empty_falls_back(self) -> None:
+        """An empty synthesis completion still yields explicit fallback content."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={})],
+                         finish_reason="tool_calls")],
+            [StreamChunk(tool_calls=[ToolCall(id="t2", name="search", arguments={})],
+                         finish_reason="tool_calls")],
+            [StreamChunk(content="", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        events, result = self._run(provider, agent, [], [{"name": "search"}], max_tool_rounds=1)
+
+        self.assertIn("tool budget exhausted", result.final_content)
+        self.assertTrue(any("tool budget exhausted" in e for e in self._events_of(events, "chunk")))
+
+    # --- v1.1: research delivery guard (finalize nudge) -------------------
+
+    def test_finalize_nudge_reactive_at_natural_stop(self) -> None:
+        """The model stopping with no document written triggers the nudge once:
+        partial folded in (thinking stripped), nudge appended, loop continues."""
+        from agentx_ai.providers.base import StreamChunk, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="<think>hmm</think>i stop here", finish_reason="stop")],
+            [StreamChunk(content="saved and summarized", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        _events, result = self._run(
+            provider, agent, messages, None, finalize_nudge="SAVE THE REPORT NOW",
+        )
+
+        self.assertEqual(provider._call, 2)
+        nudges = [m for m in messages
+                  if m.role == MessageRole.USER and m.content == "SAVE THE REPORT NOW"]
+        self.assertEqual(len(nudges), 1)
+        # Partial folded with thinking stripped (same shape as steer folding)
+        self.assertTrue(
+            any(m.role == MessageRole.ASSISTANT and m.content == "i stop here" for m in messages)
+        )
+        self.assertEqual(result.final_content, "saved and summarized")
+
+    def test_finalize_nudge_skipped_after_doc_write(self) -> None:
+        """A successful document write suppresses the nudge (docs_written > 0)."""
+        from agentx_ai.providers.base import Message, MessageRole, StreamChunk, ToolCall
+
+        class _DocAgent(self._FakeAgent):
+            def _execute_tool_calls(self, calls, task_context=""):
+                self.executed.append(list(calls))
+                return [
+                    Message(role=MessageRole.TOOL,
+                            content='{"success": true, "document_id": "d1"}',
+                            tool_call_id=tc.id, name=tc.name)
+                    for tc in calls
+                ]
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="create_document",
+                                              arguments={"filename": "r.md"})])],
+            [StreamChunk(content="done — report saved", finish_reason="stop")],
+        ])
+        agent = _DocAgent()
+        messages: list = []
+        _events, result = self._run(
+            provider, agent, messages, [{"name": "create_document"}],
+            finalize_nudge="SAVE THE REPORT NOW",
+        )
+
+        self.assertEqual(result.docs_written, 1)
+        self.assertFalse(any(
+            getattr(m, "role", None) == MessageRole.USER and m.content == "SAVE THE REPORT NOW"
+            for m in messages
+        ))
+        self.assertEqual(result.final_content, "done — report saved")
+
+    def test_finalize_nudge_proactive_near_exhaustion_once_only(self) -> None:
+        """With rounds nearly exhausted and no doc written, the nudge fires at
+        the tool boundary — and at most once across both triggers."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={})])],
+            [StreamChunk(tool_calls=[ToolCall(id="t2", name="search", arguments={})])],
+            [StreamChunk(content="wrapping up", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        _events, _result = self._run(
+            provider, agent, messages, [{"name": "search"}],
+            max_tool_rounds=4, finalize_nudge="SAVE THE REPORT NOW",
+        )
+
+        nudges = [m for m in messages
+                  if m.role == MessageRole.USER and m.content == "SAVE THE REPORT NOW"]
+        self.assertEqual(len(nudges), 1)  # proactive fired (round >= max-3); never re-fired
+
+    def test_think_only_final_falls_back_visibly(self) -> None:
+        """A think-only final is VISIBLY empty (parsed check) → the fallback
+        chunk fires, while the raw thinking is preserved for persistence."""
+        from agentx_ai.providers.base import StreamChunk
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="<think>only thinking here</think>", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(result.final_content, "[empty response from model]")
+        self.assertIn("only thinking here", result.content)   # thinking preserved
+        self.assertIn("[empty response from model]", result.content)
+        self.assertTrue(any("[empty response from model]" in e
+                            for e in self._events_of(events, "chunk")))
+
+
+class AdaptiveMaxTokensTest(TestCase):
+    """Output-budget computation, incl. the Research Mode floor (v1.1)."""
+
+    def _compute(self, **kw):
+        from agentx_ai.streaming.helpers import compute_adaptive_max_tokens
+
+        defaults = dict(
+            messages=[], tools=None, context_window=200_000,
+            max_output_tokens=4096, max_output_override=None,
+            supports_reasoning=False, min_output_override=None,
+        )
+        defaults.update(kw)
+        return compute_adaptive_max_tokens(
+            defaults.pop("messages"), defaults.pop("tools"), **defaults,
+        )
+
+    def test_baseline_unchanged_without_override(self):
+        """No research floor → capability cap governs (chat behavior intact)."""
+        self.assertEqual(self._compute(), 4096)
+
+    def test_research_floor_bounded_by_model_cap(self):
+        """The floor never exceeds the model's effective output cap — an
+        unresolved-capability model (cap 4096) gets 4096, not the full floor."""
+        self.assertEqual(self._compute(min_output_override=16384), 4096)
+
+    def test_research_floor_wins_when_context_starved(self):
+        """With a trusted operator override raising the cap, the research floor
+        holds even when the (mis-resolved) window leaves no room — the exact
+        live failure: 8192 window → available negative → 2048 without it."""
+        starved = self._compute(
+            context_window=1000, max_output_tokens=32768, max_output_override=32768,
+        )
+        self.assertEqual(starved, 2048)  # without the floor: bare minimum
+        floored = self._compute(
+            context_window=1000, max_output_tokens=32768, max_output_override=32768,
+            min_output_override=16384,
+        )
+        self.assertEqual(floored, 16384)
 
 
 class SteerPersistenceTest(TestCase):

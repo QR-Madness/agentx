@@ -10,7 +10,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.190** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.202** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -64,6 +64,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.190** (pro
 | [genome-advisor.md](todo/backlog/genome-advisor.md) | Agent Genome & Settings Advisor — the meta-layer |
 | [open-platform.md](todo/backlog/open-platform.md) | De-walling the garden — import/export, MCP server, egress |
 | [exhibits.md](todo/backlog/exhibits.md) | Rich agent-authored content (declarative protocol) |
+| [research.md](todo/backlog/research.md) | Research Mode follow-ups (form intake, delegated deep-research, Brave backends, spend ceiling) |
 | [translation-web-search.md](todo/backlog/translation-web-search.md) | Translation backend · Web Search & Delegation |
 | [logging.md](todo/backlog/logging.md) | Logging & Observability Overhaul (`logging_kit`) |
 
