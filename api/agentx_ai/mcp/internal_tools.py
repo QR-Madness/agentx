@@ -1050,6 +1050,46 @@ def delete_document_tool(document_id: str) -> dict[str, Any]:
 
 
 @register_tool(
+    name="rename_document",
+    description=(
+        "Rename a project file's name (get its `document_id` from the file list or "
+        "`project_search`). Renames the base name only — the folder and extension are "
+        "kept, and the file's identity/history are preserved. `name` is just the new "
+        "base name (no path, no extension needed)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "string", "description": "The document's id."},
+            "name": {"type": "string", "description": "The new base name (no folder/extension)."},
+        },
+        "required": ["document_id", "name"],
+    },
+)
+def rename_document_tool(document_id: str, name: str) -> dict[str, Any]:
+    from ..kit.workspaces import repository
+    from ..kit.workspaces.service import WorkspaceError, rename_document
+
+    workspace_id = _active_workspace_id()
+    if not workspace_id:
+        return {
+            "error": "This conversation is not in a project — ask the user to attach or "
+                     "create one in the Projects hub.",
+            "success": False,
+        }
+    doc = repository.get_document(document_id)
+    if not doc or doc["workspace_id"] != workspace_id:
+        return {"error": f"Document {document_id} not found in this project.", "success": False}
+    if str(doc.get("filename") or "").startswith("avatars/"):
+        return {"error": "Refusing to rename an avatar (an app icon, not project content).", "success": False}
+    try:
+        renamed = rename_document(workspace_id=workspace_id, document_id=document_id, new_base=name)
+    except WorkspaceError as e:
+        return {"error": e.message, "success": False}
+    return {"success": True, "document": {"id": renamed["id"], "filename": renamed["filename"]}}
+
+
+@register_tool(
     name="view_image",
     description=(
         "Look at an image — load it into your vision so you can actually see and describe it. "
@@ -2610,7 +2650,8 @@ def get_internal_tools() -> list[ToolInfo]:
 
 _SHELL_TOOL_NAMES: frozenset[str] = frozenset({"run_command", "write_file", "read_file", "list_files"})
 _DOCUMENT_WRITE_TOOL_NAMES: frozenset[str] = frozenset(
-    {"create_document", "update_document", "append_to_document", "edit_document", "delete_document"}
+    {"create_document", "update_document", "append_to_document", "edit_document",
+     "delete_document", "rename_document"}
 )
 _STATE_TOOL_NAMES: frozenset[str] = frozenset({"update_conversation_state"})
 

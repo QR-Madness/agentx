@@ -29,6 +29,7 @@ from .kit.workspaces.service import (
     WorkspaceError,
     create_text_document,
     release_blob_if_unreferenced,
+    rename_document,
     update_text_document,
     upload_document,
 )
@@ -261,15 +262,31 @@ def workspace_document_text(request, workspace_id: str, document_id: str):
 
 
 @csrf_exempt
-@require_methods("GET", "DELETE")
+@require_methods("GET", "PATCH", "DELETE")
 def workspace_document_detail(request, workspace_id: str, document_id: str):
-    """Get document metadata, or delete the document + its blob."""
+    """Get document metadata, rename it (PATCH ``{name}`` — base name only, keeps
+    folder + extension; the doc_id is untouched), or delete it + its blob."""
     doc = repository.get_document(document_id)
     if not doc or doc["workspace_id"] != workspace_id:
         return json_error("Document not found", status=404)
 
     if request.method == "GET":
         return json_success({"document": _serialize_document(doc)})
+
+    if request.method == "PATCH":
+        data, err = parse_json_body(request)
+        if err:
+            return err
+        name = data.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return json_error("Missing required field: name", status=400)
+        try:
+            renamed = rename_document(
+                workspace_id=workspace_id, document_id=document_id, new_base=name,
+            )
+        except WorkspaceError as e:
+            return _workspace_error_response(e)
+        return json_success({"document": _serialize_document(renamed)})
 
     storage_key = repository.delete_document(document_id)
     if storage_key:

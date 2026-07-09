@@ -169,6 +169,7 @@ describe('api facade', () => {
         "relayAmbassador",
         "rememberMemoryFact",
         "renameAmbassadorThread",
+        "renameDocument",
         "renameWorkspace",
         "reorderAgentProfiles",
         "reorderPromptLayers",

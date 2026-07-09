@@ -689,6 +689,7 @@ POST   /api/workspaces/{workspace_id}/documents      # multipart field `file` �
 POST   /api/workspaces/{workspace_id}/documents/text # { filename, content } → 201 (create md/txt doc; 409 on filename collision)
 PUT    /api/workspaces/{workspace_id}/documents/{document_id}/text  # { content, expected_sha256? } → 200 (replace content, re-ingests; 409 on ETag mismatch)
 GET    /api/workspaces/{workspace_id}/documents/{document_id}
+PATCH  /api/workspaces/{workspace_id}/documents/{document_id}       # { name } → rename base name (keeps folder + ext; doc_id unchanged); 409 on collision
 DELETE /api/workspaces/{workspace_id}/documents/{document_id}
 GET    /api/workspaces/{workspace_id}/documents/{document_id}/raw   # serve blob bytes (e.g. generated avatars)
 POST   /api/workspaces/{workspace_id}/documents/{document_id}/reingest  # retry ingestion (blob reused) → 202

@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react';
 import { ImageIcon, ImageOff } from 'lucide-react';
 import { resolveMediaImage } from '../../../lib/mediaImage';
+import { ImageLightbox } from '../../common/ImageLightbox';
 import { memoElement } from './memoElement';
 import type { ElementRenderProps } from './types';
 
@@ -18,6 +19,7 @@ function ImageElementImpl({ element }: ElementRenderProps) {
   const { url, alt, title } = element;
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
 
   useEffect(() => {
     if (!url) {
@@ -43,11 +45,24 @@ function ImageElementImpl({ element }: ElementRenderProps) {
           <ImageOff size={14} /> Couldn't load the image.
         </div>
       ) : src ? (
-        <img
-          src={src}
-          alt={alt ?? 'Generated image'}
-          className="max-h-96 w-auto max-w-full rounded-lg border border-line object-contain"
-        />
+        <>
+          <button
+            type="button"
+            onClick={() => setZoomed(true)}
+            className="block cursor-zoom-in bg-transparent p-0"
+            title="Click to zoom"
+            aria-label="Zoom image"
+          >
+            <img
+              src={src}
+              alt={alt ?? 'Generated image'}
+              className="max-h-96 w-auto max-w-full rounded-lg border border-line object-contain"
+            />
+          </button>
+          {zoomed && (
+            <ImageLightbox src={src} alt={alt ?? title} downloadName={title} onClose={() => setZoomed(false)} />
+          )}
+        </>
       ) : (
         <div className="flex h-40 w-full items-center justify-center rounded-lg border border-line bg-surface-sunken text-fg-muted">
           <ImageIcon size={20} className="animate-pulse" />

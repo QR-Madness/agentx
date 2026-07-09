@@ -15,8 +15,9 @@ import { Download, Loader2, Pencil, Printer } from 'lucide-react';
 import { api, apiErrorMessage, toApiError, type WorkspaceDocument } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
 import { useIsMobile } from '../../lib/hooks';
-import { Badge, Button, Textarea } from '../ui';
+import { Badge, Button, Input, Textarea } from '../ui';
 import { ModalDialog } from '../modals/ModalDialog';
+import { ImageLightbox } from '../common/ImageLightbox';
 import MessageContent from '../chat/MessageContent';
 import './DocumentPreviewModal.css';
 
@@ -73,6 +74,23 @@ export function DocumentPreviewModal({
   const [editing, setEditing] = useState(startInEdit && editable);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [zoomed, setZoomed] = useState(false);
+  const leaf = doc.filename.slice(doc.filename.lastIndexOf('/') + 1);
+
+  const rename = useCallback(async () => {
+    const next = nameDraft.trim();
+    setRenaming(false);
+    if (!next || next === leaf) return;
+    try {
+      const { document: updated } = await api.renameDocument(workspaceId, doc.id, next);
+      setDoc(updated);
+      onDocumentUpdated?.(updated);
+    } catch (err) {
+      notify.notifyError(err, 'Could not rename file');
+    }
+  }, [nameDraft, leaf, workspaceId, doc.id, onDocumentUpdated, notify]);
 
   // Load content for the current sha. Object URLs are revoked on cleanup.
   useEffect(() => {
@@ -145,7 +163,30 @@ export function DocumentPreviewModal({
     <ModalDialog size="xl" onClose={onClose}>
       <div className={`flex min-h-0 flex-col ${isMobile ? 'h-full flex-1' : 'h-[80vh]'}`}>
         <header className={`flex items-center gap-2 border-b border-line py-3 pr-12 ${isMobile ? 'flex-wrap px-3' : 'px-4'}`}>
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{doc.filename}</span>
+          {renaming ? (
+            <Input
+              autoFocus
+              value={nameDraft}
+              onChange={e => setNameDraft(e.target.value)}
+              onBlur={() => void rename()}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); void rename(); }
+                if (e.key === 'Escape') setRenaming(false);
+              }}
+              className="ax-field--sm min-w-0 flex-1"
+              aria-label="File name"
+            />
+          ) : (
+            <button
+              type="button"
+              className="group flex min-w-0 flex-1 items-center gap-1 bg-transparent text-left"
+              onClick={() => { setNameDraft(leaf); setRenaming(true); }}
+              title="Rename file"
+            >
+              <span className="min-w-0 truncate text-sm font-semibold">{doc.filename}</span>
+              <Pencil size={12} className="shrink-0 text-fg-muted opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
+          )}
           <Badge
             size="sm"
             className="shrink-0"
@@ -209,7 +250,22 @@ export function DocumentPreviewModal({
           ) : kind === 'image' ? (
             objectUrl === null
               ? <Loader2 size={18} className="m-6 animate-spin text-accent" />
-              : <img src={objectUrl} alt={doc.filename} className="max-h-full max-w-full self-center object-contain p-3" />
+              : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setZoomed(true)}
+                    className="flex min-h-0 flex-1 cursor-zoom-in items-center justify-center bg-transparent p-3"
+                    title="Click to zoom"
+                    aria-label="Zoom image"
+                  >
+                    <img src={objectUrl} alt={doc.filename} className="max-h-full max-w-full self-center object-contain" />
+                  </button>
+                  {zoomed && (
+                    <ImageLightbox src={objectUrl} alt={doc.filename} downloadName={leaf} onClose={() => setZoomed(false)} />
+                  )}
+                </>
+              )
           ) : (
             objectUrl === null
               ? <Loader2 size={18} className="m-6 animate-spin text-accent" />

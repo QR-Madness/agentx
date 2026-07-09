@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.194 -->
+<!-- release-version: 0.21.195 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -35,12 +35,16 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   conversations with scoped memory.
 - **Agents can now manage project files, not just create them** — beyond
   `create_document`/`update_document`, agents get `list_project_files`, `append_to_document`,
-  `edit_document` (targeted find-and-replace — no more resending the whole file), and
-  `delete_document`, with a soft write-lock so two agents editing the same file don't clobber.
+  `edit_document` (targeted find-and-replace — no more resending the whole file), `rename_document`,
+  and `delete_document`, with a soft write-lock so two agents editing the same file don't clobber.
   The prompt now frames a project as a home for **any files** (not just documents) and nudges
-  agents to lean into it; they're told generated images land in **Home** by default.
+  agents to lean into it; they're told generated images land in **Home** by default, and those
+  images now get a **readable name from their prompt** instead of a bare timestamp.
 - **Project files open in the hub** — click any file to preview (markdown rendered,
   images, PDFs), edit markdown/text in place, create new docs, and export to PDF.
+  **Click an image to zoom** it full-screen (scroll to zoom, drag to pan, download), and
+  **rename files** inline in the list or the preview (the file keeps its identity, so any
+  conversation that shows the image still works).
 - **Deployment manager, on by default in the bundle** — web dashboard + CLI;
   zero-config first Start.
 - **Hardened self-hosting**: token gateway; safe no-env boots.

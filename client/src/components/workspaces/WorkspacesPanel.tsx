@@ -421,6 +421,22 @@ export function WorkspacesPanel({
     }
   }, [confirm, notify, refreshDocuments, refreshWorkspaces, selectedId]);
 
+  // Inline rename (base name only — the backend keeps folder + extension, and the
+  // doc_id is untouched, so any conversation image reference stays valid).
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const renameDoc = useCallback(async (doc: WorkspaceDocument, folder: string) => {
+    const next = renameDraft.trim();
+    setRenamingId(null);
+    if (!next || !selectedId || next === leafName(doc.filename, folder)) return;
+    try {
+      await api.renameDocument(selectedId, doc.id, next);
+      await refreshDocuments(selectedId);
+    } catch (err) {
+      notify.notifyError(err, 'Could not rename file');
+    }
+  }, [renameDraft, selectedId, refreshDocuments, notify]);
+
   // Which avatar files are in use, and by whom. Profiles reference an avatar by
   // doc_id (`media:ws_home/{doc_id}`), so match on the id — badges the Home
   // AVATARS section and gates the "Delete unused" action.
@@ -831,6 +847,20 @@ export function WorkspacesPanel({
                               className="group flex items-start gap-2 rounded-lg border border-line-subtle bg-surface-raised p-2.5 transition-colors hover:border-line"
                             >
                               <FileText size={16} className="mt-0.5 shrink-0 text-fg-muted" />
+                              {renamingId === doc.id ? (
+                                <Input
+                                  autoFocus
+                                  value={renameDraft}
+                                  onChange={e => setRenameDraft(e.target.value)}
+                                  onBlur={() => void renameDoc(doc, group.folder)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') { e.preventDefault(); void renameDoc(doc, group.folder); }
+                                    if (e.key === 'Escape') setRenamingId(null);
+                                  }}
+                                  className="ax-field--sm min-w-0 flex-1"
+                                  aria-label="File name"
+                                />
+                              ) : (
                               <button
                                 type="button"
                                 onClick={() => setPreview({ doc, edit: false })}
@@ -869,6 +899,18 @@ export function WorkspacesPanel({
                                 {doc.error && <p className="mt-0.5 text-xs text-error">{doc.error}</p>}
                                 <span className="mt-0.5 block font-mono text-2xs text-fg-muted">{formatBytes(doc.size_bytes)}</span>
                               </button>
+                              )}
+                              {renamingId !== doc.id && (
+                                <IconButton
+                                  aria-label={`Rename ${doc.filename}`}
+                                  title="Rename"
+                                  size="xs"
+                                  className="opacity-0 group-hover:opacity-100"
+                                  onClick={() => { setRenameDraft(leafName(doc.filename, group.folder)); setRenamingId(doc.id); }}
+                                >
+                                  <Pencil size={13} />
+                                </IconButton>
+                              )}
                               {doc.status === 'failed' && (
                                 <IconButton
                                   aria-label={`Retry ingesting ${doc.filename}`}

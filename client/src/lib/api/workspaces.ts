@@ -195,6 +195,18 @@ export const workspacesApi = {
     );
   },
 
+  /** Rename a document's base name (keeps folder + extension; doc_id unchanged). */
+  async renameDocument(
+    workspaceId: string,
+    documentId: string,
+    name: string,
+  ): Promise<{ document: WorkspaceDocument }> {
+    return apiRequest(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/documents/${encodeURIComponent(documentId)}`,
+      { method: 'PATCH', body: JSON.stringify({ name }) },
+    );
+  },
+
   /** Delete every `avatars/` file not referenced by any agent profile (Home). */
   async pruneAvatars(workspaceId: string): Promise<{ deleted: string[]; count: number }> {
     return apiRequest(

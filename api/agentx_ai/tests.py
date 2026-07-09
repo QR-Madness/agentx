@@ -13253,3 +13253,50 @@ class ProjectFileToolsTest(TestCase):
         body = json.loads(resp.content)
         self.assertEqual(body["deleted"], ["unused"])
         dele.assert_called_once_with("unused")
+
+    def test_rename_keeps_folder_and_ext_and_id(self):
+        from agentx_ai.kit.workspaces import service
+        doc = {"id": "d1", "workspace_id": "ws1", "filename": "generated/20260709-003320.jpg"}
+        renamed = MagicMock(return_value={**doc, "filename": "generated/docs-banner.jpg"})
+        with patch.object(service.repository, "get_document", return_value=doc), \
+             patch.object(service.repository, "get_document_by_filename", return_value=None), \
+             patch.object(service.repository, "rename_document", renamed):
+            out = service.rename_document(workspace_id="ws1", document_id="d1", new_base="docs-banner")
+        # Base-name only: folder + extension preserved; doc_id (id) unchanged.
+        renamed.assert_called_once_with("d1", "generated/docs-banner.jpg")
+        self.assertEqual(out["id"], "d1")
+
+    def test_rename_strips_path_and_dupe_extension(self):
+        from agentx_ai.kit.workspaces import service
+        doc = {"id": "d1", "workspace_id": "ws1", "filename": "notes.md"}
+        renamed = MagicMock(return_value={**doc, "filename": "plan.md"})
+        with patch.object(service.repository, "get_document", return_value=doc), \
+             patch.object(service.repository, "get_document_by_filename", return_value=None), \
+             patch.object(service.repository, "rename_document", renamed):
+            # A leading path is stripped and a typed-in extension isn't doubled.
+            service.rename_document(workspace_id="ws1", document_id="d1", new_base="../evil/plan.md")
+        renamed.assert_called_once_with("d1", "plan.md")
+
+    def test_rename_collision_conflicts(self):
+        from agentx_ai.kit.workspaces import service
+        doc = {"id": "d1", "workspace_id": "ws1", "filename": "notes.md"}
+        with patch.object(service.repository, "get_document", return_value=doc), \
+             patch.object(service.repository, "get_document_by_filename",
+                          return_value={"id": "other"}):
+            with self.assertRaises(service.WorkspaceError) as cm:
+                service.rename_document(workspace_id="ws1", document_id="d1", new_base="taken")
+        self.assertEqual(cm.exception.code, "conflict")
+
+    def test_rename_tool_refuses_avatar(self):
+        from agentx_ai.mcp.internal_tools import rename_document_tool
+        doc = {"id": "d1", "workspace_id": "ws1", "filename": "avatars/x.png"}
+        with patch("agentx_ai.mcp.internal_tools._active_workspace_id", return_value="ws1"), \
+             patch("agentx_ai.kit.workspaces.repository.get_document", return_value=doc):
+            out = rename_document_tool("d1", "hero")
+        self.assertFalse(out["success"])
+
+    def test_generated_image_slug(self):
+        from agentx_ai.agent.image_gen import _slug_from_prompt
+        self.assertEqual(_slug_from_prompt("A Web Banner for Docs!"), "a-web-banner-for-docs")
+        self.assertEqual(_slug_from_prompt("   "), "image")  # fallback
+        self.assertLessEqual(len(_slug_from_prompt("word " * 50)), 40)

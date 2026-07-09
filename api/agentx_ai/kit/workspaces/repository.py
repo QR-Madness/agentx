@@ -395,6 +395,21 @@ def update_document_content(
     return get_document(document_id)  # None if the row vanished mid-update
 
 
+def rename_document(document_id: str, new_filename: str) -> dict[str, Any] | None:
+    """Change a document's filename only. The primary key ``id`` (doc_id) is
+    untouched, so conversation image refs / view_image keep resolving. No content
+    change → no re-ingest."""
+    with get_postgres_session() as s:
+        res = s.execute(
+            text("UPDATE documents SET filename = :fn, updated_at = NOW() WHERE id = :id"),
+            {"id": document_id, "fn": new_filename},
+        )
+        s.commit()
+        if getattr(res, "rowcount", 0) == 0:
+            return None
+    return get_document(document_id)
+
+
 def count_documents_with_storage_key(
     workspace_id: str, storage_key: str, exclude_id: str | None = None
 ) -> int:

@@ -194,7 +194,7 @@ def render_manifest_block(workspace_id: str, max_files: int = 50) -> str:
         "Project files — this conversation belongs to a project; these are its "
         "files. List with `list_project_files`, search with `project_search` (by "
         "name/tag) and `document_query` (by meaning), then `read_document`; write with "
-        "`create_document`/`append_to_document`/`edit_document`/`update_document`/`delete_document`"
+        "`create_document`/`append_to_document`/`edit_document`/`update_document`/`rename_document`/`delete_document`"
     )
     header += (
         ". Image files are marked 🖼 — to actually see one, call "

@@ -2485,6 +2485,42 @@ paths:
                     $ref: '#/components/schemas/WorkspaceDocument'
         '404':
           $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Workspaces]
+      operationId: workspaceDocumentRename
+      summary: Rename a document (base name only)
+      description: >-
+        Rename the document's base name; the folder prefix and extension are kept, and the
+        document id (doc_id) is unchanged — so conversation image references stay valid. 409
+        on a filename collision.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/DocumentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: New base name (no path; extension optional).
+      responses:
+        '200':
+          description: Renamed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  document:
+                    $ref: '#/components/schemas/WorkspaceDocument'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
     delete:
       tags: [Workspaces]
       operationId: workspaceDocumentDelete

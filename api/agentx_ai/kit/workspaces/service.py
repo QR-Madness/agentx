@@ -215,6 +215,47 @@ def update_text_document(
     return updated
 
 
+def rename_document(*, workspace_id: str, document_id: str, new_base: str) -> dict[str, Any]:
+    """Rename a document's *base name*, keeping its folder prefix and extension.
+
+    Base-name-only: the file can't change type or move sections, and — since only the
+    filename column changes — the doc_id (and any conversation image reference) is
+    untouched, with no re-ingest. Collides as a typed ``conflict``.
+    """
+    doc = repository.get_document(document_id)
+    if not doc or doc["workspace_id"] != workspace_id:
+        raise WorkspaceError("not_found", f"document {document_id} not found in this project")
+
+    # Base name only — take the last path segment so a typed-in path can't traverse.
+    base = (new_base or "").strip().rsplit("/", 1)[-1].rsplit("\\", 1)[-1].strip()
+    if not base:
+        raise WorkspaceError("unsupported", "new name is empty")
+
+    old = doc["filename"]
+    slash = old.rfind("/")
+    folder = old[: slash + 1] if slash != -1 else ""  # keep trailing slash, or ""
+    dot = old.rfind(".")
+    ext = old[dot:] if dot > slash else ""  # extension incl. the dot (ignore folder dots)
+    # If the user already typed the extension, don't double it.
+    if ext and base.lower().endswith(ext.lower()):
+        base = base[: -len(ext)]
+    new_filename = f"{folder}{base}{ext}"
+
+    if new_filename == old:
+        return doc  # no-op
+    existing = repository.get_document_by_filename(workspace_id, new_filename)
+    if existing and existing["id"] != document_id:
+        raise WorkspaceError(
+            "conflict",
+            f"'{new_filename}' already exists in this project",
+            document_id=existing["id"],
+        )
+    updated = repository.rename_document(document_id, new_filename)
+    if updated is None:
+        raise WorkspaceError("not_found", f"document {document_id} not found in this project")
+    return updated
+
+
 # Image media the blob store can hold + serve (no text ingestion).
 MEDIA_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 

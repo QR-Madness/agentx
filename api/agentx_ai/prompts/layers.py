@@ -123,7 +123,7 @@ BUILTIN_LAYERS: list[PromptLayer] = [
         id="project-collaboration",
         title="Projects",
         kind="builtin",
-        default_version=2,
+        default_version=3,
         order=25,
         default=(
             "Projects:\n"
@@ -138,8 +138,8 @@ BUILTIN_LAYERS: list[PromptLayer] = [
             "- Write/edit: `create_document` (new markdown/text file), `update_document` "
             "(replace the whole file), `append_to_document` (add to the end), "
             "`edit_document` (find-and-replace a passage — targeted edits without rewriting), "
-            "and `delete_document` (remove a file). Keep living files current as work "
-            "evolves — you don't have to recreate a file to change it.\n"
+            "`rename_document` (rename), and `delete_document` (remove a file). Keep living "
+            "files current as work evolves — you don't have to recreate a file to change it.\n"
             "- When the user asks for something lasting — notes, a plan, a report, a living "
             "reference or memory file — put it in the project, don't leave it in chat.\n"
             "- Generated images and pasted images land in your personal **Home** space by "

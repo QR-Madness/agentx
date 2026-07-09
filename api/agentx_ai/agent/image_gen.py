@@ -10,6 +10,7 @@ two never drift.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,6 +18,15 @@ logger = logging.getLogger(__name__)
 
 # content-type → file extension for the stored blob's filename.
 IMAGE_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
+
+
+def _slug_from_prompt(prompt: str, *, max_len: int = 40) -> str:
+    """A readable, filesystem-safe stem from the image prompt (lowercase, hyphenated,
+    truncated). Falls back to ``image`` when the prompt has nothing usable — so a
+    generated file reads like ``a-web-banner-for-docs`` instead of a bare timestamp."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (prompt or "").lower()).strip("-")
+    slug = slug[:max_len].rstrip("-")
+    return slug or "image"
 
 
 async def generate_and_store_image(
@@ -44,10 +54,11 @@ async def generate_and_store_image(
 
     ws_id = workspace_id or repository.ensure_home_workspace(user_id)["id"]
     ext = IMAGE_EXT.get(result.content_type, "png")
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
+    # Prompt-derived name + a short unique tail (store_media doesn't collision-check).
+    suffix = datetime.now(UTC).strftime("%H%M%S%f")[-6:]
     doc = store_media(
         workspace_id=ws_id,
-        filename=f"generated/{stamp}.{ext}",
+        filename=f"generated/{_slug_from_prompt(prompt)}-{suffix}.{ext}",
         content_type=result.content_type,
         raw=result.image,
     )
