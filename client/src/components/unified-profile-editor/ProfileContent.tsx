@@ -21,6 +21,7 @@ import {
   Sliders,
   Volume2,
   Mic,
+  ChevronLeft,
 } from 'lucide-react';
 import { type AgentProfile, type ModelInfo, type ReasoningStrategy } from '../../lib/api';
 import { agentAccent } from '../../lib/agentAccent';
@@ -145,6 +146,9 @@ interface ProfileContentProps {
   onSaved: (profileId: string) => void;
   onDeleted: () => void;
   onCancel: () => void;
+  /** Mobile master-detail: when set, render a "‹ Profiles" back button that
+   *  returns to the list. Undefined on desktop (list is always visible). */
+  onBack?: () => void;
 }
 
 export function ProfileContent({
@@ -152,6 +156,7 @@ export function ProfileContent({
   onSaved,
   onDeleted,
   onCancel,
+  onBack,
 }: ProfileContentProps) {
   const isEditing = profile !== null;
 
@@ -323,6 +328,13 @@ export function ProfileContent({
             animate="center"
             exit="exit"
           >
+            {onBack && (
+              <button type="button" className="profile-mobile-back" onClick={onBack}>
+                <ChevronLeft size={16} />
+                Profiles
+              </button>
+            )}
+
             {error && (
               <div className="profile-error-banner">
                 <AlertCircle size={15} />
@@ -809,14 +821,18 @@ export function ProfileContent({
                     {autosaveState === 'saving' ? 'Saving…' : autosaveState === 'saved' ? 'Saved ✓' : 'Autosaves'}
                   </span>
                 )}
-                <button
-                  type="button"
-                  className="profile-btn-secondary"
-                  onClick={onCancel}
-                  disabled={saving || deleting}
-                >
-                  {isEditing ? 'Done' : 'Cancel'}
-                </button>
+                {/* Edit mode autosaves (and the header ✕ closes), so no "Done"
+                    button — only new profiles need an explicit Cancel/Create. */}
+                {!isEditing && (
+                  <button
+                    type="button"
+                    className="profile-btn-secondary"
+                    onClick={onCancel}
+                    disabled={saving || deleting}
+                  >
+                    Cancel
+                  </button>
+                )}
                 {!isEditing && (
                   <button
                     type="button"

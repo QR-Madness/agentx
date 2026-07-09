@@ -10,7 +10,6 @@ import {
   Square,
   ChevronUp,
   ChevronDown,
-  Sparkles,
   Workflow as WorkflowIcon,
   Crown,
   Box,
@@ -1167,7 +1166,11 @@ export function ChatPanel() {
             onClick={() => setShowAgentSelector(!showAgentSelector)}
             title="Select agent profile"
           >
-            {activeWorkflow ? <Crown size={12} /> : <Sparkles size={12} />}
+            <span className="profile-indicator-avatar">
+              {activeWorkflow
+                ? <Crown size={12} />
+                : <AgentAvatar avatar={tabProfile?.avatar} size={14} fill />}
+            </span>
             <span>{tabProfile?.name || 'Select Agent'}</span>
             {activeWorkflow && (
               <span

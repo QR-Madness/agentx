@@ -7249,6 +7249,53 @@ class ProfileUnqualifiedToolWarningTest(TestCase):
         self.assertIn("sentinel", cm.output[0])
 
 
+class ProfileSeedAndReorderTest(TestCase):
+    """Fresh-install seed set (AgentX + Researcher) and reorder-by-ids."""
+
+    def _fresh_manager(self):
+        import pathlib
+        import tempfile
+
+        from agentx_ai.agent.profiles import ProfileManager
+
+        path = pathlib.Path(tempfile.mkdtemp()) / "agent_profiles.yaml"
+        return ProfileManager(config_path=path), path
+
+    def test_fresh_install_seeds_agentx_and_researcher(self) -> None:
+        pm, _ = self._fresh_manager()
+        agents = {p.id: p for p in pm.list_profiles_by_kind("agent")}
+        self.assertEqual(set(agents), {"default", "researcher"})
+        self.assertTrue(agents["default"].is_default)
+        self.assertEqual(agents["default"].avatar, "atom")
+        researcher = agents["researcher"]
+        self.assertEqual(researcher.avatar, "telescope")
+        self.assertTrue(researcher.available_for_delegation)
+        self.assertEqual(researcher.allowed_tools, ["_internal.web_search"])
+        self.assertTrue(researcher.delegation_hint)
+        self.assertTrue(researcher.system_prompt)
+
+    def test_reorder_rebuilds_and_persists(self) -> None:
+        from agentx_ai.agent.profiles import ProfileManager
+
+        pm, path = self._fresh_manager()
+        ids = [p.id for p in pm.list_profiles()]
+        reversed_ids = list(reversed(ids))
+        pm.reorder_profiles(reversed_ids)
+        self.assertEqual([p.id for p in pm.list_profiles()], reversed_ids)
+        # Persisted to disk — a fresh manager reads back the new order.
+        pm2 = ProfileManager(config_path=path)
+        self.assertEqual([p.id for p in pm2.list_profiles()], reversed_ids)
+
+    def test_reorder_ignores_unknown_and_never_drops(self) -> None:
+        pm, _ = self._fresh_manager()
+        ids = [p.id for p in pm.list_profiles()]
+        # Mention only the last id + a bogus one; the rest keep their order after.
+        pm.reorder_profiles([ids[-1], "does-not-exist"])
+        new = [p.id for p in pm.list_profiles()]
+        self.assertEqual(new[0], ids[-1])
+        self.assertEqual(set(new), set(ids))  # nothing dropped
+
+
 class SchemaLoaderTest(TestCase):
     """Comment-aware Cypher statement splitting (regression for the
     'Invalid input id' schema-init bug caused by a ';' inside a // comment)."""

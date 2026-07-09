@@ -6,7 +6,7 @@ Docker image and copied into a cluster's `config/` directory by
 
 | File | Purpose |
 |------|---------|
-| `agent_profiles.yaml` | Default agent profiles (AgentX/Muse/Sage) shipped with new installs. |
+| `agent_profiles.yaml` | Default agent profiles (AgentX + Researcher) shipped with new installs. |
 | `prompt_templates.yaml` | Canonical prompt templates (global assistant, etc.). |
 | `workflows.yaml` | Empty Alloy workflow list — clusters add their own. |
 | `memory_settings.json` | Default recall layer + memory tuning settings. |

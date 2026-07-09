@@ -764,6 +764,7 @@ Agent profiles define identity plus per-agent settings (model, temperature, prom
 ```
 GET    /api/agent/profiles
 POST   /api/agent/profiles
+POST   /api/agent/profiles/reorder
 GET    /api/agent/profiles/{profile_id}
 PATCH  /api/agent/profiles/{profile_id}
 DELETE /api/agent/profiles/{profile_id}

@@ -141,4 +141,12 @@ export const profilesApi = {
       method: 'POST',
     });
   },
+
+  /** Persist a new profile ordering (list of ids). Returns the authoritative order. */
+  async reorderAgentProfiles(order: string[]): Promise<{ order: string[] }> {
+    return apiRequest('/api/agent/profiles/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ order }),
+    });
+  },
 };

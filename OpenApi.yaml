@@ -2768,6 +2768,44 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /agent/profiles/reorder:
+    post:
+      tags: [Agent Profiles]
+      operationId: agentProfilesReorder
+      summary: Reorder profiles
+      description: >-
+        Persist a new profile ordering. Order is the stored insertion order (no
+        index field), so this rebuilds it. Ids not listed keep their current
+        relative order at the end; unknown ids are ignored. Returns the
+        authoritative order.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order]
+              properties:
+                order:
+                  type: array
+                  items:
+                    type: string
+                  description: Desired ordering of profile ids.
+      responses:
+        '200':
+          description: Reordered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /agent/profiles/{profile_id}/set-default:
     post:
       tags: [Agent Profiles]

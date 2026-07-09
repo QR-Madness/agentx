@@ -62,7 +62,7 @@ def _propagate_agent_rename(agent_id: str, old_name: str, new_name: str) -> None
 DEFAULT_PROFILE = AgentProfile(  # pyright: ignore[reportCallIssue]
     id="default",
     name="AgentX",
-    avatar="sparkles",
+    avatar="atom",
     description="Default assistant profile with balanced settings",
     temperature=0.7,
     reasoning_strategy=ReasoningStrategy.AUTO,
@@ -70,6 +70,35 @@ DEFAULT_PROFILE = AgentProfile(  # pyright: ignore[reportCallIssue]
     memory_channel="_global",
     enable_tools=True,
     is_default=True,
+)
+
+# A focused web-research agent, seeded alongside the default so a fresh install
+# ships a ready delegation target. Kept in sync with api/defaults/agent_profiles.yaml.
+RESEARCHER_DEFAULT = AgentProfile(  # pyright: ignore[reportCallIssue]
+    id="researcher",
+    name="Researcher",
+    avatar="telescope",
+    description="Web researcher — searches the web and returns concise, cited answers.",
+    temperature=0.3,
+    reasoning_strategy=ReasoningStrategy.AUTO,
+    system_prompt=(
+        "You are a web research specialist. Given a question or topic, use web "
+        "search to find current, accurate information, then reply with a concise, "
+        "well-structured answer and cite your sources (URLs). Prefer primary and "
+        "reputable sources, flag uncertainty or conflicting findings, and don't "
+        "speculate beyond what you found. You usually receive a delegated question "
+        "from another agent — answer it directly and completely so the delegator "
+        "can use your result without a follow-up."
+    ),
+    enable_memory=True,
+    memory_channel="_global",
+    enable_tools=True,
+    allowed_tools=["_internal.web_search"],
+    available_for_delegation=True,
+    delegation_hint=(
+        "Web researcher — delegate any question needing current facts or sources; "
+        "it searches the web and returns a concise, cited answer."
+    ),
 )
 
 
@@ -131,8 +160,14 @@ class ProfileManager:
         self._ensure_ambassador_defaults()
 
     def _init_defaults(self) -> None:
-        """Initialize with default profiles."""
+        """Initialize with default profiles (fresh install only).
+
+        Seeds the mutable default agent (AgentX) plus a ready web-research
+        delegation target (Researcher). Kept in sync with the shipped seed
+        `api/defaults/agent_profiles.yaml` (the cluster/manager copy path).
+        """
         self._profiles[DEFAULT_PROFILE.id] = DEFAULT_PROFILE
+        self._profiles[RESEARCHER_DEFAULT.id] = RESEARCHER_DEFAULT
 
         # Save defaults to disk
         self.save_config()
@@ -394,6 +429,29 @@ class ProfileManager:
             _propagate_agent_rename(current.agent_id, old_name, new_name)
 
         return self._profiles[profile_id]
+
+    def reorder_profiles(self, ordered_ids: list[str]) -> list[AgentProfile]:
+        """Rebuild the profile order from ``ordered_ids``.
+
+        Profile order is just the dict/YAML insertion order (there's no explicit
+        index field), so reordering = rebuilding ``self._profiles`` in the given
+        order. Unknown ids are ignored; any existing profiles not named in
+        ``ordered_ids`` are appended in their current order (so a partial list
+        never drops profiles). Persists to disk.
+        """
+        seen: set[str] = set()
+        reordered: dict[str, AgentProfile] = {}
+        for pid in ordered_ids:
+            if pid in self._profiles and pid not in seen:
+                reordered[pid] = self._profiles[pid]
+                seen.add(pid)
+        # Keep any profiles the caller didn't mention, in their current order.
+        for pid, profile in self._profiles.items():
+            if pid not in seen:
+                reordered[pid] = profile
+        self._profiles = reordered
+        self.save_config()
+        return list(self._profiles.values())
 
     def delete_profile(self, profile_id: str) -> bool:
         """Delete a profile by ID."""

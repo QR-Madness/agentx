@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
+import { useIsMobile } from '../../lib/hooks';
 import { ParallaxBackground } from '../unified-settings/animations/ParallaxBackground';
 import {
   backdropVariants,
@@ -24,19 +25,28 @@ export function UnifiedProfileEditor({
   initialProfileId,
   isNew: startNew = false,
 }: UnifiedProfileEditorProps) {
-  const { profiles } = useAgentProfile();
+  const { profiles, refresh } = useAgentProfile();
+  const isMobile = useIsMobile();
 
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     initialProfileId ?? null
   );
   const [isCreatingNew, setIsCreatingNew] = useState(startNew);
 
-  // Default to the first profile if nothing is selected and we're not creating
+  // Refresh the list whenever the editor opens — the profile cache is loaded
+  // once per server, so a freshly-seeded/added profile would otherwise not
+  // appear until something triggered a refetch (e.g. an edit).
   useEffect(() => {
-    if (!isCreatingNew && !selectedProfileId && profiles.length > 0) {
+    if (isOpen) void refresh();
+  }, [isOpen, refresh]);
+
+  // Default to the first profile if nothing is selected and we're not creating.
+  // On mobile the list is shown first (master-detail), so don't auto-open one.
+  useEffect(() => {
+    if (!isMobile && !isCreatingNew && !selectedProfileId && profiles.length > 0) {
       setSelectedProfileId(profiles[0].id);
     }
-  }, [profiles, selectedProfileId, isCreatingNew]);
+  }, [profiles, selectedProfileId, isCreatingNew, isMobile]);
 
   // ESC key
   useEffect(() => {
@@ -90,6 +100,15 @@ export function UnifiedProfileEditor({
     setSelectedProfileId(null); // useEffect above will pick the first
   };
 
+  // Mobile master-detail: show the list OR the editor, never both. Selecting a
+  // profile / creating one opens the editor; Back returns to the list.
+  const handleBack = () => {
+    setIsCreatingNew(false);
+    setSelectedProfileId(null);
+  };
+  const showList = !isMobile || (!isCreatingNew && !selectedProfileId);
+  const showEditor = !isMobile || isCreatingNew || !!selectedProfileId;
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -120,20 +139,25 @@ export function UnifiedProfileEditor({
               </button>
             </div>
 
-            <div className="unified-profile-layout">
-              <ProfileNav
-                selectedProfileId={selectedProfileId}
-                isCreatingNew={isCreatingNew}
-                onSelectProfile={handleSelectProfile}
-                onCreateNew={handleCreateNew}
-              />
-              <ProfileContent
-                key={isCreatingNew ? '__new__' : (selectedProfileId ?? '__empty__')}
-                profile={selectedProfile}
-                onSaved={handleSaved}
-                onDeleted={handleDeleted}
-                onCancel={onClose}
-              />
+            <div className={`unified-profile-layout${isMobile ? ' is-mobile' : ''}`}>
+              {showList && (
+                <ProfileNav
+                  selectedProfileId={selectedProfileId}
+                  isCreatingNew={isCreatingNew}
+                  onSelectProfile={handleSelectProfile}
+                  onCreateNew={handleCreateNew}
+                />
+              )}
+              {showEditor && (
+                <ProfileContent
+                  key={isCreatingNew ? '__new__' : (selectedProfileId ?? '__empty__')}
+                  profile={selectedProfile}
+                  onSaved={handleSaved}
+                  onDeleted={handleDeleted}
+                  onCancel={onClose}
+                  onBack={isMobile ? handleBack : undefined}
+                />
+              )}
             </div>
           </motion.div>
         </>

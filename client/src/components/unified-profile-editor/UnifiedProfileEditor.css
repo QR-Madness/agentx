@@ -137,6 +137,48 @@
   opacity: 0.85;
 }
 
+/* Drag handle — reveals on hover/focus (always visible on touch, see mobile
+   query). Carries the dnd listeners; the rest of the row stays clickable. */
+.profile-nav-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 26px;
+  margin: -4px 0 -4px -6px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  touch-action: none;
+}
+.profile-nav-item:hover .profile-nav-handle,
+.profile-nav-item:focus-within .profile-nav-handle {
+  opacity: 1;
+}
+.profile-nav-handle:hover {
+  color: var(--text-secondary);
+  background: var(--glass-layer-2);
+}
+.profile-nav-handle:active {
+  cursor: grabbing;
+}
+.profile-nav-item[data-dragging] {
+  opacity: 0.9;
+  background: var(--glass-layer-2);
+  box-shadow: var(--shadow-lg);
+  transform: none;
+  z-index: 5;
+}
+/* Don't nudge the row on hover while dragging is possible — it fights the dnd transform. */
+.profile-nav-item[data-dragging]:hover {
+  transform: none;
+}
+
 .profile-nav-avatar {
   width: 30px;
   height: 30px;
@@ -1170,16 +1212,45 @@
     padding: 16px;
     gap: 16px;
   }
-  .unified-profile-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-  }
-  .profile-nav {
-    max-height: 200px;
-  }
   .profile-form-scroll {
     padding: 20px;
   }
+}
+
+/* ── Mobile master-detail (≤600px, driven by the JS `is-mobile` class) ──
+   The list and the editor never co-exist; whichever is shown fills the space,
+   so the profiles list is no longer squeezed into a 200px strip. */
+.unified-profile-layout.is-mobile {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+.unified-profile-layout.is-mobile .profile-nav {
+  max-height: none;
+}
+/* Touch has no hover to reveal the handle — keep it visible. */
+.unified-profile-layout.is-mobile .profile-nav-handle {
+  opacity: 1;
+}
+
+/* "‹ Profiles" back button — only rendered on mobile. */
+.profile-mobile-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin-bottom: 12px;
+  padding: 8px 12px 8px 8px;
+  border-radius: 10px;
+  background: var(--glass-layer-1);
+  border: 1px solid var(--accent-tint-soft);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.profile-mobile-back:hover {
+  background: var(--glass-layer-2);
+  color: var(--text-primary);
 }
 
 /* ───────────────────────────────────────────────────────────────────────────
@@ -1327,10 +1398,28 @@
    room for the bottom-anchored TopBar + home indicator. */
 @media (max-width: 600px) {
   .unified-profile-container {
-    padding-top: max(env(safe-area-inset-top, 0px), 28px);
-    padding-left: max(16px, env(safe-area-inset-left, 0px));
-    padding-right: max(16px, env(safe-area-inset-right, 0px));
-    padding-bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), 12px) + 16px);
+    gap: 10px;
+    padding-top: max(env(safe-area-inset-top, 0px), 14px);
+    padding-left: max(10px, env(safe-area-inset-left, 0px));
+    padding-right: max(10px, env(safe-area-inset-right, 0px));
+    /* This overlay (z-index 2000) fully covers the bottom-anchored TopBar
+       (z-index 100), so it doesn't need to reserve the ~56px the TopBar would
+       otherwise occupy — extend to the bottom (minus the home-indicator inset). */
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 10px);
+  }
+  /* Slimmer header so the editor gets the vertical space. */
+  .unified-profile-header {
+    padding: 0 4px;
+  }
+  .unified-profile-header h1 {
+    font-size: 22px;
+  }
+  /* Fuller-bleed editor pane — less inset chrome around the content. */
+  .profile-form-scroll {
+    padding: 16px 14px;
+  }
+  .profile-content-outer {
+    border-radius: 16px;
   }
 }
 
@@ -1417,8 +1506,23 @@
 .profile-hero__desc::placeholder { color: var(--text-muted); }
 .profile-hero__desc:focus { border-bottom-color: var(--accent-primary); }
 
-@media (max-width: 560px) {
-  .profile-hero { flex-direction: column; }
+/* On phones keep the hero a compact ROW (a stacked column pushed the whole
+   form off-screen — the avatar + tall main added up to ~400px). Smaller avatar
+   + tighter padding so the actual settings are visible without a long scroll. */
+@media (max-width: 600px) {
+  .profile-hero {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .profile-hero .avatar-trigger--lg {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+  }
+  .profile-hero__name { font-size: 1.2rem; }
 }
 
 /* ── Card grid ── */

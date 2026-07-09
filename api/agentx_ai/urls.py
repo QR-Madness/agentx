@@ -90,6 +90,9 @@ urlpatterns = [
     path("workspaces/<str:workspace_id>/shell/container/<str:action>", workspace_views.workspace_shell_container_action, name="workspace-shell-container-action"),
     # Agent profile endpoints
     path("agent/profiles", views.agent_profiles_list, name="agent-profiles-list"),
+    # NOTE: `reorder` must precede the `<str:profile_id>` route below, or it'd be
+    # captured as a profile id.
+    path("agent/profiles/reorder", views.agent_profiles_reorder, name="agent-profiles-reorder"),
     path("agent/profiles/<str:profile_id>", views.agent_profile_detail, name="agent-profile-detail"),
     path("agent/profiles/<str:profile_id>/set-default", views.agent_profile_set_default, name="agent-profile-set-default"),
     path("agent/profiles/<str:profile_id>/set-default-ambassador", views.agent_profile_set_default_ambassador, name="agent-profile-set-default-ambassador"),

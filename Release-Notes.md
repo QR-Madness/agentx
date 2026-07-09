@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.191 -->
+<!-- release-version: 0.21.192 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -73,6 +73,13 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   (no more scrolling every profile), each with its own delegation hint that falls back
   to the agent's profile Specialty — and it's now fully mobile-friendly (master→detail
   flow, thumb-reachable bottom-sheet picker).
+- **The Agent Profile editor grew up on mobile** — a master→detail flow (profiles list → tap →
+  full-screen editor with a ‹ Back), **drag-to-reorder** profiles (a grip handle; order persists
+  server-side), a compact identity header so the settings aren't buried, and the editor now fills the
+  screen instead of a tiny box. The icon picker selects on the **first tap** (no more tap-twice), the
+  profile's icon shows in the composer agent chip, and the redundant **Done** button is gone (edits
+  autosave). Fresh installs seed just **AgentX** (⚛ atom) + a ready **Researcher** (🔭 telescope) with
+  a proper web-research delegation prompt.
 - **Sources stay out of the way** — cited sources no longer stack as full-width cards mid-chat;
   they collapse into a slim, tool-call-style row (icon + count + a host hint) that expands on
   click, and the Sources drawer got a lighter, icon-led restyle.

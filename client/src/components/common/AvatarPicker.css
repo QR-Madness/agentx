@@ -143,10 +143,16 @@
   cursor: pointer;
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, transform 0.12s ease;
 }
-.avatar-pick-cell:hover {
-  color: var(--text-primary);
-  border-color: var(--accent-primary);
-  transform: translateY(-1px);
+/* Gate hover behind a real hover-capable pointer. On touch, a `:hover` rule
+   makes the FIRST tap apply hover (and no click) — you'd have to tap twice to
+   pick an icon. Restricting hover to fine/hover pointers makes touch select on
+   the first tap. */
+@media (hover: hover) and (pointer: fine) {
+  .avatar-pick-cell:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+  }
 }
 .avatar-pick-cell.selected {
   color: var(--accent-primary);

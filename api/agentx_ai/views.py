@@ -7607,6 +7607,37 @@ def agent_profile_set_default_ambassador(request, profile_id):
     return JsonResponse({"default_ambassador_id": profile_id})
 
 
+@csrf_exempt
+def agent_profiles_reorder(request):
+    """
+    POST /api/agent/profiles/reorder - Reorder profiles.
+
+    Body: {"order": ["id1", "id2", ...]} — the desired ordering. Order is just the
+    stored insertion order (no index field), so this rebuilds it. Ids not listed
+    keep their current relative order at the end; unknown ids are ignored.
+    Returns the authoritative order so the client can reconcile.
+    """
+    from .agent.profiles import get_profile_manager
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return json_error("Method not allowed", status=405)
+
+    data, error = parse_json_body(request)
+    if error:
+        return error
+
+    order = data.get("order")
+    if not isinstance(order, list) or not all(isinstance(x, str) for x in order):
+        return json_error("`order` must be a list of profile ids", status=400)
+
+    manager = get_profile_manager()
+    profiles = manager.reorder_profiles(order)
+    return JsonResponse({"order": [p.id for p in profiles]})
+
+
 # ============== Agent Alloy Workflow Endpoints ==============
 
 def _serialize_workflow(wf) -> dict:

@@ -30,6 +30,7 @@ interface AgentProfileContextValue {
   updateProfile: (id: string, updates: Partial<AgentProfileCreate>) => Promise<AgentProfile | null>;
   deleteProfile: (id: string) => Promise<boolean>;
   setDefaultProfile: (id: string) => Promise<boolean>;
+  reorderProfiles: (orderedIds: string[]) => Promise<void>;
   refresh: () => Promise<void>;
 
   // Convenience getters
@@ -173,6 +174,25 @@ export function AgentProfileProvider({ children }: { children: ReactNode }) {
     }
   }, [loadProfiles]);
 
+  const reorderProfiles = useCallback(async (orderedIds: string[]): Promise<void> => {
+    // Optimistic: apply the new order locally so the drag feels instant, then
+    // persist. On failure, reload to snap back to the server's truth.
+    const prev = profiles;
+    const byId = new Map(prev.map(p => [p.id, p]));
+    const next = orderedIds.map(id => byId.get(id)).filter((p): p is AgentProfile => !!p);
+    // Keep any profiles not named in the order (defensive) at the end.
+    for (const p of prev) if (!orderedIds.includes(p.id)) next.push(p);
+    setProfiles(next);
+    if (activeServer) {
+      localStorage.setItem(STORAGE_KEY_PROFILES(activeServer.id), JSON.stringify(next));
+    }
+    try {
+      await api.reorderAgentProfiles(next.map(p => p.id));
+    } catch {
+      await loadProfiles();
+    }
+  }, [profiles, activeServer, loadProfiles]);
+
   const getAgentName = useCallback((): string => {
     return activeProfile?.name ?? 'AgentX';
   }, [activeProfile]);
@@ -193,6 +213,7 @@ export function AgentProfileProvider({ children }: { children: ReactNode }) {
         updateProfile,
         deleteProfile,
         setDefaultProfile,
+        reorderProfiles,
         refresh: loadProfiles,
         getAgentName,
         getProfileById,

@@ -1,7 +1,7 @@
 profiles:
   - id: default
     name: AgentX
-    avatar: sparkles
+    avatar: atom
     description: Default assistant profile with balanced settings
     temperature: 0.7
     reasoning_strategy: auto
@@ -10,26 +10,27 @@ profiles:
     enable_tools: true
     is_default: true
 
-  - id: creative
-    name: Ginny
-    avatar: palette
-    description: Creative assistant for brainstorming and content creation
-    temperature: 1.0
-    prompt_profile_id: creative
-    reasoning_strategy: auto
-    enable_memory: true
-    memory_channel: _global
-    enable_tools: true
-    is_default: false
-
-  - id: analyst
-    name: Sage
-    avatar: brain
-    description: Analytical assistant for research and logical reasoning
+  - id: researcher
+    name: Researcher
+    avatar: telescope
+    description: Web researcher — searches the web and returns concise, cited answers.
     temperature: 0.3
-    prompt_profile_id: analyst
-    reasoning_strategy: cot
+    reasoning_strategy: auto
+    system_prompt: >-
+      You are a web research specialist. Given a question or topic, use web
+      search to find current, accurate information, then reply with a concise,
+      well-structured answer and cite your sources (URLs). Prefer primary and
+      reputable sources, flag uncertainty or conflicting findings, and don't
+      speculate beyond what you found. You usually receive a delegated question
+      from another agent — answer it directly and completely so the delegator
+      can use your result without a follow-up.
     enable_memory: true
     memory_channel: _global
     enable_tools: true
+    allowed_tools:
+      - _internal.web_search
+    available_for_delegation: true
+    delegation_hint: >-
+      Web researcher — delegate any question needing current facts or sources;
+      it searches the web and returns a concise, cited answer.
     is_default: false
