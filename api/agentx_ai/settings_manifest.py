@@ -52,6 +52,19 @@ _CONFIG_WRITE_ROUTES: dict[str, Any] = {
     "images": ("enabled", "default_model", "avatar_style_prompt"),
     "vision": ("enabled", "refeed_recent_turns"),
     "models": ("roles.fast_utility", "roles.deep_reasoning", "roles.summarizer"),
+    # The Conversation Context settings section (one home for the in-conversation
+    # context techniques).
+    "context": ("summary_trigger_ratio", "verbatim_budget_ratio", "recent_floor",
+                "preassembly_summary_enabled", "conversation_state_enabled",
+                "conversation_state_compaction_enabled", "rehydrate_max_turns",
+                "max_input_tokens"),
+    "session": ("rolling_summary.enabled", "rolling_summary.model",
+                "rolling_summary.max_tokens"),
+    "trajectory_compression": ("enabled", "threshold_ratio",
+                               "preserve_recent_rounds", "model",
+                               "max_knowledge_chars"),
+    "compression": ("enabled", "model", "max_summary_chars"),
+    "memory": ("episodic_leads_enabled", "project_channels"),
 }
 
 
@@ -154,7 +167,6 @@ def _memory_entries() -> list[dict[str, Any]]:
 
 def _config_entries() -> list[dict[str, Any]]:
     from .config import DEFAULT_CONFIG, get_config_manager
-    from .kit.agent_memory.config import _TRAJECTORY_COMPRESSION_KEYS
     from .model_roles import ROLE_MEMBERS
 
     cfg = get_config_manager()
@@ -163,16 +175,14 @@ def _config_entries() -> list[dict[str, Any]]:
         for member, meta in ROLE_MEMBERS.items()
         if meta["kind"] == "config"
     }
-    # trajectory_compression.* lives in config but is written through the
-    # memory settings bridge (surfaced in the consolidation panel).
-    bridged_paths = {path for path, _default in _TRAJECTORY_COMPRESSION_KEYS.values()}
+    # trajectory_compression.* is now written directly via /api/config/update
+    # (Settings → Conversation Context); the legacy memory-settings bridge
+    # (trajectory_compression_* keys on /api/memory/settings) still accepts
+    # writes for back-compat but is no longer the canonical route.
 
     entries: list[dict[str, Any]] = []
     for path, default in _flatten_config(DEFAULT_CONFIG):
-        if path in bridged_paths:
-            writable_via = "/api/memory/settings"
-        else:
-            writable_via = _config_writable_via(path)
+        writable_via = _config_writable_via(path)
         entry: dict[str, Any] = {
             "key": path,
             "store": "config",

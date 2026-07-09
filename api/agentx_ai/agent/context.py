@@ -21,11 +21,15 @@ logger = logging.getLogger(__name__)
 class ContextConfig:
     """Configuration for context management.
 
-    Only the rolling-summary model remains here — the legacy token-budget knobs were
-    retired in Foundation #6 along with the superseded ``prepare_context`` assembler
-    (per-turn assembly now flows through the Context Ledger / ``assemble_turn_context``).
+    Only the rolling-summary/digest knobs remain here — the legacy token-budget
+    knobs were retired in Foundation #6 along with the superseded ``prepare_context``
+    assembler (per-turn assembly now flows through the Context Ledger /
+    ``assemble_turn_context``).
     """
     summary_model: str = "anthropic:claude-haiku-4-5-20251001"
+    # Output budget for one compaction pass. The digest is re-summarized in place
+    # each pass, so this bounds the digest's steady-state size (not its coverage).
+    summary_max_tokens: int = 800
 
 
 class ContextManager:
@@ -103,28 +107,41 @@ class ContextManager:
         ).messages
 
     async def _summarize_messages(self, messages: list[Message]) -> str:
-        """Summarize a list of messages."""
+        """Fold messages into a rolling compaction digest (one LLM call).
+
+        Serves both compaction targets — the conversation-state ``digest`` and the
+        legacy prose rolling summary; the caller rolls the prior digest/summary in
+        as a leading SYSTEM message. The instruction lives in
+        ``system_prompts.yaml`` (``compression.compaction_digest``) — recall-first,
+        per INV-CTX-1: this digest is the only surviving view of the aged-out turns.
+        """
         if not messages:
             return ""
-        
+
         try:
             provider, model_id, _ = self.registry.resolve_with_fallback(
                 self.config.summary_model
             )
-            
+
             # Build conversation text
             conversation = []
             for msg in messages:
                 role_name = msg.role.value.capitalize()
                 conversation.append(f"{role_name}: {msg.content}")
-            
+
             conversation_text = "\n\n".join(conversation)
-            
+
+            try:
+                from ..prompts.loader import get_prompt_loader
+                digest_prompt = get_prompt_loader().get("compression.compaction_digest")
+            except Exception:  # pragma: no cover — YAML missing/corrupt
+                digest_prompt = (
+                    "Summarize the following conversation concisely, preserving key "
+                    "information and context needed for future responses."
+                )
+
             summary_messages = [
-                Message(
-                    role=MessageRole.SYSTEM,
-                    content="Summarize the following conversation concisely, preserving key information and context needed for future responses."
-                ),
+                Message(role=MessageRole.SYSTEM, content=digest_prompt),
                 Message(
                     role=MessageRole.USER,
                     content=conversation_text
@@ -135,7 +152,7 @@ class ContextManager:
                 summary_messages,
                 model_id,
                 temperature=0.3,
-                max_tokens=500,
+                max_tokens=self.config.summary_max_tokens,
             )
             
             return result.content

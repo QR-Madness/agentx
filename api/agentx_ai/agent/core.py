@@ -531,18 +531,24 @@ class Agent:
         model_id: str,
         messages: list[Message],
         tools: list[dict[str, Any]] | None,
+        *,
+        max_context_tokens: int | None = None,
         **kwargs: Any,
     ) -> tuple[CompletionResult, list[str]]:
         """
         Call provider.complete() in a tool-use loop.
-        
+
         If the model returns tool_calls, execute them, append results to
         messages, and call again — up to max_tool_rounds iterations.
-        
+        ``max_context_tokens`` is the in-turn trajectory-compression ceiling;
+        callers that resolved the model's real window pass it (``chat()``),
+        others fall back to the conservative ``config.max_context_tokens``.
+
         Returns:
             (final CompletionResult, list of tool names used)
         """
         tools_used: list[str] = []
+        trajectory_limit = max_context_tokens or self.config.max_context_tokens
         
         for _ in range(self.config.max_tool_rounds):
             # Provider.complete is async; bridge it to this sync path (used by
@@ -595,7 +601,7 @@ class Agent:
             # Trajectory compression: consolidate older rounds if context is growing large
             from ..streaming.trajectory_compression import compress_trajectory
             if compress_trajectory(
-                messages, self.config.max_context_tokens, task_context,
+                messages, trajectory_limit, task_context,
                 active_model=self.config.default_model,
             ):
                 logger.info("Trajectory compressed, continuing with reduced context")
@@ -969,25 +975,55 @@ class Agent:
                     profile_id=profile_id or self.config.prompt_profile_id
                 )
 
-                # Build messages with composed system prompt
-                messages = [
-                    Message(
+                # Budget-fit assembly (window-aware): this path previously dumped
+                # the ENTIRE rehydrated session into the prompt — a long resumed
+                # conversation could exceed the provider window outright. Resolve
+                # the model's real window (per-model overrides win, like the
+                # streaming path) and fit the recent verbatim tail; persisted
+                # compaction coverage (state digest / legacy summary) rides as a
+                # system block so aged-out turns stay represented.
+                from ..config import get_config_manager, get_context_limit_overrides
+
+                caps = provider.get_capabilities(model_id)
+                overrides = get_context_limit_overrides(model_id, provider.name)
+                context_window = overrides.get("context_window") or caps.context_window
+                max_tokens = kwargs.get("max_tokens", 2000)
+
+                system_blocks = [Message(
+                    role=MessageRole.SYSTEM,
+                    content=system_prompt or "You are a helpful AI assistant.",
+                )]
+                try:
+                    from .conversation_state_storage import render_state_block
+                    coverage = render_state_block(conversation_id)
+                    if coverage:
+                        system_blocks.append(
+                            Message(role=MessageRole.SYSTEM, content=coverage)
+                        )
+                except Exception as st_err:  # pragma: no cover — Redis offline
+                    logger.debug(f"State block skipped (chat path): {st_err}")
+                if session.summary:
+                    system_blocks.append(Message(
                         role=MessageRole.SYSTEM,
-                        content=system_prompt or "You are a helpful AI assistant."
-                    )
-                ]
-                if context:
-                    messages.extend(context)
-                # Use truncated/cached version for LLM context
-                messages.append(Message(role=MessageRole.USER, content=message_for_context))
+                        content=f"Earlier conversation summary: {session.summary}",
+                    ))
+
+                from .context import ContextManager, ContextConfig
+                if self._context_manager is None:
+                    self._context_manager = ContextManager(ContextConfig())
+                cfg_mgr = get_config_manager()
+                messages = self._context_manager.assemble_turn_context(
+                    system_blocks=system_blocks,
+                    history=context,
+                    new_message=Message(role=MessageRole.USER, content=message_for_context),
+                    context_window=context_window,
+                    reserved_tokens=max_tokens + 2000,
+                    verbatim_ratio=float(cfg_mgr.get("context.verbatim_budget_ratio", 0.9)),
+                    recent_floor=int(cfg_mgr.get("context.recent_floor", 4)),
+                )
 
                 # Inject memories into context
                 if memory_bundle:
-                    from .context import ContextManager, ContextConfig
-                    if self._context_manager is None:
-                        # ContextManager here is used only for inject_memory; the
-                        # legacy token-budget knobs were retired in Foundation #6.
-                        self._context_manager = ContextManager(ContextConfig())
                     messages = self._context_manager.inject_memory(messages, memory_bundle)
 
                 logger.info(f"Agent chat {task_id} using {model_id}")
@@ -1000,8 +1036,9 @@ class Agent:
                     model_id,
                     messages,
                     tools,
+                    max_context_tokens=max(context_window - max_tokens - 2000, 4096),
                     temperature=kwargs.get("temperature", 0.7),
-                    max_tokens=kwargs.get("max_tokens", 2000),
+                    max_tokens=max_tokens,
                 )
 
                 # Parse output to extract thinking tags
@@ -1014,6 +1051,33 @@ class Agent:
 
                 # Add assistant response to session (store parsed content)
                 session.add_message(Message(role=MessageRole.ASSISTANT, content=answer))
+
+                # Post-turn compaction pre-warm — the SAME target gate as the
+                # streaming path — so background/queued conversations keep their
+                # digest fresh instead of growing until a later fit drops turns.
+                try:
+                    from .session import compaction_uses_state
+                    input_budget = min(
+                        int(context_window * float(
+                            cfg_mgr.get("context.verbatim_budget_ratio", 0.9))),
+                        context_window - (max_tokens + 2000),
+                    )
+                    threshold = int(input_budget * float(
+                        cfg_mgr.get("context.summary_trigger_ratio", 0.85)))
+                    recent_floor = int(cfg_mgr.get("context.recent_floor", 4))
+                    if threshold > 0:
+                        if compaction_uses_state(cfg_mgr):
+                            run_coro_sync(self._session_manager.maybe_compact_to_state(
+                                session.id, token_threshold=threshold,
+                                recent_floor=recent_floor,
+                            ))
+                        else:
+                            run_coro_sync(self._session_manager.maybe_update_summary(
+                                session.id, token_threshold=threshold,
+                                recent_floor=recent_floor,
+                            ))
+                except Exception as pw_err:  # noqa: BLE001 — never fail the turn
+                    logger.debug(f"Compaction pre-warm skipped (chat path): {pw_err}")
 
                 total_time = (time.time() - start_time) * 1000
 

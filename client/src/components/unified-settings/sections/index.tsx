@@ -8,6 +8,7 @@ import {
   Server,
   Key,
   Layers,
+  Layers3,
   Sparkles,
   Database,
   Wrench,
@@ -165,6 +166,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         icon: <Database size={18} />,
         component: lazy(() => import('./MemoryOverviewSection')),
         keywords: ['storage', 'data', 'retention', 'postgresql', 'neo4j', 'redis']
+      },
+      {
+        id: 'context',
+        label: 'Conversation Context',
+        icon: <Layers3 size={18} />,
+        component: lazy(() => import('./ContextSection')),
+        keywords: ['context', 'compaction', 'digest', 'conversation state', 'rolling summary', 'verbatim', 'trajectory', 'compression', 'tool output', 'rehydrate', 'episodic leads', 'window']
       },
       {
         id: 'memory-recall',

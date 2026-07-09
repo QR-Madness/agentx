@@ -3,6 +3,7 @@
  * primitive. Replaces the raw `<input type="range">` + `.setting-value` markup.
  */
 
+import type { ReactNode } from 'react';
 import { Label, Slider } from '../../ui';
 
 interface SliderFieldProps {
@@ -14,10 +15,11 @@ interface SliderFieldProps {
   onChange: (value: number) => void;
   /** Format the readout (default: 2 decimals). */
   format?: (value: number) => string;
+  hint?: ReactNode;
 }
 
 export function SliderField({
-  label, value, min, max, step, onChange, format = v => v.toFixed(2),
+  label, value, min, max, step, onChange, format = v => v.toFixed(2), hint,
 }: SliderFieldProps) {
   return (
     <div className="setting-row">
@@ -33,6 +35,7 @@ export function SliderField({
         />
         <span className="setting-value">{format(value)}</span>
       </div>
+      {hint && <span className="setting-hint">{hint}</span>}
     </div>
   );
 }

@@ -1505,7 +1505,7 @@ Canonical machine-readable registry of every user-tunable setting across both st
 POST /api/config/update
 ```
 
-Updates runtime configuration. Persists to `data/config.json` and hot-reloads providers. Sectioned partial update — handled sections: `providers`, `preferences`, `llm_settings`, `context_limits`, `context` (compaction knobs — allowlisted keys `verbatim_budget_ratio`, `summary_trigger_ratio`, `recent_floor`), `prompt_enhancement`, `planner`, `search`, `alloy`, `ambassador`, `images`, `vision`, and `models.roles`.
+Updates runtime configuration. Persists to `data/config.json` and hot-reloads providers. Sectioned partial update — handled sections: `providers`, `preferences`, `llm_settings`, `context_limits`, `context` (Conversation Context knobs — allowlisted keys `verbatim_budget_ratio`, `summary_trigger_ratio`, `recent_floor`, `preassembly_summary_enabled`, `conversation_state_enabled`, `conversation_state_compaction_enabled`, `rehydrate_max_turns`, `max_input_tokens`), `session.rolling_summary` (`enabled`, `model`, `max_tokens`), `trajectory_compression` (`enabled`, `threshold_ratio`, `preserve_recent_rounds`, `model`, `max_knowledge_chars`), `compression` (`enabled`, `model`, `max_summary_chars`), `memory` (`episodic_leads_enabled`, `project_channels`), `prompt_enhancement`, `planner`, `search`, `alloy`, `ambassador`, `images`, `vision`, and `models.roles`. Together the context-family sections back **Settings → Memory → Conversation Context**.
 
 **Request:**
 ```json

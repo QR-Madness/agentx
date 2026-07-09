@@ -93,11 +93,12 @@ export function ConsolidationSettingsPanel({
   };
 
   // The stage models that inherit `feature_default_model` when left empty.
+  // (trajectory_compression_model moved to Settings → Conversation Context —
+  // "apply to all stages" must not reach across panels.)
   const STAGE_MODEL_KEYS: (keyof ConsolidationSettings)[] = [
     'extraction_model',
     'relevance_filter_model',
     'combined_extraction_model',
-    'trajectory_compression_model',
     'entity_linking_model',
     'contradiction_model',
     'correction_model',
@@ -395,51 +396,10 @@ export function ConsolidationSettingsPanel({
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        title="Trajectory Compression"
-        description="Consolidates older tool-call rounds into a Knowledge block when context exceeds the threshold."
-      >
-        <div className="settings-grid">
-          <ToggleField
-            label="Enable trajectory compression"
-            checked={settings.trajectory_compression_enabled ?? true}
-            onChange={v => handleChange('trajectory_compression_enabled', v)}
-          />
-          <div className="setting-row">
-            <ModelPickerField
-              label="Model"
-              value={settings.trajectory_compression_model || ''}
-              onChange={v => handleChange('trajectory_compression_model', v)}
-              showDefault={false}
-            />
-          </div>
-          <SliderField
-            label="Temperature"
-            value={settings.trajectory_compression_temperature ?? 0.2}
-            min={0} max={1} step={0.05}
-            onChange={v => handleChange('trajectory_compression_temperature', v)}
-          />
-          <NumberField
-            label="Max Tokens"
-            value={settings.trajectory_compression_max_tokens ?? 1500}
-            min={100} max={8000} fallback={1500}
-            onChange={v => handleChange('trajectory_compression_max_tokens', v)}
-          />
-          <SliderField
-            label="Trigger Threshold (% of context)"
-            value={settings.trajectory_compression_threshold_ratio ?? 0.75}
-            min={0.5} max={0.95} step={0.05}
-            format={pct}
-            onChange={v => handleChange('trajectory_compression_threshold_ratio', v)}
-          />
-          <NumberField
-            label="Preserve Recent Rounds"
-            value={settings.trajectory_compression_preserve_recent_rounds ?? 2}
-            min={1} max={5} fallback={2}
-            onChange={v => handleChange('trajectory_compression_preserve_recent_rounds', v)}
-          />
-        </div>
-      </SettingsSection>
+      {/* Trajectory compression moved to Settings → Memory → Conversation Context —
+          it is an in-conversation technique, not a consolidation stage. The
+          memory-settings write bridge (trajectory_compression_* keys) remains
+          accepted for back-compat. */}
 
       <SettingsSection title="Entity Linking">
         <div className="settings-grid">

@@ -119,9 +119,13 @@ storage (`conversation_logs` in Postgres).
 without dropping old coverage), rendered in the state block every turn
 (`SessionManager.maybe_compact_to_state`). A turn leaves the window only once the digest —
 or a deterministic `history_digest` fallback, if the summarizer is unavailable — covers it.
-Two triggers: a post-turn pre-warm (`context.summary_trigger_ratio`, 0.85) and a just-in-time
-backstop (`context.verbatim_budget_ratio`, 0.9). One pass runs per over-budget turn (state
-compaction by default; the legacy prose summary is the flag-off fallback — no double-compression).
+Two triggers, both anchored to the turn's **real history budget** (what's left of the input
+budget after the preamble blocks): a post-turn pre-warm (`context.summary_trigger_ratio`,
+0.85 — pays the summarizer call in idle time) and a just-in-time backstop right before
+assembly (within `context.verbatim_budget_ratio`, 0.9). One pass runs per over-budget turn
+(state compaction by default; the legacy prose summary is the flag-off fallback — no
+double-compression). Every compaction call site — streaming, post-turn, background chat —
+routes through one shared target gate, so they can never compact into different objects.
 
 **Why rolling, not per-conversation.** Re-summarizing only the newly-aged-out turns (rather
 than re-summarizing the whole window at a checkpoint) keeps compaction incremental, and —
@@ -129,6 +133,27 @@ because the digest lives beside the goals / decisions / open-threads slots — i
 conversation's **active working state**, not just a narrative recap. The tradeoff is mild
 summary drift over very long runs, hedged by rolling the prior digest in and by keeping the
 raw turns durable.
+
+### The techniques at a glance
+
+Every technique below is tunable in **Settings → Memory → Conversation Context**. "Between
+turns" techniques manage the conversation's transcript; "within a turn" techniques manage a
+single turn's working space (tool rounds never enter the transcript, so the two never
+double-compress the same content).
+
+| Technique | Scope | Fires when | Writes / renders | Key settings |
+|-----------|-------|-----------|------------------|--------------|
+| **Verbatim window** | between turns | every turn | the recent transcript, word-for-word, newest-first | `context.verbatim_budget_ratio`, `context.recent_floor` |
+| **Conversation-state slots** | between turns | agent tool call / user edit | goals · decisions · open threads · artifacts · narrative (provenance-stamped, bounded) | `context.conversation_state_enabled` |
+| **State digest (compaction)** | between turns | history nears its budget (pre-warm at `summary_trigger_ratio`; JIT backstop before assembly) | `ConversationState.digest`, re-summarized in place | `context.conversation_state_compaction_enabled`, `context.preassembly_summary_enabled`, `session.rolling_summary.*` |
+| **Legacy prose summary** | between turns | only when state compaction is off (+ read-back for old chats) | `session.summary` (Redis) | `session.rolling_summary.enabled` |
+| **`history_digest` fallback** | between turns | summarizer unavailable while over budget | deterministic one-line-per-turn digest block | (automatic) |
+| **Checkpoints / scratchpad** | between turns | agent tool call | Redis notes re-injected every turn (compression can't strip them) | (always on) |
+| **Rehydration** | conversation resume | cold session | reloads the durable transcript; overflow → notice block + recall | `context.rehydrate_max_turns` |
+| **Episodic thread leads** | between turns | episodic phrasing ("when did we…") | ≤5 pointers into past conversations; `read_thread` pulls detail | `memory.episodic_leads_enabled` |
+| **Trajectory compression** | within a turn | tool loop crosses `threshold_ratio` of the in-turn ceiling | older tool rounds → one `[KNOWLEDGE]` block | `trajectory_compression.*` |
+| **Tool-output compression** | within a turn | one tool result is oversized | task-aware summary + structure index; full output stays retrievable | `compression.*` |
+| **Input spend guard** | within a turn | set > 0 | caps the in-turn ceiling below the model window | `context.max_input_tokens` |
 
 ## Capabilities by area
 
@@ -203,6 +228,10 @@ raw turns durable.
 ### Context gating
 - Oversized tool outputs are compressed and indexed (`ToolOutputCompressor`), chunked and
   queried on demand (`tool_output_chunker`), and long tool loops are compressed in-trajectory.
+  The in-turn ceiling these work within derives from the model's **real** context window
+  (minus the output reservation) — see the technique matrix in
+  [Conversation context lifecycle](#conversation-context-lifecycle-per-turn); all knobs live
+  in Settings → Memory → Conversation Context.
 
 ### Lifecycle & operations
 - **Promotion** raises high-value facts to `_global`; **decay** ages salience; **dedupe**

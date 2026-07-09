@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.202 -->
+<!-- release-version: 0.21.203 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -76,6 +76,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   age out of the window they're now compacted **into this structured state** (a rolling summary that
   stays bounded) instead of a separate lossy prose blob, so long conversations stay coherent.
   Default-on; opt out in settings.
+- **One home for how context works: Settings → Memory → Conversation Context** — the verbatim
+  window, the state-digest compaction and its summarizer, in-turn trajectory compression (moved out
+  of Consolidation), tool-output compression, episodic thread leads, rehydration bounds, and an
+  optional per-turn input spend cap — each explained in place, and all documented in a per-technique
+  matrix on the memory-capabilities page.
 - **Recall the actual discussion, not just the fact** — when you ask about something you worked
   through before ("when did we decide…", "earlier you said…"), agents now surface lightweight
   **links to the past conversations** those facts came from and can pull the real turns on demand,
@@ -127,6 +132,20 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Long conversations actually compact into the structured state now** — the post-turn compaction
+  still fed the old prose summary, so on big-window models the conversation-state digest sat stale
+  while a hidden second summary did the work (and on small windows the pre-warm never fired). Every
+  compaction path now targets the state digest, triggers anchor to the turn's real budget, and a
+  recall-first compaction prompt preserves goals/decisions/identifiers over brevity.
+- **Big-window models no longer get their tool results shredded** — a legacy flat 32k input cap made
+  mid-turn compression fire constantly and truncated every tool result to ~500 chars once a
+  conversation grew past 32k tokens; the in-turn ceiling now follows the model's real window (an
+  optional spend cap replaces it), and the last-resort truncation trims oldest results first instead
+  of the one the agent just asked for.
+- **The context % chip survives reopening a chat** — a resumed conversation showed no usage until
+  you sent a turn (an unpleasant surprise when resuming a huge, uncached chat); the chip now seeds
+  from the restored transcript and respects your Model Limits window override, so the
+  "this resume is expensive" signal is visible immediately.
 - **Delegated agents now see the project — and delegations stay visible** — when you delegate inside a
   project, the teammate is now *told* which project it's in (name, instructions, file list) instead of
   only being able to touch its files silently, so it uses project tools and follows your instructions.

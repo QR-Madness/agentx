@@ -187,35 +187,58 @@ DEFAULT_CONFIG = {
         "refeed_recent_turns": 2,
     },
     "session": {
+        # Master switch + model for automatic conversation compaction (both
+        # targets — the conversation-state digest AND the legacy prose summary
+        # gate on `enabled`). Named for the original prose mechanism; the state
+        # digest superseded it as the default target (Slice 1c).
         "rolling_summary": {
             "enabled": True,
-            # Now a *floor*: always keep at least this many recent turns verbatim,
-            # even under context-budget pressure (was a hard message-count cap).
-            "recent_window": 8,
             "model": "",  # empty ⇒ summarizer role (see model_roles.py); readers floor to haiku
+            # Output budget for one compaction pass; the digest is re-summarized
+            # in place each pass, so this bounds its steady-state size.
+            "max_tokens": 800,
         },
     },
     "context": {
         # Verbatim CEILING: fraction of the model's real context window the
         # verbatim transcript may use (assembly still hard-caps at
         # window − reserved output). Raised 0.7 → 0.9 so compression kicks in
-        # just before the context limit, not lossily at 70%. The rolling-summary
+        # just before the context limit, not lossily at 70%. The compaction
         # trigger is a SEPARATE knob now (summary_trigger_ratio) — the old
         # double duty is gone.
         "verbatim_budget_ratio": 0.9,
-        # Post-turn rolling-summary pre-warm threshold (fraction of window).
-        # Fires slightly BELOW the verbatim ceiling so the summary is usually
-        # fresh before the JIT pre-assembly check ever has to pay for it.
+        # Post-turn compaction pre-warm threshold — fraction of the turn's REAL
+        # history budget (input budget − granted preamble blocks). Fires slightly
+        # BELOW the JIT backstop so the digest is usually fresh before the next
+        # turn's pre-assembly check ever has to pay for it.
         "summary_trigger_ratio": 0.85,
-        # JIT pre-assembly summarization (INV-CTX-1 backstop): when a turn's
-        # history exceeds its real budget, refresh the summary BEFORE assembly
-        # so dropped turns are always covered (deterministic digest fallback
-        # when the summarizer is unavailable).
+        # JIT pre-assembly compaction (INV-CTX-1 backstop): when a turn's
+        # history exceeds its real budget, refresh the digest BEFORE assembly
+        # so dropped turns are always covered (deterministic history_digest
+        # fallback when the summarizer is unavailable).
         "preassembly_summary_enabled": True,
         # Floor of most-recent turns always kept verbatim.
         "recent_floor": 4,
         # Max turns pulled from durable history when rehydrating a cold session.
         "rehydrate_max_turns": 400,
+        # Structured conversation state (Slice 1a): the goals/decisions/
+        # open-threads/artifacts/narrative slots + the rolling digest, rendered
+        # as a ledger block and writable via the update_conversation_state tool.
+        "conversation_state_enabled": True,
+        # Slice 1c: compaction targets ConversationState.digest (the default).
+        # Off ⇒ aged-out turns fold into the legacy prose rolling summary instead.
+        "conversation_state_compaction_enabled": True,
+        # Optional per-turn INPUT spend guard for the tool loop (tokens). 0 = off
+        # (the in-turn ceiling derives from the model's real window). Replaces the
+        # old flat 32k MAX_INPUT_TOKENS cap that strangled big-window models.
+        "max_input_tokens": 0,
+    },
+    "memory": {
+        # Episodic "threads to pull" (Slice 2): pointer leads into past
+        # conversations on episodic intent, expanded on demand via read_thread.
+        "episodic_leads_enabled": True,
+        # Project (workspace) memory channels — `_project_{ws_id}` scoping.
+        "project_channels": True,
     },
     "alloy": {
         "max_delegation_depth": 3,

@@ -774,11 +774,47 @@ export interface ConfigUpdate {
     tavily_api_key?: string;
     brave_api_key?: string;
   };
-  /** Context compaction knobs (verbatim window + rolling-summary trigger). */
+  /** Conversation-context management (the Conversation Context settings section). */
   context?: {
     verbatim_budget_ratio?: number;
     summary_trigger_ratio?: number;
     recent_floor?: number;
+    preassembly_summary_enabled?: boolean;
+    conversation_state_enabled?: boolean;
+    conversation_state_compaction_enabled?: boolean;
+    rehydrate_max_turns?: number;
+    /** Optional per-turn input spend guard for the tool loop; 0 = off. */
+    max_input_tokens?: number;
+  };
+  /** Compaction summarizer (shared by the state digest + legacy prose summary). */
+  session?: {
+    rolling_summary?: {
+      enabled?: boolean;
+      /** "" = follow the summarizer model role. */
+      model?: string;
+      max_tokens?: number;
+    };
+  };
+  /** In-turn tool-loop round compression (older rounds → Knowledge block). */
+  trajectory_compression?: {
+    enabled?: boolean;
+    threshold_ratio?: number;
+    preserve_recent_rounds?: number;
+    /** "" = follow the summarizer model role. */
+    model?: string;
+    max_knowledge_chars?: number;
+  };
+  /** Task-aware compression of oversized single tool outputs. */
+  compression?: {
+    enabled?: boolean;
+    /** "" = follow the summarizer model role. */
+    model?: string;
+    max_summary_chars?: number;
+  };
+  /** Memory feature toggles (ConfigManager namespace, not the memory kit). */
+  memory?: {
+    episodic_leads_enabled?: boolean;
+    project_channels?: boolean;
   };
   alloy?: {
     allow_adhoc_delegation?: boolean;

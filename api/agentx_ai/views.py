@@ -14,9 +14,9 @@ from .kit.memory_utils import check_memory_health
 from .mcp import get_mcp_manager
 from .providers import get_registry
 from .streaming import (
+    CONTEXT_BUFFER_TOKENS,
     CONTEXT_WARNING_THRESHOLD,
     DEFAULT_MAX_TOOL_ROUNDS,
-    MAX_INPUT_TOKENS,
     REASONING_DEFAULT_OUTPUT_TOKENS,
     STREAM_CLOSE_DELAY,
     estimate_tokens,
@@ -599,6 +599,20 @@ async def _ensure_summary_coverage(
         context_window - reserved_tokens,
     )
     blocks_tokens = sum(estimate_text_tokens(b.content) for b in blocks)
+    # The coverage blocks registered AFTER this call (conversation state, legacy
+    # summary) also occupy budget — project their current renderings in, or the
+    # ledger's real history budget lands below this estimate and `fit_history`
+    # drops a band of turns with no digest coverage this turn (INV-CTX-1 gap).
+    if bool(cfg.get("context.conversation_state_enabled", True)):
+        try:
+            from .agent.conversation_state_storage import render_state_block
+            blocks_tokens += estimate_text_tokens(render_state_block(session.id))
+        except Exception as st_err:  # noqa: BLE001 — projection is best-effort
+            logger.debug(f"state-block projection skipped: {st_err}")
+    if session.summary:
+        blocks_tokens += estimate_text_tokens(
+            f"Earlier conversation summary: {session.summary}"
+        )
     history_budget = input_budget - estimate_text_tokens(new_message_content or "") - blocks_tokens
     if history_budget <= 0 or estimate_messages(non_system) <= history_budget:
         return history, None, None
@@ -612,10 +626,7 @@ async def _ensure_summary_coverage(
     # block, registered right after this call). Falls back to the legacy prose
     # rolling summary when conversation state or its compaction is disabled. Only
     # ONE pass runs (no double-compression).
-    use_state = (
-        bool(cfg.get("context.conversation_state_enabled", True))
-        and bool(cfg.get("context.conversation_state_compaction_enabled", True))
-    )
+    use_state = _compaction_uses_state(cfg)
     threshold = max(1, int(history_budget * 0.9))
     recent_floor = int(cfg.get("context.recent_floor", 4))
     state_digest: str | None = None
@@ -667,6 +678,60 @@ async def _ensure_summary_coverage(
         session.id, len(dropped),
     )
     return history, digest, None
+
+
+def _compaction_uses_state(cfg) -> bool:
+    """Delegates to the ONE shared gate (`agent.session.compaction_uses_state`)
+    so no compaction call site can target a different object than the others
+    (the drift Decisions.md INV-CTX-1 rule (c) forbids)."""
+    from .agent.session import compaction_uses_state
+
+    return compaction_uses_state(cfg)
+
+
+async def _post_turn_compaction_prewarm(
+    agent, session, *, ledger_result, context_window, reserved_tokens, cfg,
+) -> None:
+    """Post-turn compaction PRE-WARM: pay the compaction LLM call after the turn
+    (idle time) so the JIT pre-assembly backstop rarely has to pay it at the start
+    of the next one.
+
+    Routes through the SAME target gate as the JIT backstop — the state digest by
+    default, the legacy prose summary only when state compaction is off. (Slice 1c
+    switched only the JIT site; this site kept feeding `session.summary`, so on
+    big-window models the digest stayed stale while the prose summary did the real
+    compaction.)
+
+    The threshold anchors to the turn's REAL history budget — the input budget
+    minus the preamble blocks actually granted this turn (from the ledger's
+    allocation report) — times `context.summary_trigger_ratio`. The old
+    `window × ratio` anchor overshot the JIT trigger on big windows (pre-warm fired
+    first but into the wrong target) and undershot on small ones (never fired, so
+    every over-budget turn paid the summarizer latency in the JIT path instead).
+    Best-effort: never fails the turn.
+    """
+    trigger = float(cfg.get("context.summary_trigger_ratio", 0.85))
+    if ledger_result is not None:
+        blocks_tokens = sum(a.granted_tokens for a in ledger_result.allocations)
+        budget = ledger_result.input_budget - blocks_tokens
+    else:
+        # Direct/image turns skip the ledger — fall back to the window anchor.
+        budget = context_window - reserved_tokens
+    threshold = int(budget * trigger)
+    if threshold <= 0:
+        return
+    recent_floor = int(cfg.get("context.recent_floor", 4))
+    try:
+        if _compaction_uses_state(cfg):
+            await agent._session_manager.maybe_compact_to_state(
+                session.id, token_threshold=threshold, recent_floor=recent_floor,
+            )
+        else:
+            await agent._session_manager.maybe_update_summary(
+                session.id, token_threshold=threshold, recent_floor=recent_floor,
+            )
+    except Exception as e:
+        logger.warning(f"Post-turn compaction pre-warm failed for {session.id}: {e}")
 
 
 def index(request):
@@ -2180,6 +2245,22 @@ async def agent_chat_stream(request):
                     shrink_fn=shrink_tail,
                 ))
 
+            # Rehydration hit its row cap with no restored coverage: turns beyond
+            # the cap were never loaded, so no compaction pass can ever cover them
+            # (they exist only in durable storage). Tell the model honestly instead
+            # of letting the earliest turns vanish without a trace (INV-CTX-1).
+            if session.metadata.get("history_overflow"):
+                blocks.append(LedgerBlock(
+                    key="history_overflow_notice",
+                    priority=58,
+                    content=(
+                        "Note: this conversation is longer than the rehydration "
+                        "window — its earliest turns are not in view (and not in the "
+                        "summary). They remain in durable memory: use memory recall "
+                        "and `read_thread` if early details are needed."
+                    ),
+                ))
+
             # One budget-fit allocation (context-window-based, not message-count):
             # fit the highest-priority blocks + the most recent verbatim transcript
             # within a fraction of the window, drop the oldest overflow (covered by
@@ -2236,13 +2317,17 @@ async def agent_chat_stream(request):
                 try:
                     used_tokens = estimate_tokens(messages)
                     pct = (used_tokens / context_window * 100.0) if context_window else 0.0
+                    _vr_pct = int(
+                        float(_cfg.get("context.verbatim_budget_ratio", 0.9)) * 100
+                    )
                     messages.append(Message(
                         role=MessageRole.SYSTEM,
                         content=(
                             f"Context budget: ~{used_tokens:,} / {context_window:,} tokens "
-                            f"({pct:.0f}% used). When usage approaches 70% consider "
-                            f"calling the `checkpoint` tool to anchor progress before "
-                            f"automatic compression."
+                            f"({pct:.0f}% used). Near ~{_vr_pct}% the oldest turns roll "
+                            f"into the conversation-state digest automatically; use "
+                            f"`update_conversation_state` or `checkpoint` to pin anything "
+                            f"that must survive verbatim."
                         ),
                     ))
                 except Exception as bh_err:
@@ -2505,8 +2590,20 @@ async def agent_chat_stream(request):
                 import threading
                 threading.Thread(target=_run, daemon=True).start()
 
-            # Hard limit for context to prevent corruption (leave room for output)
-            max_context_tokens = min(context_window - adaptive_max_tokens - 1000, MAX_INPUT_TOKENS)
+            # In-turn context ceiling for the tool loop — the trajectory-compression
+            # trigger base AND the hard truncation fallback. Derived from the model's
+            # REAL window (minus this turn's output reservation + drift buffer): the
+            # old flat 32k cap (MAX_INPUT_TOKENS) strangled big-window models — any
+            # conversation assembled past 32k had every tool result truncated to
+            # ~500 chars mid-turn and trajectory compression firing every round. An
+            # optional spend guard (`context.max_input_tokens`, 0 = off) replaces it
+            # for users who deliberately want to bound per-turn input cost.
+            max_context_tokens = max(
+                context_window - adaptive_max_tokens - CONTEXT_BUFFER_TOKENS, 4096
+            )
+            _input_cap = int(get_config_manager().get("context.max_input_tokens", 0) or 0)
+            if _input_cap > 0:
+                max_context_tokens = min(max_context_tokens, _input_cap)
 
             # Image-generation turn: a direct-mode agent on an image-output model (flux,
             # gemini-flash-image) makes a *picture*, not text. Such a model's chat
@@ -2653,20 +2750,18 @@ async def agent_chat_stream(request):
             # Add to session
             session.add_message(Message(role=MessageRole.ASSISTANT, content=parsed.content))
 
-            # Post-turn summary PRE-WARM: roll older turns into session.summary
-            # when the transcript crosses summary_trigger_ratio — deliberately
-            # BELOW the verbatim ceiling, so the summary is usually fresh before
-            # the JIT pre-assembly check (INV-CTX-1 backstop) has to pay for it
-            # on the trigger turn. Best-effort; persisted for resume.
-            try:
-                _tr = float(get_config_manager().get("context.summary_trigger_ratio", 0.85))
-                await agent._session_manager.maybe_update_summary(
-                    session.id,
-                    token_threshold=int(context_window * _tr),
-                    recent_floor=int(get_config_manager().get("context.recent_floor", 4)),
-                )
-            except Exception as e:
-                logger.warning(f"Rolling summary update failed: {e}")
+            # Post-turn compaction PRE-WARM: roll aged-out turns into the SAME
+            # compaction target the JIT backstop uses (state digest by default),
+            # at a threshold slightly below the JIT trigger — so the digest is
+            # usually fresh before the next turn's pre-assembly check has to pay
+            # for it. Best-effort; persisted for resume.
+            await _post_turn_compaction_prewarm(
+                agent, session,
+                ledger_result=ledger_result,
+                context_window=context_window,
+                reserved_tokens=max_output_tokens + 2000,
+                cfg=get_config_manager(),
+            )
 
             total_time = (time.time() - start_time) * 1000
             logger.debug(f"Stream total time: {total_time:.0f}ms, sending done event...")
@@ -7257,15 +7352,64 @@ def config_update(request):
                         config.set(f"context_limits.{key_or_provider}.{key}", value)
                         updated_keys.append(f"context_limits.{key_or_provider}.{key}")
 
-    # Update context/compaction knobs (verbatim-window + rolling-summary trigger
-    # tuning). Allowlisted so arbitrary context.* internals aren't client-writable.
+    # Update context/compaction knobs (the Conversation Context settings section).
+    # Allowlisted so arbitrary context.* internals aren't client-writable.
     context_settings = data.get("context", {})
     if isinstance(context_settings, dict):
-        _CONTEXT_KEYS = ("summary_trigger_ratio", "verbatim_budget_ratio", "recent_floor")
+        _CONTEXT_KEYS = (
+            "summary_trigger_ratio", "verbatim_budget_ratio", "recent_floor",
+            "preassembly_summary_enabled", "conversation_state_enabled",
+            "conversation_state_compaction_enabled", "rehydrate_max_turns",
+            "max_input_tokens",
+        )
         for key, value in context_settings.items():
             if key in _CONTEXT_KEYS and value is not None:
                 config.set(f"context.{key}", value)
                 updated_keys.append(f"context.{key}")
+
+    # Compaction summarizer (session.rolling_summary.*): master switch + model +
+    # digest output budget. `model` may be explicitly "" (= follow the summarizer
+    # role), so only None is skipped.
+    session_settings = data.get("session", {})
+    if isinstance(session_settings, dict) and isinstance(
+        session_settings.get("rolling_summary"), dict
+    ):
+        _RS_KEYS = ("enabled", "model", "max_tokens")
+        for key, value in session_settings["rolling_summary"].items():
+            if key in _RS_KEYS and value is not None:
+                config.set(f"session.rolling_summary.{key}", value)
+                updated_keys.append(f"session.rolling_summary.{key}")
+
+    # In-turn trajectory compression (tool-loop rounds → Knowledge block).
+    _TRAJ_KEYS = (
+        "enabled", "threshold_ratio", "preserve_recent_rounds", "model",
+        "max_knowledge_chars",
+    )
+    traj_settings = data.get("trajectory_compression", {})
+    if isinstance(traj_settings, dict):
+        for key, value in traj_settings.items():
+            if key in _TRAJ_KEYS and value is not None:
+                config.set(f"trajectory_compression.{key}", value)
+                updated_keys.append(f"trajectory_compression.{key}")
+
+    # Tool-output compression (oversized single tool results).
+    _COMPRESSION_KEYS = ("enabled", "model", "max_summary_chars")
+    compression_settings = data.get("compression", {})
+    if isinstance(compression_settings, dict):
+        for key, value in compression_settings.items():
+            if key in _COMPRESSION_KEYS and value is not None:
+                config.set(f"compression.{key}", value)
+                updated_keys.append(f"compression.{key}")
+
+    # Memory feature toggles (ConfigManager namespace — distinct from the memory
+    # kit's pydantic settings).
+    _MEMORY_KEYS = ("episodic_leads_enabled", "project_channels")
+    memory_settings = data.get("memory", {})
+    if isinstance(memory_settings, dict):
+        for key, value in memory_settings.items():
+            if key in _MEMORY_KEYS and value is not None:
+                config.set(f"memory.{key}", value)
+                updated_keys.append(f"memory.{key}")
 
     # Update prompt enhancement settings
     prompt_enhancement = data.get("prompt_enhancement", {})

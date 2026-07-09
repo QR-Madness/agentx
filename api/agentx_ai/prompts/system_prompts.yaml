@@ -1035,6 +1035,30 @@ compression:
 
     Keep the total response under {max_chars} characters.
 
+  # Conversation compaction digest: fold turns aged out of the verbatim window into
+  # the rolling conversation-state digest (INV-CTX-1 coverage). Used as the SYSTEM
+  # prompt by ContextManager._summarize_messages for both the state digest and the
+  # legacy prose rolling summary; the prior digest is rolled in as a message.
+  # No variables.
+  compaction_digest: |
+    You are maintaining the rolling digest of a long conversation for an AI agent.
+    The turns below are leaving the agent's verbatim view — your digest is the only
+    place their content survives, so favor recall over brevity: dropping a detail
+    that later matters is worse than keeping a marginal one.
+
+    Fold the new turns into the prior summary (when one is given), preserving with
+    priority:
+    1. The user's goals, constraints, and standing instructions
+    2. Decisions made and the reasons behind them
+    3. Unresolved questions and open threads
+    4. Specific identifiers — names, files, documents, links, numbers, ids
+    5. Commitments either side made that are still in force
+
+    Rules:
+    - Write compact factual prose (no headings or lists); never invent content.
+    - When the prior summary conflicts with newer turns, the newer turns win.
+    - Attribute clearly who said or decided what when it matters.
+
   # Trajectory compression: consolidate multiple tool-call rounds into a knowledge block
   # Variables: {task_context}, {rounds_text}, {max_chars}
   trajectory: |

@@ -21,21 +21,36 @@
       crosses `verbatim_budget_ratio` of the window (keeping a `recent_floor`), and the summary is
       **persisted** in Redis so it survives a cold rebuild. (The model-authored `checkpoint` tool has
       no auto-trigger — also hardened: anchor-preserving eviction + a `replace` mode.)
+- [x] **One compaction target everywhere + budget-anchored triggers** — shipped `[v0.21.203]`. The
+      post-turn pre-warm had drifted (still fed the legacy prose summary → stale state digest on
+      big-window models; never fired on small ones); all three call sites (JIT backstop, post-turn
+      pre-warm, background `Agent.chat`) now route through `session.compaction_uses_state`, triggers
+      anchor to the ledger's real history budget, the JIT check projects the post-registration
+      coverage blocks, and the tool loop's in-turn ceiling derives from the model's real window
+      (retired the flat 32k `MAX_INPUT_TOKENS` cap; optional `context.max_input_tokens` spend guard).
+      See Decisions.md INV-CTX-1 rules (f)–(h).
+- [x] **Conversation Context settings section** — shipped `[v0.21.203]`. One home
+      (Settings → Memory → Conversation Context) for the verbatim window, state/digest compaction,
+      compaction summarizer, trajectory compression (moved out of Consolidation), tool-output
+      compression, episodic leads, rehydration bounds; ratios moved out of Model Limits. Backed by
+      allowlisted `/config/update` sections + the settings manifest.
 - [ ] **Redis/Postgres-backed live session store** — rehydrate-from-logs (shipped) re-reads the DB on
       a cold session; a durable session store would survive restarts without the per-turn read and
       across workers.
-- [ ] **Rolling summary as a first-class `conversations` column** (vs. the current Redis TTL) for
-      durability beyond 30 days.
-- [ ] **Hydrate the Alloy / background-chat paths** too — this slice rehydrates the main streaming
-      chat; the multi-agent + queued-chat paths build their own context.
-- [ ] **Stable memory core (kill transient memory injection)** — today the injected memory is
-      **transient**: `views.py` calls `agent.memory.remember(query=message)` **every turn**, so the
-      facts/entities re-rank against the current message and shift turn-to-turn (the agent "sees" a
-      fact one turn, not the next). Inject a **stable, high-salience core** (durable facts/entities for
-      this user/channel) as a persistent preamble block consistent every turn, with query-specific
-      recall as a small *supplement* on top. Goal: minimal transient context. Slots into the same
-      `assemble_turn_context` SYSTEM-preamble budget (and is exactly what the Context Inspector would
-      surface).
+- [ ] **Rolling digest as a first-class `conversations` column** (vs. the current Redis 30-day TTL)
+      for durability beyond 30 days — applies to `ConversationState` (digest + slots) now that it is
+      the compaction target.
+- [ ] **Hydrate the Alloy / plan-executor paths** too — the streaming chat and the background
+      `Agent.chat` path now rehydrate + budget-fit; Alloy specialists are task-scoped by contract
+      (deliberate), but the plan-resume path still builds its own context.
+- [ ] **>rehydrate-cap coverage** — turns beyond `context.rehydrate_max_turns` (400) can never be
+      digested (they're never loaded); today an honest `history_overflow_notice` block points the
+      model at recall/`read_thread`. A durable per-conversation digest column (above) would close
+      this properly.
+- [x] **Stable memory core (kill transient memory injection)** — shipped (Foundation #3): the
+      salient core is the prio-70 maintained-not-searched block; `remember(query)` is the prio-30
+      supplement, deduped against the core. (Record fixed — this had shipped but was never checked
+      off here.)
 
 ### Memory Area UX Cleanup
 

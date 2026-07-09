@@ -101,8 +101,10 @@ def truncate_tool_messages(
     """
     Truncate tool message contents to fit within token limit.
 
-    Iterates through messages in reverse (most recent first) and
-    truncates TOOL role messages until under the limit.
+    Last-resort hard fallback (trajectory compression runs first). Iterates
+    **oldest first**, so the freshest tool results — the ones the model is about
+    to act on — are the last to lose content. (It previously walked newest-first,
+    chopping exactly the result the current round needed.)
 
     Args:
         messages: List of Message objects (modified in place)
@@ -120,7 +122,7 @@ def truncate_tool_messages(
     excess_chars = (current_tokens - limit_tokens) * CHAR_TO_TOKEN_RATIO
     truncated_count = 0
 
-    for msg in reversed(messages):
+    for msg in messages:
         if msg.role != MessageRole.TOOL or not msg.content:
             continue
         if len(msg.content) <= MIN_TOOL_CONTENT_SIZE:

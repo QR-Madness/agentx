@@ -428,9 +428,11 @@ export function ChatPanel() {
   // `done` event; this effect covers the gaps — a fresh tab with no turns yet,
   // conversations saved before context tokens were persisted, and tabs
   // rehydrated from localStorage (the runtime contextInfo is stripped on save).
-  // Resolves the window from the latest assistant turn's model, falling back to
-  // the tab's effective model; estimates `used` from tokens/char count, or 0
-  // when nothing has been sent yet. Never clobbers a live `done`-set value.
+  // Resolves the window like the server does — a Model Limits override WINS over
+  // the catalog (an :latest route reports no window at all; hiding the chip on a
+  // reopened chat hid exactly the "resuming this is expensive" signal). Then
+  // estimates `used` from recorded tokens/char count, or 0 when nothing has been
+  // sent yet. Never clobbers a live `done`-set value.
   useEffect(() => {
     if (!activeTab || activeTab.contextInfo) return;
     const msgs = activeTab.messages;
@@ -453,10 +455,14 @@ export function ChatPanel() {
 
     const tabId = activeTab.id;
     let cancelled = false;
-    fetchModelsOnce().then((models) => {
+    Promise.all([
+      fetchModelsOnce(),
+      api.getContextLimits().catch(() => null),
+    ]).then(([models, limits]) => {
       if (cancelled) return;
       const info = models.find((mm) => mm.id === modelId);
-      const window = info?.context_window ?? info?.context_length;
+      const override = limits?.models?.[modelId as string]?.context_window;
+      const window = override || info?.context_window || info?.context_length;
       if (!window) return;
       const used =
         usedTokens ??

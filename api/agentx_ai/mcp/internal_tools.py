@@ -843,7 +843,7 @@ def update_document_tool(document_id: str, content: str) -> dict[str, Any]:
 
 
 def _read_modify_write_document(
-    document_id: str, transform: Callable[[str], "str | dict[str, Any]"]
+    document_id: str, transform: Callable[[str], str | dict[str, Any]]
 ) -> dict[str, Any]:
     """Shared read→modify→write for the partial-edit tools (append/edit).
 
@@ -956,7 +956,7 @@ def append_to_document_tool(document_id: str, text: str) -> dict[str, Any]:
 def edit_document_tool(
     document_id: str, find: str, replace: str, replace_all: bool = False
 ) -> dict[str, Any]:
-    def _t(current: str) -> "str | dict[str, Any]":
+    def _t(current: str) -> str | dict[str, Any]:
         if not find:
             return {"error": "`find` is required.", "success": False}
         count = current.count(find)

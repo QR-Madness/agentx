@@ -20,6 +20,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def compaction_uses_state(cfg=None) -> bool:
+    """Whether compaction targets the conversation-state digest (default) or the
+    legacy prose summary.
+
+    ONE definition shared by every compaction call site (streaming JIT backstop,
+    streaming post-turn pre-warm, background `Agent.chat`) so no two sites can
+    compact into different targets — the drift Decisions.md INV-CTX-1 rule (c)
+    forbids.
+    """
+    if cfg is None:
+        from ..config import get_config_manager
+        cfg = get_config_manager()
+    return (
+        bool(cfg.get("context.conversation_state_enabled", True))
+        and bool(cfg.get("context.conversation_state_compaction_enabled", True))
+    )
+
+
 @dataclass
 class Session:
     """
@@ -67,22 +85,6 @@ class Session:
         if limit:
             return self.messages[-limit:]
         return list(self.messages)
-    
-    def get_context_messages(self, max_messages: int = 20) -> list[Message]:
-        """Get messages suitable for context, including summary if available."""
-        messages = []
-        
-        # Include summary as system message if available
-        if self.summary:
-            messages.append(Message(
-                role=MessageRole.SYSTEM,
-                content=f"Previous conversation summary: {self.summary}"
-            ))
-        
-        # Include recent messages
-        messages.extend(self.get_messages(max_messages))
-        
-        return messages
     
     def clear(self) -> None:
         """Clear the session messages."""
@@ -189,6 +191,59 @@ class SessionManager:
         
         return result
     
+    @staticmethod
+    def _split_aged_out(
+        session: Session, *, token_threshold: int, recent_floor: int
+    ) -> tuple[list[Message], list[Message]] | None:
+        """Shared newest→oldest budget walk for both compaction targets.
+
+        Keeps the most-recent turns within ``token_threshold`` (always ≥
+        ``recent_floor``); everything older is the aged-out overflow. Returns
+        ``(aged_out, kept_tail)`` or ``None`` when nothing needs to age out —
+        one implementation so the state-digest and legacy prose paths can't
+        drift apart on what "aged out" means.
+        """
+        non_system = [m for m in session.messages if m.role != MessageRole.SYSTEM]
+        if len(non_system) <= recent_floor:
+            return None
+
+        used = 0
+        keep = 0
+        for m in reversed(non_system):
+            used += estimate_tokens(m.content)
+            keep += 1
+            if keep >= recent_floor and used >= token_threshold:
+                break
+        if keep >= len(non_system):
+            return None  # everything fits within budget — nothing to summarize
+
+        aged_out = non_system[: len(non_system) - keep]
+        if not aged_out:
+            return None
+        return aged_out, non_system[len(non_system) - keep:]
+
+    @staticmethod
+    def _summary_context_manager():
+        """A ContextManager on the compaction summarizer (shared by both targets).
+
+        Empty config ⇒ follow the `summarizer` model role; the concrete model is a
+        last-resort floor only when neither an explicit value nor the role is set.
+        """
+        from ..config import get_config_manager
+        from ..model_roles import resolve_member_model
+        from .context import ContextConfig, ContextManager
+
+        cfg = get_config_manager()
+        explicit_model = cfg.get("session.rolling_summary.model", "")
+        summary_model = (
+            resolve_member_model("rolling_summary", explicit_model)
+            or "anthropic:claude-haiku-4-5-20251001"
+        )
+        return ContextManager(ContextConfig(
+            summary_model=summary_model,
+            summary_max_tokens=int(cfg.get("session.rolling_summary.max_tokens", 800)),
+        ))
+
     async def maybe_update_summary(
         self,
         session_id: str,
@@ -197,14 +252,15 @@ class SessionManager:
         recent_floor: int = 4,
     ) -> bool:
         """
-        Refresh the rolling summary when the verbatim transcript exceeds the token
-        budget — **context-window-based**, not a fixed message count.
+        Refresh the **legacy prose** rolling summary when the verbatim transcript
+        exceeds the token budget — context-window-based, not a fixed message count.
 
-        Walks newest→oldest keeping recent turns within ``token_threshold`` (always
-        ≥ ``recent_floor``); the older overflow is folded into ``session.summary``
-        via an LLM call (rolling the prior summary in), **persisted** so it survives
-        a cold rebuild, and trimmed from the in-memory session so it stays lean.
-        Returns True if the summary was updated.
+        The default compaction target is the conversation-state digest
+        (:meth:`maybe_compact_to_state`); this path serves installs that disabled
+        conversation state or its compaction. Aged-out overflow is folded into
+        ``session.summary`` via an LLM call (rolling the prior summary in),
+        **persisted** so it survives a cold rebuild, and trimmed from the in-memory
+        session so it stays lean. Returns True if the summary was updated.
         """
         from ..config import get_config_manager
 
@@ -216,37 +272,14 @@ class SessionManager:
         if session is None:
             return False
 
-        non_system = [m for m in session.messages if m.role != MessageRole.SYSTEM]
-        if len(non_system) <= recent_floor:
-            return False
-
-        # Keep the most-recent turns that fit the token budget (>= floor); the rest
-        # age out into the summary.
-        used = 0
-        keep = 0
-        for m in reversed(non_system):
-            used += estimate_tokens(m.content)
-            keep += 1
-            if keep >= recent_floor and used >= token_threshold:
-                break
-        if keep >= len(non_system):
-            return False  # everything fits within budget — nothing to summarize
-
-        aged_out = non_system[: len(non_system) - keep]
-        if not aged_out:
-            return False
-
-        from .context import ContextManager, ContextConfig
-        from ..model_roles import resolve_member_model
-
-        explicit_model = cfg.get("session.rolling_summary.model", "")
-        # Empty ⇒ follow the `summarizer` model role; the concrete model is a
-        # last-resort floor only when neither an explicit value nor the role is set.
-        summary_model = (
-            resolve_member_model("rolling_summary", explicit_model)
-            or "anthropic:claude-haiku-4-5-20251001"
+        split = self._split_aged_out(
+            session, token_threshold=token_threshold, recent_floor=recent_floor
         )
-        manager = ContextManager(ContextConfig(summary_model=summary_model))
+        if split is None:
+            return False
+        aged_out, kept_tail = split
+
+        manager = self._summary_context_manager()
 
         # Roll the previous summary into the new one so the summary stays bounded.
         to_summarize: list[Message] = []
@@ -269,7 +302,7 @@ class SessionManager:
         session.summary = new_summary
         # Drop the summarized turns from the live session (durable copy stays in
         # conversation_logs); keep only the recent verbatim tail.
-        session.messages = non_system[len(non_system) - keep:]
+        session.messages = kept_tail
         try:
             from .conversation_summary_storage import set_summary
             set_summary(session_id, new_summary)
@@ -310,35 +343,16 @@ class SessionManager:
         if session is None:
             return None
 
-        non_system = [m for m in session.messages if m.role != MessageRole.SYSTEM]
-        if len(non_system) <= recent_floor:
-            return None
-
-        used = 0
-        keep = 0
-        for m in reversed(non_system):
-            used += estimate_tokens(m.content)
-            keep += 1
-            if keep >= recent_floor and used >= token_threshold:
-                break
-        if keep >= len(non_system):
-            return None
-        aged_out = non_system[: len(non_system) - keep]
-        if not aged_out:
-            return None
-
-        from .context import ContextConfig, ContextManager
-        from .conversation_state_storage import get_state, update_digest
-        from ..model_roles import resolve_member_model
-
-        explicit_model = cfg.get("session.rolling_summary.model", "")
-        # Empty ⇒ follow the `summarizer` model role; the concrete model is a
-        # last-resort floor only when neither an explicit value nor the role is set.
-        summary_model = (
-            resolve_member_model("rolling_summary", explicit_model)
-            or "anthropic:claude-haiku-4-5-20251001"
+        split = self._split_aged_out(
+            session, token_threshold=token_threshold, recent_floor=recent_floor
         )
-        manager = ContextManager(ContextConfig(summary_model=summary_model))
+        if split is None:
+            return None
+        aged_out, kept_tail = split
+
+        from .conversation_state_storage import get_state, update_digest
+
+        manager = self._summary_context_manager()
 
         # Roll the prior digest in so it stays bounded (re-summarized, not appended).
         prior = get_state(session_id).digest
@@ -366,7 +380,7 @@ class SessionManager:
         except Exception as e:  # pragma: no cover - Redis offline
             logger.warning(f"State digest persist failed for {session_id}: {e}")
             return None
-        session.messages = non_system[len(non_system) - keep:]
+        session.messages = kept_tail
         return new_digest
 
     def _cleanup_old_sessions(self) -> int:

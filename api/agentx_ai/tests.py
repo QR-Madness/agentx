@@ -3371,6 +3371,24 @@ class TrajectoryCompressionTest(TestCase):
             ))
         return messages
 
+    def test_truncate_tool_messages_oldest_first(self):
+        """The hard truncation fallback trims the OLDEST tool results first —
+        the freshest result (what the model is about to act on) loses content
+        last. (It previously walked newest-first, chopping exactly the result
+        the current round needed.)"""
+        from agentx_ai.streaming.helpers import truncate_tool_messages
+        from agentx_ai.streaming.constants import MIN_TOOL_CONTENT_SIZE
+
+        messages = self._make_messages(3, content_size=4000)
+        # Excess of 800 tokens (3200 chars) — absorbed entirely by one message
+        # (each has 4000 chars, floor 500), so exactly one gets trimmed.
+        truncated = truncate_tool_messages(messages, current_tokens=4000, limit_tokens=3200)
+        self.assertEqual(truncated, 1)
+        tool_msgs = [m for m in messages if m.role == MessageRole.TOOL]
+        self.assertIn("[TRUNCATED]", tool_msgs[0].content)      # oldest trimmed
+        self.assertNotIn("[TRUNCATED]", tool_msgs[-1].content)  # newest intact
+        self.assertGreaterEqual(len(tool_msgs[0].content), MIN_TOOL_CONTENT_SIZE)
+
     def test_identify_tool_rounds(self):
         """Should identify correct number of rounds with proper indices."""
         messages = self._make_messages(3)
@@ -4100,11 +4118,11 @@ class AdaptiveMaxTokensTest(TestCase):
     def _compute(self, **kw):
         from agentx_ai.streaming.helpers import compute_adaptive_max_tokens
 
-        defaults = dict(
-            messages=[], tools=None, context_window=200_000,
-            max_output_tokens=4096, max_output_override=None,
-            supports_reasoning=False, min_output_override=None,
-        )
+        defaults: dict = {
+            "messages": [], "tools": None, "context_window": 200_000,
+            "max_output_tokens": 4096, "max_output_override": None,
+            "supports_reasoning": False, "min_output_override": None,
+        }
         defaults.update(kw)
         return compute_adaptive_max_tokens(
             defaults.pop("messages"), defaults.pop("tools"), **defaults,
@@ -9385,6 +9403,95 @@ class ConversationContextTest(TestCase):
         cfg = SimpleNamespace(get=lambda key, default=None: store.get(key, default))
         self._run_coverage(session, history, blocks, agent, cfg, window=1000)
         agent._session_manager.maybe_update_summary.assert_called_once()
+        agent._session_manager.maybe_compact_to_state.assert_not_called()
+
+    def test_jit_coverage_projects_state_and_summary_blocks(self):
+        """The conversation-state and legacy-summary blocks register AFTER the JIT
+        call — their sizes must still count against the history budget, or the
+        ledger drops a band of turns with no digest coverage (INV-CTX-1 gap)."""
+        from unittest.mock import patch
+        from agentx_ai.agent.context_ledger import estimate_text_tokens
+
+        session, history, blocks, agent, cfg = self._coverage_fixture()
+        state_block = "## Conversation State\n" + ("state " * 40)
+        session.summary = "prior prose summary " * 10
+        with patch(
+            "agentx_ai.agent.conversation_state_storage.render_state_block",
+            return_value=state_block,
+        ):
+            self._run_coverage(session, history, blocks, agent, cfg,
+                               window=1000, reserved=100)
+        input_budget = min(int(1000 * 0.9), 1000 - 100)
+        expected_budget = (
+            input_budget
+            - estimate_text_tokens("the new question")
+            - estimate_text_tokens(blocks[0].content)
+            - estimate_text_tokens(state_block)
+            - estimate_text_tokens(
+                f"Earlier conversation summary: {session.summary}"
+            )
+        )
+        call = agent._session_manager.maybe_compact_to_state.call_args
+        self.assertEqual(
+            call.kwargs["token_threshold"], max(1, int(expected_budget * 0.9))
+        )
+
+    def _prewarm_fixture(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from agentx_ai.agent.session import Session
+
+        session = Session(id="pw")
+        agent = SimpleNamespace(
+            _session_manager=SimpleNamespace(
+                maybe_compact_to_state=AsyncMock(return_value="D"),
+                maybe_update_summary=AsyncMock(return_value=True),
+            ),
+        )
+        store = {}
+        cfg = SimpleNamespace(get=lambda key, default=None: store.get(key, default))
+        return session, agent, cfg, store
+
+    def test_post_turn_prewarm_targets_state_digest(self):
+        """The post-turn pre-warm compacts into the SAME target as the JIT
+        backstop (the state digest by default — Slice 1c drift fix), with the
+        threshold anchored to the turn's real history budget from the ledger
+        allocation report, not the raw window."""
+        import asyncio
+        from types import SimpleNamespace
+        from agentx_ai.views import _post_turn_compaction_prewarm
+
+        session, agent, cfg, _ = self._prewarm_fixture()
+        ledger_result = SimpleNamespace(
+            input_budget=10_000,
+            allocations=[
+                SimpleNamespace(granted_tokens=1_000),
+                SimpleNamespace(granted_tokens=500),
+            ],
+        )
+        asyncio.run(_post_turn_compaction_prewarm(
+            agent, session, ledger_result=ledger_result,
+            context_window=100_000, reserved_tokens=2_000, cfg=cfg,
+        ))
+        call = agent._session_manager.maybe_compact_to_state.call_args
+        self.assertEqual(call.args, ("pw",))
+        self.assertEqual(call.kwargs["token_threshold"], int((10_000 - 1_500) * 0.85))
+        agent._session_manager.maybe_update_summary.assert_not_called()
+
+    def test_post_turn_prewarm_flag_off_uses_prose_summary(self):
+        """State compaction disabled → the pre-warm feeds the legacy prose path."""
+        import asyncio
+        from agentx_ai.views import _post_turn_compaction_prewarm
+
+        session, agent, cfg, store = self._prewarm_fixture()
+        store["context.conversation_state_compaction_enabled"] = False
+        asyncio.run(_post_turn_compaction_prewarm(
+            agent, session, ledger_result=None,
+            context_window=10_000, reserved_tokens=2_000, cfg=cfg,
+        ))
+        # No ledger result (direct-mode turn) → window-anchored fallback budget.
+        call = agent._session_manager.maybe_update_summary.call_args
+        self.assertEqual(call.kwargs["token_threshold"], int((10_000 - 2_000) * 0.85))
         agent._session_manager.maybe_compact_to_state.assert_not_called()
 
     def test_jit_coverage_respects_disable_flag(self):

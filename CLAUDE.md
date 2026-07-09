@@ -106,7 +106,7 @@ One-liners for orientation. **Deep internals for the starred subsystems are in
 - `agent/tool_output_compressor.py` / `tool_output_chunker.py` — task-aware LLM compression for oversized tool outputs (section detection, JSON-path, semantic search)
 - `streaming/trajectory_compression.py` — Focus-style intra-trajectory compression for multi-round tool loops
 - `prompts/` — `PromptManager` + durable layered system-prompt stack (`LayerStore`). ★
-- `agent/context.py` — per-turn `assemble_turn_context` (verbatim budget + rolling summary + checkpoints/scratchpad). ★
+- `agent/context.py` — per-turn `assemble_turn_context` (verbatim budget + conversation-state digest compaction + checkpoints/scratchpad); knobs in Settings → Memory → Conversation Context. ★
 - `agent/ambassador.py` (+ `ambassador_storage.py`) — parallel briefer/relay; sidecar-only, never pollutes the transcript. ★
 - `logging_kit/` — centralized logging (queue handler → console/ring-buffer/`/api/logs` + daily encrypted archives), `AGENTX_LOG_*` flags. ★
 
