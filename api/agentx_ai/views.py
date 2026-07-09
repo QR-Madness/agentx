@@ -61,26 +61,10 @@ def _resolve_direct_mode(agent_config, caps) -> tuple[bool, bool]:
 
 
 async def _model_outputs_image(provider, model_id, caps) -> bool:
-    """True when the model can output images (``output_modalities`` includes ``image``).
-
-    An uncached model reports the default ``["text"]``, so — mirroring
-    ``core._model_supports_tools`` — warm the provider catalog once when caps look cold
-    and re-check. Never raises: returns ``False`` on any probe error (degrade to the
-    normal text path rather than wrongly routing a turn to image generation).
-    """
-    try:
-        mods = [str(m).lower() for m in (getattr(caps, "output_modalities", None) or [])]
-        if "image" in mods:
-            return True
-        warm = getattr(provider, "fetch_models", None)
-        if warm is not None:
-            await warm()
-            caps = provider.get_capabilities(model_id)
-            mods = [str(m).lower() for m in (getattr(caps, "output_modalities", None) or [])]
-        return "image" in mods
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[image-detect] capability probe failed, treating as non-image: {e}")
-        return False
+    """Thin alias for the shared image-output detector (``agent.image_gen``) so the
+    direct chat path and the delegation executor share one definition."""
+    from .agent.image_gen import model_outputs_image
+    return await model_outputs_image(provider, model_id, caps)
 
 
 async def _model_accepts_vision(provider, model_id, caps) -> bool:
@@ -376,27 +360,22 @@ async def _run_image_generation(
     becomes a short error message as the turn's content. Kept out of the chat-stream
     generator so its conditional-path count stays within the type-checker's budget.
     """
-    from .agent.image_gen import generate_and_store_image
-    from .streaming.exhibits import image_exhibit_from_generate
+    from .agent.image_gen import generate_image_exhibit
 
-    try:
-        info = await generate_and_store_image(
-            prompt, provider=provider, model=model_id, workspace_id=workspace_id,
-            user_id=user_id, conversation_id=conversation_id, agent_id=agent_id,
-        )
-        exhibit = image_exhibit_from_generate(
-            info["url"], exhibit_id=f"exh_img_{task_id}", alt=prompt,
-        )
-        if exhibit is None:
-            return None, "🖼️ Generated an image.", []
-        wire = exhibit.model_dump()
-        return wire, "🖼️ Generated an image.", [{
-            "type": "tool_call", "tool": "present_exhibit",
-            "tool_call_id": f"exh_img_{task_id}", "arguments": wire,
-        }]
-    except Exception as e:  # noqa: BLE001 — never break the turn
-        logger.warning(f"Image-mode generation failed: {e}")
-        return None, f"Image generation failed: {str(e)[:200]}", []
+    res = await generate_image_exhibit(
+        prompt, provider=provider, model=model_id, exhibit_id=f"exh_img_{task_id}",
+        workspace_id=workspace_id, user_id=user_id, conversation_id=conversation_id,
+        agent_id=agent_id,
+    )
+    wire = res["exhibit_wire"]
+    if wire is None:
+        # Either a generation failure (res["note"] carries the message) or an
+        # exhibit that couldn't be built — nothing to render/persist.
+        return None, res["note"], []
+    return wire, res["note"], [{
+        "type": "tool_call", "tool": "present_exhibit",
+        "tool_call_id": f"exh_img_{task_id}", "arguments": wire,
+    }]
 
 
 def _resolve_delegation_tool(agent, active_workflow):

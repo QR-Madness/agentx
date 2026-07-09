@@ -6091,6 +6091,65 @@ class AlloyDelegationMetricsTest(TestCase):
         self.assertIsNone(done["cost_currency"])
         self.assertIsNone(done["pricing_snapshot"])
 
+    def test_delegate_image_only_specialist_emits_image_exhibit(self):
+        """Delegating to an image-OUTPUT-only specialist routes through image
+        generation (not the text tool loop) and emits an `exhibit` image event."""
+        from types import SimpleNamespace
+
+        executor = self._make_executor()
+        profile = SimpleNamespace(
+            name="Pic", default_model="img", agent_id="spec", prompt_profile_id=None,
+            enable_memory=False, enable_tools=False, temperature=0.5, system_prompt=None,
+            direct_mode=True,
+        )
+        caps = SimpleNamespace(output_modalities=["image"])  # image-output-only
+        fake_provider = SimpleNamespace(get_capabilities=lambda mid: caps)
+        fake_specialist = SimpleNamespace(
+            config=SimpleNamespace(default_model="img", max_tool_rounds=3),
+            registry=SimpleNamespace(
+                resolve_with_fallback=lambda m, **kw: (fake_provider, "img", None)),
+            _get_tools_for_provider=lambda: None,
+            memory=None,
+        )
+
+        async def fake_gen(prompt, **kwargs):
+            # Stand in for provider image generation + workspace store.
+            return {
+                "ok": True,
+                "exhibit_wire": {"id": kwargs["exhibit_id"], "kind": "image"},
+                "note": "🖼️ Generated an image.",
+                "workspace_id": "ws_home",
+                "doc_id": "doc_x",
+            }
+
+        async def boom_stream(*a, **k):  # tool loop must NOT run for an image agent
+            raise AssertionError("tool loop should not run for an image-only specialist")
+            yield  # pragma: no cover
+
+        with patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(list_profiles=lambda: [profile])), \
+             patch("agentx_ai.agent.core.Agent", return_value=fake_specialist), \
+             patch("agentx_ai.agent.image_gen.generate_image_exhibit", fake_gen), \
+             patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", boom_stream), \
+             patch("agentx_ai.providers.pricing.estimate_cost", return_value=None):
+            events = asyncio.run(self._drain(
+                executor.delegate("spec", "make a web banner", tool_call_id="tc1")
+            ))
+
+        sse = [ev[0] if isinstance(ev, tuple) else ev for ev in events]
+        self.assertTrue(any(s.startswith("event: exhibit\n") for s in sse),
+                        "expected a top-level image exhibit event")
+        self.assertTrue(any(s.startswith("event: workspace_attached\n") for s in sse),
+                        "expected the image's workspace to attach")
+        done = self._parse_complete(events)
+        self.assertIsNotNone(done)
+        self.assertEqual(done["status"], "success")
+        self.assertIn("image", done["result_preview"].lower())
+        # The supervisor's tool result references the image by id (so a genuinely
+        # vision-capable model could view_image it) but doesn't command viewing.
+        self.assertIn("doc_x", done["result_preview"])
+        self.assertTrue(done["exhibits"])  # forwarded for reload persistence
+
 
 class ParallelDelegationTest(TestCase):
     """Track A: fan-out delegation — `_run_delegations` runs multiple delegate_to

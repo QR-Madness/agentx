@@ -196,6 +196,10 @@ class AlloyExecutor:
             # applies inside a delegation too (previously dropped here).
             allowed_tools=list(profile_allowed) if profile_allowed is not None else None,
             blocked_tools=list(profile_blocked) if profile_blocked else None,
+            # Parity with the direct chat path: a direct-mode specialist behaves the
+            # same inside a delegation (image-only routing below is capability-driven
+            # and doesn't depend on this flag, but keep the two paths aligned).
+            direct_mode=getattr(profile, "direct_mode", False),
         )
         specialist = Agent(specialist_config)
         # Specialists do not re-delegate. Only the supervisor receives the
@@ -211,7 +215,16 @@ class AlloyExecutor:
         provider, model_id, _ = specialist.registry.resolve_with_fallback(
             specialist.config.default_model
         )
-        tools = specialist._get_tools_for_provider() if profile.enable_tools else None
+        # An image-OUTPUT-only specialist (e.g. gemini-flash-image, flux) makes a
+        # picture, not text. Its chat completion carries the image in a field the tool
+        # loop ignores (StreamChunk has no image field) → "empty completion" and no
+        # image. Route it through the same generate→store→exhibit seam the direct chat
+        # path uses so the delegated image actually renders. Never raises.
+        from ..agent.image_gen import model_outputs_image
+        image_only = await model_outputs_image(provider, model_id)
+        tools = None if image_only else (
+            specialist._get_tools_for_provider() if profile.enable_tools else None
+        )
 
         # ------- stream specialist run -------
         # Bind a specialist-scoped internal-tool context for the duration of the
@@ -224,12 +237,15 @@ class AlloyExecutor:
             InternalToolContext, current_context, set_context, reset_context,
         )
         outer_ctx = current_context()
+        _uid = outer_ctx.user_id if outer_ctx else (self.supervisor.config.user_id or "default")
+        _conv = outer_ctx.conversation_id if outer_ctx else self.session.id
+        _ws = outer_ctx.workspace_id if outer_ctx else None
         ctx_token = set_context(InternalToolContext(
-            user_id=(outer_ctx.user_id if outer_ctx else (self.supervisor.config.user_id or "default")),
+            user_id=_uid,
             channel=self.channel,
             agent_id=profile.agent_id,
-            conversation_id=(outer_ctx.conversation_id if outer_ctx else self.session.id),
-            workspace_id=(outer_ctx.workspace_id if outer_ctx else None),
+            conversation_id=_conv,
+            workspace_id=_ws,
         ))
 
         accumulated = ""
@@ -242,7 +258,39 @@ class AlloyExecutor:
         loop_result = ToolLoopResult()
         t0 = time.perf_counter()
         try:
-            async for event_str in streaming_tool_loop(
+            if image_only:
+                # Image-generation delegation (no tool loop): the task is the prompt.
+                from ..agent.image_gen import generate_image_exhibit
+                res = await generate_image_exhibit(
+                    task, provider=provider, model=model_id,
+                    exhibit_id=f"exh_img_{delegation_id}",
+                    workspace_id=_ws, user_id=_uid,
+                    conversation_id=_conv, agent_id=profile.agent_id,
+                )
+                if res["exhibit_wire"] is not None:
+                    forwarded_exhibits.append(res["exhibit_wire"])
+                    # Forwarded top-level so the client renders the image + attaches the
+                    # workspace, exactly like the main loop (and it rides the
+                    # delegation_complete persistence seam via forwarded_exhibits).
+                    yield _sse("exhibit", res["exhibit_wire"]), accumulated
+                    if res["workspace_id"]:
+                        yield _sse("workspace_attached", {"workspace_id": res["workspace_id"]}), accumulated
+                    # Reference the image by id (so a genuinely vision-capable
+                    # supervisor CAN view_image it), but don't *instruct* viewing:
+                    # provider vision flags are unreliable (e.g. OpenRouter reports
+                    # kimi-latest as vision-capable, but it degenerates on real image
+                    # input), and pushing such a model to view melts it down. The image
+                    # is already shown to the user above, so the note is informational.
+                    accumulated = (
+                        f"🖼️ Generated an image — shown to the user above "
+                        f"(document_id: {res['doc_id']})."
+                    )
+                else:
+                    # Generation/exhibit failure — surface the note; don't hard-fail the
+                    # turn (mirrors the direct chat path).
+                    accumulated = res["note"]
+            else:
+              async for event_str in streaming_tool_loop(
                 provider, model_id, messages, tools, specialist,
                 temperature=profile.temperature,
                 max_tokens=4096,
@@ -250,7 +298,7 @@ class AlloyExecutor:
                 task_context=task,
                 emit_trajectory_info=False,
                 result=loop_result,
-            ):
+              ):
                 # Re-wrap every nested event as a delegation-scoped event so
                 # the specialist's activity stays inside the delegation card
                 # rather than fragmenting the supervisor's chat flow.

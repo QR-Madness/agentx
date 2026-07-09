@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.192 -->
+<!-- release-version: 0.21.193 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -101,6 +101,12 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Delegating to an image agent now returns the image** — asking a teammate that's an image-output
+  model (e.g. gemini-flash-image / flux) to make a picture produced only a text description, never the
+  image: the delegation path ran it through the text tool-loop, which can't carry image bytes. It now
+  routes image agents through the same generate→store→render path as a direct image chat, so the
+  picture appears under the delegation card (and persists on reload). The delegating agent also gets
+  the image's id back, so it can `view_image` the result instead of saying it can't see it.
 - **Modals are full-screen on phones again, and menus feel snappier** — a stray tablet breakpoint
   was overriding the phone rule, so dialogs (like the file preview) opened as a small floating box
   instead of filling the screen; and conversation ⋯ menus dropped a heavy backdrop-blur that made
