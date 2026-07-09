@@ -6150,6 +6150,59 @@ class AlloyDelegationMetricsTest(TestCase):
         self.assertIn("doc_x", done["result_preview"])
         self.assertTrue(done["exhibits"])  # forwarded for reload persistence
 
+    def test_specialist_messages_include_project_context(self):
+        """A delegated specialist is TOLD which project it's in (identity +
+        instructions) when the outer turn has an attached workspace — otherwise it
+        can't see the project's files/instructions and reaches for external tools.
+        Regression guard for delegation project-provenance."""
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import MessageRole
+
+        executor = self._make_executor()
+        profile = SimpleNamespace(
+            name="Kim", prompt_profile_id=None, system_prompt="", enable_memory=False,
+        )
+        specialist = SimpleNamespace(memory=None, config=SimpleNamespace())
+
+        with patch("agentx_ai.prompts.get_prompt_manager",
+                   return_value=SimpleNamespace(get_system_prompt=lambda **k: "BASE")), \
+             patch("agentx_ai.mcp.internal_context.current_context",
+                   return_value=SimpleNamespace(workspace_id="ws1")), \
+             patch("agentx_ai.kit.workspaces.retrieval.render_project_identity_block",
+                   return_value="This conversation belongs to the project “Docs”."), \
+             patch("agentx_ai.kit.workspaces.retrieval.render_instructions_block",
+                   return_value="Project instructions: follow them."):
+            messages = executor._build_specialist_messages(profile, "draft a section", specialist)
+
+        system_text = "\n".join(
+            m.content for m in messages if m.role == MessageRole.SYSTEM
+        )
+        self.assertIn("belongs to the project", system_text)
+        self.assertIn("Project instructions", system_text)
+
+    def test_specialist_messages_no_project_when_unattached(self):
+        """No workspace on the outer turn → no project blocks (don't fabricate a
+        project for a genuinely project-less delegation)."""
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import MessageRole
+
+        executor = self._make_executor()
+        profile = SimpleNamespace(
+            name="Kim", prompt_profile_id=None, system_prompt="", enable_memory=False,
+        )
+        specialist = SimpleNamespace(memory=None, config=SimpleNamespace())
+
+        with patch("agentx_ai.prompts.get_prompt_manager",
+                   return_value=SimpleNamespace(get_system_prompt=lambda **k: "BASE")), \
+             patch("agentx_ai.mcp.internal_context.current_context",
+                   return_value=SimpleNamespace(workspace_id=None)):
+            messages = executor._build_specialist_messages(profile, "draft a section", specialist)
+
+        system_text = "\n".join(
+            m.content for m in messages if m.role == MessageRole.SYSTEM
+        )
+        self.assertNotIn("belongs to the project", system_text)
+
 
 class ParallelDelegationTest(TestCase):
     """Track A: fan-out delegation — `_run_delegations` runs multiple delegate_to

@@ -392,11 +392,16 @@ class AlloyExecutor:
                     delegation_metadata["cost_estimate"] = cost["cost_total"]
                     delegation_metadata["cost_currency"] = cost["currency"]
                     delegation_metadata["pricing_snapshot"] = cost["pricing_snapshot"]
+                # Frame it as a delegation (not a bare summary): on cold rehydration
+                # `load_recent_turns` drops the tool_call/tool_result rows, so this
+                # assistant turn is the ONLY surviving trace — without the framing the
+                # supervisor just sees "a summary was generated", never that it
+                # delegated (who + what). The task is otherwise lost with the tool rows.
                 memory_for_goal.store_turn(Turn(
                     conversation_id=self.session.id,
                     index=turn_index,
                     role="assistant",
-                    content=f"[{target_agent_id} → delegation] {accumulated}",
+                    content=f"[Delegated to {profile.name}] Task: {task[:200]}\nResult: {accumulated}",
                     channel=self.channel,
                     # Attribute the turn to the specialist so its self-knowledge
                     # consolidates into the specialist's own _self_ channel.
@@ -487,6 +492,31 @@ class AlloyExecutor:
                 ),
             )
         ]
+
+        # Project context: the executor rebinds the specialist's tool context to the
+        # parent conversation's workspace (so its project tools operate on it), but a
+        # self-contained specialist is otherwise never TOLD it's in a project. Surface
+        # the same identity + instructions the main agent gets (the outer supervisor
+        # context is still active here — the specialist rebind happens after this
+        # builds) so it reaches for project tools (not external filesystem) and follows
+        # the user's project instructions.
+        try:
+            from ..mcp.internal_context import current_context
+            _ctx = current_context()
+            _ws_id = _ctx.workspace_id if _ctx else None
+            if _ws_id:
+                from ..kit.workspaces.retrieval import (
+                    render_instructions_block,
+                    render_project_identity_block,
+                )
+                identity = render_project_identity_block(_ws_id)
+                if identity:
+                    messages.append(Message(role=MessageRole.SYSTEM, content=identity))
+                instructions = render_instructions_block(_ws_id)
+                if instructions:
+                    messages.append(Message(role=MessageRole.SYSTEM, content=instructions))
+        except Exception as e:  # best-effort — project awareness must never fail the delegation
+            logger.debug(f"Specialist project-context injection skipped: {e}")
 
         # Inject relevant memories from the shared channel if memory is up.
         memory = specialist.memory if profile.enable_memory else None
