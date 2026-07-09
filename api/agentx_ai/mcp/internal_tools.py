@@ -842,6 +842,213 @@ def update_document_tool(document_id: str, content: str) -> dict[str, Any]:
     }
 
 
+def _read_modify_write_document(
+    document_id: str, transform: Callable[[str], "str | dict[str, Any]"]
+) -> dict[str, Any]:
+    """Shared read→modify→write for the partial-edit tools (append/edit).
+
+    Reads a text document's current content + sha256, applies ``transform`` (which
+    returns the new text, or a tool-shaped error dict to abort), and writes it back
+    with an optimistic-concurrency guard (``expected_sha256``): if another writer
+    changed the file since we read it, the service raises a ``conflict`` and we
+    return a soft "re-read and try again" — a lightweight write-lock without a queue.
+    """
+    from ..kit.workspaces import repository, storage
+    from ..kit.workspaces.service import WorkspaceError, update_text_document
+
+    workspace_id = _active_workspace_id()
+    if not workspace_id:
+        return {
+            "error": "This conversation is not in a project — ask the user to attach or "
+                     "create one in the Projects hub.",
+            "success": False,
+        }
+    doc = repository.get_document(document_id)
+    if not doc or doc["workspace_id"] != workspace_id:
+        return {"error": f"Document {document_id} not found in this project.", "success": False}
+    raw = storage.read_blob(doc["storage_key"])
+    if raw is None:
+        return {"error": "Couldn't read the document's current content.", "success": False}
+    try:
+        current = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return {"error": "This file isn't editable text (only .md/.txt can be edited).", "success": False}
+
+    result = transform(current)
+    if isinstance(result, dict):  # transform aborted with a tool-shaped error
+        return result
+
+    try:
+        updated = update_text_document(
+            workspace_id=workspace_id,
+            document_id=document_id,
+            content=result,
+            expected_sha256=doc["sha256"],
+        )
+    except WorkspaceError as e:
+        if e.code == "conflict":
+            return {
+                "success": False,
+                "error": "This file was just changed by someone else — re-read it "
+                         "with read_document and try your edit again.",
+            }
+        return {"error": e.message, "success": False}
+    return {
+        "success": True,
+        "document": {
+            "id": updated["id"],
+            "filename": updated["filename"],
+            "status": updated["status"],
+            "size_bytes": updated["size_bytes"],
+        },
+        "note": "Re-indexing in the background.",
+    }
+
+
+@register_tool(
+    name="append_to_document",
+    description=(
+        "Append text to the END of an existing project document — without resending the "
+        "whole file. Ideal for living logs, running notes, or changelogs. Get the "
+        "`document_id` from the project file list or `project_search`. A newline is added "
+        "between the existing content and your text if needed. Only `.md`/`.txt` files."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "string", "description": "The document's id."},
+            "text": {"type": "string", "description": "Text to append at the end."},
+        },
+        "required": ["document_id", "text"],
+    },
+)
+def append_to_document_tool(document_id: str, text: str) -> dict[str, Any]:
+    def _t(current: str) -> str:
+        sep = "" if (not current or current.endswith("\n")) else "\n"
+        return current + sep + text
+    return _read_modify_write_document(document_id, _t)
+
+
+@register_tool(
+    name="edit_document",
+    description=(
+        "Make a targeted edit to a project document by find-and-replace — change one "
+        "passage without rewriting the whole file (get the `document_id` from the file "
+        "list or `project_search`). `find` must match the current text exactly. By default "
+        "it edits a single, unique match; pass `replace_all=true` to replace every "
+        "occurrence. Only `.md`/`.txt` files. To replace the whole file use `update_document`."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "string", "description": "The document's id."},
+            "find": {"type": "string", "description": "Exact text to find."},
+            "replace": {"type": "string", "description": "Replacement text."},
+            "replace_all": {
+                "type": "boolean",
+                "description": "Replace every occurrence (default false — requires a unique match).",
+                "default": False,
+            },
+        },
+        "required": ["document_id", "find", "replace"],
+    },
+)
+def edit_document_tool(
+    document_id: str, find: str, replace: str, replace_all: bool = False
+) -> dict[str, Any]:
+    def _t(current: str) -> "str | dict[str, Any]":
+        if not find:
+            return {"error": "`find` is required.", "success": False}
+        count = current.count(find)
+        if count == 0:
+            return {"error": "`find` text was not found in the document.", "success": False}
+        if count > 1 and not replace_all:
+            return {
+                "error": f"`find` matches {count} places — pass replace_all=true to replace "
+                         "them all, or use a longer, unique `find`.",
+                "success": False,
+            }
+        return current.replace(find, replace) if replace_all else current.replace(find, replace, 1)
+    return _read_modify_write_document(document_id, _t)
+
+
+@register_tool(
+    name="list_project_files",
+    description=(
+        "List the files in the attached project — names, ids, types, sizes, tags, and a "
+        "short summary — so you know what's there before reading or editing. Use this to "
+        "enumerate the project; use `project_search`/`document_query` to find a specific one."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer", "description": "Max files (default 50).", "default": 50},
+        },
+    },
+)
+def list_project_files_tool(limit: int = 50) -> dict[str, Any]:
+    from ..kit.workspaces import repository
+
+    workspace_id = _active_workspace_id()
+    if not workspace_id:
+        return {
+            "error": "This conversation is not in a project — ask the user to attach or "
+                     "create one in the Projects hub.",
+            "success": False,
+        }
+    limit = max(1, min(int(limit or 50), 200))
+    docs = [d for d in repository.list_documents(workspace_id) if d.get("status") == "ready"][:limit]
+    files = [
+        {
+            "document_id": d["id"],
+            "filename": d["filename"],
+            "content_type": d.get("content_type"),
+            "size_bytes": int(d.get("size_bytes") or 0),
+            "tags": list(d.get("tags") or []),
+            "summary": d.get("summary") or "",
+        }
+        for d in docs
+    ]
+    return {"files": files, "count": len(files), "success": True}
+
+
+@register_tool(
+    name="delete_document",
+    description=(
+        "Delete a file from the attached project (get its `document_id` from the file list "
+        "or `project_search`). Permanent — remove obsolete or superseded files. Avatar/app "
+        "icons can't be deleted here."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "document_id": {"type": "string", "description": "The document's id to delete."},
+        },
+        "required": ["document_id"],
+    },
+)
+def delete_document_tool(document_id: str) -> dict[str, Any]:
+    from ..kit.workspaces import repository
+    from ..kit.workspaces.service import release_blob_if_unreferenced
+
+    workspace_id = _active_workspace_id()
+    if not workspace_id:
+        return {
+            "error": "This conversation is not in a project — ask the user to attach or "
+                     "create one in the Projects hub.",
+            "success": False,
+        }
+    doc = repository.get_document(document_id)
+    if not doc or doc["workspace_id"] != workspace_id:
+        return {"error": f"Document {document_id} not found in this project.", "success": False}
+    if str(doc.get("filename") or "").startswith("avatars/"):
+        return {"error": "Refusing to delete an avatar (an app icon, not project content).", "success": False}
+    storage_key = repository.delete_document(document_id)
+    if storage_key:
+        release_blob_if_unreferenced(workspace_id, storage_key)
+    return {"success": True, "deleted": True, "filename": doc.get("filename")}
+
+
 @register_tool(
     name="view_image",
     description=(
@@ -2402,7 +2609,9 @@ def get_internal_tools() -> list[ToolInfo]:
 
 
 _SHELL_TOOL_NAMES: frozenset[str] = frozenset({"run_command", "write_file", "read_file", "list_files"})
-_DOCUMENT_WRITE_TOOL_NAMES: frozenset[str] = frozenset({"create_document", "update_document"})
+_DOCUMENT_WRITE_TOOL_NAMES: frozenset[str] = frozenset(
+    {"create_document", "update_document", "append_to_document", "edit_document", "delete_document"}
+)
 _STATE_TOOL_NAMES: frozenset[str] = frozenset({"update_conversation_state"})
 
 

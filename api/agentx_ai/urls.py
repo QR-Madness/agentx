@@ -78,6 +78,9 @@ urlpatterns = [
     path("workspaces", workspace_views.workspaces, name="workspaces"),
     path("workspaces/<str:workspace_id>", workspace_views.workspace_detail, name="workspace-detail"),
     path("workspaces/<str:workspace_id>/documents", workspace_views.workspace_documents, name="workspace-documents"),
+    # Avatar management (Home): prune avatar files no profile references. Distinct
+    # path segment from `documents/<id>` — no capture conflict.
+    path("workspaces/<str:workspace_id>/avatars/prune", workspace_views.workspace_avatars_prune, name="workspace-avatars-prune"),
     # NOTE: "documents/text" must precede "documents/<str:document_id>" (str matches "text").
     path("workspaces/<str:workspace_id>/documents/text", workspace_views.workspace_documents_text, name="workspace-documents-text"),
     path("workspaces/<str:workspace_id>/documents/<str:document_id>/text", workspace_views.workspace_document_text, name="workspace-document-text"),

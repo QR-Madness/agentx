@@ -17,6 +17,7 @@ import {
 import { api, toApiError, type ConversationSummary, type Workspace, type WorkspaceDocument } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
 import { useConversation } from '../../contexts/ConversationContext';
+import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { getDisplayTitle, getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { useConfirm } from '../ui/ConfirmDialog';
 import { useIsMobile } from '../../lib/hooks';
@@ -92,6 +93,7 @@ export function WorkspacesPanel({
   const confirm = useConfirm();
   const isMobile = useIsMobile();
   const { activeTab, tabs, addTab, switchTab, restoreConversation, refreshHistory } = useConversation();
+  const { profiles } = useAgentProfile();
   useConversationMeta();  // re-render when the conversation↔project tag changes
   const convKey = activeTab ? (activeTab.sessionId ?? activeTab.id) : null;
   const attachedId = convKey ? getMeta(convKey).workspaceId : undefined;
@@ -418,6 +420,41 @@ export function WorkspacesPanel({
       notify.notifyError(err, 'Could not clear files');
     }
   }, [confirm, notify, refreshDocuments, refreshWorkspaces, selectedId]);
+
+  // Which avatar files are in use, and by whom. Profiles reference an avatar by
+  // doc_id (`media:ws_home/{doc_id}`), so match on the id — badges the Home
+  // AVATARS section and gates the "Delete unused" action.
+  const avatarUsage = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of profiles) {
+      const av = p.avatar ?? '';
+      if (av.startsWith('media:')) {
+        const docId = av.split('/').pop() ?? '';
+        if (docId) m.set(docId, p.name);
+      }
+    }
+    return m;
+  }, [profiles]);
+
+  const pruneUnusedAvatars = useCallback(async () => {
+    const unused = documents.filter(
+      d => folderOf(d.filename) === 'avatars' && !avatarUsage.has(d.id),
+    ).length;
+    if (!unused) return;
+    const ok = await confirm({
+      title: `Delete ${unused} unused avatar${unused === 1 ? '' : 's'}?`,
+      body: 'Removes avatar images not used by any agent profile. This cannot be undone.',
+      confirmLabel: 'Delete', danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.pruneAvatars(HOME_ID);
+      await refreshDocuments(HOME_ID);
+      await refreshWorkspaces();
+    } catch (err) {
+      notify.notifyError(err, 'Could not delete unused avatars');
+    }
+  }, [documents, avatarUsage, confirm, notify, refreshDocuments, refreshWorkspaces]);
 
   const docGroups = useMemo(() => groupDocuments(documents), [documents]);
   const projects = useMemo(() => workspaces.filter(w => w.id !== HOME_ID), [workspaces]);
@@ -781,6 +818,11 @@ export function WorkspacesPanel({
                               Clear
                             </Button>
                           )}
+                          {group.folder === 'avatars' && group.docs.some(d => !avatarUsage.has(d.id)) && (
+                            <Button variant="ghost" size="sm" onClick={() => void pruneUnusedAvatars()}>
+                              Delete unused
+                            </Button>
+                          )}
                         </div>
                         <ul className="space-y-1.5">
                           {group.docs.map(doc => (
@@ -808,6 +850,11 @@ export function WorkspacesPanel({
                                     {doc.status === 'pending' && <Loader2 size={10} className="animate-spin" />}
                                     {doc.status === 'pending' ? 'ingesting' : doc.status}
                                   </Badge>
+                                  {group.folder === 'avatars' && (
+                                    avatarUsage.has(doc.id)
+                                      ? <Badge size="sm" variant="neutral" className="shrink-0">{avatarUsage.get(doc.id)}</Badge>
+                                      : <Badge size="sm" variant="warning" className="shrink-0">unused</Badge>
+                                  )}
                                 </div>
                                 {doc.summary && <p className="mt-0.5 text-xs text-fg-muted">{doc.summary}</p>}
                                 {doc.tags.length > 0 && (

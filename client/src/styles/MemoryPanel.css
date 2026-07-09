@@ -16,6 +16,13 @@
   overflow-y: auto;
 }
 
+/* Inside a full-height drawer (.drawer-panel is top:0/bottom:0), fill it — the
+   85vh above is for the centered Memory dialog and otherwise leaves dead space
+   at the bottom of a drawer-hosted panel (e.g. Projects). */
+.drawer-content > .memory-modal-content {
+  height: 100%;
+}
+
 @media (max-width: 640px) {
   /* On phones the dialog is 100dvh (a definite height), so fill it. */
   .memory-modal-content {

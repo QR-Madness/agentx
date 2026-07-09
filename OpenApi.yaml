@@ -2548,6 +2548,34 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /workspaces/{workspace_id}/avatars/prune:
+    post:
+      tags: [Workspaces]
+      operationId: workspaceAvatarsPrune
+      summary: Delete unused avatar files
+      description: >-
+        Delete every `avatars/`-prefixed file in the workspace (typically Home) that is
+        NOT referenced by any agent profile's avatar. Strictly scoped — only avatar files,
+        only unused ones. Returns the deleted document ids.
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Pruned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: array
+                    items:
+                      type: string
+                  count:
+                    type: integer
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /workspaces/{workspace_id}/conversations:
     get:
       tags: [Workspaces]

@@ -692,6 +692,7 @@ GET    /api/workspaces/{workspace_id}/documents/{document_id}
 DELETE /api/workspaces/{workspace_id}/documents/{document_id}
 GET    /api/workspaces/{workspace_id}/documents/{document_id}/raw   # serve blob bytes (e.g. generated avatars)
 POST   /api/workspaces/{workspace_id}/documents/{document_id}/reingest  # retry ingestion (blob reused) → 202
+POST   /api/workspaces/{workspace_id}/avatars/prune                 # delete `avatars/` files no agent profile references → { deleted[], count }
 GET    /api/workspaces/{workspace_id}/conversations                 # the project's conversations (same shape as /api/conversations)
 PUT    /api/workspaces/{workspace_id}/conversations/{conversation_id}    # add to project (upsert — moves from any other project)
 DELETE /api/workspaces/{workspace_id}/conversations/{conversation_id}    # remove from project

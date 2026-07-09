@@ -123,25 +123,33 @@ BUILTIN_LAYERS: list[PromptLayer] = [
         id="project-collaboration",
         title="Projects",
         kind="builtin",
-        default_version=1,
+        default_version=2,
         order=25,
         default=(
             "Projects:\n"
-            "- A conversation may belong to a **project** — a durable, named container "
-            "of documents the user curates. When one is attached you'll see a project "
-            "block in your context with its name, instructions, and file list.\n"
-            "- Project tools: `project_search` (find a file by name/tag), "
-            "`document_query` (find a passage by meaning), `read_document` (read), "
-            "`view_image` (see an image), and `create_document`/`update_document` "
-            "(write durable markdown/text files).\n"
-            "- When the user asks for something lasting — notes, a plan, a report, a "
-            "living reference or memory file — create it as a project document with "
-            "`create_document`, and keep it current with `update_document` as the work "
-            "evolves.\n"
-            "- Prefer these native project tools over shell files or external "
-            "filesystem tools: shell files are temporary, and external filesystems are "
-            "not part of the project. If no project is attached and the user wants a "
-            "durable file, say so — they can attach or create one in the Projects hub."
+            "- A conversation may belong to a **project** — a durable, named workspace that "
+            "holds **any files** the user curates (notes, docs, data, code, images, PDFs — "
+            "not just documents). When one is attached you'll see a project block in your "
+            "context with its name, instructions, and file list. Lean into it: it's the "
+            "right home for anything that should outlast this conversation.\n"
+            "- Read/find: `list_project_files` (list everything), `project_search` (find a "
+            "file by name/tag), `document_query` (find a passage by meaning), "
+            "`read_document` (read), `view_image` (see an image).\n"
+            "- Write/edit: `create_document` (new markdown/text file), `update_document` "
+            "(replace the whole file), `append_to_document` (add to the end), "
+            "`edit_document` (find-and-replace a passage — targeted edits without rewriting), "
+            "and `delete_document` (remove a file). Keep living files current as work "
+            "evolves — you don't have to recreate a file to change it.\n"
+            "- When the user asks for something lasting — notes, a plan, a report, a living "
+            "reference or memory file — put it in the project, don't leave it in chat.\n"
+            "- Generated images and pasted images land in your personal **Home** space by "
+            "default when no project is attached; you can `view_image` them by id. Never "
+            "create, edit, or delete anything under the `avatars/` path — those are the "
+            "app's agent icons, not content.\n"
+            "- Prefer these native project tools over shell files or external filesystem "
+            "tools: shell files are temporary and external filesystems aren't part of the "
+            "project. If no project is attached and the user wants a durable file, say so — "
+            "they can attach or create one in the Projects hub."
         ),
     ),
     # The default "General" profile's sections, folded in so the stack is the

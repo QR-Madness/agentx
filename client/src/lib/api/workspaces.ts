@@ -195,6 +195,14 @@ export const workspacesApi = {
     );
   },
 
+  /** Delete every `avatars/` file not referenced by any agent profile (Home). */
+  async pruneAvatars(workspaceId: string): Promise<{ deleted: string[]; count: number }> {
+    return apiRequest(
+      `/api/workspaces/${encodeURIComponent(workspaceId)}/avatars/prune`,
+      { method: 'POST' },
+    );
+  },
+
   /** Create a text/markdown document (hub "New document"; 409 on filename collision). */
   async createTextDocument(
     workspaceId: string,

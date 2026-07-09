@@ -166,15 +166,16 @@ def render_project_identity_block(workspace_id: str) -> str:
     )
     if doc_count:
         lines.append(
-            f"It has {doc_count} document(s) — see the 'Project files' list. Read them "
-            "with `project_search`/`document_query`/`read_document`; add or revise "
-            "durable files with `create_document`/`update_document`."
+            f"It has {doc_count} file(s) — see the 'Project files' list. Browse with "
+            "`list_project_files`, find with `project_search`/`document_query`, read with "
+            "`read_document`/`view_image`; add or change files with `create_document` / "
+            "`append_to_document` / `edit_document` / `update_document` / `delete_document`."
         )
     else:
         lines.append(
-            "This project has no documents yet. You can create one with "
-            "`create_document` (durable — it appears in the user's Projects hub); "
-            "the user can also upload files there."
+            "This project has no files yet. It can hold any files (docs, data, code, "
+            "images) — create one with `create_document` (durable; it appears in the "
+            "user's Projects hub), or the user can upload files there."
         )
     return "\n".join(lines)
 
@@ -191,9 +192,9 @@ def render_manifest_block(workspace_id: str, max_files: int = 50) -> str:
     has_images = any(str(d.get("content_type") or "").startswith("image/") for d in docs)
     header = (
         "Project files — this conversation belongs to a project; these are its "
-        "documents. Search them with `project_search` (by name/tag) and "
-        "`document_query` (by meaning), then `read_document`; write with "
-        "`create_document`/`update_document`"
+        "files. List with `list_project_files`, search with `project_search` (by "
+        "name/tag) and `document_query` (by meaning), then `read_document`; write with "
+        "`create_document`/`append_to_document`/`edit_document`/`update_document`/`delete_document`"
     )
     header += (
         ". Image files are marked 🖼 — to actually see one, call "

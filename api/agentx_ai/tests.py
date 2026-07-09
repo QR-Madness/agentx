@@ -13085,7 +13085,7 @@ class ProjectPromptingTest(TestCase):
              patch.object(retrieval.repository, "list_documents", return_value=[]):
             block = retrieval.render_project_identity_block("ws_1")
         self.assertIn("Thesis", block)
-        self.assertIn("no documents yet", block)
+        self.assertIn("no files yet", block)
         self.assertIn("create_document", block)
 
     def test_identity_block_with_docs_and_description(self):
@@ -13097,7 +13097,7 @@ class ProjectPromptingTest(TestCase):
              patch.object(retrieval.repository, "list_documents", return_value=docs):
             block = retrieval.render_project_identity_block("ws_1")
         self.assertIn("Doctoral research.", block)
-        self.assertIn("2 document(s)", block)
+        self.assertIn("2 file(s)", block)
 
     def test_identity_block_missing_workspace(self):
         from agentx_ai.kit.workspaces import retrieval
@@ -13134,7 +13134,122 @@ class ProjectPromptingTest(TestCase):
         names = {t.name for t in it.get_internal_tools()}
         self.assertIn("create_document", names)
         self.assertIn("update_document", names)
+        for name in ("append_to_document", "edit_document", "delete_document", "list_project_files"):
+            self.assertIn(name, names)
         with patch.object(it, "_document_write_tools_enabled", return_value=False):
             gated = {t.name for t in it.get_internal_tools()}
         self.assertNotIn("create_document", gated)
         self.assertNotIn("update_document", gated)
+        # The new writers ride the same gate; the read-only lister stays available.
+        for name in ("append_to_document", "edit_document", "delete_document"):
+            self.assertNotIn(name, gated)
+        self.assertIn("list_project_files", gated)
+
+
+class ProjectFileToolsTest(TestCase):
+    """The new partial-edit / list / delete project tools + their write-lock."""
+
+    def _patch_rmw(self, *, current: bytes, update):
+        """Patch the read-modify-write dependencies: an attached workspace, a text
+        doc, its blob, and update_text_document (a MagicMock the caller inspects)."""
+        doc = {"id": "d1", "workspace_id": "ws1", "sha256": "SHA", "storage_key": "k1",
+               "filename": "notes.md", "status": "ready", "size_bytes": len(current)}
+        return (
+            patch("agentx_ai.mcp.internal_tools._active_workspace_id", return_value="ws1"),
+            patch("agentx_ai.kit.workspaces.repository.get_document", return_value=doc),
+            patch("agentx_ai.kit.workspaces.storage.read_blob", return_value=current),
+            patch("agentx_ai.kit.workspaces.service.update_text_document", update),
+        )
+
+    def test_edit_unique_match_writes_with_expected_sha(self):
+        from agentx_ai.mcp.internal_tools import edit_document_tool
+        upd = MagicMock(return_value={"id": "d1", "filename": "notes.md", "status": "pending", "size_bytes": 5})
+        a, b, c, d = self._patch_rmw(current=b"hello world", update=upd)
+        with a, b, c, d:
+            out = edit_document_tool("d1", "world", "there")
+        self.assertTrue(out["success"])
+        # New content + the sha we read (the optimistic-concurrency guard).
+        self.assertEqual(upd.call_args.kwargs["content"], "hello there")
+        self.assertEqual(upd.call_args.kwargs["expected_sha256"], "SHA")
+
+    def test_edit_no_match_errors(self):
+        from agentx_ai.mcp.internal_tools import edit_document_tool
+        upd = MagicMock()
+        a, b, c, d = self._patch_rmw(current=b"hello", update=upd)
+        with a, b, c, d:
+            out = edit_document_tool("d1", "nope", "x")
+        self.assertFalse(out["success"])
+        upd.assert_not_called()
+
+    def test_edit_ambiguous_requires_replace_all(self):
+        from agentx_ai.mcp.internal_tools import edit_document_tool
+        upd = MagicMock(return_value={"id": "d1", "filename": "n", "status": "p", "size_bytes": 1})
+        a, b, c, d = self._patch_rmw(current=b"a a a", update=upd)
+        with a, b, c, d:
+            ambiguous = edit_document_tool("d1", "a", "b")
+            self.assertFalse(ambiguous["success"])
+            upd.assert_not_called()
+            allrep = edit_document_tool("d1", "a", "b", replace_all=True)
+        self.assertTrue(allrep["success"])
+        self.assertEqual(upd.call_args.kwargs["content"], "b b b")
+
+    def test_append_adds_newline(self):
+        from agentx_ai.mcp.internal_tools import append_to_document_tool
+        upd = MagicMock(return_value={"id": "d1", "filename": "n", "status": "p", "size_bytes": 1})
+        a, b, c, d = self._patch_rmw(current=b"line1", update=upd)
+        with a, b, c, d:
+            out = append_to_document_tool("d1", "line2")
+        self.assertTrue(out["success"])
+        self.assertEqual(upd.call_args.kwargs["content"], "line1\nline2")
+
+    def test_concurrent_edit_soft_rejects(self):
+        from agentx_ai.mcp.internal_tools import edit_document_tool
+        from agentx_ai.kit.workspaces.service import WorkspaceError
+        upd = MagicMock(side_effect=WorkspaceError("conflict", "sha mismatch", document_id="d1"))
+        a, b, c, d = self._patch_rmw(current=b"hello world", update=upd)
+        with a, b, c, d:
+            out = edit_document_tool("d1", "world", "there")
+        self.assertFalse(out["success"])
+        self.assertIn("changed", out["error"].lower())
+
+    def test_delete_refuses_avatar(self):
+        from agentx_ai.mcp.internal_tools import delete_document_tool
+        doc = {"id": "d1", "workspace_id": "ws1", "filename": "avatars/avatar-x.png"}
+        with patch("agentx_ai.mcp.internal_tools._active_workspace_id", return_value="ws1"), \
+             patch("agentx_ai.kit.workspaces.repository.get_document", return_value=doc), \
+             patch("agentx_ai.kit.workspaces.repository.delete_document") as dele:
+            out = delete_document_tool("d1")
+        self.assertFalse(out["success"])
+        dele.assert_not_called()
+
+    def test_list_project_files_returns_ready_docs(self):
+        from agentx_ai.mcp.internal_tools import list_project_files_tool
+        docs = [
+            {"id": "d1", "filename": "a.md", "content_type": "text/markdown", "size_bytes": 10, "status": "ready"},
+            {"id": "d2", "filename": "b.md", "content_type": "text/markdown", "size_bytes": 20, "status": "pending"},
+        ]
+        with patch("agentx_ai.mcp.internal_tools._active_workspace_id", return_value="ws1"), \
+             patch("agentx_ai.kit.workspaces.repository.list_documents", return_value=docs):
+            out = list_project_files_tool()
+        self.assertTrue(out["success"])
+        self.assertEqual([f["document_id"] for f in out["files"]], ["d1"])  # ready only
+
+    def test_avatar_prune_deletes_only_unused(self):
+        from types import SimpleNamespace
+        from agentx_ai import workspace_views
+        docs = [
+            {"id": "used", "filename": "avatars/a.png"},
+            {"id": "unused", "filename": "avatars/b.png"},
+            {"id": "gen", "filename": "generated/c.jpg"},  # not an avatar — never touched
+        ]
+        profiles = [SimpleNamespace(name="Kim", avatar="media:ws_home/used")]
+        with patch.object(workspace_views.repository, "get_workspace", return_value={"id": "ws_home"}), \
+             patch.object(workspace_views.repository, "list_documents", return_value=docs), \
+             patch.object(workspace_views.repository, "delete_document", return_value=None) as dele, \
+             patch("agentx_ai.agent.profiles.get_profile_manager",
+                   return_value=SimpleNamespace(list_profiles=lambda: profiles)):
+            from django.test import RequestFactory
+            resp = workspace_views.workspace_avatars_prune(RequestFactory().post("/"), "ws_home")
+        body = json.loads(resp.content)
+        self.assertEqual(body["deleted"], ["unused"])
+        dele.assert_called_once_with("unused")

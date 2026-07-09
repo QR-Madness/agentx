@@ -278,6 +278,48 @@ def workspace_document_detail(request, workspace_id: str, document_id: str):
     return json_success({"status": "deleted", "document_id": document_id})
 
 
+def _avatar_usage() -> dict[str, str]:
+    """Map an avatar doc_id → the name of the profile that uses it.
+
+    Profiles reference their icon by doc_id as ``avatar: "media:ws_home/{doc_id}"``,
+    so the filename is irrelevant — usage is keyed on the doc_id. Best-effort.
+    """
+    used: dict[str, str] = {}
+    try:
+        from .agent.profiles import get_profile_manager
+        for p in get_profile_manager().list_profiles():
+            avatar = getattr(p, "avatar", None) or ""
+            if avatar.startswith("media:"):
+                doc_id = avatar.split("/")[-1].strip()
+                if doc_id:
+                    used[doc_id] = p.name
+    except Exception as e:  # noqa: BLE001 — usage lookup is best-effort
+        logger.debug(f"avatar usage lookup failed: {e}")
+    return used
+
+
+@csrf_exempt
+@require_methods("POST")
+def workspace_avatars_prune(request, workspace_id: str):
+    """Delete every ``avatars/`` file NOT referenced by any agent profile. Strictly
+    scoped — only avatar files, only unused ones (never generated images or in-use
+    avatars). Returns the deleted doc ids."""
+    if repository.get_workspace(workspace_id) is None:
+        return json_error("Workspace not found", status=404)
+    usage = _avatar_usage()
+    deleted: list[str] = []
+    for d in repository.list_documents(workspace_id):
+        if not str(d.get("filename") or "").startswith("avatars/"):
+            continue
+        if d["id"] in usage:
+            continue  # in use by a profile — keep it
+        storage_key = repository.delete_document(d["id"])
+        if storage_key:
+            release_blob_if_unreferenced(workspace_id, storage_key)
+        deleted.append(d["id"])
+    return json_success({"deleted": deleted, "count": len(deleted)})
+
+
 @csrf_exempt
 @require_methods("POST")
 def workspace_document_reingest(request, workspace_id: str, document_id: str):

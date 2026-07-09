@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.193 -->
+<!-- release-version: 0.21.194 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -33,9 +33,12 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **New themes** — Ugentx, Tango, Blackhawk.
 - **Workspaces grew into Projects**: files + per-project **instructions** +
   conversations with scoped memory.
-- **Agents can now write project files** — `create_document`/`update_document` create
-  and revise durable markdown/text docs (indexed + searchable); agents are told what a
-  project is, even an empty one.
+- **Agents can now manage project files, not just create them** — beyond
+  `create_document`/`update_document`, agents get `list_project_files`, `append_to_document`,
+  `edit_document` (targeted find-and-replace — no more resending the whole file), and
+  `delete_document`, with a soft write-lock so two agents editing the same file don't clobber.
+  The prompt now frames a project as a home for **any files** (not just documents) and nudges
+  agents to lean into it; they're told generated images land in **Home** by default.
 - **Project files open in the hub** — click any file to preview (markdown rendered,
   images, PDFs), edit markdown/text in place, create new docs, and export to PDF.
 - **Deployment manager, on by default in the bundle** — web dashboard + CLI;
@@ -101,6 +104,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Projects hub fills the screen, and Home avatars make sense** — the Projects drawer no longer
+  stops short with dead space at the bottom (it inherited a centered-dialog height); and in Home,
+  each avatar image is badged with the agent that uses it, with a **Delete unused** button to clear
+  avatars no profile references.
 - **Delegating to an image agent now returns the image** — asking a teammate that's an image-output
   model (e.g. gemini-flash-image / flux) to make a picture produced only a text description, never the
   image: the delegation path ran it through the text tool-loop, which can't carry image bytes. It now
