@@ -67,7 +67,8 @@ export const configApi = {
 
   async updateContextLimits(limits: {
     lmstudio?: { context_window?: number; max_output_tokens?: number };
-    models?: Record<string, { context_window?: number; max_output_tokens?: number }>;
+    // A model mapped to `null` removes its override (provider capability resumes).
+    models?: Record<string, { context_window?: number; max_output_tokens?: number } | null>;
   }): Promise<{ status: string; updated: string[] }> {
     return apiRequest('/api/config/context-limits', {
       method: 'POST',

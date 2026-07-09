@@ -605,6 +605,34 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Per-model override rows */
+.model-overrides-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin: var(--space-md) 0;
+}
+
+.model-override-row {
+  padding: var(--space-md);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface-sunken, transparent);
+}
+
+.model-override-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.model-override-id {
+  font-size: 12px;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
 @media (max-width: 600px) {
   .context-limits-form {
     grid-template-columns: 1fr;

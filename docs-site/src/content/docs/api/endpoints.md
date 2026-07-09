@@ -1487,7 +1487,7 @@ Returns the current runtime configuration with secrets (API keys) redacted.
 GET /api/config/context-limits
 ```
 
-Returns the resolved context-window limit per configured model — used by the client for token budgeting.
+Returns the resolved context-window limit per configured model — used by the client for token budgeting. `POST` accepts `{"lmstudio": {...}, "models": {"<model-id>": {"context_window", "max_output_tokens"}}}` to set a per-model override (works for any provider — the escape hatch when a provider reports the wrong window, e.g. an OpenRouter `:latest` route); a model mapped to `null` removes its override.
 
 ### Settings Manifest
 
@@ -1503,7 +1503,7 @@ Canonical machine-readable registry of every user-tunable setting across both st
 POST /api/config/update
 ```
 
-Updates runtime configuration. Persists to `data/config.json` and hot-reloads providers. Sectioned partial update — handled sections: `providers`, `preferences`, `llm_settings`, `context_limits`, `prompt_enhancement`, `planner`, `search`, `alloy`, `ambassador`, `images`, `vision`, and `models.roles`.
+Updates runtime configuration. Persists to `data/config.json` and hot-reloads providers. Sectioned partial update — handled sections: `providers`, `preferences`, `llm_settings`, `context_limits`, `context` (compaction knobs — allowlisted keys `verbatim_budget_ratio`, `summary_trigger_ratio`, `recent_floor`), `prompt_enhancement`, `planner`, `search`, `alloy`, `ambassador`, `images`, `vision`, and `models.roles`.
 
 **Request:**
 ```json

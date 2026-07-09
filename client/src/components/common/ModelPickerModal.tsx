@@ -19,7 +19,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, RefreshCw, Search, Check, Wrench, Eye, Braces, Zap, Loader2, Volume2, Mic,
-  Image as ImageIcon,
+  Image as ImageIcon, AlertTriangle,
 } from 'lucide-react';
 import type { ModelInfo } from '../../lib/api';
 import {
@@ -72,6 +72,9 @@ interface PreparedModel {
   capKeys: ReadonlySet<CapabilityKey>;
   /** Lowercase search haystack — includes the model id so id fragments match. */
   haystack: string;
+  /** OpenRouter `:latest` route — reports no context window (falls back to ~8k)
+   *  and can break image generation. Flagged so the row can warn. */
+  warnLatest: boolean;
 }
 
 interface ModelPickerModalProps {
@@ -129,6 +132,7 @@ function prepareModel(m: ModelInfo): PreparedModel {
     caps,
     capKeys: new Set(caps.map(c => c.key)),
     haystack: `${m.id} ${m.name} ${m.description ?? ''}`.toLowerCase(),
+    warnLatest: m.provider === 'openrouter' && /:latest$/i.test(m.id),
   };
 }
 
@@ -503,6 +507,14 @@ const ModelRow = memo(function ModelRow({
         <div className="model-row-title-line">
           <span className="model-row-title">{rowTitle}</span>
           {record && <span className="model-row-provider">{record.providerLabel}</span>}
+          {record?.warnLatest && (
+            <span
+              className="model-row-warn"
+              title="`:latest` routes don't report a context window (falls back to ~8k) and can break image generation — pin a concrete version."
+            >
+              <AlertTriangle size={13} />
+            </span>
+          )}
           {selected && <Check size={14} className="model-row-check" />}
         </div>
         {rowSubtitle && <div className="model-row-subtitle" title={rowSubtitle}>{rowSubtitle}</div>}

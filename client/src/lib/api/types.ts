@@ -769,6 +769,12 @@ export interface ConfigUpdate {
     tavily_api_key?: string;
     brave_api_key?: string;
   };
+  /** Context compaction knobs (verbatim window + rolling-summary trigger). */
+  context?: {
+    verbatim_budget_ratio?: number;
+    summary_trigger_ratio?: number;
+    recent_floor?: number;
+  };
   alloy?: {
     allow_adhoc_delegation?: boolean;
     max_parallel_delegations?: number;

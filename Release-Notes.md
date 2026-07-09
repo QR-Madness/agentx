@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.196 -->
+<!-- release-version: 0.21.197 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -108,6 +108,12 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **No more premature "spotty memory" on OpenRouter models** — a model whose provider reports the
+  wrong context window (e.g. an OpenRouter `:latest` route, which falls back to ~8k) made the agent
+  start summarizing almost immediately and forget most of the conversation. Settings → Model Limits
+  now lets you **pin a per-model context window** for any provider, and the model picker flags
+  `:latest` routes. New **Context Compaction** controls expose the verbatim-window budget and the
+  rolling-summary trigger, so the digest only kicks in near the model's real limit.
 - **Image settings copy caught up** — the Images settings no longer says in-conversation image
   generation is "coming soon" (it's here), and the enable toggle now notes it gates the
   `generate_image` tool, not just the avatar "Generate" tab.

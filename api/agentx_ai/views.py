@@ -7115,6 +7115,16 @@ def config_update(request):
                         config.set(f"context_limits.{key_or_provider}.{key}", value)
                         updated_keys.append(f"context_limits.{key_or_provider}.{key}")
 
+    # Update context/compaction knobs (verbatim-window + rolling-summary trigger
+    # tuning). Allowlisted so arbitrary context.* internals aren't client-writable.
+    context_settings = data.get("context", {})
+    if isinstance(context_settings, dict):
+        _CONTEXT_KEYS = ("summary_trigger_ratio", "verbatim_budget_ratio", "recent_floor")
+        for key, value in context_settings.items():
+            if key in _CONTEXT_KEYS and value is not None:
+                config.set(f"context.{key}", value)
+                updated_keys.append(f"context.{key}")
+
     # Update prompt enhancement settings
     prompt_enhancement = data.get("prompt_enhancement", {})
     for key, value in prompt_enhancement.items():
@@ -7307,9 +7317,15 @@ def context_limits(request):
                     config.set(f"context_limits.lmstudio.{key}", data["lmstudio"][key])
                     updated.append(f"context_limits.lmstudio.{key}")
 
-        # Update model-specific limits (escape hatch for any provider)
+        # Update model-specific limits (escape hatch for any provider). A model
+        # mapped to null removes its override entirely (so the provider's own
+        # per-model capability takes over again).
         if "models" in data and isinstance(data["models"], dict):
             for model_id, settings in data["models"].items():
+                if settings is None:
+                    if config.unset(f"context_limits.models.{model_id}"):
+                        updated.append(f"-context_limits.models.{model_id}")
+                    continue
                 if isinstance(settings, dict):
                     for key in ("context_window", "max_output_tokens"):
                         if key in settings:

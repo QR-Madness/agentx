@@ -379,6 +379,24 @@ class ConfigManager:
         with self._lock:
             self._set_nested(self._config, key, value)
 
+    def unset(self, key: str) -> bool:
+        """Remove a config value by dot-notation key. No-op if absent.
+
+        Returns True if a key was removed. Call save() to persist.
+        """
+        with self._lock:
+            keys = key.split(".")
+            current = self._config
+            for k in keys[:-1]:
+                nxt = current.get(k) if isinstance(current, dict) else None
+                if not isinstance(nxt, dict):
+                    return False
+                current = nxt
+            if isinstance(current, dict) and keys[-1] in current:
+                del current[keys[-1]]
+                return True
+            return False
+
     def save(self) -> bool:
         """
         Persist current configuration to disk.

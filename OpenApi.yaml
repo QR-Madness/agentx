@@ -4794,7 +4794,9 @@ paths:
         Sectioned partial update. `models` accepts only `roles.{fast_utility,
         deep_reasoning,summarizer}` — each "" (clear) or a concrete
         provider:model (`role:` refs and non-`provider:model` strings 400).
-        `images` and `vision` accept their whitelisted keys.
+        `images` and `vision` accept their whitelisted keys. `context` accepts
+        the compaction knobs `verbatim_budget_ratio`, `summary_trigger_ratio`,
+        `recent_floor` (allowlisted).
       requestBody:
         required: true
         content:
