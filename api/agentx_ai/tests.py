@@ -2674,10 +2674,15 @@ class ToolOutputCompressorTest(TestCase):
     def test_default_config_model_unset(self) -> None:
         """The default compression model is unset — resolution flows down the
         fallback chain (active model → global default) instead of a hardcoded,
-        possibly-unusable provider."""
+        possibly-unusable provider. The model-roles overlay reads config through
+        its own accessor (`agentx_ai.config.get_config_manager`, imported at
+        call time inside role_model_for), so it must be pinned to defaults too —
+        otherwise a live `models.roles.*` setting on the dev box leaks in."""
         compressor = ToolOutputCompressor()
-        with patch("agentx_ai.agent.tool_output_compressor.get_config_manager") as gcm:
+        with patch("agentx_ai.agent.tool_output_compressor.get_config_manager") as gcm, \
+             patch("agentx_ai.config.get_config_manager") as roles_gcm:
             gcm.return_value.get.side_effect = lambda key, default=None: default
+            roles_gcm.return_value.get.side_effect = lambda key, default=None: default
             cfg = compressor._get_config()
         self.assertIsNone(cfg["model"])
 
@@ -8966,10 +8971,11 @@ class SettingsManifestTest(TestCase):
                          "/api/config/update")
         comp = by_key["compression.model"]
         self.assertEqual(comp["role_member"], "compression")
-        # trajectory_compression.* is config-stored but bridged through the
-        # memory settings endpoint.
+        # trajectory_compression.* is config-stored and written directly via
+        # /api/config/update (Settings → Conversation Context); the old
+        # memory-settings bridge is back-compat only, not the canonical route.
         self.assertEqual(by_key["trajectory_compression.model"]["writable_via"],
-                         "/api/memory/settings")
+                         "/api/config/update")
         # Plumbing keys are API-read-only.
         self.assertIsNone(by_key["neo4j_uri"]["writable_via"])
         # Sanity: the registry is substantial, not a sample.
@@ -11430,32 +11436,56 @@ class PromptLayerStoreTest(TestCase):
 
 
 class PromptStackCompositionTest(TestCase):
-    """Phase 1b — the live conversational system prompt is composed from the layer
-    stack: byte-parity with the legacy default, and the default-profile sections
-    (now stack layers) are not double-injected via the General profile."""
+    """The live conversational system prompt is composed from the layer stack:
+    the shipped built-in layers, in order, with no section double-injected via
+    the General profile. (The original byte-parity-with-legacy contract ended
+    when the legacy monolith was decomposed into layers and the stack grew
+    deliberate additions — the expectation below pins the current stack.)"""
 
     def _store(self, fake):
         from agentx_ai.prompts import layers
         with patch.object(layers, "get_config_manager", return_value=fake):
             return layers.LayerStore()
 
-    def _expected_default(self) -> str:
-        from agentx_ai.prompts.defaults import (
-            DEFAULT_GLOBAL_PROMPT,
-            SECTION_STRUCTURED_THINKING,
-            SECTION_CONCISE_OUTPUT,
-            SECTION_SAFETY_CONSTRAINTS,
-        )
-        return "\n\n".join([
-            DEFAULT_GLOBAL_PROMPT.content,
-            SECTION_STRUCTURED_THINKING.content,
-            SECTION_CONCISE_OUTPUT.content,
-            SECTION_SAFETY_CONSTRAINTS.content,
-        ])
+    # The shipped default stack, pinned by id and order. Adding, removing, or
+    # reordering a built-in layer must update this list on purpose.
+    _EXPECTED_LAYER_IDS = [
+        "core-principles",
+        "citing-sources",
+        "reasoning-vs-results",
+        "memory-tools",
+        "project-collaboration",
+        "structured-thinking",
+        "concise-output",
+        "safety-constraints",
+    ]
 
-    def test_stack_reproduces_legacy_default_prompt(self):
+    def _expected_default(self) -> str:
+        from agentx_ai.prompts.layers import _BUILTIN_BY_ID
+        # Fail loudly on an unlisted (or removed) built-in before diffing prose.
+        self.assertEqual(set(self._EXPECTED_LAYER_IDS), set(_BUILTIN_BY_ID))
+        return "\n\n".join(
+            _BUILTIN_BY_ID[layer_id].default or ""
+            for layer_id in self._EXPECTED_LAYER_IDS
+        )
+
+    def test_stack_composes_shipped_builtin_defaults(self):
         store = self._store(_FakeConfigManager())
         self.assertEqual(store.compose(), self._expected_default())
+
+    def test_section_constants_match_their_layer_twins(self):
+        """The defaults.py section constants that survived the layer decomposition
+        stay in lockstep with their layer twins (core-principles diverged on
+        purpose when citing-sources / reasoning-vs-results split out of it)."""
+        from agentx_ai.prompts import defaults as prompt_defaults
+        from agentx_ai.prompts.layers import _BUILTIN_BY_ID
+        pairs = [
+            ("structured-thinking", prompt_defaults.SECTION_STRUCTURED_THINKING),
+            ("concise-output", prompt_defaults.SECTION_CONCISE_OUTPUT),
+            ("safety-constraints", prompt_defaults.SECTION_SAFETY_CONSTRAINTS),
+        ]
+        for layer_id, section in pairs:
+            self.assertEqual(_BUILTIN_BY_ID[layer_id].default, section.content, layer_id)
 
     def test_compose_prompt_uses_stack_without_duplicate_sections(self):
         from agentx_ai.prompts import layers, manager as mgr_mod
