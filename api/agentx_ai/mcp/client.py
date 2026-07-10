@@ -325,13 +325,13 @@ class MCPClientManager:
             async def redirect_handler(url: str) -> None:
                 raise MCPTransportError(
                     f"Server '{config.name}' requires OAuth authorization — "
-                    "connect it from the Toolkit page to sign in."
+                    "connect it from the Connectors & Tools page to sign in."
                 )
 
             async def callback_handler() -> tuple[str, str | None]:
                 raise MCPTransportError(
                     f"Server '{config.name}' requires OAuth authorization — "
-                    "connect it from the Toolkit page to sign in."
+                    "connect it from the Connectors & Tools page to sign in."
                 )
 
         return _RestoringOAuthProvider(

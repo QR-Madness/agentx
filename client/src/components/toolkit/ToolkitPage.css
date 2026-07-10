@@ -32,8 +32,10 @@
 }
 .toolkit-header .header-left {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 .toolkit-header h1 {
   font-size: 32px;
@@ -43,6 +45,12 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
   margin: 0;
+  white-space: nowrap;
+}
+.toolkit-tagline {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 /* Single rich scroll view — no submenu; sections stack in one column. */

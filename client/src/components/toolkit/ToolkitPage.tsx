@@ -96,9 +96,10 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
             <ParallaxBackground />
             <div className="toolkit-header">
               <div className="header-left">
-                <h1>Toolkit</h1>
+                <h1>Connectors &amp; Tools</h1>
+                <p className="toolkit-tagline">Your agents' interface to the real world</p>
               </div>
-              <IconButton aria-label="Close Toolkit" onClick={onClose}>
+              <IconButton aria-label="Close Connectors & Tools" onClick={onClose}>
                 <X size={16} />
               </IconButton>
             </div>

@@ -78,7 +78,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
 
       // Workspace
       { id: 'open-settings', group: 'Workspace', label: 'Open Settings', hint: '⌘,', icon: <Settings size={16} />, keywords: ['config', 'preferences', 'providers'], run: open('settings') },
-      { id: 'open-tools', group: 'Workspace', label: 'Open Tools', icon: <Wrench size={16} />, keywords: ['toolkit', 'mcp', 'servers'], run: open('tools') },
+      { id: 'open-tools', group: 'Workspace', label: 'Open Connectors & Tools', icon: <Wrench size={16} />, keywords: ['toolkit', 'mcp', 'servers', 'connectors', 'integrations', 'skills', 'registry', 'catalog'], run: open('tools') },
       { id: 'open-memory', group: 'Workspace', label: 'Open Memory', icon: <Database size={16} />, keywords: ['facts', 'entities', 'recall', 'memories'], run: open('memory') },
       { id: 'open-sources', group: 'Workspace', label: 'Open Sources', icon: <BookMarked size={16} />, keywords: ['citations', 'bibliography', 'references', 'links'], run: open('sources') },
       { id: 'open-consolidation', group: 'Workspace', label: 'Memory Consolidation', icon: <Zap size={16} />, keywords: ['consolidate', 'memory', 'extract', 'facts', 'entities', 'lightning'], run: open('consolidation') },
