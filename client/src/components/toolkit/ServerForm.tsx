@@ -69,8 +69,9 @@ export function ServerForm({ initial, initialDraft, agentProfiles, onCancel, onS
   const [whitelistAll, setWhitelistAll] = useState<boolean>(initial?.allowed_agent_ids == null);
   const [allowedAgents, setAllowedAgents] = useState<string[]>(initial?.allowed_agent_ids ?? []);
   // Existing servers open Advanced so their configured settings are visible;
-  // new servers start collapsed for a clean first-run.
-  const [advancedOpen, setAdvancedOpen] = useState<boolean>(isEdit);
+  // a new server seeded with a pre-registered client id opens it too (the
+  // client id/secret live in Advanced now). New blank servers start collapsed.
+  const [advancedOpen, setAdvancedOpen] = useState<boolean>(isEdit || !!seedAuth?.client_id);
 
   const [errors, setErrors] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -224,18 +225,9 @@ export function ServerForm({ initial, initialDraft, agentProfiles, onCancel, onS
                 <span>Scope<Hint text="Space-separated OAuth scopes to request. Leave blank to use the provider's defaults." /></span>
                 <Input value={authScope} onChange={(e) => setAuthScope(e.target.value)} placeholder="mcp:tools offline_access" disabled={submitting} />
               </label>
-              <label>
-                <span>Client ID<Hint text="Leave blank for automatic dynamic client registration (RFC 7591). Set it only for providers that require a pre-registered client." /></span>
-                <Input value={authClientId} onChange={(e) => setAuthClientId(e.target.value)} placeholder="blank = automatic registration (use ${VAR})" disabled={submitting} />
-              </label>
-              {authClientId.trim() && (
-                <label>
-                  <span>Client secret<Hint text="Only for confidential pre-registered clients. Prefer ${VAR} so the secret isn't stored in mcp_servers.json." /></span>
-                  <Input type="password" value={authClientSecret} onChange={(e) => setAuthClientSecret(e.target.value)} placeholder="${MY_CLIENT_SECRET}" disabled={submitting} />
-                </label>
-              )}
               <p className="toolkit-section-note" style={{ margin: 0 }}>
-                Connecting opens the provider's sign-in page in your browser; tokens are stored on the server.
+                Most servers register automatically — just connect to sign in via your browser.
+                {' '}Providers that need a pre-registered app (client ID/secret) live under Advanced.
               </p>
             </>
           )}
@@ -280,6 +272,20 @@ export function ServerForm({ initial, initialDraft, agentProfiles, onCancel, onS
                   </SelectContent>
                 </Select>
               </label>
+              {authMode === 'oauth' && (
+                <>
+                  <label>
+                    <span>Pre-registered client ID<Hint text="Leave blank for automatic dynamic client registration (RFC 7591) — the common case. Set it only for providers that require a pre-registered OAuth app." /></span>
+                    <Input value={authClientId} onChange={(e) => setAuthClientId(e.target.value)} placeholder="blank = automatic registration (use ${VAR})" disabled={submitting} />
+                  </label>
+                  {authClientId.trim() && (
+                    <label>
+                      <span>Client secret<Hint text="Only for confidential pre-registered clients. Prefer ${VAR} so the secret isn't stored in mcp_servers.json." /></span>
+                      <Input type="password" value={authClientSecret} onChange={(e) => setAuthClientSecret(e.target.value)} placeholder="${MY_CLIENT_SECRET}" disabled={submitting} />
+                    </label>
+                  )}
+                </>
+              )}
               {renderKV(headers, setHeaders, 'Headers', 'Static request headers sent on every call (e.g. a static bearer token). Use ${VAR} for env expansion.')}
             </>
           ) : (

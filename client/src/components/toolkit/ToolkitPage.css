@@ -243,6 +243,82 @@
   gap: 16px;
 }
 
+/* ── Connector catalog tiles — compact clickable rows (no per-tile buttons;
+      the connector dialog owns all actions) ── */
+.toolkit-connector-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--accent-tint-soft);
+  background: var(--glass-layer-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+
+.toolkit-connector-tile:hover {
+  border-color: var(--accent-tint-medium);
+  transform: translateY(-1px);
+}
+
+.toolkit-connector-tile--soon {
+  opacity: 0.55;
+}
+
+.toolkit-connector-tile--soon:hover {
+  opacity: 0.8;
+}
+
+.toolkit-connector-tile-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.toolkit-connector-tile-info .name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolkit-connector-tile-info .desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolkit-connector-tile-status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.toolkit-connector-tile-status.added {
+  color: var(--feedback-success);
+  background: var(--feedback-success-tint, color-mix(in srgb, var(--feedback-success) 12%, transparent));
+}
+
+.toolkit-connector-tile-status.soon {
+  color: var(--text-tertiary);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+
 .toolkit-card {
   background: var(--glass-layer-1);
   backdrop-filter: blur(var(--blur-medium));

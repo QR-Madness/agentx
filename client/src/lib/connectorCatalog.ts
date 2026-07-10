@@ -41,7 +41,7 @@ export interface CatalogEntry {
   /** Display title (vendor product name). */
   title: string;
   vendor: string;
-  category: 'files' | 'dev' | 'productivity' | 'knowledge' | 'local';
+  category: 'files' | 'productivity' | 'design' | 'business' | 'dev' | 'knowledge' | 'local';
   description: string;
   authKind: CatalogAuthKind;
   /** Suggested server name (becomes the mcp_servers.json key). */
@@ -51,6 +51,10 @@ export interface CatalogEntry {
   inputs?: QuickInput[];
   setupNote?: string;
   docsUrl?: string;
+  /** Gated: the tile renders dimmed with a "Coming soon" badge and can't be
+   *  added — the string is the short reason (shown as the tile tooltip).
+   *  Power users who DO qualify can still add the server via Add Server. */
+  comingSoon?: string;
   brand: { initial: string; color: string };
 }
 
@@ -111,6 +115,12 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
       '4. Set GOOGLE_DRIVE_CLIENT_ID / GOOGLE_DRIVE_CLIENT_SECRET in the API’s .env (defaults below reference them), or paste values directly.',
     ].join('\n'),
     docsUrl: 'https://developers.google.com/workspace/drive/api/guides/configure-mcp-server',
+    comingSoon:
+      'Google gates ALL its Workspace MCP servers (Drive, Docs, Gmail, …) behind the Workspace '
+      + 'Developer Preview Program — enrollment needs a Google Workspace account + Cloud project '
+      + '(consumer Google accounts can’t enroll; approval takes days). Live-verified: sign-in works '
+      + 'but every tool call fails "The caller does not have permission" until enrolled. If you ARE '
+      + 'enrolled, add it manually via Add Server with the settings from the docs link.',
     brand: { initial: 'D', color: '#4285f4' },
   },
   {
@@ -196,6 +206,151 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     brand: { initial: 'A', color: '#1868db' },
   },
   {
+    id: 'asana',
+    title: 'Asana',
+    vendor: 'Asana',
+    category: 'productivity',
+    description: 'Tasks, projects, and goals — search and update work in Asana.',
+    authKind: 'oauth-dcr',
+    serverName: 'asana',
+    config: {
+      transport: 'sse',
+      url: 'https://mcp.asana.com/sse',
+      auth: { type: 'oauth' },
+    },
+    docsUrl: 'https://developers.asana.com/docs/using-asanas-mcp-server',
+    brand: { initial: 'As', color: '#f06a6a' },
+  },
+  {
+    id: 'monday',
+    title: 'monday.com',
+    vendor: 'monday.com',
+    category: 'productivity',
+    description: 'Boards, items, and workflows — read and update your monday.com workspace.',
+    authKind: 'oauth-dcr',
+    serverName: 'monday',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://mcp.monday.com/mcp',
+      auth: { type: 'oauth' },
+    },
+    docsUrl: 'https://developer.monday.com/apps/docs/mondaycom-mcp',
+    brand: { initial: 'M', color: '#6161ff' },
+  },
+  {
+    id: 'zapier',
+    title: 'Zapier',
+    vendor: 'Zapier',
+    category: 'productivity',
+    description: 'One connector, thousands of apps — run actions across your Zapier-connected tools.',
+    authKind: 'oauth-dcr',
+    serverName: 'zapier',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://mcp.zapier.com/api/mcp/mcp',
+      auth: { type: 'oauth' },
+      timeout: 60,
+    },
+    docsUrl: 'https://zapier.com/mcp',
+    brand: { initial: 'Z', color: '#ff4f00' },
+  },
+  {
+    id: 'figma',
+    title: 'Figma',
+    vendor: 'Figma',
+    category: 'design',
+    description: 'Read designs, components, and variables from your Figma files.',
+    authKind: 'oauth-dcr',
+    serverName: 'figma',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://mcp.figma.com/mcp',
+      auth: { type: 'oauth' },
+    },
+    docsUrl: 'https://developers.figma.com/docs/figma-mcp-server/',
+    brand: { initial: 'F', color: '#a259ff' },
+  },
+  {
+    id: 'canva',
+    title: 'Canva',
+    vendor: 'Canva',
+    category: 'design',
+    description: 'Create and edit Canva designs, and export them, from conversation.',
+    authKind: 'oauth-dcr',
+    serverName: 'canva',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://mcp.canva.com/mcp',
+      auth: { type: 'oauth' },
+    },
+    docsUrl: 'https://www.canva.dev/docs/connect/canva-mcp-server-setup/',
+    brand: { initial: 'C', color: '#8b3dff' },
+  },
+  {
+    id: 'stripe',
+    title: 'Stripe',
+    vendor: 'Stripe',
+    category: 'business',
+    description: 'Customers, payments, subscriptions, and invoices from your Stripe account.',
+    authKind: 'oauth-dcr',
+    serverName: 'stripe',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://mcp.stripe.com/',
+      auth: { type: 'oauth' },
+    },
+    docsUrl: 'https://docs.stripe.com/mcp',
+    brand: { initial: 'S', color: '#635bff' },
+  },
+  {
+    id: 'paypal',
+    title: 'PayPal',
+    vendor: 'PayPal',
+    category: 'business',
+    description: 'Invoices, payments, and disputes via PayPal’s official remote MCP server.',
+    authKind: 'oauth-dcr',
+    serverName: 'paypal',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://mcp.paypal.com/mcp',
+      auth: { type: 'oauth' },
+    },
+    docsUrl: 'https://www.paypal.ai/docs/tools/mcp-quickstart',
+    brand: { initial: 'P', color: '#0070ba' },
+  },
+  {
+    id: 'vercel',
+    title: 'Vercel',
+    vendor: 'Vercel',
+    category: 'dev',
+    description: 'Projects, deployments, and logs — manage your Vercel apps.',
+    authKind: 'oauth-dcr',
+    serverName: 'vercel',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://mcp.vercel.com/',
+      auth: { type: 'oauth' },
+    },
+    docsUrl: 'https://vercel.com/docs/mcp/vercel-mcp',
+    brand: { initial: 'V', color: '#737373' },
+  },
+  {
+    id: 'cloudflare-browser',
+    title: 'Cloudflare Browser Rendering',
+    vendor: 'Cloudflare',
+    category: 'dev',
+    description: 'Fetch pages, take screenshots, and convert web content in a managed headless browser.',
+    authKind: 'oauth-dcr',
+    serverName: 'cloudflare-browser',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://browser.mcp.cloudflare.com/mcp',
+      auth: { type: 'oauth' },
+    },
+    docsUrl: 'https://github.com/cloudflare/mcp-server-cloudflare',
+    brand: { initial: 'CF', color: '#f38020' },
+  },
+  {
     id: 'context7',
     title: 'Context7',
     vendor: 'Upstash',
@@ -265,6 +420,53 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     brand: { initial: 'HF', color: '#ffb000' },
   },
   {
+    id: 'deepwiki',
+    title: 'DeepWiki',
+    vendor: 'Cognition',
+    category: 'knowledge',
+    description: 'Ask questions about any public GitHub repository. Open — no sign-in needed.',
+    authKind: 'none',
+    serverName: 'deepwiki',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://mcp.deepwiki.com/mcp',
+    },
+    docsUrl: 'https://docs.devin.ai/work-with-devin/deepwiki-mcp',
+    brand: { initial: 'DW', color: '#2563eb' },
+  },
+  {
+    id: 'microsoft-learn',
+    title: 'Microsoft Learn',
+    vendor: 'Microsoft',
+    category: 'knowledge',
+    description: 'Search official Microsoft/Azure documentation. Open — no sign-in needed.',
+    authKind: 'none',
+    serverName: 'microsoft-learn',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://learn.microsoft.com/api/mcp',
+    },
+    docsUrl: 'https://github.com/MicrosoftDocs/mcp',
+    brand: { initial: 'ML', color: '#0078d4' },
+  },
+  {
+    id: 'playwright',
+    title: 'Playwright',
+    vendor: 'Microsoft',
+    category: 'local',
+    description: 'Drive a real browser — navigate, click, fill forms, and screenshot (runs locally via npx).',
+    authKind: 'local',
+    serverName: 'playwright',
+    config: {
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', '@playwright/mcp@latest'],
+    },
+    setupNote: 'Runs locally via npx — requires Node.js on the API host; first run downloads a browser.',
+    docsUrl: 'https://github.com/microsoft/playwright-mcp',
+    brand: { initial: 'PW', color: '#2ead33' },
+  },
+  {
     id: 'filesystem',
     title: 'Filesystem',
     vendor: 'Model Context Protocol',
@@ -312,10 +514,12 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
 
 /** Categories in display order, with section labels. */
 export const CATALOG_CATEGORIES: { id: CatalogEntry['category']; label: string }[] = [
-  { id: 'files', label: 'Files & Storage' },
   { id: 'productivity', label: 'Productivity' },
   { id: 'dev', label: 'Development' },
   { id: 'knowledge', label: 'Knowledge' },
+  { id: 'design', label: 'Design' },
+  { id: 'business', label: 'Business & Payments' },
+  { id: 'files', label: 'Files & Storage' },
   { id: 'local', label: 'Local servers' },
 ];
 
@@ -348,27 +552,36 @@ export function applyQuickInputs(
 }
 
 /**
- * Is this catalog entry already configured? Remote entries match on URL
- * (exact, trailing-slash-insensitive); local entries match on command + the
- * package argument, so a different allowed directory still counts as added.
+ * The already-configured server backing this catalog entry, or undefined.
+ * Remote entries match on URL (exact, trailing-slash-insensitive); local
+ * entries match on command + the package argument, so a different allowed
+ * directory still counts as added. Generic over the caller's server shape so
+ * the connector dialog gets the full object back (name, status, auth state).
  */
-export function catalogEntryConfigured(
-  entry: CatalogEntry,
-  servers: { url?: string | null; command?: string | null; args?: string[] }[],
-): boolean {
+export function findConfiguredServer<
+  S extends { url?: string | null; command?: string | null; args?: string[] },
+>(entry: CatalogEntry, servers: S[]): S | undefined {
   const norm = (u: string) => u.replace(/\/+$/, '');
   if (entry.config.url) {
     const target = norm(entry.config.url);
-    return servers.some(s => s.url && norm(s.url) === target);
+    return servers.find(s => s.url && norm(s.url) === target);
   }
   if (entry.config.command) {
     const pkg = (entry.config.args ?? []).find(a => a.startsWith('@') || !a.startsWith('-'));
-    return servers.some(s =>
+    return servers.find(s =>
       s.command === entry.config.command
       && (!pkg || (s.args ?? []).includes(pkg)),
     );
   }
-  return false;
+  return undefined;
+}
+
+/** Boolean convenience over `findConfiguredServer`. */
+export function catalogEntryConfigured(
+  entry: CatalogEntry,
+  servers: { url?: string | null; command?: string | null; args?: string[] }[],
+): boolean {
+  return findConfiguredServer(entry, servers) !== undefined;
 }
 
 /* ── MCP registry search → draft ─────────────────────────────── */

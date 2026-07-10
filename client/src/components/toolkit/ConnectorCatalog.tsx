@@ -1,25 +1,28 @@
 /**
  * ConnectorCatalogView — the "add real connectors" shelf of Connectors & Tools.
  *
- * Curated entries go through a compact **quick-add** dialog: just the setup
- * steps and the few fields that entry actually needs (none for DCR-OAuth /
- * open connectors — those are one click, and OAuth entries chain straight
- * into the browser sign-in). "Open full form" is the escape hatch to the
- * complete ServerForm. Registry search results always open the full form —
- * they're untrusted and deserve review.
+ * The shelf is a grid of compact clickable tiles (brand + name + status pip —
+ * no per-tile action buttons). Each tile opens ONE **connector dialog** that
+ * covers the whole lifecycle: not-added entries get the guided quick-add
+ * (setup steps + only the fields that entry needs; OAuth chains straight into
+ * browser sign-in), added entries show live status + Connect, and gated
+ * entries explain their "Coming soon". "Open full form" is the escape hatch
+ * to the complete ServerForm. Registry search results always open the full
+ * form — they're untrusted and deserve review.
  */
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ExternalLink, Loader2, Plus, Search } from 'lucide-react';
+import { Check, Clock, ExternalLink, Loader2, Plus, Search } from 'lucide-react';
 import { api, apiErrorMessage } from '../../lib/api';
 import type { MCPRegistryResult } from '../../lib/api';
 import type { McpServersState } from '../../lib/hooks';
 import { useNotify } from '../../contexts/NotificationContext';
 import { openExternal } from '../../lib/openExternal';
-import { Button, Input } from '../ui';
+import { Button, Input, StatusDot } from '../ui';
 import {
   AUTH_KIND_LABELS, CATALOG_CATEGORIES, CONNECTOR_CATALOG,
   applyQuickInputs, catalogEntryConfigured, draftFromCatalogEntry, draftFromRegistryResult,
+  findConfiguredServer,
   type CatalogEntry, type ServerDraft,
 } from '../../lib/connectorCatalog';
 import { ServerForm } from './ServerForm';
@@ -107,31 +110,33 @@ export function ConnectorCatalogView({ mcp }: { mcp: McpServersState }) {
                 {entries.map(entry => {
                   const configured = catalogEntryConfigured(entry, servers);
                   return (
-                    <div key={entry.id} className="toolkit-card">
-                      <div className="toolkit-card-header">
-                        <span
-                          className="toolkit-brand-tile"
-                          style={{ background: `${entry.brand.color}26`, color: entry.brand.color }}
-                        >
-                          {entry.brand.initial}
+                    <button
+                      key={entry.id}
+                      type="button"
+                      className={`toolkit-connector-tile${entry.comingSoon ? ' toolkit-connector-tile--soon' : ''}`}
+                      title={entry.comingSoon ?? entry.description}
+                      onClick={() => setQuickAdd(entry)}
+                    >
+                      <span
+                        className="toolkit-brand-tile"
+                        style={{ background: `${entry.brand.color}26`, color: entry.brand.color }}
+                      >
+                        {entry.brand.initial}
+                      </span>
+                      <span className="toolkit-connector-tile-info">
+                        <span className="name">{entry.title}</span>
+                        <span className="desc">{entry.description}</span>
+                      </span>
+                      {entry.comingSoon ? (
+                        <span className="toolkit-connector-tile-status soon">
+                          <Clock size={12} /> Soon
                         </span>
-                        <span className="name" title={entry.title}>{entry.title}</span>
-                      </div>
-                      <div className="meta" style={{ color: 'var(--text-secondary)' }}>
-                        {entry.description}
-                      </div>
-                      <div className="toolkit-card-actions">
-                        {configured ? (
-                          <Button variant="ghost" size="sm" disabled>
-                            <Check size={14} /> Added
-                          </Button>
-                        ) : (
-                          <Button variant="primary" size="sm" onClick={() => setQuickAdd(entry)}>
-                            <Plus size={14} /> Add
-                          </Button>
-                        )}
-                      </div>
-                    </div>
+                      ) : configured ? (
+                        <span className="toolkit-connector-tile-status added">
+                          <Check size={12} /> Added
+                        </span>
+                      ) : null}
+                    </button>
                   );
                 })}
               </div>
@@ -141,7 +146,7 @@ export function ConnectorCatalogView({ mcp }: { mcp: McpServersState }) {
       )}
 
       {quickAdd && (
-        <QuickAddDialog
+        <ConnectorDialog
           entry={quickAdd}
           mcp={mcp}
           onClose={() => setQuickAdd(null)}
@@ -188,12 +193,17 @@ function ServerFormHost({
 /* ── Quick add ─────────────────────────────────────────────── */
 
 /**
- * The guided path: setup steps + only the fields the entry declares. OAuth
- * entries add-and-sign-in in one action (create → connect → browser consent;
- * the shared poll flips the card when the round-trip lands). Dismissing while
- * a sign-in waits cancels it server-side, mirroring ServersView.
+ * One modal per connector, covering its whole lifecycle:
+ *   · not added   — setup steps + only the fields the entry declares; OAuth
+ *     entries add-and-sign-in in one action (create → connect → browser
+ *     consent; the shared poll flips it when the round-trip lands)
+ *   · added       — live status for the backing server + Connect / sign-in
+ *     when it's down (full management stays in the Servers section)
+ *   · coming soon — the reason it's gated + docs, no add action
+ * Dismissing while a sign-in waits cancels it server-side, mirroring
+ * ServersView.
  */
-function QuickAddDialog({
+function ConnectorDialog({
   entry, mcp, onClose, onOpenFullForm,
 }: {
   entry: CatalogEntry;
@@ -212,6 +222,12 @@ function QuickAddDialog({
   const isOauth = entry.config.auth?.type === 'oauth';
   const createdRef = useRef(false);
 
+  // The server already backing this entry (URL/command match — its name may
+  // differ from the suggested one). Live: mcp.servers is shared state.
+  const existing = findConfiguredServer(entry, mcp.servers);
+  const serverName = existing?.name ?? entry.serverName;
+  const soon = !existing && !!entry.comingSoon;
+
   // While waiting on browser consent, poll shared state; stop when the server
   // connects or errors (mirrors ServersView's authWait loop).
   useEffect(() => {
@@ -225,7 +241,7 @@ function QuickAddDialog({
   }, [phase, mcp]);
   useEffect(() => {
     if (phase !== 'waiting') return;
-    const s = mcp.servers.find(x => x.name === entry.serverName);
+    const s = mcp.servers.find(x => x.name === serverName);
     if (s?.status === 'connected') {
       notify({ kind: 'success', title: `${entry.title} connected`, message: `${s.tools_count ?? 0} tools available.` });
       onClose();
@@ -233,11 +249,26 @@ function QuickAddDialog({
       setError(`Sign-in failed: ${s.auth_state.error}`);
       setPhase('idle');
     }
-  }, [phase, mcp.servers, entry, notify, onClose]);
+  }, [phase, mcp.servers, serverName, entry, notify, onClose]);
 
   const missingRequired = (entry.inputs ?? [])
     .filter(i => i.required && !(values[i.key] ?? '').trim())
     .map(i => i.label);
+
+  /** Connect (or OAuth sign in) the named server — shared by add + manage. */
+  const startConnect = async () => {
+    const result = await mcp.connectServer(serverName);
+    if (result?.status === 'connected') {
+      notify({ kind: 'success', title: `${entry.title} connected`, message: 'Its tools are live.' });
+      onClose();
+    } else if (result?.status === 'auth_required' && 'authorization_url' in result && result.authorization_url) {
+      void openExternal(result.authorization_url);
+      setPhase('waiting');
+    } else {
+      setError('Connect failed — the server was added; try Connect from the Servers list.');
+      setPhase('idle');
+    }
+  };
 
   const submit = async () => {
     if (missingRequired.length > 0) {
@@ -264,17 +295,18 @@ function QuickAddDialog({
         return;
       }
       // OAuth: chain straight into the sign-in round-trip.
-      const result = await mcp.connectServer(entry.serverName);
-      if (result?.status === 'connected') {
-        notify({ kind: 'success', title: `${entry.title} connected`, message: 'Its tools are live.' });
-        onClose();
-      } else if (result?.status === 'auth_required' && 'authorization_url' in result && result.authorization_url) {
-        void openExternal(result.authorization_url);
-        setPhase('waiting');
-      } else {
-        setError('Connect failed — the server was added; try Connect from the Servers list.');
-        setPhase('idle');
-      }
+      await startConnect();
+    } catch (err) {
+      setError(apiErrorMessage(err));
+      setPhase('idle');
+    }
+  };
+
+  const connectExisting = async () => {
+    setError(null);
+    setPhase('saving');
+    try {
+      await startConnect();
     } catch (err) {
       setError(apiErrorMessage(err));
       setPhase('idle');
@@ -283,11 +315,13 @@ function QuickAddDialog({
 
   const cancel = async () => {
     if (phase === 'waiting') {
-      try { await api.cancelMCPServerAuth(entry.serverName); } catch { /* best-effort */ }
+      try { await api.cancelMCPServerAuth(serverName); } catch { /* best-effort */ }
       void mcp.refresh();
     }
     onClose();
   };
+
+  const connected = existing?.status === 'connected';
 
   return createPortal(
     <div className="toolkit-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) void cancel(); }}>
@@ -300,46 +334,73 @@ function QuickAddDialog({
             {entry.brand.initial}
           </span>
           <div>
-            <h3>Add {entry.title}</h3>
+            <h3>{existing || soon ? entry.title : `Add ${entry.title}`}</h3>
             <span className="meta">{AUTH_KIND_LABELS[entry.authKind]}</span>
           </div>
+          {entry.docsUrl && (
+            <button
+              type="button"
+              className="toolkit-guidance-link"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => void openExternal(entry.docsUrl!)}
+            >
+              Docs <ExternalLink size={12} />
+            </button>
+          )}
         </div>
         <p className="toolkit-section-note" style={{ margin: 0 }}>{entry.description}</p>
 
-        {entry.setupNote && (
+        {soon ? (
+          /* ── Gated: explain why, nothing to add ── */
+          <div className="toolkit-guidance">
+            <div className="toolkit-guidance-title"><span><Clock size={12} /> Coming soon</span></div>
+            <div className="toolkit-guidance-note">{entry.comingSoon}</div>
+          </div>
+        ) : existing ? (
+          /* ── Added: live status + connect when down ── */
           <div className="toolkit-guidance">
             <div className="toolkit-guidance-title">
-              <span>Setup</span>
-              {entry.docsUrl && (
-                <button
-                  type="button"
-                  className="toolkit-guidance-link"
-                  onClick={() => void openExternal(entry.docsUrl!)}
-                >
-                  Docs <ExternalLink size={12} />
-                </button>
-              )}
+              <span>
+                <StatusDot tone={connected ? 'online' : existing.auth_state?.error ? 'error' : 'inactive'} />
+                {' '}Added as “{existing.name}” — {connected
+                  ? `connected · ${existing.tools_count ?? 0} tools`
+                  : 'not connected'}
+              </span>
             </div>
-            <div className="toolkit-guidance-note">{entry.setupNote}</div>
+            <div className="toolkit-guidance-note">
+              {existing.auth_state?.error
+                ? `Last sign-in error: ${existing.auth_state.error}`
+                : 'Rename, tool access, reset auth, and removal live in the Servers section above.'}
+            </div>
           </div>
-        )}
+        ) : (
+          /* ── Not added yet: setup + quick-add fields ── */
+          <>
+            {entry.setupNote && (
+              <div className="toolkit-guidance">
+                <div className="toolkit-guidance-title"><span>Setup</span></div>
+                <div className="toolkit-guidance-note">{entry.setupNote}</div>
+              </div>
+            )}
 
-        {(entry.inputs ?? []).length > 0 && (
-          <div className="toolkit-form" style={{ gap: 12 }}>
-            {entry.inputs!.map(input => (
-              <label key={input.key}>
-                <span>{input.label}</span>
-                <Input
-                  type={input.secret ? 'password' : 'text'}
-                  value={values[input.key] ?? ''}
-                  placeholder={input.placeholder}
-                  onChange={(e) => setValues(v => ({ ...v, [input.key]: e.target.value }))}
-                  disabled={phase !== 'idle'}
-                />
-                {input.hint && <span className="meta">{input.hint}</span>}
-              </label>
-            ))}
-          </div>
+            {(entry.inputs ?? []).length > 0 && (
+              <div className="toolkit-form" style={{ gap: 12 }}>
+                {entry.inputs!.map(input => (
+                  <label key={input.key}>
+                    <span>{input.label}</span>
+                    <Input
+                      type={input.secret ? 'password' : 'text'}
+                      value={values[input.key] ?? ''}
+                      placeholder={input.placeholder}
+                      onChange={(e) => setValues(v => ({ ...v, [input.key]: e.target.value }))}
+                      disabled={phase !== 'idle'}
+                    />
+                    {input.hint && <span className="meta">{input.hint}</span>}
+                  </label>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {phase === 'waiting' && (
@@ -354,14 +415,24 @@ function QuickAddDialog({
         {error && <div className="toolkit-error-banner"><span>{error}</span></div>}
 
         <div className="toolkit-modal-actions">
-          <Button variant="ghost" onClick={() => void cancel()}>Cancel</Button>
-          <Button variant="ghost" onClick={onOpenFullForm} disabled={phase !== 'idle'}>
-            Open full form
-          </Button>
-          <Button variant="primary" onClick={() => void submit()} disabled={phase !== 'idle' || missingRequired.length > 0}>
-            {phase === 'saving' ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
-            {isOauth ? 'Add & sign in' : 'Add connector'}
-          </Button>
+          <Button variant="ghost" onClick={() => void cancel()}>{soon || connected ? 'Close' : 'Cancel'}</Button>
+          {!soon && !existing && (
+            <>
+              <Button variant="ghost" onClick={onOpenFullForm} disabled={phase !== 'idle'}>
+                Open full form
+              </Button>
+              <Button variant="primary" onClick={() => void submit()} disabled={phase !== 'idle' || missingRequired.length > 0}>
+                {phase === 'saving' ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
+                {isOauth ? 'Add & sign in' : 'Add connector'}
+              </Button>
+            </>
+          )}
+          {existing && !connected && (
+            <Button variant="primary" onClick={() => void connectExisting()} disabled={phase !== 'idle'}>
+              {phase === 'saving' ? <Loader2 size={14} className="spin" /> : <Plus size={14} />}
+              {isOauth ? 'Connect & sign in' : 'Connect'}
+            </Button>
+          )}
         </div>
       </div>
     </div>,

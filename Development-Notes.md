@@ -454,14 +454,24 @@ is reactive, on first use of a dead session) — backlog.
 
 The Connectors & Tools page (user-facing rename of the Toolkit — internal ids/CSS keep `toolkit`,
 Workspaces→Projects precedent) opens with a **Connector Catalog**: a curated, data-only shelf in
-`client/src/lib/connectorCatalog.ts` (Google Drive via Google's official remote MCP
-`https://drivemcp.googleapis.com/mcp/v1` with a guided BYO-OAuth-client setup note, GitHub, Notion,
-Linear, Sentry, Atlassian, Context7, Cloudflare Docs, Hugging Face, and local stdio classics — every
-URL probed live before inclusion; brand tiles are initials, no external fetches). Entries map to
-`ServerDraft`s (`draftFromCatalogEntry`) that **prefill** the existing `ServerForm` via its
-`initialDraft` prop (guidance panel renders `setupNote` + docs link); `catalogEntryConfigured`
-matches URL (remote) or command+package (stdio) to show "Added". The same section hosts **registry
-search**: `GET /api/mcp/registry/search?q=` (`views.mcp_registry_search`) proxies
+`client/src/lib/connectorCatalog.ts` (~22 entries across 7 categories — Productivity, Development,
+Knowledge, Design, Business & Payments, Files & Storage, Local — every remote URL probed live
+before inclusion; brand tiles are initials, no external fetches). The shelf renders **compact
+clickable tiles** (`.toolkit-connector-tile` — brand + name + status pip, NO per-tile buttons);
+clicking one opens **`ConnectorDialog`**, a single modal covering the whole lifecycle: not-added →
+guided quick-add (setup + only the entry's declared fields; OAuth chains create→connect→browser
+consent), added → live status + Connect (`findConfiguredServer` returns the backing server object,
+whose name may differ from the suggested one), coming-soon → the gate reason, no add action. Full
+server management stays in the Servers section. **`comingSoon`** field gates an entry (dimmed tile +
+badge, no add): **all Google Workspace MCP servers** (Drive/Docs/…) are gated — they need Google
+Workspace **Developer Preview** enrollment (Workspace account + Cloud project; consumer accounts
+can't enroll), the true cause of the `caller does not have permission` 403s (auth verifiably fine;
+enrolled users add manually via Add Server). **ServerForm auth simplification** (v0.21.216): the
+OAuth section shows **only** the type dropdown + Scope in the main body — the **pre-registered
+client id/secret** moved into Advanced (blank = RFC 7591 dynamic registration, the common case; a
+draft seeded with a client_id auto-opens Advanced). Entries still map to `ServerDraft`s
+(`draftFromCatalogEntry`) prefilling `ServerForm` via `initialDraft`. The same section hosts
+**registry search**: `GET /api/mcp/registry/search?q=` (`views.mcp_registry_search`) proxies
 `registry.modelcontextprotocol.io/v0.1/servers` server-side (active+latest filter, flattened
 remotes/packages, in-process ~15-min TTL cache, 502 on egress failure) and
 `draftFromRegistryResult` maps a result (remote → url/transport; npm→`npx -y`, pypi→`uvx`,

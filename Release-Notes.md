@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.215 -->
+<!-- release-version: 0.21.216 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -22,17 +22,19 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 ### Highlights
 
 - **The Tools menu grew into Connectors & Tools** — a control center for your agents' reach into
-  the real world: a stats strip, a curated **connector catalog** (Google Drive via Google's official
-  MCP server with a guided setup, GitHub, Notion, Linear, Sentry, Atlassian, Context7, and more),
-  and live search of the public MCP registry — every result opens the Add Server form prefilled for
-  your review. Google Drive sign-in is wired end-to-end: connect opens Google's consent page even
-  though Google serves discovery anonymously, and one OAuth app covers every cluster. Finishing
-  a browser sign-in now toasts in-app, and a revoked or re-scoped grant fails fast with a clear
-  "Reset auth, then Connect" message instead of a silent one-minute timeout. Connector sessions
-  that die mid-conversation (idle drops, servers that reset the connection on sign-in) now
-  self-heal — the dead connection is evicted, reconnected, and the tool call retried instead of
-  every call failing with a cryptic `ClosedResourceError` — and Google sign-ins request offline
-  access, so Drive sessions renew themselves instead of expiring every hour.
+  the real world: a stats strip, a curated **connector catalog** of ~20 known-good connectors
+  grouped by category (Notion, Linear, Atlassian, Asana, monday.com, Zapier, GitHub, Sentry,
+  Vercel, Stripe, PayPal, Figma, Canva, Context7, Hugging Face, DeepWiki, Microsoft Learn, and
+  more), and live search of the public MCP registry. Each connector is one clickable tile with a
+  status pip; clicking it opens a single dialog that guides setup, shows live status, or connects —
+  no wall of Add buttons. Adding a server is simpler too: the OAuth form is just "sign in via
+  browser" + optional scope, with pre-registered client credentials tucked into Advanced for the
+  rare provider that needs them. Connector sign-ins now toast on success, a revoked or re-scoped
+  grant fails fast with a clear "Reset auth, then Connect" message instead of a silent timeout, and
+  sessions that die mid-conversation self-heal (evict → reconnect → retry) instead of failing every
+  call with a cryptic error. *(Google Drive and the other Google Workspace connectors are marked
+  "Coming soon" — they require Google's Workspace Developer Preview enrollment, which consumer
+  Google accounts can't get.)*
 - **Skills** — teach agents *how you want things done*: named instruction packs with a markdown
   body, per-agent access, and an enable toggle. Agents see a compact index and load a skill's full
   instructions only when a task calls for it, so your library can grow without bloating every turn.

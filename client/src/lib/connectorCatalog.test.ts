@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { MCPRegistryResult } from './api';
 import {
-  CONNECTOR_CATALOG, applyQuickInputs, catalogEntryConfigured, draftFromCatalogEntry,
-  draftFromRegistryResult, registryShortName,
+  CONNECTOR_CATALOG, CATALOG_CATEGORIES, applyQuickInputs, catalogEntryConfigured,
+  findConfiguredServer, draftFromCatalogEntry, draftFromRegistryResult, registryShortName,
 } from './connectorCatalog';
 
 describe('CONNECTOR_CATALOG entries', () => {
@@ -35,6 +35,19 @@ describe('CONNECTOR_CATALOG entries', () => {
     const names = CONNECTOR_CATALOG.map(e => e.serverName);
     expect(new Set(ids).size).toBe(ids.length);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('every entry sits in a declared category section', () => {
+    const known = new Set(CATALOG_CATEGORIES.map(c => c.id));
+    for (const entry of CONNECTOR_CATALOG) {
+      expect(known.has(entry.category), `${entry.id} → ${entry.category}`).toBe(true);
+    }
+  });
+
+  it('gates Google Drive behind Coming soon (Workspace preview only)', () => {
+    const gdrive = CONNECTOR_CATALOG.find(e => e.id === 'google-drive')!;
+    expect(gdrive.comingSoon).toBeTruthy();
+    expect(gdrive.comingSoon).toMatch(/preview/i);
   });
 });
 
@@ -87,6 +100,24 @@ describe('catalogEntryConfigured', () => {
       args: ['-y', '@modelcontextprotocol/server-filesystem', '/home/me/docs'],
     }])).toBe(true);
     expect(catalogEntryConfigured(fs, [{ command: 'npx', args: ['-y', '@other/server'] }])).toBe(false);
+  });
+});
+
+describe('findConfiguredServer', () => {
+  const gdrive = CONNECTOR_CATALOG.find(e => e.id === 'google-drive')!;
+
+  it('returns the backing server object (name may differ from the suggested one)', () => {
+    const servers = [
+      { name: 'my-gdrive', url: 'https://drivemcp.googleapis.com/mcp/v1', status: 'connected' },
+      { name: 'other', url: 'https://x/mcp' },
+    ];
+    const hit = findConfiguredServer(gdrive, servers);
+    expect(hit?.name).toBe('my-gdrive');
+    expect(hit?.status).toBe('connected');
+  });
+
+  it('returns undefined when nothing matches', () => {
+    expect(findConfiguredServer(gdrive, [{ name: 'x', url: 'https://x/mcp' }])).toBeUndefined();
   });
 });
 
