@@ -632,6 +632,71 @@ class MCPOAuthTest(TestCase):
         self.assertEqual(resp.status_code, 404)
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class MCPRegistrySearchTest(TestCase):
+    """GET /api/mcp/registry/search — the official-registry proxy: filtering,
+    flattening, caching, and friendly egress failure."""
+
+    def setUp(self) -> None:
+        from agentx_ai import views
+        views._mcp_registry_cache.clear()
+
+    @staticmethod
+    def _registry_payload() -> dict:
+        def row(name, status="active", is_latest=True, remotes=None, packages=None):
+            return {
+                "server": {
+                    "name": name,
+                    "description": f"{name} desc",
+                    "version": "1.0.0",
+                    "repository": {"url": f"https://github.com/x/{name}"},
+                    "remotes": remotes or [],
+                    "packages": packages or [],
+                },
+                "_meta": {"io.modelcontextprotocol.registry/official": {
+                    "status": status, "isLatest": is_latest,
+                }},
+            }
+        return {"servers": [
+            row("io.x/remote", remotes=[{"type": "streamable-http", "url": "https://x/mcp"}]),
+            row("io.x/pkg", packages=[{"registryType": "npm", "identifier": "@x/pkg", "runtimeHint": "npx"}]),
+            row("io.x/old", is_latest=False, remotes=[{"type": "sse", "url": "https://old/sse"}]),
+            row("io.x/dead", status="deprecated", remotes=[{"type": "sse", "url": "https://dead/sse"}]),
+            row("io.x/empty"),  # nothing a client could configure
+        ]}
+
+    def test_requires_query(self) -> None:
+        from django.test import Client
+        self.assertEqual(Client().get("/api/mcp/registry/search").status_code, 400)
+
+    def test_flattens_and_filters_then_caches(self) -> None:
+        from django.test import Client
+        fake = MagicMock()
+        fake.json.return_value = self._registry_payload()
+        fake.raise_for_status.return_value = None
+        with patch("httpx.get", return_value=fake) as get:
+            resp = Client().get("/api/mcp/registry/search", {"q": "x"})
+            self.assertEqual(resp.status_code, 200)
+            results = resp.json()["results"]
+            self.assertEqual([r["name"] for r in results], ["io.x/remote", "io.x/pkg"])
+            self.assertEqual(results[0]["remotes"], [{"type": "streamable-http", "url": "https://x/mcp"}])
+            self.assertEqual(results[1]["packages"], [{
+                "registry_type": "npm", "identifier": "@x/pkg", "runtime_hint": "npx",
+            }])
+            self.assertEqual(results[0]["repository_url"], "https://github.com/x/io.x/remote")
+            # Same query again → served from the 15-min cache, no second egress.
+            resp2 = Client().get("/api/mcp/registry/search", {"q": "X"})
+            self.assertEqual(resp2.status_code, 200)
+            self.assertEqual(get.call_count, 1)
+
+    def test_registry_unreachable_is_502(self) -> None:
+        from django.test import Client
+        with patch("httpx.get", side_effect=OSError("boom")):
+            resp = Client().get("/api/mcp/registry/search", {"q": "x"})
+        self.assertEqual(resp.status_code, 502)
+        self.assertIn("unreachable", resp.json()["error"])
+
+
 class MCPServerRegistryTest(TestCase):
     def test_server_config_creation(self) -> None:
         """Test creating a server configuration."""

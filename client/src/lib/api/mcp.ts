@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { MCPServer, MCPServerConfigInput, MCPTool } from './types';
+import type { MCPRegistryResult, MCPServer, MCPServerConfigInput, MCPTool } from './types';
 
 export const mcpApi = {
   // === MCP ===
@@ -103,5 +103,11 @@ export const mcpApi = {
       method: 'POST',
       body: JSON.stringify({ name, config }),
     });
+  },
+
+  /** Search the official MCP registry (server-side proxy, ~15 min cache). */
+  async searchMCPRegistry(q: string, limit = 20): Promise<{ results: MCPRegistryResult[]; count: number }> {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    return apiRequest(`/api/mcp/registry/search?${params.toString()}`);
   },
 };

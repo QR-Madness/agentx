@@ -28,6 +28,7 @@ import {
 } from '../ui';
 import { openExternal } from '../../lib/openExternal';
 import { ServerForm } from './ServerForm';
+import { ConnectorCatalogView } from './ConnectorCatalog';
 import './ToolkitPage.css';
 
 interface ToolkitPageProps {
@@ -110,9 +111,17 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
               {/* Everything else folds into collapsible cards in the same scroll. */}
               <Accordion.Root
                 type="multiple"
-                defaultValue={['meta', 'access', 'catalog']}
+                defaultValue={['connectors', 'meta', 'access', 'catalog']}
                 className="toolkit-accordion-root"
               >
+                <ToolkitSection
+                  value="connectors"
+                  icon={<Plug size={15} />}
+                  title="Connector Catalog"
+                  subtitle="Add known-good connectors, or search the MCP registry"
+                >
+                  <ConnectorCatalogView />
+                </ToolkitSection>
                 <ToolkitSection
                   value="meta"
                   icon={<Tag size={15} />}

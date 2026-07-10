@@ -158,6 +158,18 @@ export interface MCPServer {
   allowed_agent_ids?: string[] | null;
 }
 
+/** One flattened result from GET /api/mcp/registry/search (the official MCP
+ *  registry, proxied + normalized server-side). Untrusted input — used only
+ *  to PREFILL the Add Server form for user review. */
+export interface MCPRegistryResult {
+  name: string;
+  description: string;
+  version: string;
+  repository_url: string | null;
+  remotes: { type: string; url: string }[];
+  packages: { registry_type: string; identifier: string; runtime_hint?: string | null }[];
+}
+
 export interface MCPServerConfigInput {
   transport: string;
   command?: string | null;

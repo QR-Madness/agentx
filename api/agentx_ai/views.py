@@ -1339,13 +1339,90 @@ def mcp_server_validate(request):
     return JsonResponse({"valid": True, "errors": []})
 
 
+# Official MCP registry (https://registry.modelcontextprotocol.io) — proxied
+# server-side so the desktop/PWA client needs no cross-origin egress and hits
+# a normalized, cached shape. Results are UNTRUSTED input: the client uses
+# them only to prefill the Add Server form for user review.
+_MCP_REGISTRY_URL = "https://registry.modelcontextprotocol.io/v0.1/servers"
+_MCP_REGISTRY_CACHE_TTL_S = 900.0
+_mcp_registry_cache: dict[str, tuple[float, list[dict]]] = {}
+
+
+def _flatten_registry_row(row: dict) -> dict | None:
+    """Normalize one registry row; None for inactive/superseded/unusable entries."""
+    server = row.get("server") or {}
+    meta = (row.get("_meta") or {}).get("io.modelcontextprotocol.registry/official") or {}
+    if meta.get("status") != "active" or not meta.get("isLatest"):
+        return None
+    remotes = [
+        {"type": r.get("type") or "", "url": r["url"]}
+        for r in (server.get("remotes") or [])
+        if isinstance(r, dict) and r.get("url")
+    ]
+    packages = [
+        {
+            "registry_type": p.get("registryType") or "",
+            "identifier": p["identifier"],
+            "runtime_hint": p.get("runtimeHint"),
+        }
+        for p in (server.get("packages") or [])
+        if isinstance(p, dict) and p.get("identifier")
+    ]
+    if not remotes and not packages:
+        return None  # nothing the client could turn into a server config
+    return {
+        "name": server.get("name") or "",
+        "description": server.get("description") or "",
+        "version": server.get("version") or "",
+        "repository_url": (server.get("repository") or {}).get("url"),
+        "remotes": remotes,
+        "packages": packages,
+    }
+
+
+def mcp_registry_search(request):
+    """GET: search the official MCP registry. Query: ?q=<term>&limit=<1..50>."""
+    q = (request.GET.get("q") or "").strip()
+    if not q:
+        return json_error("Query parameter 'q' is required", status=400)
+    try:
+        limit = max(1, min(int(request.GET.get("limit", 20)), 50))
+    except ValueError:
+        return json_error("'limit' must be an integer", status=400)
+
+    import time as _time
+
+    key = q.lower()
+    cached = _mcp_registry_cache.get(key)
+    if cached and _time.monotonic() - cached[0] < _MCP_REGISTRY_CACHE_TTL_S:
+        results = cached[1]
+    else:
+        import httpx
+
+        try:
+            resp = httpx.get(
+                _MCP_REGISTRY_URL, params={"search": q, "limit": 50}, timeout=10.0,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+        except Exception as e:
+            return json_error(f"MCP registry unreachable: {e}", status=502)
+        results = [
+            flat for row in (payload.get("servers") or [])
+            if (flat := _flatten_registry_row(row)) is not None
+        ]
+        _mcp_registry_cache[key] = (_time.monotonic(), results)
+
+    return JsonResponse({"results": results[:limit], "count": len(results)})
+
+
 def mcp_tools(request):
     """List available tools from connected MCP servers."""
     manager = get_mcp_manager()
     server_name = request.GET.get('server')
-    
+
     tools = manager.list_tools(server_name)
-    
+
     return JsonResponse({
         "tools": [tool.to_dict() for tool in tools],
         "count": len(tools),

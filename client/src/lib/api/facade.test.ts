@@ -181,6 +181,7 @@ describe('api facade', () => {
         "runAgent",
         "runJob",
         "searchHealth",
+        "searchMCPRegistry",
         "setDefaultAgentProfile",
         "setDefaultAmbassador",
         "setWorkspaceShell",

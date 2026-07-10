@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, HelpCircle, ChevronDown, Globe, TerminalSquare } from 'lucide-react';
+import { Plus, Trash2, HelpCircle, ChevronDown, Globe, TerminalSquare, ExternalLink, Lightbulb } from 'lucide-react';
 import type { MCPServer, MCPServerConfigInput, AgentProfile } from '../../lib/api';
+import type { ServerDraft } from '../../lib/connectorCatalog';
+import { openExternal } from '../../lib/openExternal';
 import {
   Input, Textarea, Button, IconButton, Switch, Tooltip, SegmentedControl,
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -8,6 +10,9 @@ import {
 
 interface ServerFormProps {
   initial?: MCPServer | null;
+  /** Prefill for a NEW server (catalog entry / registry result) — ignored when
+   *  editing. Its guidance renders as a setup panel above the fields. */
+  initialDraft?: ServerDraft | null;
   agentProfiles: AgentProfile[];
   onCancel: () => void;
   onSubmit: (name: string, config: MCPServerConfigInput, rename?: string) => Promise<void>;
@@ -39,23 +44,26 @@ function Hint({ text }: { text: string }) {
   );
 }
 
-export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValidate }: ServerFormProps) {
+export function ServerForm({ initial, initialDraft, agentProfiles, onCancel, onSubmit, onValidate }: ServerFormProps) {
   const isEdit = !!initial;
-  const [name, setName] = useState(initial?.name ?? '');
+  // Prefill seed for NEW servers only — editing always reflects the saved server.
+  const draft = isEdit ? undefined : initialDraft?.config;
+  const [name, setName] = useState(initial?.name ?? (isEdit ? '' : initialDraft?.name ?? ''));
   // `stdio` = local command; anything else = a remote MCP URL. Default new
   // servers to remote streamable_http (the overwhelming common case).
-  const [transport, setTransport] = useState(initial?.transport ?? 'streamable_http');
-  const [command, setCommand] = useState(initial?.command ?? '');
-  const [argsText, setArgsText] = useState((initial?.args ?? []).join('\n'));
-  const [url, setUrl] = useState(initial?.url ?? '');
-  const [env, setEnv] = useState<KV[]>(dictToList(initial?.env));
-  const [headers, setHeaders] = useState<KV[]>(dictToList(initial?.headers));
-  const [authMode, setAuthMode] = useState<'none' | 'oauth'>(initial?.auth?.type === 'oauth' ? 'oauth' : 'none');
-  const [authScope, setAuthScope] = useState(initial?.auth?.scope ?? '');
-  const [authClientId, setAuthClientId] = useState(initial?.auth?.client_id ?? '');
-  const [authClientSecret, setAuthClientSecret] = useState(initial?.auth?.client_secret ?? '');
-  const [timeout, setTimeoutVal] = useState<number>(initial?.timeout ?? 30);
-  const [autoReconnect, setAutoReconnect] = useState<boolean>(initial?.auto_reconnect ?? true);
+  const [transport, setTransport] = useState(initial?.transport ?? draft?.transport ?? 'streamable_http');
+  const [command, setCommand] = useState(initial?.command ?? draft?.command ?? '');
+  const [argsText, setArgsText] = useState((initial?.args ?? draft?.args ?? []).join('\n'));
+  const [url, setUrl] = useState(initial?.url ?? draft?.url ?? '');
+  const [env, setEnv] = useState<KV[]>(dictToList(initial?.env ?? draft?.env));
+  const [headers, setHeaders] = useState<KV[]>(dictToList(initial?.headers ?? draft?.headers));
+  const seedAuth = initial?.auth ?? draft?.auth;
+  const [authMode, setAuthMode] = useState<'none' | 'oauth'>(seedAuth?.type === 'oauth' ? 'oauth' : 'none');
+  const [authScope, setAuthScope] = useState(seedAuth?.scope ?? '');
+  const [authClientId, setAuthClientId] = useState(seedAuth?.client_id ?? '');
+  const [authClientSecret, setAuthClientSecret] = useState(seedAuth?.client_secret ?? '');
+  const [timeout, setTimeoutVal] = useState<number>(initial?.timeout ?? draft?.timeout ?? 30);
+  const [autoReconnect, setAutoReconnect] = useState<boolean>(initial?.auto_reconnect ?? draft?.auto_reconnect ?? true);
   const [tags, setTags] = useState<string>((initial?.tags ?? []).join(', '));
   const [groups, setGroups] = useState<string>((initial?.groups ?? []).join(', '));
   const [whitelistAll, setWhitelistAll] = useState<boolean>(initial?.allowed_agent_ids == null);
@@ -154,8 +162,28 @@ export function ServerForm({ initial, agentProfiles, onCancel, onSubmit, onValid
     </label>
   );
 
+  const guidance = !isEdit ? initialDraft?.guidance : undefined;
+
   return (
     <form className="toolkit-form" onSubmit={submit}>
+      {guidance && (guidance.note || guidance.docsUrl) && (
+        <div className="toolkit-guidance">
+          <div className="toolkit-guidance-title">
+            <Lightbulb size={14} />
+            <span>{guidance.title ?? 'Setup'}</span>
+            {guidance.docsUrl && (
+              <button
+                type="button"
+                className="toolkit-guidance-link"
+                onClick={() => void openExternal(guidance.docsUrl!)}
+              >
+                Docs <ExternalLink size={12} />
+              </button>
+            )}
+          </div>
+          {guidance.note && <div className="toolkit-guidance-note">{guidance.note}</div>}
+        </div>
+      )}
       <label>
         <span>Server name</span>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="filesystem" required disabled={submitting} />
