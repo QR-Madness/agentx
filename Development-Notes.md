@@ -421,7 +421,16 @@ Client: `ServerForm` auth section (None | OAuth 2.1, optional scope + pre-regist
 `ToolkitPage` opens the consent URL on 202, shows "waiting for authorization…" with a 2.5s poll
 (5-min cap + cancel), an OAuth status line, and a "Reset auth" action. Redirect URI defaults to
 `http://localhost:12319/api/mcp/oauth/callback`; override `AGENTX_OAUTH_REDIRECT_URL` (Tauri
-deep-link for remote-API cloud mode is a Phase-19 consideration — backlog). Tests: `MCPOAuthTest`.
+deep-link for remote-API cloud mode is a Phase-19 consideration — backlog).
+**Clusters/gateway** (v0.21.208): the gateway nginx template passes exactly
+`/api/mcp/oauth/callback` through **tokenless** (a browser redirect can't carry the gateway
+token; the view is state-validated single-flight — `test_gateway_stack` pins 200 tokenless on
+the exact path, 401 on siblings). One Google OAuth app serves every cluster: register each
+cluster's `https://<host>/api/mcp/oauth/callback` on the same app, share
+`GOOGLE_DRIVE_CLIENT_ID`/`_SECRET` via `.env` (docker-compose passes them +
+`AGENTX_OAUTH_REDIRECT_URL` through the api service's env allowlist — previously a silent
+no-op inside containers), and set per-cluster `AGENTX_OAUTH_REDIRECT_URL`; the catalog
+quick-add defaults its credential fields to those `${VAR}` references. Tests: `MCPOAuthTest`.
 **Not yet**: `tools/list_changed` re-discovery and runtime `auto_reconnect` (backlog).
 
 ### Connector Catalog & MCP Registry Search (v0.21.208)

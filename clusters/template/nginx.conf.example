@@ -77,6 +77,26 @@ server {
         return 200 "ok\n";
     }
 
+    # OAuth redirect for remote MCP connectors (e.g. Google Drive). The
+    # browser arrives here straight from the provider's consent page and
+    # cannot carry the gateway token — so this exact path is tokenless,
+    # mirroring Django's own auth-middleware exemption for it. Safe by
+    # design: the view only resolves a pending single-flight sign-in keyed
+    # by the unguessable OAuth `state` (no data, no session), and the
+    # server-level rate limit still applies. Point the provider's redirect
+    # URI at https://<this-cluster-host>/api/mcp/oauth/callback and set
+    # AGENTX_OAUTH_REDIRECT_URL to the same value in the cluster .env.
+    location = /api/mcp/oauth/callback {
+        proxy_pass http://${AGENTX_API_HOST}:${AGENTX_API_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header AgentX-Gateway-Token "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $gw_client_ip;
+        proxy_set_header X-Forwarded-For $gw_client_ip;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
     location / {
         # Token gate scoped here (not server-level) so the tokenless health
         # probe above stays reachable. `return` inside `if` is in nginx's

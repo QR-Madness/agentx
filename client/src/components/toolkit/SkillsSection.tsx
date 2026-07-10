@@ -12,13 +12,13 @@ import { createPortal } from 'react-dom';
 import { GraduationCap, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { api, apiErrorMessage } from '../../lib/api';
 import type { AgentSkill, AgentSkillInput } from '../../lib/api';
-import { useSkills } from '../../lib/hooks';
+import type { SkillsState } from '../../lib/hooks';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useConfirm } from '../ui/ConfirmDialog';
 import { Button, IconButton, Input, Switch, Textarea, Tooltip } from '../ui';
 
-export function SkillsSection() {
-  const { skills, loading, refresh } = useSkills();
+export function SkillsSection({ skillsState }: { skillsState: SkillsState }) {
+  const { skills, loading, refresh } = skillsState;
   const { profiles } = useAgentProfile();
   const confirm = useConfirm();
   // undefined = closed; null = creating; a skill = editing it.

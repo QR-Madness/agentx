@@ -15,7 +15,17 @@ Google's Drive MCP server (`https://drivemcp.googleapis.com/mcp/v1`) requires a 
 1. In the Google Cloud console, create or select a project; enable the **Google Drive API** and the **Google Drive MCP API**.
 2. Configure the OAuth consent screen with the scopes `https://www.googleapis.com/auth/drive.readonly` and `https://www.googleapis.com/auth/drive.file`.
 3. Create an OAuth client ID (Web application) and add the AgentX callback as an authorized redirect URI: `http://localhost:12319/api/mcp/oauth/callback` (adjust if your API runs elsewhere — `AGENTX_OAUTH_REDIRECT_URL`).
-4. Add the connector from the catalog and paste the Client ID + Client secret (or reference them as `${VAR}` from the API server's environment). Connecting opens Google's consent page in your browser.
+4. Set `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` in the API's `.env` (see `.env.example`) — the catalog quick-add references them as `${VAR}` so credentials never land in `mcp_servers.json` — or paste values directly into the dialog.
+
+**One Google app for all your clusters.** A single OAuth client can list many authorized
+redirect URIs: add each cluster's `https://<cluster-host>/api/mcp/oauth/callback`, reuse the
+same client id/secret in every cluster's `.env`, set each cluster's
+`AGENTX_OAUTH_REDIRECT_URL` to its own callback, and DNS routes every consent redirect back
+to the right cluster. Gateway deployments already allow this: the browser redirect can't
+carry the gateway token, so the gateway passes exactly `/api/mcp/oauth/callback` through
+tokenless (state-validated by the API; see `clusters/template/nginx.conf.example`). Existing
+clusters need the updated `nginx.conf` and a force-recreate (`agentx-manager restart` handles
+the bind-mount inode). Connecting opens Google's consent page in your browser.
 
 ## Architecture
 

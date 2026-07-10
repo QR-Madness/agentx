@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { MCPRegistryResult } from './api';
 import {
-  CONNECTOR_CATALOG, catalogEntryConfigured, draftFromCatalogEntry,
+  CONNECTOR_CATALOG, applyQuickInputs, catalogEntryConfigured, draftFromCatalogEntry,
   draftFromRegistryResult, registryShortName,
 } from './connectorCatalog';
 
@@ -35,6 +35,39 @@ describe('CONNECTOR_CATALOG entries', () => {
     const names = CONNECTOR_CATALOG.map(e => e.serverName);
     expect(new Set(ids).size).toBe(ids.length);
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe('applyQuickInputs', () => {
+  const gdrive = CONNECTOR_CATALOG.find(e => e.id === 'google-drive')!;
+  const fs = CONNECTOR_CATALOG.find(e => e.id === 'filesystem')!;
+  const context7 = CONNECTOR_CATALOG.find(e => e.id === 'context7')!;
+
+  it('folds Google Drive credentials into the oauth block, keeping the scope', () => {
+    const cfg = applyQuickInputs(gdrive, { client_id: 'cid.apps', client_secret: 'shh' });
+    expect(cfg.auth).toMatchObject({ type: 'oauth', client_id: 'cid.apps', client_secret: 'shh' });
+    expect(cfg.auth?.scope).toContain('drive.readonly');
+    // The base entry is not mutated.
+    expect(gdrive.config.auth?.client_id).toBeUndefined();
+  });
+
+  it('appends the filesystem directory as the final arg', () => {
+    const cfg = applyQuickInputs(fs, { directory: '/home/me/docs' });
+    expect(cfg.args?.at(-1)).toBe('/home/me/docs');
+    expect(fs.config.args).not.toContain('/home/me/docs');
+  });
+
+  it('skips blank optional values (Context7 works keyless)', () => {
+    expect(applyQuickInputs(context7, { api_key: '  ' }).headers).toBeUndefined();
+    expect(applyQuickInputs(context7, { api_key: 'k' }).headers).toMatchObject({ CONTEXT7_API_KEY: 'k' });
+  });
+
+  it('Google Drive defaults reference the .env vars (the .env.example contract)', () => {
+    const defaults = Object.fromEntries(gdrive.inputs!.map(i => [i.key, i.defaultValue]));
+    expect(defaults).toEqual({
+      client_id: '${GOOGLE_DRIVE_CLIENT_ID}',
+      client_secret: '${GOOGLE_DRIVE_CLIENT_SECRET}',
+    });
   });
 });
 

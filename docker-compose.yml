@@ -144,6 +144,13 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - AI_GATEWAY_API_KEY=${AI_GATEWAY_API_KEY:-}
+      # MCP connector OAuth: the advertised redirect URI (must be this
+      # cluster's public callback for gateway/tunnel deployments) + the
+      # pre-registered Google Drive app that mcp_servers.json references as
+      # ${VAR}. Must be passed through here or the .env knobs are no-ops.
+      - AGENTX_OAUTH_REDIRECT_URL=${AGENTX_OAUTH_REDIRECT_URL:-}
+      - GOOGLE_DRIVE_CLIENT_ID=${GOOGLE_DRIVE_CLIENT_ID:-}
+      - GOOGLE_DRIVE_CLIENT_SECRET=${GOOGLE_DRIVE_CLIENT_SECRET:-}
       # Embedding configuration
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
       # Container boot (entrypoint) — must be passed through or the .env knobs

@@ -285,6 +285,12 @@ export function useSkills() {
   return { skills: data?.skills ?? [], loading, error, refresh };
 }
 
+/** Shapes for lifting ONE hook instance to a page and passing it to sections —
+ *  sibling hook instances have independent state, so a page whose sections
+ *  each call useMCPServers() goes stale across them (Connectors & Tools). */
+export type McpServersState = ReturnType<typeof useMCPServers>;
+export type SkillsState = ReturnType<typeof useSkills>;
+
 export function useAgentStatus(opts?: UseApiOptions) {
   const { data, loading, error, refresh } = useApi<{ status: string; active_sessions: number }>(
     () => api.getAgentStatus(),

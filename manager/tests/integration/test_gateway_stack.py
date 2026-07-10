@@ -143,6 +143,12 @@ def test_up_and_gateway_token_gate(deployment):
     assert _get("/api/health") == 401                # no token
     assert _get("/api/health", token="x" * 64) == 401  # wrong token
     assert _get("/api/health", token=TOKEN) == 200   # valid token
+    # The OAuth callback must pass tokenless — the browser arrives straight
+    # from the provider's consent page and can't carry the gateway token
+    # (Django state-validates it; see nginx template + AGENTX_OAUTH_REDIRECT_URL).
+    assert _get("/api/mcp/oauth/callback") == 200
+    # …and it must not open a hole anywhere else.
+    assert _get("/api/mcp/oauth/callback/other") == 401
 
 
 def test_rate_limit_429_on_burst(deployment):

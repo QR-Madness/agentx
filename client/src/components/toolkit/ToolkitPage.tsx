@@ -14,7 +14,7 @@ import {
   Plug, Unplug, RefreshCw, Search, Loader2, AlertTriangle, Save, ChevronDown, KeyRound,
   ExternalLink, GraduationCap,
 } from 'lucide-react';
-import { useMCPServers, useMCPTools, useSkills } from '../../lib/hooks';
+import { useMCPServers, useMCPTools, useSkills, type McpServersState, type SkillsState } from '../../lib/hooks';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { needsAuth, sessionExpired } from '../../lib/connectors';
 import { ParallaxBackground } from '../unified-settings/animations/ParallaxBackground';
@@ -105,68 +105,7 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
                 <X size={16} />
               </IconButton>
             </div>
-            <div className="toolkit-content toolkit-single-view">
-              <StatsStrip />
-
-              {/* Primary section — always visible. */}
-              <ServersView />
-
-              {/* Everything else folds into collapsible cards in the same scroll. */}
-              <Accordion.Root
-                type="multiple"
-                defaultValue={['connectors', 'skills', 'meta', 'access', 'catalog']}
-                className="toolkit-accordion-root"
-              >
-                <ToolkitSection
-                  value="connectors"
-                  icon={<Plug size={15} />}
-                  title="Connector Catalog"
-                  subtitle="Add known-good connectors, or search the MCP registry"
-                >
-                  <ConnectorCatalogView />
-                </ToolkitSection>
-                <ToolkitSection
-                  value="skills"
-                  icon={<GraduationCap size={15} />}
-                  title="Skills"
-                  subtitle="Instruction packs agents load on demand with use_skill"
-                >
-                  <SkillsSection />
-                </ToolkitSection>
-                <ToolkitSection
-                  value="meta"
-                  icon={<Tag size={15} />}
-                  title="Groups & Tags"
-                  subtitle="Toggle each server's tag / group membership"
-                >
-                  <MetaView />
-                </ToolkitSection>
-                <ToolkitSection
-                  value="access"
-                  icon={<Shield size={15} />}
-                  title="Agent Access"
-                  subtitle="Whitelist which agents may use each server"
-                >
-                  <AccessView />
-                </ToolkitSection>
-                <ToolkitSection
-                  value="catalog"
-                  icon={<Wrench size={15} />}
-                  title="Tool Catalog"
-                  subtitle="Discovered tools across connected servers"
-                >
-                  <ToolsBrowserView />
-                </ToolkitSection>
-                <ToolkitSection
-                  value="raw"
-                  icon={<Code size={15} />}
-                  title="Raw JSON"
-                  subtitle="Advanced — edit mcp_servers.json directly"
-                >
-                  <RawJsonView />
-                </ToolkitSection>
-              </Accordion.Root>
-            </div>
+            <ToolkitBody />
           </motion.div>
         </>
       )}
@@ -174,13 +113,91 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
   );
 }
 
+/* ── Body (single source of truth for server + skill state) ── */
+
+/**
+ * Owns the ONE `useMCPServers`/`useSkills` instance for the whole page —
+ * sibling hook calls have independent state, so per-section instances made
+ * an action in one section invisible to the others (stats strip, catalog
+ * "Added" ticks, server cards). Mounted only while the page is open.
+ */
+function ToolkitBody() {
+  const mcp = useMCPServers();
+  const skillsState = useSkills();
+
+  return (
+    <div className="toolkit-content toolkit-single-view">
+      <StatsStrip mcp={mcp} skillsState={skillsState} />
+
+      {/* Primary section — always visible. */}
+      <ServersView mcp={mcp} />
+
+      {/* Everything else folds into collapsible cards in the same scroll. */}
+      <Accordion.Root
+        type="multiple"
+        defaultValue={['connectors', 'skills', 'meta', 'access', 'catalog']}
+        className="toolkit-accordion-root"
+      >
+        <ToolkitSection
+          value="connectors"
+          icon={<Plug size={15} />}
+          title="Connector Catalog"
+          subtitle="Add known-good connectors, or search the MCP registry"
+        >
+          <ConnectorCatalogView mcp={mcp} />
+        </ToolkitSection>
+        <ToolkitSection
+          value="skills"
+          icon={<GraduationCap size={15} />}
+          title="Skills"
+          subtitle="Instruction packs agents load on demand with use_skill"
+        >
+          <SkillsSection skillsState={skillsState} />
+        </ToolkitSection>
+        <ToolkitSection
+          value="meta"
+          icon={<Tag size={15} />}
+          title="Groups & Tags"
+          subtitle="Toggle each server's tag / group membership"
+        >
+          <MetaView mcp={mcp} />
+        </ToolkitSection>
+        <ToolkitSection
+          value="access"
+          icon={<Shield size={15} />}
+          title="Agent Access"
+          subtitle="Whitelist which agents may use each server"
+        >
+          <AccessView mcp={mcp} />
+        </ToolkitSection>
+        <ToolkitSection
+          value="catalog"
+          icon={<Wrench size={15} />}
+          title="Tool Catalog"
+          subtitle="Discovered tools across connected servers"
+        >
+          <ToolsBrowserView />
+        </ToolkitSection>
+        <ToolkitSection
+          value="raw"
+          icon={<Code size={15} />}
+          title="Raw JSON"
+          subtitle="Advanced — edit mcp_servers.json directly"
+        >
+          <RawJsonView mcp={mcp} />
+        </ToolkitSection>
+      </Accordion.Root>
+    </div>
+  );
+}
+
 /* ── Stats strip ──────────────────────────────────────────── */
 
 /** Control-center vitals: servers/tools/skills counts + a sign-in warning. */
-function StatsStrip() {
-  const { servers } = useMCPServers();
+function StatsStrip({ mcp, skillsState }: { mcp: McpServersState; skillsState: SkillsState }) {
+  const { servers } = mcp;
   const { tools } = useMCPTools();
-  const { skills } = useSkills();
+  const { skills } = skillsState;
   // Whole-fleet view (agent-agnostic): every connector needing any sign-in.
   const needAuth = servers.filter(needsAuth).length;
   const connected = servers.filter(s => s.status === 'connected').length;
@@ -200,12 +217,12 @@ function StatsStrip() {
 
 /* ── Servers ──────────────────────────────────────────────── */
 
-function ServersView() {
+function ServersView({ mcp }: { mcp: McpServersState }) {
   const {
     servers, loading, refresh,
     connectServer, disconnectServer, connectAll,
     createServer, updateServer, deleteServer, validateServer,
-  } = useMCPServers();
+  } = mcp;
   const { profiles } = useAgentProfile();
   const confirm = useConfirm();
   const [editing, setEditing] = useState<MCPServer | null | undefined>(undefined); // undefined = closed; null = creating
@@ -504,8 +521,8 @@ function ToolsBrowserView() {
 
 /* ── Groups & Tags ─────────────────────────────────────────── */
 
-function MetaView() {
-  const { servers, updateServer } = useMCPServers();
+function MetaView({ mcp }: { mcp: McpServersState }) {
+  const { servers, updateServer } = mcp;
   const allTags = useMemo(() => uniqueAcross(servers.map(s => s.tags || [])), [servers]);
   const allGroups = useMemo(() => uniqueAcross(servers.map(s => s.groups || [])), [servers]);
 
@@ -562,8 +579,8 @@ function MetaView() {
 
 /* ── Access ────────────────────────────────────────────────── */
 
-function AccessView() {
-  const { servers, updateServer } = useMCPServers();
+function AccessView({ mcp }: { mcp: McpServersState }) {
+  const { servers, updateServer } = mcp;
   const { profiles } = useAgentProfile();
 
   const toggleAgent = async (s: MCPServer, agentId: string) => {
@@ -619,8 +636,8 @@ function AccessView() {
 
 /* ── Raw JSON ──────────────────────────────────────────────── */
 
-function RawJsonView() {
-  const { servers, refresh } = useMCPServers();
+function RawJsonView({ mcp }: { mcp: McpServersState }) {
+  const { servers, refresh } = mcp;
   const initialJson = useMemo(() => buildRawJson(servers), [servers]);
   const [text, setText] = useState(initialJson);
   const [parseError, setParseError] = useState<string | null>(null);
