@@ -456,15 +456,18 @@ class MCPOAuthTest(TestCase):
                     )
                     provider = MCPClientManager()._build_oauth_provider(config, interactive_flow=flow)
                     assert provider is not None
+                    redirect = provider.context.redirect_handler
+                    callback = provider.context.callback_handler
+                    assert redirect is not None and callback is not None
                     with self.assertRaises(MCPTransportError) as ctx:
-                        asyncio.run(provider.context.redirect_handler("https://a/authorize?state=new"))
+                        asyncio.run(redirect("https://a/authorize?state=new"))
                     self.assertIn("re-authorization", str(ctx.exception))
                     self.assertIn("Reset auth", str(ctx.exception))
                     # Dead tokens dropped; pointed error recorded for the card.
                     self.assertFalse(oauth_storage.has_oauth_tokens("gd"))
                     self.assertIn("re-authorization", oauth_flow.last_error("gd") or "")
                     with self.assertRaises(MCPTransportError):
-                        asyncio.run(provider.context.callback_handler())
+                        asyncio.run(callback())
         finally:
             loop.call_soon_threadsafe(loop.stop)
             t.join(timeout=5)
@@ -1024,6 +1027,188 @@ class MCPCapabilityAwareDiscoveryTest(TestCase):
         config = ServerConfig(name="srv", transport=TransportType.STREAMABLE_HTTP, url="https://x/mcp")
         asyncio.run(manager._setup_connection(session, config))
         session.list_resources.assert_called_once()
+
+
+class MCPDeadSessionTest(TestCase):
+    """A registered session whose transport died must be evicted and revived,
+    never served as a corpse — writing into its closed streams fails every
+    call with a bare ClosedResourceError while the server still *looks*
+    connected. (Exact Google Drive failure mode: the server terminates the
+    anonymous HTTP session the moment consent elevates it.)"""
+
+    def test_google_consent_url_gains_offline_access(self) -> None:
+        # Without access_type=offline Google never issues a refresh token, so
+        # the session dies at access-token expiry (~1h) with nothing to renew.
+        from agentx_ai.mcp.client import _augment_authorization_url
+
+        google = "https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=s"
+        out = _augment_authorization_url(google)
+        self.assertTrue(out.startswith(google))
+        self.assertIn("access_type=offline", out)
+        self.assertIn("prompt=consent", out)
+
+        other = "https://github.com/login/oauth/authorize?client_id=x"
+        self.assertEqual(_augment_authorization_url(other), other)
+
+    def _manager_with_dead_connection(self, auth=None):
+        from agentx_ai.mcp.client import MCPClientManager, ServerConnection
+        from agentx_ai.mcp.server_registry import ServerConfig, TransportType
+
+        manager = MCPClientManager()
+        config = ServerConfig(
+            name="srv", transport=TransportType.STREAMABLE_HTTP,
+            url="https://x/mcp", auth=auth,
+        )
+        manager.registry.register(config)
+        dead = ServerConnection(name="srv", session=MagicMock(), config=config)
+        manager._active_connections["srv"] = dead
+        fresh = ServerConnection(name="srv", session=MagicMock(), config=config)
+
+        def fake_connect(cfg, interactive_flow=None):
+            manager._active_connections[cfg.name] = fresh
+            return fresh
+
+        manager._connect_persistent = AsyncMock(side_effect=fake_connect)
+        return manager, dead, fresh
+
+    def test_call_tool_revives_dead_session_and_retries(self) -> None:
+        import asyncio
+        from anyio import ClosedResourceError
+        from agentx_ai.mcp.tool_executor import ToolResult
+
+        manager, dead, fresh = self._manager_with_dead_connection()
+        good = ToolResult(success=True, content=[{"type": "text", "text": "ok"}])
+        manager.tool_executor.execute = AsyncMock(side_effect=[ClosedResourceError(), good])
+
+        result = asyncio.run(manager.call_tool("srv", "t", {}))
+
+        self.assertTrue(result.success)
+        self.assertEqual(manager.tool_executor.execute.await_count, 2)
+        # The retry ran on the revived session, not the corpse.
+        self.assertIs(manager.tool_executor.execute.await_args.args[0], fresh.session)
+        manager._connect_persistent.assert_awaited_once()
+
+    def test_dead_oauth_session_without_tokens_asks_for_signin(self) -> None:
+        # Tokenless OAuth server: retrying would just 401 and kill the fresh
+        # transport again — reconnect the anonymous surface but surface the
+        # sign-in ask instead of a doomed retry.
+        import asyncio
+        import tempfile
+        from pathlib import Path
+        from anyio import ClosedResourceError
+        from agentx_ai.mcp import oauth_storage
+
+        manager, dead, fresh = self._manager_with_dead_connection(auth={"type": "oauth"})
+        manager.tool_executor.execute = AsyncMock(side_effect=ClosedResourceError())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                result = asyncio.run(manager.call_tool("srv", "t", {}))
+
+        self.assertFalse(result.success)
+        self.assertIn("requires sign-in", result.error or "")
+        self.assertEqual(manager.tool_executor.execute.await_count, 1)
+        manager._connect_persistent.assert_awaited_once()
+
+    def _transport_scaffold(self, manager, sessions):
+        """Fake streamable-http transport yielding one session per connect,
+        plus a _setup_connection stand-in that registers like the real one."""
+        from contextlib import asynccontextmanager
+        from agentx_ai.mcp.client import ServerConnection
+        from agentx_ai.mcp.tool_executor import ToolInfo
+
+        @asynccontextmanager
+        async def fake_transport_connect(**kwargs):
+            yield sessions.pop(0)
+
+        manager._streamable_http_transport = MagicMock()
+        manager._streamable_http_transport.connect = fake_transport_connect
+
+        async def fake_setup(sess, cfg):
+            conn = ServerConnection(
+                name=cfg.name, session=sess, config=cfg,
+                tools=[ToolInfo(name="list_x", description="", input_schema={},
+                                server_name=cfg.name)],
+            )
+            manager._active_connections[cfg.name] = conn
+            return conn
+
+        manager._setup_connection = fake_setup
+
+    def test_failed_connect_never_leaves_a_corpse_registered(self) -> None:
+        # _setup_connection registers BEFORE the consent kick runs; a kick that
+        # dies pre-consent (bare CancelledError from the dead task group) must
+        # evict that half-registration on the way out.
+        import asyncio
+        import tempfile
+        import types
+        from pathlib import Path
+        from agentx_ai.mcp import oauth_storage
+        from agentx_ai.mcp.client import MCPClientManager
+        from agentx_ai.mcp.server_registry import ServerConfig, TransportType
+
+        manager = MCPClientManager()
+        config = ServerConfig(name="srv", transport=TransportType.STREAMABLE_HTTP,
+                              url="https://x/mcp", auth={"type": "oauth"})
+        session = MagicMock()
+        session.call_tool = AsyncMock(side_effect=asyncio.CancelledError())
+        self._transport_scaffold(manager, [session])
+
+        async def run():
+            flow = types.SimpleNamespace(
+                future=asyncio.get_running_loop().create_future())
+            await manager._connect_persistent(config, interactive_flow=flow)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                with self.assertRaises(asyncio.CancelledError):
+                    asyncio.run(run())
+
+        self.assertNotIn("srv", manager._active_connections)
+        self.assertNotIn("srv", manager._exit_stacks)
+
+    def test_kick_death_after_consent_reconnects_with_tokens(self) -> None:
+        # Google terminates the anonymous HTTP session the moment consent
+        # elevates it: tokens land on disk but the kick await dies. Connect
+        # must finish by reconnecting headless with the stored tokens — one
+        # browser round-trip, green card.
+        import asyncio
+        import tempfile
+        import types
+        from pathlib import Path
+        from mcp.shared.auth import OAuthToken
+        from agentx_ai.mcp import oauth_storage
+        from agentx_ai.mcp.client import MCPClientManager
+        from agentx_ai.mcp.server_registry import ServerConfig, TransportType
+
+        manager = MCPClientManager()
+        config = ServerConfig(name="srv", transport=TransportType.STREAMABLE_HTTP,
+                              url="https://x/mcp", auth={"type": "oauth"})
+        session1, session2 = MagicMock(), MagicMock()
+
+        async def kick_and_die(name, args):
+            # Consent + token exchange completed out-of-band…
+            store = oauth_storage.FileTokenStorage("srv")
+            await store.set_tokens(OAuthToken(access_token="at", token_type="Bearer"))  # noqa: S106 — test fixture
+            # …then the anonymous transport died delivering the kick result.
+            raise asyncio.CancelledError()
+
+        session1.call_tool = AsyncMock(side_effect=kick_and_die)
+        self._transport_scaffold(manager, [session1, session2])
+
+        async def run():
+            flow = types.SimpleNamespace(
+                future=asyncio.get_running_loop().create_future())
+            return await manager._connect_persistent(config, interactive_flow=flow)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                conn = asyncio.run(run())
+
+        self.assertIs(conn.session, session2)
+        self.assertIs(manager._active_connections["srv"].session, session2)
+        self.assertIn("srv", manager._exit_stacks)
+        session2.call_tool.assert_not_called()  # no kick on the authorized reconnect
 
 
 class MCPServerRegistryTest(TestCase):

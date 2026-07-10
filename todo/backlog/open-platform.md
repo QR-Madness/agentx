@@ -97,7 +97,17 @@
 - [ ] **`tools/list_changed` re-discovery** — pass a `message_handler` to `ClientSession` and re-run
       `discover_tools` on the notification (today discovery happens once at connect; refresh = reconnect).
 - [ ] **Make `auto_reconnect` real** — the flag is persisted but no runtime loop acts on transient
-      failures; expired-token OAuth sessions also want a refresh-then-reconnect pass.
+      failures; expired-token OAuth sessions also want a refresh-then-reconnect pass. (v0.21.213
+      shipped the *reactive* half: dead sessions are evicted and revived on first use —
+      `call_tool` self-heal, `MCPDeadSessionTest`. This item is the *proactive* loop.)
+- [ ] **SDK swallows non-2xx POST responses → 60s hang** — live-diagnosed with Google Drive: a
+      tools/call answered HTTP 403 ("Drive MCP API … disabled", a well-formed JSON-RPC body!)
+      never reaches the session — `streamable_http._handle_post_request` raise_for_status()es and
+      the exception dies in the transport task, so the caller waits out the full `_run_async`
+      60s timeout with a bare `TimeoutError`. Consider an in-band `asyncio.wait_for` in
+      `call_tool` with a "server accepted the request but never answered (HTTP error swallowed
+      by transport?)" message, and/or an upstream python-sdk issue: 4xx bodies that parse as
+      JSON-RPC responses should be delivered.
 - [ ] **Tauri deep-link OAuth callback** — for Phase-19 cloud mode where the API isn't on the user's
       localhost; the loopback callback covers desktop + browser today (`AGENTX_OAUTH_REDIRECT_URL`).
 - [ ] **Docs-surfaces debt (RISK)** — the same feature knowledge now lives in N places: the

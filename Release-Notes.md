@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.212 -->
+<!-- release-version: 0.21.213 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -28,7 +28,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   your review. Google Drive sign-in is wired end-to-end: connect opens Google's consent page even
   though Google serves discovery anonymously, and one OAuth app covers every cluster. Finishing
   a browser sign-in now toasts in-app, and a revoked or re-scoped grant fails fast with a clear
-  "Reset auth, then Connect" message instead of a silent one-minute timeout.
+  "Reset auth, then Connect" message instead of a silent one-minute timeout. Connector sessions
+  that die mid-conversation (idle drops, servers that reset the connection on sign-in) now
+  self-heal — the dead connection is evicted, reconnected, and the tool call retried instead of
+  every call failing with a cryptic `ClosedResourceError` — and Google sign-ins request offline
+  access, so Drive sessions renew themselves instead of expiring every hour.
 - **Skills** — teach agents *how you want things done*: named instruction packs with a markdown
   body, per-agent access, and an enable toggle. Agents see a compact index and load a skill's full
   instructions only when a task calls for it, so your library can grow without bloating every turn.

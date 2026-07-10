@@ -15,8 +15,10 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode, urlparse
 from collections.abc import AsyncGenerator
 
+from anyio import BrokenResourceError, ClosedResourceError
 from mcp import ClientSession
 from pydantic import AnyUrl
 
@@ -52,6 +54,35 @@ def oauth_callback_url() -> str:
         os.environ.get("AGENTX_OAUTH_REDIRECT_URL")
         or "http://localhost:12319/api/mcp/oauth/callback"
     )
+
+
+def _augment_authorization_url(url: str) -> str:
+    """Provider-specific consent-URL tweaks, applied just before the browser hop.
+
+    Google only issues a *refresh token* when the authorization request asks
+    for offline access — without it the session dies at access-token expiry
+    (~1h) with nothing to refresh, forcing hourly re-consent. And Google omits
+    the refresh token on every consent after the first unless ``prompt=consent``
+    forces a full re-approval. Other providers pass through untouched: these
+    params are Google-specific, and ``prompt=consent`` would needlessly re-show
+    consent screens elsewhere.
+    """
+    if urlparse(url).netloc != "accounts.google.com":
+        return url
+    return f"{url}&{urlencode({'access_type': 'offline', 'prompt': 'consent'})}"
+
+
+async def _close_stack_quietly(stack: AsyncExitStack) -> None:
+    """Best-effort teardown of a (possibly already-dead) connection stack.
+
+    Closing a transport whose task group died raises the group's buried
+    exception — or cancel-scope complaints when unwound from another task.
+    Teardown noise must never mask the original failure being handled.
+    """
+    try:
+        await stack.aclose()
+    except BaseException as e:  # noqa: BLE001 — dead-transport teardown only
+        logger.debug(f"Ignored error closing connection stack: {type(e).__name__}: {e}")
 
 
 @dataclass
@@ -130,6 +161,10 @@ class MCPClientManager:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._loop_thread: threading.Thread | None = None
         self._loop_lock = threading.Lock()
+        # Serializes dead-session revival per server (parallel tool calls all
+        # hitting the same corpse must not race reconnects). Only ever touched
+        # on the background loop thread.
+        self._revive_locks: dict[str, asyncio.Lock] = {}
     
     # ──────────────────────────────────────────────
     #  Background event loop (for persistent connections)
@@ -337,7 +372,7 @@ class MCPClientManager:
             async def redirect_handler(url: str) -> None:
                 if interactive_flow.future.done():
                     raise _reauth_demanded()
-                publish_authorization_url(interactive_flow, url)
+                publish_authorization_url(interactive_flow, _augment_authorization_url(url))
                 logger.info(f"OAuth authorization required for '{config.name}' — awaiting user consent")
 
             async def callback_handler() -> tuple[str, str | None]:
@@ -409,7 +444,12 @@ class MCPClientManager:
                         self.registry.save_to_file()
                 except Exception as persist_err:  # noqa: BLE001 - best-effort
                     logger.warning(f"Could not persist auto_connect for '{name}': {persist_err}")
-            except Exception as e:  # noqa: BLE001 - background terminal state
+            except BaseException as e:  # noqa: BLE001 - background terminal state
+                # BaseException on purpose: a transport task group that dies
+                # mid-connect surfaces as a bare CancelledError, which `except
+                # Exception` misses — leaving the flow pending forever and the
+                # failure unlogged. Nothing above this callback can handle it.
+                #
                 # An explicit user cancel (cancel_flow) aborts the future; that
                 # is not a failure — stay quiet so the card doesn't flip to
                 # "sign-in failed". cancel_flow already dropped the bookkeeping.
@@ -419,8 +459,9 @@ class MCPClientManager:
                 # A superseded attempt (future cancelled by a retry's begin_flow)
                 # dies late — fail_flow is identity-guarded so it never disturbs
                 # the newer pending flow.
-                logger.warning(f"OAuth connect for '{name}' failed: {e}")
-                oauth_flow.fail_flow(flow, str(e))
+                msg = str(e) or type(e).__name__
+                logger.warning(f"OAuth connect for '{name}' failed: {msg}")
+                oauth_flow.fail_flow(flow, msg)
 
         task_future.add_done_callback(_on_done)
 
@@ -506,29 +547,65 @@ class MCPClientManager:
                         logger.info(
                             f"OAuth consent kick completed for '{config.name}' via '{kick.name}'"
                         )
-                    except Exception as kick_err:  # noqa: BLE001 — kick is best-effort
-                        logger.debug(
-                            f"OAuth consent kick for '{config.name}' ended: {kick_err}"
+                    except BaseException as kick_err:  # noqa: BLE001 — see below
+                        # BaseException on purpose: when the server kills the
+                        # HTTP session on auth elevation (Google terminates the
+                        # anonymous session once the 401→consent→token exchange
+                        # completes), the transport task group dies and this
+                        # await surfaces a bare CancelledError that `except
+                        # Exception` cannot catch.
+                        if has_oauth_tokens(config.name):
+                            # Consent + token exchange COMPLETED — only the
+                            # throwaway kick delivery died with the anonymous
+                            # session. Reconnect fresh; the stored tokens make
+                            # it headless, so Connect still ends green in one
+                            # browser round-trip.
+                            logger.info(
+                                f"Consent for '{config.name}' completed; reconnecting with "
+                                f"stored tokens (anonymous session ended: "
+                                f"{type(kick_err).__name__})"
+                            )
+                            self._evict_connection(config.name)
+                            await _close_stack_quietly(stack)
+                            return await self._connect_persistent(config)
+                        if isinstance(kick_err, asyncio.CancelledError):
+                            raise
+                        logger.info(
+                            f"OAuth consent kick for '{config.name}' ended without sign-in: "
+                            f"{type(kick_err).__name__}: {kick_err}"
                         )
 
             self._exit_stacks[config.name] = stack
             return connection
-        except Exception:
-            await stack.aclose()
+        except BaseException:
+            # A failed or died connect must never leave a half-registered
+            # session behind: _setup_connection registers into
+            # _active_connections BEFORE the consent kick runs, and a corpse
+            # there turns every later tool call into ClosedResourceError.
+            # BaseException so bare CancelledErrors from a dead transport task
+            # group evict too.
+            self._evict_connection(config.name)
+            await _close_stack_quietly(stack)
             raise
     
-    async def _disconnect_persistent(self, name: str) -> None:
-        """Disconnect a persistent connection and clean up."""
+    def _evict_connection(self, name: str) -> None:
+        """Drop a server's registered connection + cached tools (no teardown).
+
+        The registry entry is the source of "connected" truth — a session whose
+        transport died must be evicted or every later call fails with
+        ClosedResourceError while the server still *looks* connected.
+        """
         self._active_connections.pop(name, None)
         self.tool_executor.clear_cache(name)
-        
+
+    async def _disconnect_persistent(self, name: str) -> None:
+        """Disconnect a persistent connection and clean up."""
+        self._evict_connection(name)
+
         stack = self._exit_stacks.pop(name, None)
         if stack:
-            try:
-                await stack.aclose()
-            except Exception as e:
-                logger.warning(f"Error closing connection to '{name}': {e}")
-        
+            await _close_stack_quietly(stack)
+
         logger.info(f"Disconnected persistent connection to '{name}'")
     
     # ──────────────────────────────────────────────
@@ -693,7 +770,13 @@ class MCPClientManager:
         tool_name: str,
         arguments: dict[str, Any],
     ) -> ToolResult:
-        """Execute a tool on a connected server."""
+        """Execute a tool on a connected server.
+
+        Self-healing: a registered session whose transport died (idle drop,
+        server-side session termination, mid-call task-group death) fails with
+        ClosedResourceError — instead of serving that corpse forever, evict it,
+        reconnect once, and retry the call.
+        """
         connection = self._active_connections.get(server_name)
         if not connection:
             return ToolResult(
@@ -701,12 +784,90 @@ class MCPClientManager:
                 error=f"Server '{server_name}' is not connected",
                 is_error=True,
             )
-        
-        return await self.tool_executor.execute(
-            connection.session,
-            tool_name,
-            arguments,
-        )
+
+        try:
+            return await self.tool_executor.execute(
+                connection.session,
+                tool_name,
+                arguments,
+            )
+        except (ClosedResourceError, BrokenResourceError) as e:
+            logger.warning(
+                f"Session for '{server_name}' is dead ({type(e).__name__}) — "
+                "evicting and reviving the connection"
+            )
+            return await self._revive_and_retry(connection, tool_name, arguments)
+
+    async def _revive_and_retry(
+        self,
+        dead: ServerConnection,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> ToolResult:
+        """Replace a dead persistent connection and retry the call once.
+
+        OAuth servers without stored tokens are reconnected too (anonymous
+        discovery keeps the surface alive) but the call is NOT retried — it
+        would just 401 and kill the fresh transport again; surface the sign-in
+        ask instead.
+        """
+        name = dead.name
+        lock = self._revive_locks.setdefault(name, asyncio.Lock())
+        async with lock:
+            current = self._active_connections.get(name)
+            if current is not None and current is not dead:
+                connection = current  # another caller already revived it
+            else:
+                self._evict_connection(name)
+                stack = self._exit_stacks.pop(name, None)
+                if stack:
+                    await _close_stack_quietly(stack)
+                config = self.registry.get(name)
+                if config is None:
+                    return ToolResult(
+                        success=False,
+                        error=f"Server '{name}' is no longer registered",
+                        is_error=True,
+                    )
+                try:
+                    connection = await self._connect_persistent(config)
+                except Exception as reconnect_err:  # noqa: BLE001 — reported in result
+                    msg = str(reconnect_err) or type(reconnect_err).__name__
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            f"Connection to '{name}' was lost and reconnecting failed "
+                            f"({msg}) — check the server, then Connect it in "
+                            "Connectors & Tools."
+                        ),
+                        is_error=True,
+                    )
+
+        from .oauth_storage import has_oauth_tokens
+
+        if (dead.config.auth or {}).get("type") == "oauth" and not has_oauth_tokens(name):
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Server '{name}' requires sign-in before tools can run — "
+                    "Connect it in Connectors & Tools to authorize."
+                ),
+                is_error=True,
+            )
+
+        try:
+            return await self.tool_executor.execute(connection.session, tool_name, arguments)
+        except (ClosedResourceError, BrokenResourceError) as e:
+            self._evict_connection(name)
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Connection to '{name}' died again right after reconnecting "
+                    f"({type(e).__name__}) — check the server, then Connect it in "
+                    "Connectors & Tools."
+                ),
+                is_error=True,
+            )
     
     def call_tool_sync(
         self,

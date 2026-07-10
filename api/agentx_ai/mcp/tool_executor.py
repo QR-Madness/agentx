@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Callable
 
+from anyio import BrokenResourceError, ClosedResourceError
 from mcp import ClientSession
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 
@@ -199,6 +200,12 @@ class ToolExecutor:
                 content=content,
                 is_error=is_error,
             )
+        except (ClosedResourceError, BrokenResourceError):
+            # The transport under this session is dead — propagate so the
+            # client manager can evict the corpse and revive the connection.
+            # Boxing it into a ToolResult here would leave every later call
+            # failing the same way. (Sole caller: MCPClientManager.call_tool.)
+            raise
         except Exception as e:
             latency_ms = int((time.time() - start_time) * 1000)
             logger.error(f"Tool execution failed: {e}")

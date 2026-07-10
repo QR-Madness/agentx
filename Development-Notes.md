@@ -431,7 +431,24 @@ cluster's `https://<host>/api/mcp/oauth/callback` on the same app, share
 `AGENTX_OAUTH_REDIRECT_URL` through the api service's env allowlist — previously a silent
 no-op inside containers), and set per-cluster `AGENTX_OAUTH_REDIRECT_URL`; the catalog
 quick-add defaults its credential fields to those `${VAR}` references. Tests: `MCPOAuthTest`.
-**Not yet**: `tools/list_changed` re-discovery and runtime `auto_reconnect` (backlog).
+**Anonymous-discovery servers + the consent kick** (v0.21.211): Google Drive MCP serves
+`initialize`/`tools/list` anonymously and 401-challenges only `tools/call`, so an interactive
+OAuth connect with no stored tokens drives ONE throwaway read-preferring tool call to trigger
+the consent round-trip during Connect instead of mid-conversation. **Dead-session eviction +
+self-heal** (v0.21.213): `_setup_connection` registers into `_active_connections` *before* the
+kick runs, and Google terminates the anonymous HTTP session the moment consent elevates it —
+the kick await dies as a **bare CancelledError** (BaseException; `except Exception` misses it),
+which used to strand a corpse session whose every later call failed `ClosedResourceError`.
+Now: `_connect_persistent` evicts on any failure (`except BaseException`); a kick death *with
+tokens stored* tears down and reconnects headless (one browser round-trip still ends green);
+`call_tool` catches `ClosedResourceError`/`BrokenResourceError` (tool_executor re-raises them
+instead of boxing), evicts, reconnects once under a per-server revive lock, and retries — except
+tokenless-OAuth servers, which get a "requires sign-in" result instead of a doomed retry. The
+interactive `redirect_handler` also appends `access_type=offline&prompt=consent` for
+`accounts.google.com` (`_augment_authorization_url`) — without it Google never issues a refresh
+token and sessions hard-expire hourly. Tests: `MCPDeadSessionTest`.
+**Not yet**: `tools/list_changed` re-discovery and a *proactive* reconnect loop (self-heal above
+is reactive, on first use of a dead session) — backlog.
 
 ### Connector Catalog & MCP Registry Search (v0.21.208)
 

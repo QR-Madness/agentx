@@ -104,7 +104,7 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     ],
     setupNote: [
       'Google requires a pre-registered OAuth app (no dynamic registration):',
-      '1. In Google Cloud console, create/select a project and enable the Google Drive API and the Google Drive MCP API.',
+      '1. In Google Cloud console, create/select a project and enable BOTH the Google Drive API and the Google Drive MCP API. (A missing Drive MCP API does not block sign-in — it surfaces later as every tool call failing with permission errors.)',
       '2. Configure the OAuth consent screen with the two Drive scopes (read-only + drive.file — prefilled).',
       '3. Create an OAuth client ID (Web application) and add this exact redirect URI: http://localhost:12319/api/mcp/oauth/callback (gateway/cluster setups use https://<cluster-host>/api/mcp/oauth/callback — set AGENTX_OAUTH_REDIRECT_URL to match; one Google app can list every cluster’s URI).',
       '4. Set GOOGLE_DRIVE_CLIENT_ID / GOOGLE_DRIVE_CLIENT_SECRET in the API’s .env (defaults below reference them), or paste values directly.',
