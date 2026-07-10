@@ -460,6 +460,34 @@ class MCPClientManager:
                 raise MCPTransportError(f"Unsupported transport: {config.transport}")
 
             connection = await self._setup_connection(session, config)
+
+            # Consent kick — OAuth servers that serve initialize/tools/list
+            # ANONYMOUSLY (Google Drive) never present a 401 during connect,
+            # so the sign-in would otherwise fire mid-conversation on the
+            # first real tool call. When a browser round-trip is available
+            # and no tokens are stored yet, drive ONE throwaway tool call:
+            # its 401 challenge starts the SDK auth flow (consent URL →
+            # callback → token exchange). The post-consent execution result
+            # is discarded; a read-only-looking tool is preferred for it.
+            if interactive_flow is not None and auth is not None:
+                from .oauth_storage import has_oauth_tokens
+
+                if not has_oauth_tokens(config.name) and connection.tools:
+                    read_prefixes = ("list", "search", "read", "get")
+                    kick = min(
+                        connection.tools,
+                        key=lambda t: 0 if t.name.startswith(read_prefixes) else 1,
+                    )
+                    try:
+                        await session.call_tool(kick.name, {})
+                        logger.info(
+                            f"OAuth consent kick completed for '{config.name}' via '{kick.name}'"
+                        )
+                    except Exception as kick_err:  # noqa: BLE001 — kick is best-effort
+                        logger.debug(
+                            f"OAuth consent kick for '{config.name}' ended: {kick_err}"
+                        )
+
             self._exit_stacks[config.name] = stack
             return connection
         except Exception:
@@ -574,7 +602,18 @@ class MCPClientManager:
     ) -> ServerConnection:
         """Set up a new connection with tool/resource discovery."""
         tools = await self.tool_executor.discover_tools(session, config.name)
-        resources = await self._discover_resources(session, config.name)
+        # Only ask for resources when the server advertises the capability.
+        # Some servers (Google Drive MCP) answer unknown methods with a hard
+        # HTTP 400 instead of a JSON-RPC error — that detonates the transport
+        # task group, and the await here dies as a bare CancelledError that
+        # `except Exception` can't catch (the whole connect fails with an
+        # empty message).
+        caps = session.get_server_capabilities()
+        if caps is not None and caps.resources is None:
+            self._resource_discovery_errors.pop(config.name, None)
+            resources: list[ResourceInfo] = []
+        else:
+            resources = await self._discover_resources(session, config.name)
         
         connection = ServerConnection(
             name=config.name,

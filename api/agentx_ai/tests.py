@@ -915,6 +915,53 @@ class SkillsTest(TestCase):
                 self.assertEqual(c.get(f"/api/agent/skills/{sid}").status_code, 404)
 
 
+class MCPCapabilityAwareDiscoveryTest(TestCase):
+    """Servers that don't advertise the resources capability must never be
+    sent resources/list — Google Drive MCP hard-400s unknown methods, which
+    kills the transport task group (bare CancelledError, empty error)."""
+
+    def _setup(self, resources_cap):
+        import asyncio
+        from agentx_ai.mcp.client import MCPClientManager
+        from agentx_ai.mcp.server_registry import ServerConfig, TransportType
+
+        manager = MCPClientManager()
+        manager.tool_executor = MagicMock()
+        manager.tool_executor.discover_tools = AsyncMock(return_value=[])
+        session = MagicMock()
+        caps = MagicMock()
+        caps.resources = resources_cap
+        session.get_server_capabilities.return_value = caps
+        session.list_resources = AsyncMock(side_effect=AssertionError("must not be called"))
+        config = ServerConfig(name="gd", transport=TransportType.STREAMABLE_HTTP, url="https://x/mcp")
+        conn = asyncio.run(manager._setup_connection(session, config))
+        return session, conn
+
+    def test_skips_resources_when_not_advertised(self) -> None:
+        session, conn = self._setup(resources_cap=None)
+        session.list_resources.assert_not_called()
+        self.assertEqual(conn.resources, [])
+
+    def test_queries_resources_when_advertised(self) -> None:
+        import asyncio
+        from agentx_ai.mcp.client import MCPClientManager
+        from agentx_ai.mcp.server_registry import ServerConfig, TransportType
+
+        manager = MCPClientManager()
+        manager.tool_executor = MagicMock()
+        manager.tool_executor.discover_tools = AsyncMock(return_value=[])
+        session = MagicMock()
+        caps = MagicMock()
+        caps.resources = MagicMock()  # capability advertised
+        session.get_server_capabilities.return_value = caps
+        result = MagicMock()
+        result.resources = []
+        session.list_resources = AsyncMock(return_value=result)
+        config = ServerConfig(name="srv", transport=TransportType.STREAMABLE_HTTP, url="https://x/mcp")
+        asyncio.run(manager._setup_connection(session, config))
+        session.list_resources.assert_called_once()
+
+
 class MCPServerRegistryTest(TestCase):
     def test_server_config_creation(self) -> None:
         """Test creating a server configuration."""
