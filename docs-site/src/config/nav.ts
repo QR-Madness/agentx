@@ -30,7 +30,7 @@ export const nav: NavEntry[] = [
       { label: 'Chat', slug: 'features/chat', color: 'var(--c-agent)' },
       { label: 'Reasoning', slug: 'features/reasoning', color: 'var(--c-reasoning)' },
       { label: 'Drafting', slug: 'features/drafting', color: 'var(--c-drafting)' },
-      { label: 'MCP Client', slug: 'features/mcp', color: 'var(--c-mcp)' },
+      { label: 'Connectors & Tools (MCP)', slug: 'features/mcp', color: 'var(--c-mcp)' },
       { label: 'Multi-Agent', slug: 'features/multi-agent', color: 'var(--c-agent)' },
       { label: 'Providers', slug: 'features/providers', color: 'var(--c-providers)' },
       { label: 'Prompts', slug: 'features/prompts', color: 'var(--c-prompts)' },

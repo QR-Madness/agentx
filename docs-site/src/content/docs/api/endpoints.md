@@ -160,6 +160,20 @@ GET  /api/mcp/servers/{name}
 `validate` checks a server config without saving it (`{"server": {...}}`). The detail
 endpoint returns the stored config plus live status for a single server.
 
+### Registry Search
+
+```
+GET /api/mcp/registry/search?q=notion&limit=20
+```
+
+Searches the official MCP registry (`registry.modelcontextprotocol.io`) through a
+server-side proxy: only `active` + latest entries, flattened to
+`{name, description, version, repository_url, remotes: [{type, url}], packages:
+[{registry_type, identifier, runtime_hint}]}`, cached ~15 minutes per query. `502` when
+the public registry is unreachable. Registry data is untrusted — the client uses it only
+to **prefill** the Add Server form for user review (nothing is created or connected
+automatically).
+
 ### List Tools
 
 ```
@@ -260,11 +274,16 @@ POST /api/mcp/servers/{name}/auth/cancel  # abort an in-flight sign-in (leaves s
 The callback is the loopback redirect URI (RFC 8252) registered with the authorization
 server — override the advertised URL with `AGENTX_OAUTH_REDIRECT_URL` when the API is not
 on `http://localhost:12319`. Server payloads from `GET /api/mcp/servers` carry an
-`auth_state` object (`authorized` / `pending` / `error`) for OAuth servers. `authorized`
-means real tokens are stored — not merely that a registration file exists (the SDK writes
-that at dynamic-registration time, before consent), so a cancelled or denied sign-in never
-reads as authorized. `auth/cancel` aborts the pending browser consent flow so a late
-completion can't retroactively flip the server to signed-in.
+`auth_state` object (`authorized` / `expired` / `refreshable` / `pending` / `error`) for
+OAuth servers. `authorized` means real tokens are stored — not merely that a registration
+file exists (the SDK writes that at dynamic-registration time, before consent), so a
+cancelled or denied sign-in never reads as authorized. `expired` is tri-state (`null` =
+expiry unknown: legacy token file or a provider without `expires_in`); with
+`refreshable: true` an expired session still reconnects headlessly via the stored
+refresh token, while `expired && !refreshable` means the next connect goes back through
+the browser — clients should surface that as "session expired", not "signed in".
+`auth/cancel` aborts the pending browser consent flow so a late completion can't
+retroactively flip the server to signed-in.
 
 ---
 
@@ -816,6 +835,45 @@ hidden from the chat agent selector, delegation, and `@`-mention routing.
 delegation roster ("Join the team roster" in the UI); `delegation_hint` is a one-line
 specialty shown to teammates deciding whom to delegate to (falls back to `description`;
 trimmed, max 200 chars).
+
+---
+
+## Skills
+
+Skills are named instruction packs — know-how, not tools. Agents see a compact index
+(`id — name: description`) in their chat system prompt and load a skill's full markdown
+body on demand with the `use_skill` internal tool (progressive disclosure: per-turn prompt
+cost stays flat as the library grows). Managed in **Connectors & Tools → Skills**; stored
+in `data/skills.yaml` with one-time seeded defaults.
+
+```
+GET    /api/agent/skills
+POST   /api/agent/skills
+GET    /api/agent/skills/{skill_id}
+PUT    /api/agent/skills/{skill_id}
+DELETE /api/agent/skills/{skill_id}
+```
+
+**Skill object** (responses wrap one skill as `{"skill": {...}}`; the list returns
+`{"skills": [...]}`):
+```json
+{
+  "id": "decision-brief",
+  "name": "Structured Decision Brief",
+  "description": "Turn a fuzzy choice between options into a compact, opinionated decision brief.",
+  "body": "When a decision needs to be made…",
+  "tags": ["thinking", "writing"],
+  "enabled": true,
+  "allowed_agent_ids": null,
+  "created_at": "2026-07-10T12:00:00",
+  "updated_at": null
+}
+```
+
+`POST` requires `name`; the `id` is server-assigned (slug of the name, unique-suffixed)
+and immutable. `PUT` accepts a partial object. `allowed_agent_ids` mirrors MCP servers:
+`null` = all agents, `[]` = none, else an `agent_id` whitelist — enforced both in the
+prompt index and inside `use_skill`. Disabled skills disappear from both.
 
 ---
 

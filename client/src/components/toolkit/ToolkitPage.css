@@ -60,6 +60,28 @@
   gap: 20px;
 }
 
+/* ── Control-center stats strip ── */
+.toolkit-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.toolkit-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--glass-layer-2);
+  border: 1px solid var(--accent-tint-soft);
+  color: var(--text-secondary);
+}
+.toolkit-stat.warn {
+  color: var(--feedback-warning);
+  border-color: var(--feedback-warning);
+}
+
 /* ── Collapsible section cards (Radix Accordion) ── */
 .toolkit-accordion-root {
   display: flex;

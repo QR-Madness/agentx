@@ -407,15 +407,57 @@ browser carries no token; strict state validation instead) resolves the future t
 synchronously; consent-needed returns `{"status": "auth_required", "authorization_url"}` (endpoint
 → HTTP 202) while the connect task keeps running; on eventual success it persists `auto_connect`.
 Headless paths (startup restore, `connect_all`) build the provider with raising handlers → a clear
-"connect it from the Toolkit page" error instead of a hang. `POST /api/mcp/servers/{name}/auth/reset`
+"connect it from the Connectors & Tools page" error instead of a hang. `POST /api/mcp/servers/{name}/auth/reset`
 forgets tokens + registration. Server payloads carry `auth` + `auth_state`
-(`authorized`/`pending`/`error` — `views._serialize_auth_state`; sticky per-server `last_error`).
+(`authorized`/`expired`/`refreshable`/`pending`/`error` — `views._serialize_auth_state`; sticky
+per-server `last_error`). **Expiry truth** (v0.21.208): `authorized` = tokens stored, but alone it
+lied about expired sessions — `oauth_storage.oauth_token_status()` adds `expired` (tri-state from
+the persisted absolute `expires_at`; `None` = unknown expiry, trusted as-is per
+`_RestoringOAuthProvider`) and `refreshable` (stored `refresh_token`). Expired+refreshable still
+connects headlessly ("signed in · refreshes on connect"); expired+unrefreshable renders "session
+expired — sign in again on connect" (warning dot) and joins `connectorsNeedingAuth` so the
+new-conversation nudge fires (`lib/connectors.ts::needsAuth/sessionExpired`).
 Client: `ServerForm` auth section (None | OAuth 2.1, optional scope + pre-registered creds);
 `ToolkitPage` opens the consent URL on 202, shows "waiting for authorization…" with a 2.5s poll
 (5-min cap + cancel), an OAuth status line, and a "Reset auth" action. Redirect URI defaults to
 `http://localhost:12319/api/mcp/oauth/callback`; override `AGENTX_OAUTH_REDIRECT_URL` (Tauri
 deep-link for remote-API cloud mode is a Phase-19 consideration — backlog). Tests: `MCPOAuthTest`.
 **Not yet**: `tools/list_changed` re-discovery and runtime `auto_reconnect` (backlog).
+
+### Connector Catalog & MCP Registry Search (v0.21.208)
+
+The Connectors & Tools page (user-facing rename of the Toolkit — internal ids/CSS keep `toolkit`,
+Workspaces→Projects precedent) opens with a **Connector Catalog**: a curated, data-only shelf in
+`client/src/lib/connectorCatalog.ts` (Google Drive via Google's official remote MCP
+`https://drivemcp.googleapis.com/mcp/v1` with a guided BYO-OAuth-client setup note, GitHub, Notion,
+Linear, Sentry, Atlassian, Context7, Cloudflare Docs, Hugging Face, and local stdio classics — every
+URL probed live before inclusion; brand tiles are initials, no external fetches). Entries map to
+`ServerDraft`s (`draftFromCatalogEntry`) that **prefill** the existing `ServerForm` via its
+`initialDraft` prop (guidance panel renders `setupNote` + docs link); `catalogEntryConfigured`
+matches URL (remote) or command+package (stdio) to show "Added". The same section hosts **registry
+search**: `GET /api/mcp/registry/search?q=` (`views.mcp_registry_search`) proxies
+`registry.modelcontextprotocol.io/v0.1/servers` server-side (active+latest filter, flattened
+remotes/packages, in-process ~15-min TTL cache, 502 on egress failure) and
+`draftFromRegistryResult` maps a result (remote → url/transport; npm→`npx -y`, pypi→`uvx`,
+oci→`docker run -i --rm`) into the same prefilled form. Registry data is untrusted → prefill only,
+never auto-create/connect. Tests: `MCPRegistrySearchTest` + `connectorCatalog.test.ts`.
+
+### Agent Skills (`agent/skills.py`, v0.21.208)
+
+**Skills = named instruction packs with progressive disclosure** — know-how, not tools. `Skill`
+(pydantic: `id` slug, `name`, `description`, `body` markdown, `tags`, `enabled`,
+`allowed_agent_ids` — server-style access: `None`=all/`[]`=none/whitelist) persisted by
+`SkillsManager` in `data/skills.yaml` (ProfileManager pattern: one-time `seeded_defaults` markers,
+deletions stick; shipped seed "Structured Decision Brief" mirrored in `api/defaults/skills.yaml`).
+Per turn, `views._skills_block(agent)` emits ONE shrinkable ledger block (`skills_index`,
+priority 62, gated on `enable_tools` — an index the agent can't act on is noise) listing
+`id — name: description`; the agent loads a body on demand with the **`use_skill` internal tool**
+(`mcp/internal_tools.py`; enforces `allowed_agent_ids` via `InternalToolContext.agent_id`; member
+of `RETRIEVAL_TOOL_NAMES` so long bodies bypass the oversized-output compress/store gate). CRUD:
+`/api/agent/skills` (+`/{id}`); client `lib/api/skills.ts` + `useSkills` + the Skills section in
+Connectors & Tools (enable toggle, agent-access chips, markdown editor). Per-profile tool gating
+applies automatically — `use_skill` shows up under `_internal` in the profile Tools editor.
+Tests: `SkillsTest`.
 
 ### Logging (`logging_kit/`)
 
@@ -446,7 +488,8 @@ reaches uvicorn in seconds. `agentx migrate` (in-image ops CLI) calls the same `
 
 - **Chat page** (`pages/AgentXPage.tsx`) = left `ConversationSidebar` rail + `ChatPanel` (collapsible/resizable, presentation over `ConversationContext`). Shared list logic in `hooks/useConversationList.ts` + `components/chat/ConversationList.tsx`/`ConversationRow.tsx`, reused by the mobile Conversations drawer. Per-conversation meta (pin/archive/icon/color/group/bulk) in `lib/conversationMeta.ts` (reserves `workspaceId`/`fileRefs`).
 - **Composer + Relay command center** (`components/chat/relay/RelayMenu.tsx`): the Orbit trigger opens the conversation's control center — glass container (the ONE hero blur; tiles stay opaque `--surface-raised` per the WebKitGTK paint-cost rule), status strip (agent · model · context %), a 2-col tile grid (wide **Thinking-mode** tile w/ aurora gradient ring when engaged + `ThinkingModeMenu`; Memory `MemoryStick`/`Ghost` w/ amber warn state; Solo/Team; Background arm; Model/Project/State/attach/enhance/auto-title openers; tile icons stroke a shared `--accent-primary→--accent-secondary` SVG gradient, solid on warn/disabled), then Live runs + Background inbox. Desktop keeps a slimmed chip row (Agent · Model · Memory · Team · Mode); **mobile (≤600px) hides `.input-controls` entirely** — input row = `[mobile-agent-chip] [textarea] [relay] [send]` (44px targets) and the Relay opens as the bottom sheet (`.relay-menu--sheet`, grab handle; the <600px fixed-position fallback is scoped `:not(.relay-menu--sheet)`). Palette: `open-relay` (window event `agentx:relay-open`) + `toggle-research`; everything else lives in the Relay by design. **Expanded drafting box:** `.composer-expand-toggle` (slim pill above the input, sticky via `agentx:composerExpanded`) swaps the composer into a tall CSS-owned canvas (`autoResize` yields height control) where Enter = newline and Ctrl/Cmd+Enter submits; the send button carries the aurora ready-breath + hover shine (reduced-motion + NO_GLOW safe).
-- **Surfaces**: Settings, Tools, **Memory**, and the **Ambassador Command Deck** (`SURFACES.ambassadorDeck` — `AmbassadorPanel` in conversation-less `deckThreadId` mode; holds multiple named Inquiries via `AmbassadorInquirySwitcher` + the per-user registry; relay routes via `lib/ambassadorRelay.ts::planRelay` — live in-tab for the active tab, else headless `POST /ambassador/relay`) open as full-screen modals (`type:'modal', size:'full'`); Plans/Sources/**Projects** are right-side drawers.
+- **Surfaces**: Settings, **Connectors & Tools**, **Memory**, and the **Ambassador Command Deck** (`SURFACES.ambassadorDeck` — `AmbassadorPanel` in conversation-less `deckThreadId` mode; holds multiple named Inquiries via `AmbassadorInquirySwitcher` + the per-user registry; relay routes via `lib/ambassadorRelay.ts::planRelay` — live in-tab for the active tab, else headless `POST /ambassador/relay`) open as full-screen modals (`type:'modal', size:'full'`); Plans/Sources/**Projects** are right-side drawers.
+- **Connectors & Tools** (`components/toolkit/ToolkitPage.tsx`, surface `tools`; internal naming stays `toolkit`): the agent-capability control center — stats strip (servers/connected · tools · skills · needs-sign-in warning over `lib/connectors.ts::needsAuth`), the always-visible MCP **Servers** grid (connect/OAuth lifecycle incl. the expired-session states), then accordion sections: **Connector Catalog** (`toolkit/ConnectorCatalog.tsx` — curated shelf from `lib/connectorCatalog.ts` + debounced official-registry search; both prefill `ServerForm` via `initialDraft` with a setup-guidance panel), **Skills** (`toolkit/SkillsSection.tsx` — CRUD + enable toggle + agent-access chips over `useSkills`), Groups & Tags, Agent Access, Tool Catalog, Raw JSON.
 - **Projects hub** (`components/workspaces/WorkspacesPanel.tsx`, surface `workspaces`; internal naming stays `workspace`): CRUD + upload + ingest status + description/instructions editors + the project's conversation list + "new chat in project"; Home is a fixed personal-media entry. **Document preview/editor (v0.21.162)**: file rows click-open `DocumentPreviewModal.tsx` — markdown renders through the shared chat renderer (`chat/MessageContent`), txt/code as mono text, images/PDFs from an authed object URL (`workspacesApi.fetchDocumentBlob`, sha-cache-busted since `/raw` content changes on edit; revoked on close); md/txt get an Edit mode with explicit Save/Cancel using the `expected_sha256` ETag (409 → "changed elsewhere" toast) and an **Export PDF** button (`window.print()` + a print-visibility stylesheet in `DocumentPreviewModal.css`; known no-op on macOS WKWebView — Linux/Windows/browser fine, Download is the fallback). A **"New document"** action creates a scaffolded `.md` via `POST /documents/text` and opens it in edit mode. Attach = `conversationMeta.workspaceId` (fast path; chat stream sends `workspace_id`) + durable server membership (`PUT /workspaces/{id}/conversations/{conv}`; the sidebar's project sections derive from it, with a one-time localStorage sync in `lib/projectSync.ts`); `lib/api/workspaces.ts`.
 - **Memory Workbench** (`components/memory/MemoryWorkbench.tsx`, surface `memory`): full-screen immersive explorer — in `ModalPortal` `FULLSCREEN_SURFACES` + `SELF_CLOSING`, so it renders **bare** and owns its own backdrop + ESC/✕ close (the `UnifiedSettings` pattern; avoids the Chromium thin-strip bug). A horizontally-scrollable **top tab bar** (`MemoryArea` in `memory/types.ts`: Overview · Entities · Facts · Strategies · Procedures · Explore · History · Jobs) sits over a list+detail canvas. A header **channel picker** (`useMemoryChannels`) scopes every area (previously hardcoded `_all`); **Overview** (`OverviewPanel`) is the landing tab (totals + per-channel table over `useMemoryStats`); **Procedures** (`ProcedureListView`/`ProcedureDetail`, read-only) surfaces `useMemoryProcedures`; **Explore** (`MemoryGraphView`) is search/topic-driven with static (non-animated) edges + `onlyRenderVisibleElements` for smooth panning. The `EntityDetail`/`FactDetail` editors are reused, re-hosted in a roomy detail pane and migrated to the field primitives (Input/Textarea/Slider/Select). Shell/tabs/Overview CSS is `styles/MemoryWorkbench.css`; the reused list/detail/graph classes stay in `styles/MemoryPanel.css` (also shared by the memory **settings** sections — don't gut it). Mobile (`useIsMobile`) swaps master↔detail with a "‹ Back" button and stacks the list rows.
 - **Agent-profile editor** (`unified-profile-editor/`): hero identity header over a `ControlCard` grid; avatars in `common/AvatarPicker` (`lib/avatars.ts`) — an icon id **or** a generated image (the Generate tab → `POST /api/agent/avatar/generate`, stored as `media:{ws}/{doc}` on `profile.avatar`); render via `common/AgentAvatar` (image avatars resolve to an authed object URL through `lib/avatarImage.ts`, icon otherwise). Signature color from `lib/agentAccent.ts`. Primitives: `ui/SegmentedControl`, `ui/CopyChip`, `common/ControlCard`.
@@ -469,6 +512,8 @@ Base URL: `http://localhost:12319/api/`
 | `/api/mcp/connect` `/api/mcp/disconnect` | POST | Connect/disconnect (`{"server": "name"}` or `{"all": true}`); OAuth servers needing consent → 202 `auth_required` + `authorization_url` |
 | `/api/mcp/oauth/callback` | GET | OAuth redirect target (PUBLIC — state-validated; middleware-exempt) |
 | `/api/mcp/servers/{name}/auth/reset` | POST | Forget a server's OAuth tokens + registration |
+| `/api/mcp/registry/search` | GET | Search the official MCP registry (proxied; `?q=` + `?limit=`; active+latest, flattened, ~15-min cache; prefill-only) |
+| `/api/agent/skills`, `/api/agent/skills/{id}` | GET/POST/PUT/DELETE | Skill CRUD (named instruction packs; index rides the prompt, bodies load via `use_skill`) |
 | `/api/providers` `/api/providers/models` `/api/providers/health` | GET | List providers / models (`?provider=`) / health |
 | `/api/agent/run` | POST | Execute a task with the agent |
 | `/api/agent/chat` | POST | Conversational interaction with session |

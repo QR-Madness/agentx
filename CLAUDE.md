@@ -76,7 +76,7 @@ Agent profiles configure: name, avatar, default model, temperature, system promp
 Tauri Client (React 19 + Vite)          Django API (port 12319)
   TopBar → Start, Dashboard, AgentX       Agent Core (planner, session, context)
   ConversationTabs (browser-style)        ├── MCP Client (consume external tool servers)
-  Drawers: Settings, Memory, Tools        ├── Reasoning (CoT, ToT, ReAct, Reflection)
+  Drawers: Settings, Memory, Connectors   ├── Reasoning (CoT, ToT, ReAct, Reflection)
   Modals: Translation, Prompt Library     ├── Drafting (speculative, pipeline, candidate)
      ↕ HTTP                               ├── Model Providers (LM Studio, Anthropic, OpenAI, OpenRouter, Vercel)
                                           ├── Context Gating (compression, chunking, retrieval)
@@ -95,13 +95,14 @@ One-liners for orientation. **Deep internals for the starred subsystems are in
 - `kit/agent_memory/` — memory system, lazy-loaded connections (`interface.py` → `connections.py` → impls); `RecallLayer` = 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query) + a post-fusion cross-encoder rerank stage (50-pool, bounded demotion; default-ON). ★
 - `kit/shell/` — Agent Shells: **opt-in per-workspace** (`workspaces.allow_shell`, off by default) sandboxed command execution — bubblewrap jail default, per-workspace Docker-container backend optional. Internals + threat model ★. e2e: `scripts/shell_e2e.py`.
 - `kit/workspaces/` — File Workspaces & Document RAG, surfaced as **Projects** (instructions ride every turn; durable conversation membership; `_project_{ws_id}` memory channels; `ws_home` is never a project). Agent tools `list_project_files`/`project_search` (legacy alias `workspace_search`)/`document_query`/`read_document` + write tools `create_document`/`update_document`/`append_to_document`/`edit_document`/`rename_document`/`delete_document` (partial edits use an `expected_sha256` soft write-lock). Internals ★. e2e: `scripts/rag_e2e.py`.
-- `mcp/` — MCP client manager, server registry, tool executor, transports (stdio, SSE); configure via `mcp_servers.json`
+- `mcp/` — MCP client manager, server registry, tool executor, transports, remote OAuth 2.1 (`auth_state` reports `expired`/`refreshable`), registry-search proxy; `mcp_servers.json`. Client surface: **Connectors & Tools** (connector catalog + registry search; internal name stays `toolkit`). ★
 - `providers/` — abstract `ModelProvider` (LM Studio/Anthropic/OpenAI/OpenRouter/Vercel); `models.yaml` configs + defaults, `pricing.py` cost. Resolution/fallback ★
 - `config.py` — `ConfigManager` singleton; persists `data/config.json`, dot-notation access + env-var fallback
 - `drafting/` — speculative decoding, multi-stage pipelines, N-best candidates; `drafting_strategies.yaml`
 - `reasoning/` — **Thinking Patterns**: chat patterns compiled into the streaming turn (`chat_patterns.py` + `streaming/thinking_exec.py` — native/cot/step_back/reflection/deep_reflection/self_consistency; `selection.py` = the shared auto brain) + the offline CoT/ToT/ReAct/Reflection kit for `/agent/run`. ★
 - `agent/` — `Agent` orchestrates reasoning + drafting + tools; `TaskPlanner` decomposes (chat path composes plans with the main agent model; legacy `plan()` for non-chat callers ★); `SessionManager` for conversations.
 - `agent/profiles.py` — `ProfileManager` CRUD (`data/agent_profiles.yaml`); Docker-style `agent_id` + `self_channel`; ships seeded defaults (AgentX, Researcher, **Deluxe Image Creator** — one-time `seeded_defaults` markers, deletions stick; sync with `api/defaults/agent_profiles.yaml`). **Rule:** `kind` ∈ `agent`|`ambassador`, and ambassadors are **excluded from chat** (default/routing/`delegate_to` filter `kind=='agent'`). ★
+- `agent/skills.py` — **Agent Skills**: named instruction packs, progressively disclosed — compact index in the chat prompt (`views._skills_block`), bodies load via the `use_skill` internal tool; `data/skills.yaml` (ProfileManager-style seeding, sync with `api/defaults/skills.yaml`); access via `allowed_agent_ids`. UI: Connectors & Tools → Skills. ★
 - `alloy/` — **Agent Teams** (user-facing name; internals/routes/config keep `alloy` — Workspaces→Projects precedent): Team (workflow) CRUD (`data/workflows.yaml`), `delegate_to` tool + `AlloyExecutor`; supervisor prompt in workflows, **soft ad-hoc roster block** in normal chats (opt-in `available_for_delegation` + `delegation_hint`; per-conversation `disable_delegation`). ★
 - `agent/tool_output_compressor.py` / `tool_output_chunker.py` — task-aware LLM compression for oversized tool outputs (section detection, JSON-path, semantic search)
 - `streaming/trajectory_compression.py` — Focus-style intra-trajectory compression for multi-round tool loops

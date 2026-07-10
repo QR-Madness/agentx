@@ -44,6 +44,8 @@ tags:
     description: File workspaces & document RAG (upload, manifest, retrieval).
   - name: Agent Profiles
     description: Per-agent identity and settings.
+  - name: Skills
+    description: Named instruction packs agents load on demand via the use_skill tool.
   - name: Multi-Agent
     description: Agent Alloy supervisor/specialist workflows.
   - name: Prompts
@@ -459,6 +461,49 @@ paths:
                 $ref: '#/components/schemas/McpServer'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /mcp/registry/search:
+    get:
+      tags: [MCP]
+      operationId: mcpRegistrySearch
+      summary: Search the official MCP registry (server-side proxy)
+      description: >-
+        Proxies registry.modelcontextprotocol.io (active + latest entries only,
+        flattened remotes/packages, ~15-minute cache). Results are untrusted
+        input — clients use them only to prefill the Add Server form for user
+        review.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Flattened registry results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/McpRegistryResult'
+                  count:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '502':
+          description: The public registry was unreachable
 
   /mcp/tools:
     get:
@@ -2745,6 +2790,103 @@ paths:
                     additionalProperties: true
         '503':
           description: Docker is not available
+
+  /agent/skills:
+    get:
+      tags: [Skills]
+      operationId: agentSkillsList
+      summary: List skills (named instruction packs)
+      responses:
+        '200':
+          description: Skills
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skills:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentSkill'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Skills]
+      operationId: agentSkillCreate
+      summary: Create a skill (id is server-assigned from the name)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentSkillInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill:
+                    $ref: '#/components/schemas/AgentSkill'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /agent/skills/{skill_id}:
+    parameters:
+      - name: skill_id
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Skills]
+      operationId: agentSkillDetail
+      summary: Get a skill
+      responses:
+        '200':
+          description: Skill
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill:
+                    $ref: '#/components/schemas/AgentSkill'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Skills]
+      operationId: agentSkillUpdate
+      summary: Update a skill (partial; id immutable)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentSkillInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill:
+                    $ref: '#/components/schemas/AgentSkill'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Skills]
+      operationId: agentSkillDelete
+      summary: Delete a skill
+      responses:
+        '200':
+          description: Deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /agent/profiles:
     get:
@@ -5283,6 +5425,15 @@ components:
           description: OAuth lifecycle state (null for non-OAuth servers).
           properties:
             authorized: { type: boolean }
+            expired:
+              type: boolean
+              nullable: true
+              description: >-
+                Access token past its persisted expiry; null when the expiry is
+                unknown (legacy token file or provider without expires_in).
+            refreshable:
+              type: boolean
+              description: A refresh_token is stored — an expired session reconnects headlessly.
             pending: { type: boolean }
             error: { type: string, nullable: true }
 
@@ -5308,6 +5459,93 @@ components:
           type: string
         server:
           type: string
+
+    McpRegistryResult:
+      type: object
+      description: >-
+        One flattened entry from the official MCP registry (untrusted — prefill
+        only). remotes/packages mirror the registry's server.json shape.
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+        repository_url:
+          type: string
+          nullable: true
+        remotes:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              url: { type: string }
+        packages:
+          type: array
+          items:
+            type: object
+            properties:
+              registry_type: { type: string }
+              identifier: { type: string }
+              runtime_hint: { type: string, nullable: true }
+
+    AgentSkill:
+      type: object
+      description: >-
+        A named instruction pack. Agents see a compact index (id — name:
+        description) in their system prompt and load the body on demand via
+        the use_skill internal tool. allowed_agent_ids mirrors MCP servers:
+        null = all agents, [] = none, else an agent_id whitelist.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        body:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        allowed_agent_ids:
+          type: array
+          nullable: true
+          items:
+            type: string
+        created_at:
+          type: string
+          nullable: true
+        updated_at:
+          type: string
+          nullable: true
+
+    AgentSkillInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        body:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        allowed_agent_ids:
+          type: array
+          nullable: true
+          items:
+            type: string
 
     Provider:
       type: object

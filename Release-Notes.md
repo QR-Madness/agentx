@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.207 -->
+<!-- release-version: 0.21.208 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,6 +21,17 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
+- **The Tools menu grew into Connectors & Tools** — a control center for your agents' reach into
+  the real world: a stats strip, a curated **connector catalog** (Google Drive via Google's official
+  MCP server with a guided setup, GitHub, Notion, Linear, Sentry, Atlassian, Context7, and more),
+  and live search of the public MCP registry — every result opens the Add Server form prefilled for
+  your review.
+- **Skills** — teach agents *how you want things done*: named instruction packs with a markdown
+  body, per-agent access, and an enable toggle. Agents see a compact index and load a skill's full
+  instructions only when a task calls for it, so your library can grow without bloating every turn.
+- **OAuth connectors stop lying about sign-in** — a connector whose session expired (and can't
+  refresh itself) now says "session expired — sign in again on connect" instead of "signed in",
+  and the new-conversation nudge catches it.
 - **The Relay is now the conversation's command center** — the Orbit button opens a glass
   control panel: a status strip (agent · model · context %), tiled controls with aurora gradient
   icons (thinking mode, memory, team, background send, model, project, state, attach, enhance,

@@ -21,23 +21,25 @@ export function sessionExpired(server: MCPServer): boolean {
   return !!a?.authorized && a.expired === true && !a.refreshable;
 }
 
+/** Agent-agnostic auth need: an OAuth server, not pending/connected, that is
+ *  either never authorized or holding an expired session that can't refresh
+ *  itself. (The per-agent nudge adds the whitelist filter on top.) */
+export function needsAuth(server: MCPServer): boolean {
+  return server.auth?.type === 'oauth'
+    && (!server.auth_state?.authorized || sessionExpired(server))
+    && !server.auth_state?.pending
+    && server.status !== 'connected';
+}
+
 /**
  * OAuth connectors that need the user to sign in before their tools work for
- * the active agent: OAuth auth, not already pending/connected, allowed for
- * this agent, and either never authorized or holding an expired session that
- * can't refresh itself.
+ * the active agent: `needsAuth` plus allowed for this agent.
  */
 export function connectorsNeedingAuth(
   servers: MCPServer[],
   activeAgentId: string | null,
 ): MCPServer[] {
-  return servers.filter(s =>
-    s.auth?.type === 'oauth'
-    && (!s.auth_state?.authorized || sessionExpired(s))
-    && !s.auth_state?.pending
-    && s.status !== 'connected'
-    && allowedForAgent(s, activeAgentId)
-  );
+  return servers.filter(s => needsAuth(s) && allowedForAgent(s, activeAgentId));
 }
 
 /** One-line nudge copy for a set of connectors needing auth. */

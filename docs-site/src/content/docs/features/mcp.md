@@ -1,6 +1,21 @@
-# MCP Client
+# Connectors & Tools (MCP Client)
 
-AgentX acts as an MCP (Model Context Protocol) client, connecting to external tool servers that expose filesystem, database, search, and custom capabilities.
+AgentX acts as an MCP (Model Context Protocol) client, connecting to external tool servers that expose filesystem, database, search, and custom capabilities. The **Connectors & Tools** page in the client is the control center for all of it: your servers and their OAuth state, a curated connector catalog, live search of the public MCP registry, the discovered tool catalog, per-agent access, and the [skill library](../api/endpoints.md#skills).
+
+## Connector Catalog
+
+The fastest way to give agents real-world reach. The catalog is a curated shelf of known-good connectors — **Google Drive** (Google's official remote MCP server), GitHub, Notion, Linear, Sentry, Atlassian (Jira & Confluence), Context7, Cloudflare Docs, Hugging Face, plus local stdio classics — where "Add connector" opens the server form **prefilled** with the right URL, transport, auth mode, and a step-by-step setup note where one is needed. Nothing connects until you review and save.
+
+Below the shelf, a search box queries the **official MCP registry** (`registry.modelcontextprotocol.io`) through the API proxy (`GET /api/mcp/registry/search`); any result maps into the same prefilled form (remote endpoints directly; npm/PyPI/OCI packages as `npx` / `uvx` / `docker run` stdio commands). Registry entries are community-published — review commands and URLs before saving.
+
+### Google Drive setup (BYO OAuth client)
+
+Google's Drive MCP server (`https://drivemcp.googleapis.com/mcp/v1`) requires a **pre-registered OAuth app** in your own Google Cloud project — there is no dynamic registration:
+
+1. In the Google Cloud console, create or select a project; enable the **Google Drive API** and the **Google Drive MCP API**.
+2. Configure the OAuth consent screen with the scopes `https://www.googleapis.com/auth/drive.readonly` and `https://www.googleapis.com/auth/drive.file`.
+3. Create an OAuth client ID (Web application) and add the AgentX callback as an authorized redirect URI: `http://localhost:12319/api/mcp/oauth/callback` (adjust if your API runs elsewhere — `AGENTX_OAUTH_REDIRECT_URL`).
+4. Add the connector from the catalog and paste the Client ID + Client secret (or reference them as `${VAR}` from the API server's environment). Connecting opens Google's consent page in your browser.
 
 ## Architecture
 
@@ -136,15 +151,23 @@ sequenceDiagram
 
 When both are `null`, all tools from connected servers are available.
 
+## OAuth 2.1 (remote connectors)
+
+Remote servers (`sse` / `streamable_http`) can carry an `auth: {"type": "oauth"}` block — AgentX handles discovery, dynamic client registration (or pre-registered `client_id`/`client_secret` for providers like Google), PKCE, and token refresh, opening your browser for consent on first connect. Tokens persist per server under `data/mcp_oauth/`.
+
+The server card tells the truth about session state: **signed in**, **signed in (refreshes on connect)** when the access token expired but a refresh token covers it, or **session expired — sign in again on connect** when the next connect must go back through the browser (this state also triggers the new-conversation nudge). "Reset auth" forgets stored tokens for a clean sign-in.
+
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/mcp/servers` | GET | List servers and connection status |
+| `/api/mcp/servers` | GET | List servers, connection status, and OAuth `auth_state` |
+| `/api/mcp/registry/search` | GET | Search the official MCP registry (proxied, prefill-only) |
 | `/api/mcp/tools` | GET | List available tools (filter: `?server=name`) |
 | `/api/mcp/resources` | GET | List available resources |
-| `/api/mcp/connect` | POST | Connect to server(s) |
+| `/api/mcp/connect` | POST | Connect to server(s); OAuth consent → HTTP 202 + URL |
 | `/api/mcp/disconnect` | POST | Disconnect from server(s) |
+| `/api/agent/skills` | GET/POST | The skill library (see [Skills](../api/endpoints.md#skills)) |
 
 See [API Endpoints](../api/endpoints.md#mcp-model-context-protocol) for full details.
 

@@ -83,9 +83,16 @@
 > SSE/streamable-HTTP transports (PKCE, RFC 7591 dynamic registration, RFC 9728 discovery, token
 > refresh); per-server token store `data/mcp_oauth/` (`FileTokenStorage`); interactive connect
 > state machine (`connect_interactive` → 202 `auth_required` + consent URL → PUBLIC state-validated
-> `GET /api/mcp/oauth/callback`); `auth` config block (pre-registered creds for non-DCR providers —
-> what a future Google Drive import will use); Toolkit UI (auth section, waiting-poll, Reset auth).
+> `GET /api/mcp/oauth/callback`); `auth` config block (pre-registered creds for non-DCR providers).
 > See Development-Notes → "MCP Remote OAuth".
+>
+> ⭐ **Connectors & Tools control center shipped v0.21.208** — the Toolkit became "Connectors &
+> Tools": curated **connector catalog** (`lib/connectorCatalog.ts` — the anticipated Google Drive
+> import landed via Google's official remote MCP + guided BYO-client setup, plus GitHub/Notion/
+> Linear/Sentry/Atlassian/Context7/Cloudflare Docs/Hugging Face), **official-registry search**
+> (`GET /api/mcp/registry/search` proxy → prefilled ServerForm), **Skills v1** (`agent/skills.py`,
+> `use_skill` progressive disclosure), and **OAuth truth** (`auth_state.expired`/`refreshable` —
+> expired-unrefreshable sessions stop claiming "signed in" and join the auth nudge).
 
 - [ ] **`tools/list_changed` re-discovery** — pass a `message_handler` to `ClientSession` and re-run
       `discover_tools` on the notification (today discovery happens once at connect; refresh = reconnect).
@@ -93,4 +100,10 @@
       failures; expired-token OAuth sessions also want a refresh-then-reconnect pass.
 - [ ] **Tauri deep-link OAuth callback** — for Phase-19 cloud mode where the API isn't on the user's
       localhost; the loopback callback covers desktop + browser today (`AGENTX_OAUTH_REDIRECT_URL`).
+- [ ] **Catalog-bundled skills** — let a connector catalog entry ship a suggested skill (usage
+      know-how installed alongside the server), completing the "connectors = tools + skills" pairing.
+- [ ] **Skills index beyond streaming chat** — `_skills_block` rides the chat-stream ledger only;
+      consider the offline `/agent/run` path + ambassador turns once skills prove out.
+- [ ] **Catalog freshness check** — a tiny CI/script probe that the curated catalog URLs still
+      answer (they were verified live at ship time; vendors move endpoints).
 

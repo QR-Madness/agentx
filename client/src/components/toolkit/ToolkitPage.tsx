@@ -14,13 +14,13 @@ import {
   Plug, Unplug, RefreshCw, Search, Loader2, AlertTriangle, Save, ChevronDown, KeyRound,
   ExternalLink, GraduationCap,
 } from 'lucide-react';
-import { useMCPServers, useMCPTools } from '../../lib/hooks';
+import { useMCPServers, useMCPTools, useSkills } from '../../lib/hooks';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
+import { needsAuth, sessionExpired } from '../../lib/connectors';
 import { ParallaxBackground } from '../unified-settings/animations/ParallaxBackground';
 import { backdropVariants, containerVariants } from '../unified-settings/animations/transitions';
 import type { MCPServer, MCPServerConfigInput } from '../../lib/api';
 import { api } from '../../lib/api';
-import { sessionExpired } from '../../lib/connectors';
 import { useConfirm } from '../ui/ConfirmDialog';
 import {
   Button, IconButton, Input, Textarea, StatusDot, CopyChip, Tooltip,
@@ -106,6 +106,8 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
               </IconButton>
             </div>
             <div className="toolkit-content toolkit-single-view">
+              <StatsStrip />
+
               {/* Primary section — always visible. */}
               <ServersView />
 
@@ -169,6 +171,30 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
         </>
       )}
     </AnimatePresence>
+  );
+}
+
+/* ── Stats strip ──────────────────────────────────────────── */
+
+/** Control-center vitals: servers/tools/skills counts + a sign-in warning. */
+function StatsStrip() {
+  const { servers } = useMCPServers();
+  const { tools } = useMCPTools();
+  const { skills } = useSkills();
+  // Whole-fleet view (agent-agnostic): every connector needing any sign-in.
+  const needAuth = servers.filter(needsAuth).length;
+  const connected = servers.filter(s => s.status === 'connected').length;
+  const enabledSkills = skills.filter(s => s.enabled).length;
+
+  return (
+    <div className="toolkit-stats">
+      <span className="toolkit-stat"><Server size={13} /> {servers.length} server{servers.length === 1 ? '' : 's'} · {connected} connected</span>
+      <span className="toolkit-stat"><Wrench size={13} /> {tools.length} tool{tools.length === 1 ? '' : 's'}</span>
+      <span className="toolkit-stat"><GraduationCap size={13} /> {enabledSkills} skill{enabledSkills === 1 ? '' : 's'}</span>
+      {needAuth > 0 && (
+        <span className="toolkit-stat warn"><KeyRound size={13} /> {needAuth} need{needAuth === 1 ? 's' : ''} sign-in</span>
+      )}
+    </div>
   );
 }
 
