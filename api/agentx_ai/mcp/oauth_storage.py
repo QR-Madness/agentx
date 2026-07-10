@@ -181,10 +181,16 @@ class FileTokenStorage:
         client_id = self._preregistered.get("client_id")
         if client_id:
             # Seed from pre-registered credentials — the SDK then skips DCR.
+            # token_endpoint_auth_method must be EXPLICIT: the model defaults
+            # to None and the SDK only attaches the secret for
+            # client_secret_basic/_post, so a seeded confidential client was
+            # exchanging its authorization code secretless — Google's token
+            # endpoint rejected it with "client_secret is missing."
+            secret = self._preregistered.get("client_secret")
             return OAuthClientInformationFull(
                 client_id=str(client_id),
-                client_secret=(str(self._preregistered["client_secret"])
-                               if self._preregistered.get("client_secret") else None),
+                client_secret=(str(secret) if secret else None),
+                token_endpoint_auth_method=("client_secret_post" if secret else "none"),
                 redirect_uris=None,
             )
         return None

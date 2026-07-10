@@ -404,6 +404,16 @@ class MCPOAuthTest(TestCase):
                 assert info is not None
                 self.assertEqual(info.client_id, "pre")
                 self.assertEqual(info.client_secret, "psec")
+                # Explicit auth method or the SDK sends NO secret on the token
+                # exchange (model default is None → Google 400s "client_secret
+                # is missing" after a successful consent).
+                self.assertEqual(info.token_endpoint_auth_method, "client_secret_post")
+                public = oauth_storage.FileTokenStorage(
+                    "p", preregistered={"type": "oauth", "client_id": "pub"},
+                )
+                pub_info = asyncio.run(public.get_client_info())
+                assert pub_info is not None
+                self.assertEqual(pub_info.token_endpoint_auth_method, "none")
 
     # --- oauth_flow bridge ---
 
