@@ -1,48 +1,98 @@
 /**
- * ToolExecutionBlock styles — Unified tool call + result card
+ * ToolExecutionBlock — non-invasive tool chips (Claude-style).
+ *
+ * Collapsed = a slim holographic pill: transparent surface, a faint
+ * accent-gradient border (border-box gradient trick — rounds correctly on
+ * every corner, unlike the old 3px left-border accent), muted text. Running
+ * gets a soft shimmer sweep; success settles to near-invisible. FAILED is the
+ * one loud state: error tint + label. Expanded opens a quiet details panel
+ * inside the same rounded container.
  */
 
 .tool-execution-block {
-  margin: 0.25rem 0;
-  border-radius: 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
+  margin: 0.2rem 0;
+  border-radius: 12px;
+  position: relative;
+  /* Gradient border that follows the radius: paint the surface in the
+     padding-box and the (very faint) accent gradient in the border-box. */
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--bg-secondary), var(--bg-secondary)) padding-box,
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--accent-primary) 22%, transparent),
+      color-mix(in srgb, var(--accent-secondary) 22%, transparent) 60%,
+      color-mix(in srgb, var(--accent-primary) 10%, transparent)) border-box;
   overflow: hidden;
-  transition: border-color 0.2s;
+  transition: opacity 0.25s, background 0.25s;
 }
 
-/* Status-based left border accent */
-.tool-execution-block.status-pending {
-  border-left: 3px solid var(--feedback-warning);
-}
-
-.tool-execution-block.status-running {
-  border-left: 3px solid var(--feedback-info);
-}
-
+/* Completed calls recede — present but whisper-quiet until hovered. */
 .tool-execution-block.status-completed {
-  border-left: 3px solid var(--feedback-success);
+  opacity: 0.72;
+}
+.tool-execution-block.status-completed:hover,
+.tool-execution-block.status-completed:focus-within {
+  opacity: 1;
 }
 
+/* Running/pending: holographic shimmer — a slow light sweep across the pill. */
+.tool-execution-block.status-running::after,
+.tool-execution-block.status-pending::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--accent-primary) 9%, transparent) 40%,
+    color-mix(in srgb, var(--accent-secondary) 12%, transparent) 50%,
+    color-mix(in srgb, var(--accent-primary) 9%, transparent) 60%,
+    transparent 80%);
+  background-size: 250% 100%;
+  animation: tool-shimmer 2.2s linear infinite;
+}
+
+@keyframes tool-shimmer {
+  from { background-position: 125% 0; }
+  to   { background-position: -125% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-execution-block.status-running::after,
+  .tool-execution-block.status-pending::after {
+    animation: none;
+    background: color-mix(in srgb, var(--accent-primary) 6%, transparent);
+  }
+  .animate-pulse { animation: none; }
+}
+
+/* Failure is the ONE loud state. */
 .tool-execution-block.status-failed {
-  border-left: 3px solid var(--feedback-error);
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--feedback-error) 8%, var(--bg-secondary)),
+      color-mix(in srgb, var(--feedback-error) 8%, var(--bg-secondary))) padding-box,
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--feedback-error) 55%, transparent),
+      color-mix(in srgb, var(--feedback-error) 30%, transparent)) border-box;
 }
 
-/* Header */
+/* Header (the pill row) */
 .tool-execution-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.3rem 0.6rem;
+  padding: 0.3rem 0.65rem;
+  min-height: 30px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .tool-execution-header:hover {
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--accent-primary) 5%, transparent);
 }
 
-/* Animated icon container */
+/* Icon */
 .tool-execution-icon {
   display: flex;
   align-items: center;
@@ -50,22 +100,12 @@
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+  color: var(--text-tertiary);
 }
 
-.tool-execution-icon svg {
-  transition: color 0.2s;
-}
-
+.status-running .tool-execution-icon,
 .status-pending .tool-execution-icon {
-  color: var(--feedback-warning);
-}
-
-.status-running .tool-execution-icon {
-  color: var(--feedback-info);
-}
-
-.status-completed .tool-execution-icon {
-  color: var(--feedback-success);
+  color: var(--accent-primary);
 }
 
 .status-failed .tool-execution-icon {
@@ -73,30 +113,17 @@
 }
 
 /* Animations */
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
-
-.animate-pulse {
-  animation: pulse 1.5s ease-in-out infinite;
-}
+.animate-pulse { animation: pulse 1.5s ease-in-out infinite; }
+.animate-spin { animation: spin 1s linear infinite; }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 
 /* Tool info */
@@ -109,15 +136,25 @@
 }
 
 .tool-execution-name {
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.8125rem;
-  color: var(--text-primary);
+  color: var(--text-secondary);
   flex-shrink: 0;
+}
+
+.status-running .tool-execution-name,
+.status-pending .tool-execution-name {
+  color: var(--text-primary);
+}
+
+.status-failed .tool-execution-name {
+  color: var(--feedback-error);
+  font-weight: 600;
 }
 
 .tool-execution-preview {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -135,6 +172,11 @@
   white-space: nowrap;
 }
 
+.tool-execution-meta .meta-failed {
+  color: var(--feedback-error);
+  font-weight: 600;
+}
+
 /* Dot between meta items; plus a leading dot only when a preview precedes the
    group (so the recall row `3 messages · 2 facts` has no stray leading dot). */
 .tool-execution-meta > span:not(:first-child)::before,
@@ -146,19 +188,19 @@
 
 /* Toggle button */
 .tool-execution-toggle {
-  background: none;
+  background: transparent;
   border: none;
   padding: 0.25rem;
   color: var(--text-tertiary);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .tool-execution-toggle:hover {
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--accent-primary) 8%, transparent);
   color: var(--text-secondary);
 }
 
@@ -213,7 +255,7 @@
   overflow-y: auto;
 }
 
-/* Result footer — now nested inside the expanded details, below the args JSON. */
+/* Result footer — nested inside the expanded details, below the args JSON. */
 .tool-execution-result {
   display: flex;
   align-items: center;
@@ -260,7 +302,7 @@
   padding: 0.25rem 0.5rem;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--text-secondary);
   font-size: 0.6875rem;
   cursor: pointer;
@@ -271,4 +313,62 @@
   background: var(--bg-hover);
   border-color: var(--accent-primary);
   color: var(--accent-primary);
+}
+
+/* ── Stacked tool runs (N consecutive calls fold into one group) ── */
+.tool-run-group {
+  margin: 0.2rem 0;
+}
+
+.tool-run-group-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.65rem;
+  min-height: 28px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--bg-secondary), var(--bg-secondary)) padding-box,
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--accent-primary) 22%, transparent),
+      color-mix(in srgb, var(--accent-secondary) 22%, transparent)) border-box;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: color 0.15s, opacity 0.2s;
+  opacity: 0.85;
+}
+
+.tool-run-group-header:hover {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+.tool-run-group-header .group-icons {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tool-run-group-header .group-icons > * {
+  margin-left: -5px;
+  background: var(--bg-secondary);
+  border-radius: 50%;
+  padding: 2px;
+}
+
+.tool-run-group-header .group-icons > :first-child {
+  margin-left: 0;
+}
+
+.tool-run-group-header .group-failed {
+  color: var(--feedback-error);
+  font-weight: 600;
+}
+
+.tool-run-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 0.25rem;
 }

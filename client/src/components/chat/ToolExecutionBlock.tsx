@@ -51,7 +51,7 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   delegate_to: Users,
 };
 
-function toolIconFor(toolName: string): LucideIcon {
+export function toolIconFor(toolName: string): LucideIcon {
   return TOOL_ICONS[toolName] ?? Wrench;
 }
 
@@ -222,6 +222,7 @@ export function ToolExecutionBlock({
           {preview && <span className="tool-execution-preview">{preview}</span>}
           <span className="tool-execution-meta">
             {isActive && <span>{statusInfo.label}</span>}
+            {status === 'failed' && <span className="meta-failed">Failed</span>}
             {results !== null && <span>{results} result{results === 1 ? '' : 's'}</span>}
             {result?.durationMs !== undefined && <span>{formatDuration(result.durationMs)}</span>}
           </span>

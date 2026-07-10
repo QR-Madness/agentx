@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupMessagesBySteps } from './groupMessagesBySteps';
+import { foldToolRuns, groupMessagesBySteps } from './groupMessagesBySteps';
 import type { ConversationMessage, PlanStepRef } from '../../lib/messages';
 
 let seq = 0;
@@ -22,6 +22,40 @@ function assistant(planStep?: PlanStepRef): ConversationMessage {
     planStep,
   };
 }
+
+function toolCall(planStep?: PlanStepRef): ConversationMessage {
+  return {
+    id: `t${seq++}`,
+    type: 'tool_call',
+    toolName: 'web_search',
+    toolCallId: `call-${seq}`,
+    arguments: {},
+    status: 'completed',
+    timestamp: '2026-05-28T00:00:00.000Z',
+    planStep,
+  } as ConversationMessage;
+}
+
+describe('foldToolRuns', () => {
+  it('stacks runs of ≥2 consecutive tool calls and demotes singles', () => {
+    const out = foldToolRuns([
+      assistant(),
+      toolCall(), toolCall(), toolCall(),
+      assistant(),
+      toolCall(),
+    ]);
+    expect(out.map(i => i.kind)).toEqual(['message', 'toolRun', 'message', 'message']);
+    const run = out[1];
+    if (run.kind === 'toolRun') expect(run.messages).toHaveLength(3);
+  });
+
+  it('keys a run by its first call id', () => {
+    const a = toolCall();
+    const out = foldToolRuns([a, toolCall()]);
+    expect(out[0].kind).toBe('toolRun');
+    if (out[0].kind === 'toolRun') expect(out[0].key).toBe(`toolrun-${a.id}`);
+  });
+});
 
 describe('groupMessagesBySteps', () => {
   it('passes through messages without planStep as standalone items', () => {

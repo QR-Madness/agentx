@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.209 -->
+<!-- release-version: 0.21.210 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -35,6 +35,12 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **OAuth connectors stop lying about sign-in** — a connector whose session expired (and can't
   refresh itself) now says "session expired — sign in again on connect" instead of "signed in",
   and the new-conversation nudge catches it.
+- **Tool calls stopped shouting** — the blocky left-border cards are gone. Tool activity is now
+  quiet holographic chips that shimmer while running and fade when done, consecutive calls stack
+  into one "Ran N tools" pill, and only failures speak up. Tool output opens as a rendered
+  document (headings, bold, lists) with a Raw toggle. Streaming also keeps its pulse: the
+  indicator no longer vanishes after delegation results or between tool rounds, and reopening a
+  running conversation no longer blanks the transcript while it re-attaches.
 - **The Relay is now the conversation's command center** — the Orbit button opens a glass
   control panel: a status strip (agent · model · context %), tiled controls with aurora gradient
   icons (thinking mode, memory, team, background send, model, project, state, attach, enhance,

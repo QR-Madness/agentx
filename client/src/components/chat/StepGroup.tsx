@@ -9,6 +9,8 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, ListChecks } from 'lucide-react';
 import type { ConversationMessage, PlanStepRef } from '../../lib/messages';
 import { MessageBubble } from './MessageBubble';
+import { ToolRunGroup } from './ToolRunGroup';
+import { foldToolRuns } from './groupMessagesBySteps';
 import './StepGroup.css';
 
 interface StepGroupProps {
@@ -58,16 +60,22 @@ export function StepGroup({
 
       {!collapsed && (
         <div className="step-group-body">
-          {messages.map(message => (
-            <MessageBubble
-              key={message.id}
-              message={message}
-              agentName={agentName}
-              avatarId={avatarId}
-              onSubmitChoice={onSubmitChoice}
-              busy={busy}
-            />
-          ))}
+          {foldToolRuns(messages).map(item =>
+            item.kind === 'toolRun' ? (
+              <div key={item.key} className="message-bubble tool_call">
+                <ToolRunGroup messages={item.messages} />
+              </div>
+            ) : (
+              <MessageBubble
+                key={item.message.id}
+                message={item.message}
+                agentName={agentName}
+                avatarId={avatarId}
+                onSubmitChoice={onSubmitChoice}
+                busy={busy}
+              />
+            ),
+          )}
         </div>
       )}
     </div>

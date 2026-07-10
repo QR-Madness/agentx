@@ -47,6 +47,7 @@ import { MessageContent } from './MessageContent';
 import { ThinkingBubble } from './ThinkingBubble';
 import { MessageBubble } from './MessageBubble';
 import { StepGroup } from './StepGroup';
+import { ToolRunGroup } from './ToolRunGroup';
 import { groupMessagesBySteps } from './groupMessagesBySteps';
 import { AgentSelectorDropdown } from './AgentSelectorDropdown';
 import { CheckpointsBadge } from './CheckpointsBadge';
@@ -392,6 +393,14 @@ export function ChatPanel() {
     [profiles],
   );
 
+  // Re-attach bookkeeping — declared before the hook opts below close over
+  // them. `attachedRunRef` = the run this tab already attached to (guards the
+  // effect); `pendingAttachTruncateRef` = a run whose replay, once it actually
+  // starts delivering, may truncate the transcript back to the user turn.
+  const attachedRunRef = useRef<string | null>(null);
+  const pendingAttachTruncateRef = useRef<string | null>(null);
+  const activeRunId = activeTab?.activeRun?.runId;
+
   const stream = useChatStream({
     appendMessage,
     updateMessage,
@@ -405,11 +414,31 @@ export function ChatPanel() {
     tabTitle: activeTab?.title,
     plans: { upsertPlan, patchPlan },
     onRunChanged: (runId) => {
+      // Deferred re-attach truncation: the transcript is only cut back to the
+      // triggering user turn once the replay has actually begun delivering
+      // (run_started is the first buffered event — this callback fires before
+      // any replayed message events append). Truncating before attach left the
+      // pane BLANK whenever the buffer was gone or the connection hiccuped.
+      if (runId && activeTab && pendingAttachTruncateRef.current === runId) {
+        pendingAttachTruncateRef.current = null;
+        const msgs = activeTab.messages;
+        let lastUser = -1;
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].type === 'user') { lastUser = i; break; }
+        }
+        if (lastUser >= 0 && lastUser < msgs.length - 1) {
+          updateTab(activeTab.id, { messages: msgs.slice(0, lastUser + 1) });
+        }
+      }
       if (activeTab) updateTab(activeTab.id, { activeRun: runId ? { runId } : undefined });
     },
     onRunMissing: () => {
       // The run's event buffer expired but its turns are persisted — pull the
-      // finished conversation from server history.
+      // finished conversation from server history. The transcript was NOT
+      // truncated (see onRunChanged), so whatever was rendered stays visible
+      // while (and even if) the restore fetch runs.
+      pendingAttachTruncateRef.current = null;
+      attachedRunRef.current = null;
       if (activeTab?.sessionId) restoreConversation(activeTab.sessionId).catch(() => {});
     },
     onCheckpointSaved: () => setCheckpointSignal(n => n + 1),
@@ -466,25 +495,16 @@ export function ChatPanel() {
     };
   }, [activeTab?.id, stream.detach]);
 
-  // Resume an in-flight detached run when this tab is shown. Truncate the
-  // transcript back to the triggering user turn first so the replay-from-0
-  // rebuilds the assistant side without duplicating already-rendered messages.
-  const attachedRunRef = useRef<string | null>(null);
-  const activeRunId = activeTab?.activeRun?.runId;
+  // Resume an in-flight detached run when this tab is shown. The transcript
+  // is truncated back to the triggering user turn only when the replay
+  // actually begins (see onRunChanged above) — so a failed/expired attach
+  // never blanks the pane it was supposed to restore.
   useEffect(() => {
     if (!activeTab || !activeRunId) return;
     if (isTyping) return;                         // already streaming (e.g. just sent)
     if (attachedRunRef.current === activeRunId) return;
     attachedRunRef.current = activeRunId;
-
-    const msgs = activeTab.messages;
-    let lastUser = -1;
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].type === 'user') { lastUser = i; break; }
-    }
-    if (lastUser >= 0 && lastUser < msgs.length - 1) {
-      updateTab(activeTab.id, { messages: msgs.slice(0, lastUser + 1) });
-    }
+    pendingAttachTruncateRef.current = activeRunId;
     stream.attach(activeRunId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab?.id, activeRunId]);
@@ -1271,6 +1291,13 @@ export function ChatPanel() {
               />
             );
           }
+          if (item.kind === 'toolRun') {
+            return (
+              <div key={item.key} className="message-bubble tool_call">
+                <ToolRunGroup messages={item.messages} />
+              </div>
+            );
+          }
           const { message } = item;
           // The plan_execution card is the jump target for plan-level focus.
           if (message.type === 'plan_execution') {
@@ -1294,42 +1321,56 @@ export function ChatPanel() {
           );
         })}
 
-        {/* Streaming message or typing indicator. Suppress the empty-state
-            spinner while a delegation card is actively streaming — the card
-            is the source of activity, the main bubble would just look stalled. */}
-        {isTyping && (streamingContent || activeDelegationCount === 0) && (() => {
-          return (
+        {/* Streaming message or activity indicator. The turn is NEVER visually
+            dead while streaming: prose renders live; otherwise the spinner
+            bubble shows — except while a delegation card is the active thing,
+            where a full empty bubble would look stalled, so a slim activity
+            line keeps the pulse instead (fixes the dead zone after delegation
+            results / between tool rounds). */}
+        {isTyping && streamingContent && (
           <div className="message-bubble assistant">
             <div className="message-avatar assistant-avatar">
               <AgentAvatar avatar={tabProfile?.avatar} size={16} fill />
             </div>
             <div className="message-body">
-              {streamingContent ? (
-                <div className="streaming-message">
-                  {(() => {
-                    // Find all thinking blocks and show the last one (active during streaming)
-                    const thinkMatches = [
-                      ...streamingContent.matchAll(/<think(?:ing)?>([\s\S]*?)(?:<\/think(?:ing)?>|$)/gi)
-                    ];
-                    const lastMatch = thinkMatches[thinkMatches.length - 1];
-                    return lastMatch ? (
-                      <ThinkingBubble thinking={lastMatch[1]} isStreaming />
-                    ) : null;
-                  })()}
-                  <MessageContent content={stripThinkingTags(streamingContent, true)} />
-                </div>
-              ) : (
+              <div className="streaming-message">
+                {(() => {
+                  // Find all thinking blocks and show the last one (active during streaming)
+                  const thinkMatches = [
+                    ...streamingContent.matchAll(/<think(?:ing)?>([\s\S]*?)(?:<\/think(?:ing)?>|$)/gi)
+                  ];
+                  const lastMatch = thinkMatches[thinkMatches.length - 1];
+                  return lastMatch ? (
+                    <ThinkingBubble thinking={lastMatch[1]} isStreaming />
+                  ) : null;
+                })()}
+                <MessageContent content={stripThinkingTags(streamingContent, true)} />
+              </div>
+            </div>
+          </div>
+        )}
+        {isTyping && !streamingContent && (
+          activeDelegationCount === 0 ? (
+            <div className="message-bubble assistant">
+              <div className="message-avatar assistant-avatar">
+                <AgentAvatar avatar={tabProfile?.avatar} size={16} fill />
+              </div>
+              <div className="message-body">
                 <div className="stream-spinner">
                   <div className="stream-spinner-ring" />
                   <span className="stream-spinner-text">
                     {stream.state.activity?.label || 'Thinking...'}
                   </span>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
-          );
-        })()}
+          ) : (
+            <div className="stream-activity-line">
+              <div className="stream-spinner-ring" />
+              <span>{stream.state.activity?.label || 'Working with teammates…'}</span>
+            </div>
+          )
+        )}
 
         <div ref={messagesEndRef} />
         </div>

@@ -330,6 +330,22 @@
   padding: 4px 0;
 }
 
+/* Slim activity pulse — shown instead of the full empty bubble while a
+   delegation card is the active thing (a big empty bubble reads as stalled;
+   NO indicator reads as dead). Reuses the ring at a smaller scale. */
+.stream-activity-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 1rem 6px 3rem;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+.stream-activity-line .stream-spinner-ring {
+  width: 14px;
+  height: 14px;
+}
+
 .stream-spinner-ring {
   width: 24px;
   height: 24px;

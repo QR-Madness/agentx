@@ -3,7 +3,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import { CheckCircle, XCircle, Copy, Check, MessagesSquare } from 'lucide-react';
+import { CheckCircle, XCircle, Copy, Check, MessagesSquare, Braces, BookOpen } from 'lucide-react';
+import { MessageContent } from '../chat/MessageContent';
 import { MemoryWorkbench } from '../memory/MemoryWorkbench';
 import { PlansPanel } from '../plans/PlansPanel';
 import { SourcesPanel } from '../bibliography/SourcesPanel';
@@ -224,6 +225,12 @@ function tryFormatJson(content: string): { formatted: string; isJson: boolean } 
   }
 }
 
+/** Markdown-ish tool output (compressed summaries, web research reports) reads
+ *  far better through the shared chat renderer than as a mono blob. */
+function looksLikeMarkdown(content: string): boolean {
+  return /(^|\n)#{1,4} |\*\*[^*\n]+\*\*|(^|\n)[-*] |(^|\n)\d+\. /.test(content);
+}
+
 export function ToolOutputDrawer({
   onClose,
   toolName = 'Tool',
@@ -233,6 +240,11 @@ export function ToolOutputDrawer({
 }: ToolOutputDrawerProps) {
   const [copied, setCopied] = useState(false);
   const { formatted, isJson } = tryFormatJson(content);
+  // Markdown-ish output defaults to the rendered reading view; Raw is a click
+  // away (debugging always deserves the verbatim bytes).
+  const markdown = !isJson && looksLikeMarkdown(content);
+  const [showRaw, setShowRaw] = useState(false);
+  const rendered = markdown && !showRaw;
 
   const handleCopy = async () => {
     try {
@@ -259,6 +271,16 @@ export function ToolOutputDrawer({
           )}
         </div>
         <div className="tool-output-actions">
+          {markdown && (
+            <button
+              className="copy-btn"
+              onClick={() => setShowRaw(r => !r)}
+              title={showRaw ? 'Rendered reading view' : 'Raw output (verbatim)'}
+            >
+              {showRaw ? <BookOpen size={14} /> : <Braces size={14} />}
+              <span>{showRaw ? 'Pretty' : 'Raw'}</span>
+            </button>
+          )}
           <button className="copy-btn" onClick={handleCopy} title="Copy to clipboard">
             {copied ? <Check size={14} /> : <Copy size={14} />}
             <span>{copied ? 'Copied!' : 'Copy'}</span>
@@ -269,9 +291,15 @@ export function ToolOutputDrawer({
         </div>
       </div>
       <div className="tool-output-content">
-        <pre className={isJson ? 'json-content' : ''}>
-          {formatted}
-        </pre>
+        {rendered ? (
+          <div className="tool-output-md">
+            <MessageContent content={content} />
+          </div>
+        ) : (
+          <pre className={isJson ? 'json-content' : ''}>
+            {formatted}
+          </pre>
+        )}
       </div>
       <style>{`
         .tool-output-drawer {
@@ -326,6 +354,12 @@ export function ToolOutputDrawer({
           background: var(--bg-hover);
           border-color: var(--accent-primary);
           color: var(--accent-primary);
+        }
+        .tool-output-md {
+          padding: 1rem 1.5rem 2rem;
+          max-width: 72ch;
+          font-size: 0.875rem;
+          line-height: 1.65;
         }
         .tool-output-content {
           flex: 1;
