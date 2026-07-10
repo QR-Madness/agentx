@@ -235,6 +235,10 @@ export interface ChatRequest {
   // Research Mode: elevated search budget + rigorous, evidence-grounded,
   // self-reviewing research prompt (gated server-side by research.enabled).
   research_mode?: boolean;
+  // Thinking Patterns: per-turn pattern override (native | cot | step_back |
+  // reflection | deep_reflection | self_consistency, or a legacy strategy
+  // value the server degrades honestly). Unset ⇒ profile/auto chain.
+  thinking_pattern?: string;
   workflow_id?: string;  // Optional Agent Alloy workflow — supervisor takes over the chat
   workspace_id?: string;  // Optional attached document workspace (Document RAG)
   images?: ChatImageRef[];  // Vision input: refs to uploaded images the model should see
@@ -488,7 +492,11 @@ export interface TemplateTag {
 
 // === Agent Profile Types ===
 
-export type ReasoningStrategy = 'auto' | 'cot' | 'tot' | 'react' | 'reflection';
+// `tot`/`react` are legacy offline-kit values (chat degrades them honestly:
+// tot→cot, react→native+tool narration); kept valid for existing profiles.
+export type ReasoningStrategy =
+  | 'auto' | 'native' | 'cot' | 'step_back' | 'tot' | 'react'
+  | 'reflection' | 'deep_reflection' | 'self_consistency';
 
 export interface AgentProfile {
   id: string;
@@ -815,6 +823,25 @@ export interface ConfigUpdate {
   memory?: {
     episodic_leads_enabled?: boolean;
     project_channels?: boolean;
+  };
+  /** Thinking Patterns (Settings → Intelligence → Thinking). */
+  reasoning?: {
+    chat_patterns_enabled?: boolean;
+    auto_classifier_enabled?: boolean;
+    /** "" = follow the fast_utility model role. */
+    classifier_model?: string;
+    classifier_min_chars?: number;
+    /** "" = the active turn model. */
+    step_back_model?: string;
+    step_back_timeout_seconds?: number;
+    cot_enabled?: boolean;
+    step_back_enabled?: boolean;
+    reflection_enabled?: boolean;
+    self_consistency_enabled?: boolean;
+    /** "" = the active turn model. */
+    sc_model?: string;
+    sc_k?: number;
+    min_output_tokens?: number;
   };
   alloy?: {
     allow_adhoc_delegation?: boolean;

@@ -65,6 +65,13 @@ _CONFIG_WRITE_ROUTES: dict[str, Any] = {
                                "max_knowledge_chars"),
     "compression": ("enabled", "model", "max_summary_chars"),
     "memory": ("episodic_leads_enabled", "project_channels"),
+    # Thinking Patterns (Settings → Intelligence → Thinking).
+    "reasoning": ("chat_patterns_enabled", "auto_classifier_enabled",
+                  "classifier_model", "classifier_min_chars",
+                  "step_back_model", "step_back_timeout_seconds",
+                  "cot_enabled", "step_back_enabled", "reflection_enabled",
+                  "self_consistency_enabled", "sc_model", "sc_k",
+                  "min_output_tokens"),
 }
 
 

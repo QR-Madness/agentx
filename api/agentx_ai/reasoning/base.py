@@ -86,16 +86,21 @@ class ReasoningResult(BaseModel):
 
 @dataclass
 class ReasoningConfig:
-    """Configuration for a reasoning strategy."""
+    """Base identity/config every strategy registers under.
+
+    Strategy-specific knobs live on the per-strategy dataclasses (CoTConfig,
+    ToTConfig, …); ``timeout_seconds`` is the per-strategy wall-clock budget the
+    orchestrator enforces around ``reason()`` (`asyncio.wait_for`). The old
+    ``max_steps`` field was never read anywhere and is gone.
+    """
     name: str
     strategy_type: str  # "cot", "tot", "react", "reflection"
     model: str
-    
+
     # Common settings
     temperature: float = 0.7
-    max_steps: int = 10
     timeout_seconds: float = 120.0
-    
+
     # Strategy-specific config
     extra: dict[str, Any] = field(default_factory=dict)
 

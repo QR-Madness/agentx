@@ -135,7 +135,7 @@ describe('SECTION_HIERARCHY (settings overhaul S4)', () => {
     );
     expect(shape).toEqual({
       infrastructure: ['providers', 'models', 'model-roles', 'search', 'images'],
-      intelligence: ['planner', 'alloy', 'ambassador', 'research'],
+      intelligence: ['planner', 'thinking', 'alloy', 'ambassador', 'research'],
       prompts: ['prompt-stack', 'prompts', 'prompt-templates', 'feature-prompts'],
       memory: ['memory-overview', 'context', 'memory-recall', 'memory-consolidation'],
       tools: ['translation'],

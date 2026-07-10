@@ -6,31 +6,24 @@ task characteristics and can combine multiple strategies for
 complex problems.
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any
 
 from ..providers.base import Message
 from .base import ReasoningResult, ReasoningStatus, ReasoningStrategy
 from .chain_of_thought import ChainOfThought, CoTConfig
+from .selection import TaskType, classify_task_type
 from .tree_of_thought import TreeOfThought, ToTConfig
 from .react import ReActAgent, ReActConfig, Tool
 from .reflection import ReflectiveReasoner, ReflectionConfig
 
 logger = logging.getLogger(__name__)
 
-
-class TaskType(str, Enum):
-    """Types of tasks for strategy selection."""
-    SIMPLE = "simple"
-    ANALYTICAL = "analytical"
-    CREATIVE = "creative"
-    RESEARCH = "research"
-    PLANNING = "planning"
-    CODE = "code"
-    MATH = "math"
-    UNKNOWN = "unknown"
+# Backward-compat re-export: TaskType moved to reasoning/selection.py (ONE
+# brain for classification, shared with the chat thinking patterns).
+__all__ = ["OrchestratorConfig", "ReasoningOrchestrator", "TaskType"]
 
 
 @dataclass
@@ -56,10 +49,14 @@ class OrchestratorConfig:
     
     # ReAct tools
     react_tools: list[Tool] = field(default_factory=list)
-    
+
     # Fallback behavior
     fallback_strategy: str = "cot"
     enable_fallback: bool = True
+
+    # Wall-clock budget per strategy execution (a hung provider call no longer
+    # hangs the whole /agent/run request). Applied around each `reason()` call.
+    timeout_seconds: float = 180.0
 
 
 class ReasoningOrchestrator:
@@ -83,8 +80,19 @@ class ReasoningOrchestrator:
         self.config = config
         self._strategies: dict[str, ReasoningStrategy] = {}
     
+    # Chat-first pattern values mapped to their nearest offline kit strategy
+    # (the chat path compiles these into the streaming loop instead; a profile
+    # carrying one must still work on /agent/run).
+    _OFFLINE_ALIASES: dict[str, str] = {
+        "native": "cot",
+        "step_back": "cot",
+        "deep_reflection": "reflection",
+        "self_consistency": "cot",
+    }
+
     def _get_strategy(self, strategy_type: str, model: str) -> ReasoningStrategy:
         """Get or create a reasoning strategy."""
+        strategy_type = self._OFFLINE_ALIASES.get(strategy_type, strategy_type)
         key = f"{strategy_type}:{model}"
         
         if key not in self._strategies:
@@ -152,31 +160,40 @@ class ReasoningOrchestrator:
 
         logger.info(f"Using strategy: {strategy}, model: {model}")
 
-        # Get and execute strategy
+        # Get and execute strategy (bounded — a hung provider call fails over
+        # instead of hanging the whole /agent/run request).
         try:
             reasoning_strategy = self._get_strategy(strategy, model)
-            result = await reasoning_strategy.reason(task, context, **kwargs)
+            result = await asyncio.wait_for(
+                reasoning_strategy.reason(task, context, **kwargs),
+                timeout=self.config.timeout_seconds,
+            )
 
             # Check for failure and fallback (safely handle status)
             status_value = getattr(result.status, 'value', str(result.status))
             if status_value == "failed" and self.config.enable_fallback:
                 logger.warning(f"Strategy {strategy} failed, trying fallback")
                 fallback = self._get_strategy(self.config.fallback_strategy, model)
-                result = await fallback.reason(task, context, **kwargs)
+                result = await asyncio.wait_for(
+                    fallback.reason(task, context, **kwargs),
+                    timeout=self.config.timeout_seconds,
+                )
 
             return result
 
         except Exception as e:
-            # Top-level guard for genuine provider/runtime failures. With
-            # strategies now awaited, this no longer masks the un-awaited
-            # coroutine bug that previously made every call fall through here.
+            # Top-level guard for genuine provider/runtime failures (incl.
+            # TimeoutError from the wall-clock budget above).
             logger.error(f"Reasoning failed: {e}", exc_info=True)
 
             if self.config.enable_fallback:
                 logger.info("Attempting fallback strategy")
                 try:
                     fallback = self._get_strategy(self.config.fallback_strategy, model)
-                    return await fallback.reason(task, context, **kwargs)
+                    return await asyncio.wait_for(
+                        fallback.reason(task, context, **kwargs),
+                        timeout=self.config.timeout_seconds,
+                    )
                 except Exception as e2:
                     logger.error(f"Fallback also failed: {e2}")
 
@@ -185,47 +202,11 @@ class ReasoningOrchestrator:
                 strategy=strategy,
                 status=ReasoningStatus.FAILED,
             )
-    
+
     def _classify_task(self, task: str) -> TaskType:
-        """Classify the task type based on keywords and patterns."""
-        task_lower = task.lower()
-        
-        # Math indicators
-        math_words = ["calculate", "compute", "solve", "equation", "formula", "sum", "product", "divide", "multiply"]
-        if any(w in task_lower for w in math_words):
-            return TaskType.MATH
-        
-        # Code indicators
-        code_words = ["code", "program", "function", "implement", "algorithm", "debug", "fix the bug", "script"]
-        if any(w in task_lower for w in code_words):
-            return TaskType.CODE
-        
-        # Research indicators
-        research_words = ["search", "find information", "look up", "research", "what is the latest", "current"]
-        if any(w in task_lower for w in research_words):
-            return TaskType.RESEARCH
-        
-        # Planning indicators
-        planning_words = ["plan", "design", "strategy", "approach", "organize", "schedule", "roadmap"]
-        if any(w in task_lower for w in planning_words):
-            return TaskType.PLANNING
-        
-        # Creative indicators
-        creative_words = ["write", "create", "compose", "draft", "story", "essay", "poem", "creative"]
-        if any(w in task_lower for w in creative_words):
-            return TaskType.CREATIVE
-        
-        # Analytical indicators
-        analytical_words = ["analyze", "compare", "evaluate", "assess", "review", "examine", "explain why"]
-        if any(w in task_lower for w in analytical_words):
-            return TaskType.ANALYTICAL
-        
-        # Simple task indicators
-        simple_words = ["what is", "who is", "when did", "where is", "define", "list"]
-        if any(w in task_lower for w in simple_words):
-            return TaskType.SIMPLE
-        
-        return TaskType.UNKNOWN
+        """Classify the task type — delegates to the shared selection module
+        (ONE definition for the chat thinking patterns AND this orchestrator)."""
+        return classify_task_type(task)
     
     def add_react_tool(self, tool: Tool) -> None:
         """Add a tool for ReAct reasoning."""

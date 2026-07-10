@@ -42,12 +42,22 @@ def generate_agent_id() -> str:
 
 
 class ReasoningStrategy(str, Enum):
-    """Available reasoning strategies for agent task execution."""
+    """Available reasoning strategies / chat thinking patterns for a profile.
+
+    In chat, values compile to thinking patterns (`reasoning/chat_patterns.py`);
+    `tot`/`react` degrade honestly there (tot→cot; react→native+tool narration —
+    the tool loop IS ReAct) while keeping their full offline behavior on
+    `/api/agent/run`.
+    """
     AUTO = "auto"
-    COT = "cot"  # Chain of Thought
-    TOT = "tot"  # Tree of Thought
-    REACT = "react"
-    REFLECTION = "reflection"
+    NATIVE = "native"                    # model thinks natively, no scaffold
+    COT = "cot"                          # Chain of Thought
+    STEP_BACK = "step_back"              # principles-first pre-call
+    TOT = "tot"                          # Tree of Thought (offline; chat: →cot)
+    REACT = "react"                      # (offline; chat: →native + narration)
+    REFLECTION = "reflection"            # single-pass draft→critique→final
+    DEEP_REFLECTION = "deep_reflection"  # multi-pass streamed reflection
+    SELF_CONSISTENCY = "self_consistency"  # k samples + judged consensus
 
 
 class AmbassadorConfig(BaseModel):

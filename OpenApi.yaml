@@ -4813,8 +4813,10 @@ paths:
         (`enabled`, `model`, `max_tokens`), `trajectory_compression`
         (`enabled`, `threshold_ratio`, `preserve_recent_rounds`, `model`,
         `max_knowledge_chars`), `compression` (`enabled`, `model`,
-        `max_summary_chars`), and `memory` (`episodic_leads_enabled`,
-        `project_channels`).
+        `max_summary_chars`), `memory` (`episodic_leads_enabled`,
+        `project_channels`), and `reasoning` (Thinking Patterns —
+        allowlisted per-pattern enables, classifier/step-back/sampling
+        models, `sc_k`, `min_output_tokens`).
       requestBody:
         required: true
         content:

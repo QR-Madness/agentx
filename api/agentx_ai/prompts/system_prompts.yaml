@@ -788,6 +788,96 @@ reasoning:
       Based on the critique, revise and improve the response.
       Address all the issues mentioned while maintaining what was good.
 
+  # Chat thinking patterns — system-layer directives compiled into the
+  # streaming turn (reasoning/chat_patterns.py). Distinct from the offline
+  # strategy prompts above: these steer ONE completion (thinking happens
+  # inside <think> tags the client renders live), they never script multiple
+  # calls.
+  chat:
+    # Visible step-by-step scaffold for models WITHOUT native reasoning.
+    cot_directive: |
+      For this turn, reason before you answer. Inside <think> tags, work
+      through the problem as explicit numbered steps (Step 1, Step 2, …),
+      each a single verifiable claim or operation — check each step against
+      the previous ones before moving on. Keep the thinking concise and
+      information-dense. After </think>, give only the final answer; never
+      repeat the steps outside the tags.
+
+    # Single-completion structured reflection: draft → critique → final.
+    reflection_directive: |
+      For this turn, use structured self-review. Inside <think> tags: first
+      write a complete DRAFT of your answer; then CRITIQUE it — name concrete
+      errors, gaps, or weak reasoning (be adversarial with yourself, not
+      polite); then decide what to change. After </think>, output only the
+      improved final answer. The final answer must address every flaw your
+      critique found, and must never mention the draft or critique process.
+
+    # step_back pre-call: extract governing principles before the main turn.
+    # Variables: {question}
+    step_back_extract: |
+      Before answering the question below, step back: identify the general
+      principles, laws, or concepts that govern it. List 2-4 principles, one
+      line each, most fundamental first. No preamble, no answer to the
+      question itself — principles only.
+
+      Question: {question}
+
+    # Tool-narration nudge when a legacy `react` selection runs on the native
+    # tool loop (chat turns already interleave reasoning and real tool calls).
+    react_narration_nudge: |
+      As you work with tools this turn, narrate your loop inside <think>
+      tags before each call: what you are trying to learn (Thought), which
+      tool you chose and why (Action), and what the last result told you
+      (Observation). Keep each entry to one or two lines.
+
+    # deep_reflection critique pass (hidden completion between draft and final).
+    multipass_critique: |
+      Critique the draft answer you just gave, adversarially: name concrete
+      errors, unsupported claims, missing considerations, and weak reasoning —
+      most serious first, one line each. No praise, no rewriting yet.
+
+    # deep_reflection final-pass brief. Variables: {draft}, {critique}
+    multipass_final: |
+      You drafted an answer and critiqued it. Produce the improved final
+      answer now: fix every flaw the critique names, keep what was right, and
+      do not mention the draft or critique process.
+
+      DRAFT:
+      {draft}
+
+      CRITIQUE:
+      {critique}
+
+    # self_consistency judge brief. Variables: {samples}
+    sc_judge: |
+      Several independent solutions to the user's request were sampled. Find
+      where they agree — the consensus is usually right; where they disagree,
+      re-derive that part yourself. Then give ONE final authoritative answer.
+      Do not mention the samples or the sampling process.
+
+      {samples}
+
+    # Auto-selector LLM tiebreak (fast_utility role, bounded). Variables:
+    # {message}, {native}
+    classifier: |
+      Pick the best thinking pattern for an AI agent answering the message
+      below. Model has native reasoning: {native}.
+
+      Patterns:
+      - native: model thinks freely (best for models with native reasoning)
+      - cot: explicit numbered steps (multi-step logic without native reasoning)
+      - step_back: extract governing principles first (conceptual why/how)
+      - reflection: draft, self-critique, improve (writing, code, judgment)
+      - self_consistency: sample several solutions, keep the consensus (short
+        calculation or logic puzzles only, never tool tasks)
+      - none: trivial or conversational message, no pattern needed
+
+      Message:
+      {message}
+
+      Reply with exactly one word: native, cot, step_back, reflection,
+      self_consistency, or none.
+
 # =============================================================================
 # PLANNER PROMPTS
 # =============================================================================

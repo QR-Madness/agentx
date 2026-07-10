@@ -24,7 +24,15 @@ import {
   Users,
   UserX,
   Telescope,
+  Brain,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from '../ui/DropdownMenu';
 import { api } from '../../lib/api';
 import { contextChipState } from '../../lib/contextChip';
 import { MessageImages } from './MessageImages';
@@ -84,6 +92,21 @@ import './ChatPanel.css';
 // client-side size cap (the server enforces the workspace per-file limit too).
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const MAX_IMAGE_BYTES = 8_000_000;
+
+// Thinking Patterns — the composer chip's per-conversation override menu.
+// '' = Auto (profile/auto chain). Values mirror the server's chat patterns.
+const THINKING_PATTERN_OPTIONS: { value: string; label: string; hint: string }[] = [
+  { value: '', label: 'Auto', hint: 'Pick the best pattern per message' },
+  { value: 'native', label: 'Native', hint: 'The model thinks freely — no scaffold' },
+  { value: 'cot', label: 'Step-by-step', hint: 'Explicit numbered reasoning steps' },
+  { value: 'step_back', label: 'Step-back', hint: 'Distill governing principles first' },
+  { value: 'reflection', label: 'Reflect', hint: 'Draft, self-critique, improve — one pass' },
+  { value: 'deep_reflection', label: 'Reflect deeply', hint: 'Live draft → critique → final (extra calls)' },
+  { value: 'self_consistency', label: 'Consensus', hint: 'Sample several solutions, keep the agreement (extra calls)' },
+];
+const THINKING_PATTERN_LABELS: Record<string, string> = Object.fromEntries(
+  THINKING_PATTERN_OPTIONS.filter(o => o.value).map(o => [o.value, o.label]),
+);
 
 export function ChatPanel() {
   const {
@@ -272,6 +295,15 @@ export function ChatPanel() {
   const setResearchMode = useCallback(
     (next: boolean) => {
       if (activeTab) updateTab(activeTab.id, { researchMode: next });
+    },
+    [activeTab, updateTab],
+  );
+  // Thinking Patterns chip: per-conversation pattern override (null/'' = Auto —
+  // the profile/auto chain decides). Sent as `thinking_pattern` per turn.
+  const thinkingPattern = activeTab?.thinkingPattern ?? null;
+  const setThinkingPattern = useCallback(
+    (next: string | null) => {
+      if (activeTab) updateTab(activeTab.id, { thinkingPattern: next });
     },
     [activeTab, updateTab],
   );
@@ -621,6 +653,7 @@ export function ChatPanel() {
       use_memory: useMemory,
       disable_delegation: soloMode || undefined,
       research_mode: researchMode || undefined,
+      thinking_pattern: thinkingPattern || undefined,
       workflow_id: activeTab.workflowId || undefined,
       workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       ...(imgs.length ? { images: imgs } : {}),
@@ -663,6 +696,7 @@ export function ChatPanel() {
               use_memory: useMemory,
               disable_delegation: soloMode || undefined,
               research_mode: researchMode || undefined,
+              thinking_pattern: thinkingPattern || undefined,
               workflow_id: activeTab.workflowId || undefined,
               workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
             });
@@ -687,6 +721,7 @@ export function ChatPanel() {
         use_memory: useMemory,
         disable_delegation: soloMode || undefined,
         research_mode: researchMode || undefined,
+        thinking_pattern: thinkingPattern || undefined,
         workflow_id: activeTab.workflowId || undefined,
         workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       });
@@ -720,6 +755,7 @@ export function ChatPanel() {
         use_memory: useMemory,
         disable_delegation: soloMode || undefined,
         research_mode: researchMode || undefined,
+        thinking_pattern: thinkingPattern || undefined,
         workflow_id: activeTab.workflowId || undefined,
         workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       });
@@ -1280,6 +1316,36 @@ export function ChatPanel() {
               <span>Research</span>
             </button>
           )}
+
+          {/* Thinking Patterns chip — per-conversation pattern override. Auto
+              (default) lets the profile/auto chain decide; a chosen pattern is
+              sent as `thinking_pattern` on every turn until changed. */}
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={`composer-chip ${thinkingPattern ? 'active' : ''}`}
+                title="Thinking pattern — how the agent reasons this conversation (Auto picks per message)"
+              >
+                <Brain size={12} />
+                <span>{THINKING_PATTERN_LABELS[thinkingPattern ?? ''] ?? 'Thinking'}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-[15rem]">
+              <DropdownMenuRadioGroup
+                value={thinkingPattern ?? ''}
+                onValueChange={v => setThinkingPattern(v || null)}
+              >
+                {THINKING_PATTERN_OPTIONS.map(opt => (
+                  <DropdownMenuRadioItem key={opt.value} value={opt.value} title={opt.hint}>
+                    <span className="flex flex-col items-start">
+                      <span>{opt.label}</span>
+                      <span className="text-2xs text-fg-muted">{opt.hint}</span>
+                    </span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         {(pendingImages.length > 0 || uploadingImages > 0) && (
           <div className="composer-images">

@@ -124,6 +124,35 @@ DEFAULT_CONFIG = {
         "complexity_threshold": "complex",   # "simple" | "moderate" | "complex"
         "max_subtasks": 6,                   # Hard cap on decomposed subtasks
     },
+    "reasoning": {
+        # Thinking Patterns — reasoning compiled into the streaming chat turn
+        # (reasoning/chat_patterns.py). Master kill-switch restores pre-feature
+        # behavior in one flip.
+        "chat_patterns_enabled": True,
+        # Auto mode: LLM tiebreak when the keyword heuristics are unconfident
+        # (fast_utility role, ≤150 output tokens, 5s timeout). Heuristics always
+        # run first — the common path costs zero extra calls.
+        "auto_classifier_enabled": True,
+        "classifier_model": "",   # empty ⇒ fast_utility role (see model_roles.py)
+        # Below this message length the tiebreak never fires (trivial turns).
+        "classifier_min_chars": 240,
+        # step_back pre-call (principles extracted before the turn). Empty
+        # model ⇒ the active turn model (role: refs still expand).
+        "step_back_model": "",
+        "step_back_timeout_seconds": 20,
+        # Per-pattern availability (auto + explicit selection both respect these).
+        "cot_enabled": True,
+        "step_back_enabled": True,
+        "reflection_enabled": True,
+        "self_consistency_enabled": True,
+        # Self-consistency: k parallel short samples + a judged final answer.
+        # Empty model ⇒ the active turn model (samples are the k× cost).
+        "sc_model": "",
+        "sc_k": 3,
+        # Thinking output floor (tokens). 0 = auto: floor at the reasoning
+        # minimum whenever a pattern is active or the model reasons natively.
+        "min_output_tokens": 0,
+    },
     "shell": {
         # Agent shells = LLM-driven command execution (arbitrary code), so it's OFF by
         # default and **enabled per-workspace** (set `allow_shell` on the workspace, not a

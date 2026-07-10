@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.203 -->
+<!-- release-version: 0.21.204 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -76,6 +76,15 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   age out of the window they're now compacted **into this structured state** (a rolling summary that
   stays bounded) instead of a separate lossy prose blob, so long conversations stay coherent.
   Default-on; opt out in settings.
+- **Thinking Patterns — agents now really reason, live in chat** — pick how an agent thinks per
+  profile or per conversation (the composer 🧠 chip): Native free thinking, Step-by-step, Step-back
+  (principles first), Reflection, **Deep reflection** (watch the draft and self-critique stream live
+  in the thinking bubble before the improved answer), and **Consensus** (sample several solutions,
+  keep the agreement). Auto picks per message — instantly by heuristics, with an optional tiny
+  classifier call — and never wastes budget scaffolding a model that already thinks natively; the
+  thinking output floor keeps long thinking from starving the visible answer. The old strategies
+  (Tree-of-Thought, ReAct) degrade honestly in chat and live on for `/agent/run`. Configure under
+  **Settings → Intelligence → Thinking Patterns**.
 - **One home for how context works: Settings → Memory → Conversation Context** — the verbatim
   window, the state-digest compaction and its summarizer, in-turn trajectory compression (moved out
   of Consolidation), tool-output compression, episodic thread leads, rehydration bounds, and an

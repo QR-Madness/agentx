@@ -9,6 +9,7 @@ import {
   Key,
   Layers,
   Layers3,
+  BrainCircuit,
   Sparkles,
   Database,
   Wrench,
@@ -98,6 +99,13 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         icon: <ListTree size={18} />,
         component: lazy(() => import('./PlannerSection')),
         keywords: ['plan', 'planner', 'decompose', 'subtask', 'complexity']
+      },
+      {
+        id: 'thinking',
+        label: 'Thinking Patterns',
+        icon: <BrainCircuit size={18} />,
+        component: lazy(() => import('./ThinkingSection')),
+        keywords: ['thinking', 'reasoning', 'cot', 'chain of thought', 'reflection', 'step-back', 'self-consistency', 'consensus', 'classifier', 'pattern', 'scaffold']
       },
       {
         id: 'alloy',

@@ -836,18 +836,19 @@ class ReasoningBaseTest(TestCase):
         self.assertEqual(result.status, ReasoningStatus.COMPLETE)
     
     def test_reasoning_config_creation(self) -> None:
-        """Test ReasoningConfig creation."""
+        """Test ReasoningConfig creation (max_steps was removed — never read)."""
         config = ReasoningConfig(
             name="test-cot",
             strategy_type="cot",
             model="llama3.2",
             temperature=0.7,
-            max_steps=5,
+            timeout_seconds=60.0,
         )
-        
+
         self.assertEqual(config.name, "test-cot")
         self.assertEqual(config.strategy_type, "cot")
         self.assertEqual(config.model, "llama3.2")
+        self.assertEqual(config.timeout_seconds, 60.0)
 
 
 class ChainOfThoughtTest(TestCase):
@@ -13923,3 +13924,386 @@ class ProjectFileToolsTest(TestCase):
         self.assertEqual(_slug_from_prompt("A Web Banner for Docs!"), "a-web-banner-for-docs")
         self.assertEqual(_slug_from_prompt("   "), "image")  # fallback
         self.assertLessEqual(len(_slug_from_prompt("word " * 50)), 40)
+
+
+# =============================================================================
+# Thinking Patterns (reasoning/selection.py + chat_patterns.py + thinking_exec)
+# =============================================================================
+
+class ThinkingSelectionTest(TestCase):
+    """Heuristic pattern selection — the zero-latency common path."""
+
+    def test_keyword_families_route(self):
+        from agentx_ai.reasoning.selection import select_pattern
+
+        p, conf = select_pattern("calculate the sum of 3 and 4",
+                                 supports_reasoning=False, tools_likely=False)
+        self.assertEqual(p, "cot")
+        self.assertGreaterEqual(conf, 0.5)
+        p, _ = select_pattern("write a story about autumn",
+                              supports_reasoning=False, tools_likely=False)
+        self.assertEqual(p, "reflection")
+        p, _ = select_pattern("search for the latest census figures",
+                              supports_reasoning=True, tools_likely=True)
+        self.assertEqual(p, "native")
+
+    def test_native_reasoners_never_get_cot_from_auto(self):
+        from agentx_ai.reasoning.selection import select_pattern
+
+        for msg in ("calculate 3*7 quickly", "analyze the tradeoffs involved",
+                    "plan a three-step approach"):
+            p, _ = select_pattern(msg, supports_reasoning=True, tools_likely=False)
+            self.assertNotEqual(p, "cot", msg)
+
+    def test_self_consistency_gate(self):
+        from agentx_ai.reasoning.selection import select_pattern
+
+        # Math + no tools + enabled → SC.
+        p, _ = select_pattern("solve this equation for x",
+                              supports_reasoning=False, tools_likely=False,
+                              sc_enabled=True)
+        self.assertEqual(p, "self_consistency")
+        # Tools likely → never SC (samples run tool-less).
+        p, _ = select_pattern("solve this equation for x",
+                              supports_reasoning=False, tools_likely=True,
+                              sc_enabled=True)
+        self.assertNotEqual(p, "self_consistency")
+        # Disabled → falls to the plain table.
+        p, _ = select_pattern("solve this equation for x",
+                              supports_reasoning=False, tools_likely=False,
+                              sc_enabled=False)
+        self.assertEqual(p, "cot")
+
+    def test_step_back_markers(self):
+        from agentx_ai.reasoning.selection import select_pattern
+
+        p, _ = select_pattern("why does entropy always increase in a closed system",
+                              supports_reasoning=False, tools_likely=False)
+        self.assertEqual(p, "step_back")
+
+    def test_unconfident_default_is_cheap(self):
+        from agentx_ai.reasoning.selection import select_pattern
+
+        p, conf = select_pattern("hmm ok then", supports_reasoning=False,
+                                 tools_likely=False)
+        self.assertIsNone(p)
+        self.assertLess(conf, 0.5)
+        p, conf = select_pattern("hmm ok then", supports_reasoning=True,
+                                 tools_likely=False)
+        self.assertEqual(p, "native")
+
+    def test_degradation_map(self):
+        from agentx_ai.reasoning.selection import normalize_chat_pattern
+
+        self.assertEqual(normalize_chat_pattern("tot")[0], "cot")
+        self.assertIsNotNone(normalize_chat_pattern("tot")[1])  # note surfaced
+        self.assertEqual(normalize_chat_pattern("react")[0], "native")
+        self.assertEqual(normalize_chat_pattern("reflection"), ("reflection", None))
+        self.assertEqual(normalize_chat_pattern("auto"), (None, None))
+        self.assertEqual(normalize_chat_pattern("bogus-value"), (None, None))
+        self.assertEqual(normalize_chat_pattern(None), (None, None))
+
+
+class ThinkingResolutionTest(TestCase):
+    """resolve_thinking_plan — precedence chain, gates, degradations."""
+
+    def _resolve(self, *, turn=None, profile=None, preference="",
+                 store=None, supports_reasoning=False, research=False,
+                 direct=False, tools_likely=False, message="analyze the tradeoffs involved here"):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.reasoning.chat_patterns import resolve_thinking_plan
+
+        cfg_store = {"preferences.default_reasoning_strategy": preference}
+        cfg_store.update(store or {})
+        cfg = SimpleNamespace(get=lambda key, default=None: cfg_store.get(key, default))
+        caps = SimpleNamespace(supports_reasoning=supports_reasoning)
+        provider = SimpleNamespace()  # no fetch_models → probe returns caps value
+        with patch("agentx_ai.reasoning.chat_patterns._cfg", return_value=cfg):
+            return asyncio.run(resolve_thinking_plan(
+                message,
+                turn_override=turn, profile_strategy=profile,
+                provider=provider, model_id="m", caps=caps,
+                active_model="prov:m", research_active=research,
+                tools_likely=tools_likely, direct_mode=direct,
+            ))
+
+    def test_turn_override_beats_profile_and_preference(self):
+        plan = self._resolve(turn="reflection", profile="cot", preference="tot")
+        self.assertEqual(plan.pattern, "reflection")
+        self.assertTrue(plan.blocks)
+        self.assertFalse(plan.auto_selected)
+
+    def test_profile_beats_preference_and_auto(self):
+        plan = self._resolve(profile="cot", preference="reflection")
+        self.assertEqual(plan.pattern, "cot")
+        self.assertEqual(plan.blocks[0].key, "thinking_cot")
+
+    def test_auto_falls_through_when_sources_are_auto(self):
+        plan = self._resolve(profile="auto", preference="auto",
+                             supports_reasoning=True)
+        self.assertEqual(plan.pattern, "native")
+        self.assertTrue(plan.auto_selected)
+
+    def test_disabled_pattern_falls_through_to_next_source(self):
+        plan = self._resolve(turn="reflection", profile="cot",
+                             store={"reasoning.reflection_enabled": False})
+        self.assertEqual(plan.pattern, "cot")
+
+    def test_kill_switch_and_scope_gates(self):
+        for kwargs in (
+            {"store": {"reasoning.chat_patterns_enabled": False}, "turn": "cot"},
+            {"research": True, "turn": "cot"},
+            {"direct": True, "turn": "cot"},
+        ):
+            plan = self._resolve(**kwargs)
+            self.assertIsNone(plan.pattern, kwargs)
+            self.assertEqual(plan.blocks, [])
+
+    def test_legacy_react_degrades_to_native_with_nudge(self):
+        plan = self._resolve(profile="react", supports_reasoning=True)
+        self.assertEqual(plan.pattern, "native")
+        self.assertTrue(any(b.key == "thinking_react_nudge" for b in plan.blocks))
+        self.assertIsNotNone(plan.note)
+
+    def test_step_back_precall_failure_degrades_to_cot(self):
+        from unittest.mock import AsyncMock, patch
+
+        with patch("agentx_ai.reasoning.chat_patterns._step_back_block",
+                   new=AsyncMock(return_value=[])):
+            plan = self._resolve(turn="step_back")
+        self.assertEqual(plan.pattern, "cot")
+        self.assertTrue(plan.blocks)
+
+    def test_thinking_floor_rides_the_plan(self):
+        from agentx_ai.streaming.constants import REASONING_MIN_OUTPUT_TOKENS
+
+        plan = self._resolve(profile="cot")
+        self.assertEqual(plan.min_output, REASONING_MIN_OUTPUT_TOKENS)
+        plan = self._resolve(message="hmm ok then")  # no pattern, non-reasoner
+        self.assertIsNone(plan.min_output)
+
+
+class ThinkingBudgetFloorTest(TestCase):
+    """_effective_min_output — the single min_output_override slot combiner."""
+
+    def test_max_of_research_and_thinking_floors(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.views import _effective_min_output
+
+        plan = SimpleNamespace(min_output=8192)
+        with patch("agentx_ai.views._research_min_output", return_value=16384):
+            self.assertEqual(_effective_min_output(True, plan, 200_000, "m"), 16384)
+        with patch("agentx_ai.views._research_min_output", return_value=4096):
+            self.assertEqual(_effective_min_output(True, plan, 200_000, "m"), 8192)
+        self.assertEqual(
+            _effective_min_output(False, SimpleNamespace(min_output=None), 200_000, "m"),
+            None,
+        )
+        self.assertEqual(
+            _effective_min_output(False, plan, 200_000, "m"), 8192)
+
+
+class ThinkingReasoningProbeTest(TestCase):
+    """supports_reasoning_hardened — warm-catalog recheck (mirrors the tool gate)."""
+
+    def test_cold_catalog_flip(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from agentx_ai.reasoning.chat_patterns import supports_reasoning_hardened
+
+        cold = SimpleNamespace(supports_reasoning=False)
+        warm = SimpleNamespace(supports_reasoning=True)
+        provider = SimpleNamespace(
+            fetch_models=AsyncMock(return_value=[]),
+            get_capabilities=lambda mid: warm,
+        )
+        self.assertTrue(asyncio.run(
+            supports_reasoning_hardened(provider, "m", cold)))
+        provider.fetch_models.assert_awaited_once()
+
+    def test_probe_failure_defaults_false(self):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from agentx_ai.reasoning.chat_patterns import supports_reasoning_hardened
+
+        provider = SimpleNamespace(
+            fetch_models=AsyncMock(side_effect=RuntimeError("boom")),
+            get_capabilities=lambda mid: SimpleNamespace(supports_reasoning=True),
+        )
+        cold = SimpleNamespace(supports_reasoning=False)
+        self.assertFalse(asyncio.run(
+            supports_reasoning_hardened(provider, "m", cold)))
+
+
+class StepBackPrecallTest(TestCase):
+    """The step_back pre-call: bounded, best-effort, model-chain honest."""
+
+    def _run(self, registry_mock, store=None):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.reasoning import chat_patterns
+
+        cfg_store = store or {}
+        cfg = SimpleNamespace(get=lambda key, default=None: cfg_store.get(key, default))
+        with patch("agentx_ai.reasoning.chat_patterns._cfg", return_value=cfg), \
+             patch("agentx_ai.providers.registry.get_registry", return_value=registry_mock):
+            return asyncio.run(chat_patterns._step_back_block("why does x", "prov:m"))
+
+    def test_success_produces_block(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, MagicMock
+
+        registry = MagicMock()
+        registry.complete_with_fallback = AsyncMock(
+            return_value=SimpleNamespace(content="1. Conservation applies."))
+        blocks = self._run(registry)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0].key, "thinking_step_back")
+        self.assertIn("Conservation", blocks[0].content)
+        # "" model ⇒ active model rides in as the preferred fallback.
+        kwargs = registry.complete_with_fallback.call_args.kwargs
+        self.assertEqual(kwargs["preferred_fallback"], "prov:m")
+
+    def test_timeout_returns_empty(self):
+        import asyncio as aio
+        from unittest.mock import AsyncMock, MagicMock
+
+        async def _slow(*a, **k):
+            await aio.sleep(0.2)
+
+        registry = MagicMock()
+        registry.complete_with_fallback = AsyncMock(side_effect=_slow)
+        blocks = self._run(registry, store={"reasoning.step_back_timeout_seconds": 0.01})
+        self.assertEqual(blocks, [])
+
+    def test_exception_returns_empty(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        registry = MagicMock()
+        registry.complete_with_fallback = AsyncMock(side_effect=RuntimeError("no credits"))
+        self.assertEqual(self._run(registry), [])
+
+
+class ThinkTagSanitizerTest(TestCase):
+    """Streaming think-tag stripping + the stitched multi-block parse."""
+
+    def test_tags_split_across_chunks(self):
+        from agentx_ai.streaming.thinking_exec import ThinkTagSanitizer
+
+        s = ThinkTagSanitizer()
+        out = s.feed("alpha <thi") + s.feed("nk>beta</th") + s.feed("ink> gamma") + s.flush()
+        self.assertEqual(out, "alpha beta gamma")
+
+    def test_partial_that_never_becomes_a_tag_passes_through(self):
+        from agentx_ai.streaming.thinking_exec import ThinkTagSanitizer
+
+        s = ThinkTagSanitizer()
+        out = s.feed("value <thr") + s.feed("eshold>") + s.flush()
+        self.assertEqual(out, "value <threshold>")
+
+    def test_nested_corruption_case(self):
+        """The exact shape that used to corrupt parse_output: a native model's
+        own tags inside a synthetic wrapper."""
+        from agentx_ai.streaming.thinking_exec import ThinkTagSanitizer
+
+        s = ThinkTagSanitizer()
+        inner = "<think>A<think>B</think>C</think>"
+        self.assertEqual(s.feed(inner) + s.flush(), "ABC")
+
+    def test_stitched_multiblock_parses_cleanly(self):
+        """Synthetic outer think + the final pass's own native think block →
+        parse_output keeps ALL thinking and only the visible answer."""
+        from agentx_ai.agent.output_parser import parse_output
+
+        stitched = ("<think>Draft:\nfirst try\n\nCritique:\nweak claim</think>"
+                    "<think>native pondering</think>The final answer.")
+        parsed = parse_output(stitched)
+        self.assertEqual(parsed.content, "The final answer.")
+        self.assertTrue(parsed.has_thinking)
+        self.assertIn("Draft:", parsed.thinking)
+        self.assertIn("native pondering", parsed.thinking)
+
+    def test_prepend_think_folds_into_result(self):
+        from agentx_ai.streaming.thinking_exec import _prepend_think
+        from agentx_ai.streaming.tool_loop import ToolLoopResult
+
+        r = ToolLoopResult()
+        r.content = "final"
+        _prepend_think(r, "draft + critique")
+        self.assertEqual(r.content, "<think>draft + critique</think>final")
+
+
+class OrchestratorSelectionDelegationTest(TestCase):
+    """The offline orchestrator delegates classification + aliases chat values."""
+
+    def test_classification_parity(self):
+        from agentx_ai.reasoning.orchestrator import ReasoningOrchestrator, OrchestratorConfig
+        from agentx_ai.reasoning.selection import classify_task_type
+
+        orch = ReasoningOrchestrator(OrchestratorConfig())
+        for msg in ("calculate 3+4", "write a poem", "plan my week",
+                    "analyze this dataset", "hello there"):
+            self.assertEqual(orch._classify_task(msg), classify_task_type(msg), msg)
+
+    def test_chat_values_alias_to_kit_strategies(self):
+        from agentx_ai.reasoning.chain_of_thought import ChainOfThought
+        from agentx_ai.reasoning.orchestrator import ReasoningOrchestrator, OrchestratorConfig
+        from agentx_ai.reasoning.reflection import ReflectiveReasoner
+
+        orch = ReasoningOrchestrator(OrchestratorConfig())
+        self.assertIsInstance(orch._get_strategy("native", "prov:m"), ChainOfThought)
+        self.assertIsInstance(orch._get_strategy("deep_reflection", "prov:m"),
+                              ReflectiveReasoner)
+
+
+class ReflectionTemplateTest(TestCase):
+    """The kit's reflection stages consume the YAML templates (were dead)."""
+
+    def test_yaml_templates_used_when_config_empty(self):
+        from agentx_ai.reasoning.reflection import ReflectiveReasoner, ReflectionConfig
+
+        r = ReflectiveReasoner(ReflectionConfig(model="prov:m"))
+        critique = r._prompt("critique", r.ref_config.critique_prompt)
+        revision = r._prompt("revision", r.ref_config.revision_prompt)
+        self.assertIn("critically", critique)
+        self.assertIn("revise", revision.lower())
+
+    def test_explicit_override_wins(self):
+        from agentx_ai.reasoning.reflection import ReflectiveReasoner, ReflectionConfig
+
+        r = ReflectiveReasoner(ReflectionConfig(model="prov:m",
+                                                critique_prompt="MY CRITIQUE"))
+        self.assertEqual(r._prompt("critique", r.ref_config.critique_prompt),
+                         "MY CRITIQUE")
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class ThinkingConfigEndpointTest(TestCase):
+    """/api/config/update accepts the allowlisted reasoning.* keys only."""
+
+    def test_reasoning_section_allowlist(self):
+        cfg = MagicMock()
+        cfg.save.return_value = True
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+             patch("agentx_ai.views.get_registry"):
+            resp = self.client.post(
+                "/api/config/update",
+                data=json.dumps({"reasoning": {
+                    "chat_patterns_enabled": False,
+                    "classifier_model": "",
+                    "sc_k": 4,
+                    "not_a_real_key": True,
+                }}),
+                content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+        cfg.set.assert_any_call("reasoning.chat_patterns_enabled", False)
+        cfg.set.assert_any_call("reasoning.classifier_model", "")
+        cfg.set.assert_any_call("reasoning.sc_k", 4)
+        set_keys = [c.args[0] for c in cfg.set.call_args_list]
+        self.assertNotIn("reasoning.not_a_real_key", set_keys)

@@ -443,6 +443,146 @@ def _research_min_output(research_active: bool, context_window: int, model_id: s
     return int(get_config_manager().get("research.min_max_tokens", 16384) or 0) or None
 
 
+async def _resolve_thinking(
+    message, thinking_pattern_req, agent_profile, provider, model_id, caps,
+    active_model, *, research_active, direct_mode, workspace_id, active_workflow,
+    disable_delegation, session,
+):
+    """Resolve this turn's ThinkingPlan (Thinking Patterns). Module-level so the
+    chat-stream generator stays within pyright's flow budget; never raises —
+    any failure yields the empty plan (a plain turn).
+
+    Tool-likelihood is a proxy (tools resolve later in the generator): a
+    project, a workflow, or delegation-on suggests the turn may call tools —
+    which gates auto-selected self_consistency (its samples run tool-less).
+    """
+    from .reasoning.chat_patterns import EMPTY_PLAN, resolve_thinking_plan
+
+    try:
+        return await resolve_thinking_plan(
+            message,
+            turn_override=thinking_pattern_req,
+            profile_strategy=(
+                getattr(agent_profile, "reasoning_strategy", None) or None
+            ),
+            provider=provider,
+            model_id=model_id,
+            caps=caps,
+            active_model=active_model,
+            research_active=research_active,
+            tools_likely=bool(
+                workspace_id or active_workflow is not None or not disable_delegation
+            ),
+            direct_mode=direct_mode,
+            session_had_thinking=bool(session.metadata.get("had_thinking")),
+        )
+    except Exception as e:  # noqa: BLE001 — a thinking plan must never kill a turn
+        logger.warning(f"Thinking-pattern resolution failed: {e}")
+        return EMPTY_PLAN
+
+
+def _thinking_blocks(plan) -> list:
+    """The plan's ledger blocks (a bare attribute read stays out of the
+    generator's flow budget; the list is ready to unpack into `blocks`)."""
+    return list(plan.blocks)
+
+
+def _stamp_thinking_meta(asst_metadata: dict, thinking_plan, parsed, session) -> None:
+    """Stamp the turn's thinking telemetry: `had_thinking` on the persisted
+    metadata (the catalog-proof "this model actually thinks" signal, mirrored
+    onto the live session for same-process turns) and the pattern used.
+    Branches live here, not in the generator (pyright flow budget)."""
+    asst_metadata["had_thinking"] = parsed.has_thinking
+    if parsed.has_thinking:
+        session.metadata["had_thinking"] = True
+    if thinking_plan.pattern:
+        asst_metadata["thinking_pattern"] = thinking_plan.pattern
+
+
+def _stamp_interrupted_thinking(interrupted_meta: dict, thinking_plan, partial) -> None:
+    """The hard-stop twin of `_stamp_thinking_meta` (no session mirror — the
+    partial turn shouldn't vouch for the model's thinking)."""
+    interrupted_meta["had_thinking"] = partial.has_thinking
+    if thinking_plan.pattern:
+        interrupted_meta["thinking_pattern"] = thinking_plan.pattern
+
+
+def _append_coverage_read_blocks(blocks: list, session) -> None:
+    """Register the read-back coverage blocks: the legacy prose summary (older
+    conversations / state-compaction-off installs) and the rehydration-overflow
+    notice. Conditionals live here, not in the generator (pyright flow budget)."""
+    from .agent.context_ledger import LedgerBlock, shrink_tail
+
+    if session.summary:
+        blocks.append(LedgerBlock(
+            key="summary",
+            priority=65,
+            content=f"Earlier conversation summary: {session.summary}",
+            shrink_fn=shrink_tail,
+        ))
+    if session.metadata.get("history_overflow"):
+        blocks.append(LedgerBlock(
+            key="history_overflow_notice",
+            priority=58,
+            content=(
+                "Note: this conversation is longer than the rehydration "
+                "window — its earliest turns are not in view (and not in the "
+                "summary). They remain in durable memory: use memory recall "
+                "and `read_thread` if early details are needed."
+            ),
+        ))
+
+
+def _tool_loop_context_ceiling(context_window: int, adaptive_max_tokens: int) -> int:
+    """The in-turn context ceiling for the tool loop: the model's real window
+    minus the output reservation + drift buffer (floor 4096), optionally capped
+    by the `context.max_input_tokens` spend guard (0 = off)."""
+    from .config import get_config_manager
+
+    ceiling = max(context_window - adaptive_max_tokens - CONTEXT_BUFFER_TOKENS, 4096)
+    input_cap = int(get_config_manager().get("context.max_input_tokens", 0) or 0)
+    if input_cap > 0:
+        ceiling = min(ceiling, input_cap)
+    return ceiling
+
+
+def _append_budget_header(messages: list, context_window: int, cfg) -> None:
+    """Append the one-line token-budget SYSTEM header (self-pacing hint).
+    Best-effort; branches/try live here (pyright flow budget)."""
+    from .providers.base import Message, MessageRole
+
+    try:
+        used_tokens = estimate_tokens(messages)
+        pct = (used_tokens / context_window * 100.0) if context_window else 0.0
+        vr_pct = int(float(cfg.get("context.verbatim_budget_ratio", 0.9)) * 100)
+        messages.append(Message(
+            role=MessageRole.SYSTEM,
+            content=(
+                f"Context budget: ~{used_tokens:,} / {context_window:,} tokens "
+                f"({pct:.0f}% used). Near ~{vr_pct}% the oldest turns roll "
+                f"into the conversation-state digest automatically; use "
+                f"`update_conversation_state` or `checkpoint` to pin anything "
+                f"that must survive verbatim."
+            ),
+        ))
+    except Exception as bh_err:  # noqa: BLE001 — the header is a nicety
+        logger.debug(f"Token budget header skipped: {bh_err}")
+
+
+def _effective_min_output(
+    research_active: bool, thinking_plan, context_window: int, model_id: str
+) -> int | None:
+    """Combine the research and thinking output floors (one kwarg slot on
+    `compute_adaptive_max_tokens` — without the max() a research turn with a
+    pattern active would silently drop one of the two floors)."""
+    floors = [
+        _research_min_output(research_active, context_window, model_id),
+        thinking_plan.min_output,
+    ]
+    present = [f for f in floors if f]
+    return max(present) if present else None
+
+
 def _append_team_blocks(blocks: list, agent, active_workflow, session) -> None:
     """Append multi-agent framing ledger blocks: the workflow supervisor prompt OR
     participant awareness, plus the ad-hoc delegation roster. Factored out of the
@@ -1535,6 +1675,12 @@ def get_agent():
         default_model=default_model,
         enable_planning=True,
         enable_reasoning=True,
+        # The global default strategy (Settings) was previously dead config —
+        # wire it so /agent/run without an explicit strategy honors it.
+        default_reasoning_strategy=(
+            get_config_manager().get("preferences.default_reasoning_strategy", "auto")
+            or "auto"
+        ),
     ))
     logger.info(f"Agent initialized with model: {default_model}")
     return agent
@@ -1687,6 +1833,9 @@ async def agent_chat_stream(request):
         # Per-conversation Research Mode: elevated search budget + rigorous,
         # evidence-grounded, self-reviewing research prompt (gated by research.enabled).
         research_mode = bool(data.get("research_mode", False))
+        # Per-turn thinking-pattern override (Thinking Patterns): one of the
+        # chat patterns / legacy strategy values, or None ⇒ profile/auto chain.
+        thinking_pattern_req = (str(data.get("thinking_pattern") or "").strip() or None)
 
     except json.JSONDecodeError as e:
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
@@ -1719,6 +1868,7 @@ async def agent_chat_stream(request):
         start_time = time.time()
         # Bound on every path: the GeneratorExit/finally persist handlers below may run
         # after a hard-stop mid-setup, so these must never be unassigned.
+        from .reasoning.chat_patterns import EMPTY_PLAN
         provider = None
         model_id = ""
         caps = None
@@ -1726,6 +1876,7 @@ async def agent_chat_stream(request):
         plan_result = None
         plan_obj = None
         persisted = False
+        thinking_plan = EMPTY_PLAN
 
         # Look up agent profile early to apply all settings
         logger.debug(
@@ -2082,6 +2233,16 @@ async def agent_chat_stream(request):
             # the durable persona stack. `research_active` also drives the elevated search
             # budget + tool-round cap + flat-path forcing below (all via module-level
             # helpers to keep this generator under the type-checker's complexity budget).
+            # Thinking Patterns (same idiom): the turn's pattern resolves ONCE into a
+            # ThinkingPlan — directive block(s), optional step_back pre-call, output
+            # floor — via the per-turn override > profile > preference > auto chain.
+            thinking_plan = await _resolve_thinking(
+                message, thinking_pattern_req, agent_profile, provider, model_id,
+                caps, agent.config.default_model,
+                research_active=research_active, direct_mode=direct_mode,
+                workspace_id=workspace_id, active_workflow=active_workflow,
+                disable_delegation=disable_delegation, session=session,
+            )
             blocks: list[LedgerBlock] = [
                 LedgerBlock(
                     key="base_prompt",
@@ -2090,6 +2251,7 @@ async def agent_chat_stream(request):
                     content=system_prompt or "You are a helpful AI assistant.",
                 ),
                 *_research_blocks(research_active),
+                *_thinking_blocks(thinking_plan),
             ]
 
             # Multi-agent framing: workflow supervisor OR participant awareness, plus
@@ -2234,32 +2396,11 @@ async def agent_chat_stream(request):
                     shrink_tail, shrink_lines_newest_n, fresh_digest=_state_digest,
                 )
 
-            # The (persisted) rolling summary covers turns older than the verbatim
-            # budget — registered AFTER the JIT refresh so a summary created this
-            # turn is included this turn; droppable only under hard pressure.
-            if session.summary:
-                blocks.append(LedgerBlock(
-                    key="summary",
-                    priority=65,
-                    content=f"Earlier conversation summary: {session.summary}",
-                    shrink_fn=shrink_tail,
-                ))
-
-            # Rehydration hit its row cap with no restored coverage: turns beyond
-            # the cap were never loaded, so no compaction pass can ever cover them
-            # (they exist only in durable storage). Tell the model honestly instead
-            # of letting the earliest turns vanish without a trace (INV-CTX-1).
-            if session.metadata.get("history_overflow"):
-                blocks.append(LedgerBlock(
-                    key="history_overflow_notice",
-                    priority=58,
-                    content=(
-                        "Note: this conversation is longer than the rehydration "
-                        "window — its earliest turns are not in view (and not in the "
-                        "summary). They remain in durable memory: use memory recall "
-                        "and `read_thread` if early details are needed."
-                    ),
-                ))
+            # Read-back coverage: the (persisted) legacy prose summary — registered
+            # AFTER the JIT refresh so a summary created this turn is included this
+            # turn — plus the rehydration-overflow notice (turns beyond the row cap
+            # were never loaded; no compaction pass can cover them — INV-CTX-1).
+            _append_coverage_read_blocks(blocks, session)
 
             # One budget-fit allocation (context-window-based, not message-count):
             # fit the highest-priority blocks + the most recent verbatim transcript
@@ -2313,25 +2454,9 @@ async def agent_chat_stream(request):
 
                 # Token budget header: a one-line system message telling the model how
                 # full its context window is, so it can self-pace (wrap up, checkpoint,
-                # summarize) before automatic compression kicks in.
-                try:
-                    used_tokens = estimate_tokens(messages)
-                    pct = (used_tokens / context_window * 100.0) if context_window else 0.0
-                    _vr_pct = int(
-                        float(_cfg.get("context.verbatim_budget_ratio", 0.9)) * 100
-                    )
-                    messages.append(Message(
-                        role=MessageRole.SYSTEM,
-                        content=(
-                            f"Context budget: ~{used_tokens:,} / {context_window:,} tokens "
-                            f"({pct:.0f}% used). Near ~{_vr_pct}% the oldest turns roll "
-                            f"into the conversation-state digest automatically; use "
-                            f"`update_conversation_state` or `checkpoint` to pin anything "
-                            f"that must survive verbatim."
-                        ),
-                    ))
-                except Exception as bh_err:
-                    logger.debug(f"Token budget header skipped: {bh_err}")
+                # summarize) before automatic compression kicks in. Helper-wrapped
+                # (pyright flow budget).
+                _append_budget_header(messages, context_window, _cfg)
 
             # Defensive: never send image blocks to a model that can't see them — a
             # mid-conversation switch to a non-vision model can leave images on history
@@ -2412,7 +2537,9 @@ async def agent_chat_stream(request):
                 max_output_tokens=max_output_tokens,
                 max_output_override=max_output_override,
                 supports_reasoning=caps.supports_reasoning,
-                min_output_override=_research_min_output(research_active, context_window, model_id),
+                min_output_override=_effective_min_output(
+                    research_active, thinking_plan, context_window, model_id
+                ),
             )
 
             # Stream tokens with tool-use loop
@@ -2592,18 +2719,10 @@ async def agent_chat_stream(request):
 
             # In-turn context ceiling for the tool loop — the trajectory-compression
             # trigger base AND the hard truncation fallback. Derived from the model's
-            # REAL window (minus this turn's output reservation + drift buffer): the
-            # old flat 32k cap (MAX_INPUT_TOKENS) strangled big-window models — any
-            # conversation assembled past 32k had every tool result truncated to
-            # ~500 chars mid-turn and trajectory compression firing every round. An
-            # optional spend guard (`context.max_input_tokens`, 0 = off) replaces it
-            # for users who deliberately want to bound per-turn input cost.
-            max_context_tokens = max(
-                context_window - adaptive_max_tokens - CONTEXT_BUFFER_TOKENS, 4096
-            )
-            _input_cap = int(get_config_manager().get("context.max_input_tokens", 0) or 0)
-            if _input_cap > 0:
-                max_context_tokens = min(max_context_tokens, _input_cap)
+            # REAL window (the old flat 32k MAX_INPUT_TOKENS cap strangled big-window
+            # models); optional `context.max_input_tokens` spend guard. Helper-wrapped
+            # (pyright flow budget).
+            max_context_tokens = _tool_loop_context_ceiling(context_window, adaptive_max_tokens)
 
             # Image-generation turn: a direct-mode agent on an image-output model (flux,
             # gemini-flash-image) makes a *picture*, not text. Such a model's chat
@@ -2716,12 +2835,19 @@ async def agent_chat_stream(request):
                     yield _sse("exhibit", wire)
 
             else:
-                # Standard single-pass path (simple tasks)
-                from .streaming.tool_loop import streaming_tool_loop, ToolLoopResult
+                # Standard streaming path. `thinking_stream` is the pattern
+                # chooser: the multi-pass patterns (deep_reflection /
+                # self_consistency) wrap the tool loop with live-thinking
+                # pre-passes; every other pattern IS the plain tool loop.
+                from .streaming.tool_loop import ToolLoopResult
+                from .streaming.thinking_exec import thinking_stream
 
                 loop_result = ToolLoopResult()
-                async for event_str in streaming_tool_loop(
+                async for event_str in thinking_stream(
+                    thinking_plan.pattern,
                     provider, model_id, messages, tools, agent,
+                    result=loop_result,
+                    active_model=agent.config.default_model,
                     temperature=effective_temperature,
                     max_tokens=adaptive_max_tokens,
                     max_tool_rounds=max_tool_rounds,
@@ -2730,7 +2856,6 @@ async def agent_chat_stream(request):
                     context_warning_threshold=CONTEXT_WARNING_THRESHOLD,
                     task_context=message,
                     capture_tool_turns=True,
-                    result=loop_result,
                     vision_capable=accepts_vision,
                     search_limit_override=_research_search_limit(research_active),
                     finalize_nudge=_research_finalize_nudge(research_active),
@@ -2826,6 +2951,8 @@ async def agent_chat_stream(request):
                 'pricing_snapshot': cost['pricing_snapshot'] if cost else None,
                 'finish_reason': final_finish_reason,
                 'truncated': was_truncated,
+                # Thinking Patterns: which pattern shaped this turn (None = plain).
+                'thinking_pattern': thinking_plan.pattern,
             }
             done_json = json.dumps(done_data)
             logger.debug(f"Done event JSON length: {len(done_json)} chars")
@@ -2851,6 +2978,8 @@ async def agent_chat_stream(request):
                     "context_window": context_window,
                     "context_used": final_context_tokens,
                 }
+                # had_thinking signal + the pattern used (helper: flow budget).
+                _stamp_thinking_meta(asst_metadata, thinking_plan, parsed, session)
                 if cost is not None:
                     asst_metadata["cost_estimate"] = cost["cost_total"]
                     asst_metadata["cost_currency"] = cost["currency"]
@@ -2898,6 +3027,7 @@ async def agent_chat_stream(request):
                         "tokens_output": loop_result.tokens_out,
                         "interrupted": True,
                     }
+                    _stamp_interrupted_thinking(interrupted_meta, thinking_plan, partial)
                     _icost = _estimate_cost(caps, loop_result.tokens_in, loop_result.tokens_out) if caps else None
                     if _icost is not None:
                         interrupted_meta["cost_estimate"] = _icost["cost_total"]
@@ -7410,6 +7540,21 @@ def config_update(request):
             if key in _MEMORY_KEYS and value is not None:
                 config.set(f"memory.{key}", value)
                 updated_keys.append(f"memory.{key}")
+
+    # Thinking Patterns (Settings → Intelligence → Thinking). Models may be
+    # explicitly "" (= follow role / active model), so only None is skipped.
+    _REASONING_KEYS = (
+        "chat_patterns_enabled", "auto_classifier_enabled", "classifier_model",
+        "classifier_min_chars", "step_back_model", "step_back_timeout_seconds",
+        "cot_enabled", "step_back_enabled", "reflection_enabled",
+        "self_consistency_enabled", "sc_model", "sc_k", "min_output_tokens",
+    )
+    reasoning_settings = data.get("reasoning", {})
+    if isinstance(reasoning_settings, dict):
+        for key, value in reasoning_settings.items():
+            if key in _REASONING_KEYS and value is not None:
+                config.set(f"reasoning.{key}", value)
+                updated_keys.append(f"reasoning.{key}")
 
     # Update prompt enhancement settings
     prompt_enhancement = data.get("prompt_enhancement", {})
