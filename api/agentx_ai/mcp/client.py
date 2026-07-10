@@ -315,11 +315,34 @@ class MCPClientManager:
         storage = FileTokenStorage(config.name, preregistered=auth_cfg)
 
         if interactive_flow is not None:
+            def _reauth_demanded() -> MCPTransportError:
+                # The provider is demanding a FRESH consent after the original
+                # sign-in finished (revoked grant / changed scopes) — there is
+                # no browser round-trip on a persistent connection, and the
+                # stale flow would either hang the call to the server timeout
+                # or replay a used authorization code. Fail fast, drop the dead
+                # tokens (so auth_state + the connectors nudge tell the truth),
+                # and point at the fix.
+                from . import oauth_flow as _flow_mod
+                from .oauth_storage import clear_oauth_state
+
+                clear_oauth_state(config.name)
+                msg = (
+                    f"Server '{config.name}' needs re-authorization (grant revoked "
+                    "or scopes changed) — Reset auth, then Connect in Connectors & Tools."
+                )
+                _flow_mod.record_error(config.name, msg)
+                return MCPTransportError(msg)
+
             async def redirect_handler(url: str) -> None:
+                if interactive_flow.future.done():
+                    raise _reauth_demanded()
                 publish_authorization_url(interactive_flow, url)
                 logger.info(f"OAuth authorization required for '{config.name}' — awaiting user consent")
 
             async def callback_handler() -> tuple[str, str | None]:
+                if interactive_flow.future.done():
+                    raise _reauth_demanded()
                 return await interactive_flow.future
         else:
             async def redirect_handler(url: str) -> None:

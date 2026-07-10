@@ -178,6 +178,13 @@ def cancel_flow(server_name: str) -> bool:
     return True
 
 
+def record_error(server_name: str, error: str) -> None:
+    """Record a terminal auth error outside a pending flow (e.g. a provider
+    demanding re-consent mid-call on a persistent connection)."""
+    with _LOCK:
+        _LAST_ERROR[server_name] = error
+
+
 def last_error(server_name: str) -> str | None:
     with _LOCK:
         return _LAST_ERROR.get(server_name)

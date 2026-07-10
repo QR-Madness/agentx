@@ -415,6 +415,60 @@ class MCPOAuthTest(TestCase):
                 assert pub_info is not None
                 self.assertEqual(pub_info.token_endpoint_auth_method, "none")
 
+    def test_mid_call_reauth_fails_fast_and_clears_tokens(self) -> None:
+        # A provider demanding FRESH consent after the sign-in finished
+        # (revoked grant / changed scopes) must not hang the tool call or
+        # replay the used code: the handlers fail fast, drop the dead tokens
+        # (auth_state truth + nudge), and record a pointed error.
+        import asyncio
+        import tempfile
+        import threading
+        from unittest.mock import patch as _patch
+        from pathlib import Path
+        from mcp.shared.auth import OAuthToken
+        from agentx_ai.exceptions import MCPTransportError
+        from agentx_ai.mcp import oauth_flow, oauth_storage
+        from agentx_ai.mcp.client import MCPClientManager
+        from agentx_ai.mcp.server_registry import ServerConfig, TransportType
+
+        loop = asyncio.new_event_loop()
+        t = threading.Thread(target=loop.run_forever, daemon=True)
+        t.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                with _patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                    store = oauth_storage.FileTokenStorage("gd")
+                    asyncio.run(store.set_tokens(OAuthToken(access_token="at", token_type="Bearer")))  # noqa: S106
+                    self.assertTrue(oauth_storage.has_oauth_tokens("gd"))
+
+                    flow = oauth_flow.begin_flow("gd", loop)
+                    oauth_flow.publish_authorization_url(flow, "https://a/authorize?state=st-gd")
+                    oauth_flow.resolve_callback("st-gd", "code-1")  # original consent completed
+                    for _ in range(50):
+                        if flow.future.done():
+                            break
+                        threading.Event().wait(0.02)
+                    self.assertTrue(flow.future.done())
+
+                    config = ServerConfig(
+                        name="gd", transport=TransportType.STREAMABLE_HTTP,
+                        url="https://x/mcp", auth={"type": "oauth"},
+                    )
+                    provider = MCPClientManager()._build_oauth_provider(config, interactive_flow=flow)
+                    assert provider is not None
+                    with self.assertRaises(MCPTransportError) as ctx:
+                        asyncio.run(provider.context.redirect_handler("https://a/authorize?state=new"))
+                    self.assertIn("re-authorization", str(ctx.exception))
+                    self.assertIn("Reset auth", str(ctx.exception))
+                    # Dead tokens dropped; pointed error recorded for the card.
+                    self.assertFalse(oauth_storage.has_oauth_tokens("gd"))
+                    self.assertIn("re-authorization", oauth_flow.last_error("gd") or "")
+                    with self.assertRaises(MCPTransportError):
+                        asyncio.run(provider.context.callback_handler())
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            t.join(timeout=5)
+
     # --- oauth_flow bridge ---
 
     def test_flow_publish_and_resolve(self) -> None:

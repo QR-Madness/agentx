@@ -22,6 +22,7 @@ import { backdropVariants, containerVariants } from '../unified-settings/animati
 import type { MCPServer, MCPServerConfigInput } from '../../lib/api';
 import { api } from '../../lib/api';
 import { useConfirm } from '../ui/ConfirmDialog';
+import { useNotify } from '../../contexts/NotificationContext';
 import {
   Button, IconButton, Input, Textarea, StatusDot, CopyChip, Tooltip,
   Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription,
@@ -225,6 +226,7 @@ function ServersView({ mcp }: { mcp: McpServersState }) {
   } = mcp;
   const { profiles } = useAgentProfile();
   const confirm = useConfirm();
+  const { notify } = useNotify();
   const [editing, setEditing] = useState<MCPServer | null | undefined>(undefined); // undefined = closed; null = creating
   const [busy, setBusy] = useState<string | null>(null);
   // Server currently waiting on a browser OAuth consent (connect continues
@@ -275,7 +277,20 @@ function ServersView({ mcp }: { mcp: McpServersState }) {
   useEffect(() => {
     if (!authWait) return;
     const s = servers.find(x => x.name === authWait);
-    if (!s || s.status === 'connected' || s.auth_state?.error) clearAuthWait();
+    if (!s) { clearAuthWait(); return; }
+    // Browser consent completed — say so (the card flipping alone was easy to
+    // miss; users reported "the success page showed but the app said nothing").
+    if (s.status === 'connected') {
+      notify({
+        kind: 'success',
+        title: `${s.name} connected`,
+        message: `Signed in — ${s.tools_count ?? 0} tools available.`,
+      });
+      clearAuthWait();
+    } else if (s.auth_state?.error) {
+      clearAuthWait();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servers, authWait]);
 
   const resetAuth = async (s: MCPServer) => {

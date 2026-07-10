@@ -219,7 +219,7 @@ class ToolExecutor:
             
             return ToolResult(
                 success=False,
-                error=str(e),
+                error=(str(e) or type(e).__name__),
                 is_error=True,
             )
     
