@@ -20,6 +20,7 @@ import { ParallaxBackground } from '../unified-settings/animations/ParallaxBackg
 import { backdropVariants, containerVariants } from '../unified-settings/animations/transitions';
 import type { MCPServer, MCPServerConfigInput } from '../../lib/api';
 import { api } from '../../lib/api';
+import { sessionExpired } from '../../lib/connectors';
 import { useConfirm } from '../ui/ConfirmDialog';
 import {
   Button, IconButton, Input, Textarea, StatusDot, CopyChip, Tooltip,
@@ -276,11 +277,15 @@ function ServersView() {
                   tone={
                     s.status === 'connected' ? 'online'
                       : s.auth_state?.error ? 'error'
-                        : (authWait === s.name || s.auth_state?.pending) ? 'warning'
+                        : (authWait === s.name || s.auth_state?.pending || sessionExpired(s)) ? 'warning'
                           : 'inactive'
                   }
                   pulse={authWait === s.name || !!s.auth_state?.pending}
-                  title={s.status === 'connected' ? 'Connected' : 'Disconnected'}
+                  title={
+                    s.status === 'connected' ? 'Connected'
+                      : sessionExpired(s) ? 'Session expired'
+                        : 'Disconnected'
+                  }
                 />
               </div>
               <div className="meta">
@@ -309,9 +314,13 @@ function ServersView() {
                     ? 'OAuth · waiting for authorization…'
                     : s.auth_state?.error
                       ? `OAuth · sign-in failed: ${s.auth_state.error}`
-                      : s.auth_state?.authorized
-                        ? 'OAuth · signed in'
-                        : 'OAuth · sign-in required on connect'}
+                      : sessionExpired(s)
+                        ? 'OAuth · session expired — sign in again on connect'
+                        : s.auth_state?.authorized
+                          ? s.auth_state.expired
+                            ? 'OAuth · signed in (refreshes on connect)'
+                            : 'OAuth · signed in'
+                          : 'OAuth · sign-in required on connect'}
                 </div>
               )}
               <div className="toolkit-card-actions">

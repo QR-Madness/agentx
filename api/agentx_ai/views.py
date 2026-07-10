@@ -1172,17 +1172,23 @@ def _serialize_server(
 
 
 def _serialize_auth_state(config) -> dict | None:
-    """OAuth lifecycle state for the Toolkit UI (None for non-OAuth servers)."""
+    """OAuth lifecycle state for the Connectors & Tools UI (None for non-OAuth servers)."""
     if not config.auth or config.auth.get("type") != "oauth":
         return None
     from .mcp import oauth_flow
-    from .mcp.oauth_storage import has_oauth_tokens
+    from .mcp.oauth_storage import oauth_token_status
 
     flow = oauth_flow.get_flow(config.name)
+    status = oauth_token_status(config.name)
     return {
         # Tokens present — not mere file existence (the SDK writes a token-less
-        # registration file at DCR time, before consent).
-        "authorized": has_oauth_tokens(config.name),
+        # registration file at DCR time, before consent). Presence alone is NOT
+        # "still signed in": `expired` + `refreshable` qualify it so the client
+        # can distinguish a session that reconnects headlessly from one that
+        # needs the browser again.
+        "authorized": status["has_tokens"],
+        "expired": status["expired"],
+        "refreshable": status["refreshable"],
         "pending": bool(flow and flow.authorization_url and flow.error is None),
         "error": oauth_flow.last_error(config.name),
     }

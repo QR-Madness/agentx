@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { connectorsNeedingAuth, connectorAuthMessage } from './connectors';
+import { connectorsNeedingAuth, connectorAuthMessage, sessionExpired } from './connectors';
 import type { MCPServer } from './api';
 
 function srv(over: Partial<MCPServer>): MCPServer {
@@ -27,6 +27,22 @@ describe('connectorsNeedingAuth', () => {
     expect(connectorsNeedingAuth(servers, 'agent-1').map(s => s.name)).toEqual(['needs']);
   });
 
+  it('includes an expired-unrefreshable session (the "signed in" lie)', () => {
+    const stale = srv({
+      name: 'stale',
+      auth_state: { authorized: true, expired: true, refreshable: false, pending: false, error: null },
+    });
+    expect(connectorsNeedingAuth([stale], 'agent-1').map(s => s.name)).toEqual(['stale']);
+  });
+
+  it('excludes expired-but-refreshable and unknown-expiry sessions', () => {
+    const servers = [
+      srv({ name: 'refreshes', auth_state: { authorized: true, expired: true, refreshable: true, pending: false, error: null } }),
+      srv({ name: 'unknown', auth_state: { authorized: true, expired: null, refreshable: false, pending: false, error: null } }),
+    ];
+    expect(connectorsNeedingAuth(servers, 'agent-1')).toEqual([]);
+  });
+
   it('respects allowed_agent_ids (includes / empty / null)', () => {
     const included = srv({ name: 'inc', allowed_agent_ids: ['agent-1'] });
     const other = srv({ name: 'oth', allowed_agent_ids: ['agent-2'] });
@@ -39,9 +55,29 @@ describe('connectorsNeedingAuth', () => {
   });
 });
 
+describe('sessionExpired', () => {
+  it('is true only for authorized + expired + unrefreshable', () => {
+    const state = (over: object) => sessionExpired(srv({
+      auth_state: { authorized: true, expired: true, refreshable: false, pending: false, error: null, ...over },
+    }));
+    expect(state({})).toBe(true);
+    expect(state({ refreshable: true })).toBe(false);
+    expect(state({ expired: false })).toBe(false);
+    expect(state({ expired: null })).toBe(false);
+    expect(state({ authorized: false })).toBe(false);
+  });
+});
+
 describe('connectorAuthMessage', () => {
   it('names a single connector', () => {
     expect(connectorAuthMessage([srv({ name: 'sentry' })])).toBe('sentry needs authorization to use its tools.');
+  });
+  it('says "session expired" for a single stale connector', () => {
+    const stale = srv({
+      name: 'drive',
+      auth_state: { authorized: true, expired: true, refreshable: false, pending: false, error: null },
+    });
+    expect(connectorAuthMessage([stale])).toBe("drive's session expired — sign in again to use its tools.");
   });
   it('counts multiple connectors', () => {
     expect(connectorAuthMessage([srv({ name: 'a' }), srv({ name: 'b' })])).toBe('2 connectors need authorization.');

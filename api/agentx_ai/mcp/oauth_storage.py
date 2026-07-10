@@ -57,6 +57,18 @@ def has_oauth_state(server_name: str) -> bool:
     return _token_path(server_name).exists()
 
 
+def _read_state(server_name: str) -> dict[str, Any]:
+    """Best-effort read of a server's token file ({} when missing/corrupt)."""
+    try:
+        with open(_token_path(server_name)) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def has_oauth_tokens(server_name: str) -> bool:
     """True only when actual OAuth *tokens* are stored (not just a registration).
 
@@ -66,15 +78,28 @@ def has_oauth_tokens(server_name: str) -> bool:
     behind. This drives the "signed in" indicator; ``has_oauth_state`` (file
     existence) is only for the reset/cleanup path.
     """
-    path = _token_path(server_name)
-    try:
-        with open(path) as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        return False
-    except (OSError, ValueError):
-        return False
-    return bool(isinstance(data, dict) and data.get("tokens"))
+    return bool(_read_state(server_name).get("tokens"))
+
+
+def oauth_token_status(server_name: str) -> dict[str, Any]:
+    """Static lifecycle facts about a server's stored tokens, for status display.
+
+    ``expired`` is a tri-state: True/False when the persisted absolute
+    ``expires_at`` decides it, None when the expiry is unknown (legacy file or
+    a provider that issues tokens without ``expires_in``) — matching
+    ``_RestoringOAuthProvider``, which trusts such tokens as-is. ``refreshable``
+    reports a stored ``refresh_token``: an expired-but-refreshable session
+    still connects headlessly; expired **and** unrefreshable is the state that
+    genuinely needs a new interactive sign-in.
+    """
+    data = _read_state(server_name)
+    tokens = data.get("tokens")
+    if not tokens:
+        return {"has_tokens": False, "expired": None, "refreshable": False}
+    expires_at = data.get("expires_at")
+    expired = (time.time() >= float(expires_at)) if expires_at is not None else None
+    refreshable = bool(isinstance(tokens, dict) and tokens.get("refresh_token"))
+    return {"has_tokens": True, "expired": expired, "refreshable": refreshable}
 
 
 class FileTokenStorage:

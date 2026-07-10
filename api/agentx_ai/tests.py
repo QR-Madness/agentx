@@ -342,6 +342,52 @@ class MCPOAuthTest(TestCase):
                 asyncio.run(store.set_tokens(OAuthToken(access_token="at2", token_type="Bearer")))  # noqa: S106
                 self.assertIsNone(store.read_token_expiry())
 
+    def test_oauth_token_status_lifecycle(self) -> None:
+        # `authorized` alone lied to the Toolkit ("signed in" on an expired
+        # session) — oauth_token_status adds the static facts the card needs:
+        # expired (tri-state; None = unknown expiry) + refreshable.
+        import asyncio
+        import tempfile
+        import time
+        from unittest.mock import patch as _patch
+        from pathlib import Path
+        from mcp.shared.auth import OAuthToken
+        from agentx_ai.mcp import oauth_storage
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with _patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                # No file at all.
+                self.assertEqual(
+                    oauth_storage.oauth_token_status("srv"),
+                    {"has_tokens": False, "expired": None, "refreshable": False},
+                )
+                store = oauth_storage.FileTokenStorage("srv")
+                # Fresh, refreshable token.
+                asyncio.run(store.set_tokens(OAuthToken(
+                    access_token="at", token_type="Bearer", refresh_token="rt", expires_in=3600,  # noqa: S106
+                )))
+                self.assertEqual(
+                    oauth_storage.oauth_token_status("srv"),
+                    {"has_tokens": True, "expired": False, "refreshable": True},
+                )
+                # Expired and NOT refreshable — the "sign in again" state.
+                asyncio.run(store.set_tokens(OAuthToken(
+                    access_token="at2", token_type="Bearer", expires_in=3600,  # noqa: S106
+                )))
+                data = store._read()
+                data["expires_at"] = time.time() - 10
+                store._write(data)
+                self.assertEqual(
+                    oauth_storage.oauth_token_status("srv"),
+                    {"has_tokens": True, "expired": True, "refreshable": False},
+                )
+                # Legacy/unknown expiry (no expires_at persisted) → tri-state None.
+                asyncio.run(store.set_tokens(OAuthToken(access_token="at3", token_type="Bearer")))  # noqa: S106
+                self.assertEqual(
+                    oauth_storage.oauth_token_status("srv"),
+                    {"has_tokens": True, "expired": None, "refreshable": False},
+                )
+
     def test_token_storage_preregistered_seed(self) -> None:
         import asyncio
         import tempfile

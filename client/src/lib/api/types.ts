@@ -122,6 +122,11 @@ export interface MCPServerAuth {
 export interface MCPServerAuthState {
   /** Tokens/registration are stored server-side (may still need refresh). */
   authorized: boolean;
+  /** Access token past its persisted expiry; null when expiry is unknown
+   *  (legacy token file or provider without `expires_in`). */
+  expired?: boolean | null;
+  /** A refresh_token is stored — an expired session still reconnects headlessly. */
+  refreshable?: boolean;
   /** A consent round-trip is currently pending in the browser. */
   pending: boolean;
   /** Last terminal auth error (denied consent, exchange failure). */

@@ -14,10 +14,18 @@ function allowedForAgent(server: MCPServer, activeAgentId: string | null): boole
   return activeAgentId != null && allowed.includes(activeAgentId);
 }
 
+/** A stored session that cannot come back headlessly: access token expired and
+ *  no refresh_token — the next connect must go through the browser again. */
+export function sessionExpired(server: MCPServer): boolean {
+  const a = server.auth_state;
+  return !!a?.authorized && a.expired === true && !a.refreshable;
+}
+
 /**
  * OAuth connectors that need the user to sign in before their tools work for
- * the active agent: OAuth auth, not already authorized/pending/connected, and
- * allowed for this agent.
+ * the active agent: OAuth auth, not already pending/connected, allowed for
+ * this agent, and either never authorized or holding an expired session that
+ * can't refresh itself.
  */
 export function connectorsNeedingAuth(
   servers: MCPServer[],
@@ -25,7 +33,7 @@ export function connectorsNeedingAuth(
 ): MCPServer[] {
   return servers.filter(s =>
     s.auth?.type === 'oauth'
-    && !s.auth_state?.authorized
+    && (!s.auth_state?.authorized || sessionExpired(s))
     && !s.auth_state?.pending
     && s.status !== 'connected'
     && allowedForAgent(s, activeAgentId)
@@ -35,7 +43,10 @@ export function connectorsNeedingAuth(
 /** One-line nudge copy for a set of connectors needing auth. */
 export function connectorAuthMessage(servers: MCPServer[]): string {
   if (servers.length === 1) {
-    return `${servers[0].name} needs authorization to use its tools.`;
+    const s = servers[0];
+    return sessionExpired(s)
+      ? `${s.name}'s session expired — sign in again to use its tools.`
+      : `${s.name} needs authorization to use its tools.`;
   }
   return `${servers.length} connectors need authorization.`;
 }
