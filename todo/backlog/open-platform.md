@@ -124,4 +124,10 @@
       consider the offline `/agent/run` path + ambassador turns once skills prove out.
 - [ ] **Catalog freshness check** — a tiny CI/script probe that the curated catalog URLs still
       answer (they were verified live at ship time; vendors move endpoints).
+- [ ] **More Global-Intelligence connectors (held to avoid crowding)** — verified reachable but
+      not shipped in the v0.21.217 two-lens round-out: **Firecrawl** (`https://mcp.firecrawl.dev/mcp`,
+      api-key — scrape/crawl/search to markdown; overlaps Exa + Playwright), **PubMed** (PyPI
+      `pubmedmcp`, local stdio — biomedical), a **Semantic Scholar** stdio server. Add on request.
+      The world-knowledge hosted ecosystem is thin/key-gated (unlike dev tools) — most options are
+      api-key remote or reputable local stdio.
 

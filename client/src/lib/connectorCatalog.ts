@@ -36,12 +36,19 @@ export interface QuickInput {
   apply: (config: Partial<MCPServerConfigInput>, value: string) => Partial<MCPServerConfigInput>;
 }
 
+/** Fine category (an in-tab sub-header). Each maps into exactly one lens via
+ *  {@link LENSES}. Kept granular so the shelf reads well; the lens is the tab. */
+export type CatalogCategory =
+  | 'web' | 'research'            // Global Intelligence
+  | 'knowledge' | 'dev'          // Technical Intelligence
+  | 'productivity' | 'design' | 'business' | 'files' | 'local'; // Workspace & Apps
+
 export interface CatalogEntry {
   id: string;
   /** Display title (vendor product name). */
   title: string;
   vendor: string;
-  category: 'files' | 'productivity' | 'design' | 'business' | 'dev' | 'knowledge' | 'local';
+  category: CatalogCategory;
   description: string;
   authKind: CatalogAuthKind;
   /** Suggested server name (becomes the mcp_servers.json key). */
@@ -58,7 +65,7 @@ export interface CatalogEntry {
   brand: { initial: string; color: string };
 }
 
-/** Human labels for the auth-kind badge on catalog tiles. */
+/** Full auth-kind labels — shown in the connector dialog header. */
 export const AUTH_KIND_LABELS: Record<CatalogAuthKind, string> = {
   'oauth-dcr': 'OAuth sign-in',
   'oauth-byo-client': 'OAuth · bring your own app',
@@ -67,7 +74,81 @@ export const AUTH_KIND_LABELS: Record<CatalogAuthKind, string> = {
   local: 'Local command',
 };
 
+/** Terse tile badge — a glanceable "what setup does this need" cue. `none`
+ *  ("No sign-in") is the zero-friction win and gets a success tint in the UI. */
+export const AUTH_BADGE: Record<CatalogAuthKind, string> = {
+  none: 'No sign-in',
+  'oauth-dcr': 'OAuth',
+  'oauth-byo-client': 'OAuth · your app',
+  'api-key': 'API key',
+  local: 'Local',
+};
+
 export const CONNECTOR_CATALOG: CatalogEntry[] = [
+  {
+    id: 'exa',
+    title: 'Exa',
+    vendor: 'Exa',
+    category: 'web',
+    description: 'Neural web search, plus company/people research and site crawling — real-world knowledge.',
+    authKind: 'api-key',
+    serverName: 'exa',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://mcp.exa.ai/mcp',
+      timeout: 60,
+    },
+    inputs: [
+      {
+        key: 'exa_api_key',
+        label: 'Exa API key',
+        placeholder: 'exa_… (or ${EXA_API_KEY})',
+        required: true,
+        secret: true,
+        hint: 'Free tier available at dashboard.exa.ai. Sent as an x-api-key header — never in the URL.',
+        // Exa authenticates via the x-api-key header; the ?exaApiKey= query form
+        // is discouraged (the MCP SDK drops the base query string on POST).
+        apply: (c, v) => ({ ...c, headers: { ...(c.headers ?? {}), 'x-api-key': v.trim() } }),
+      },
+    ],
+    setupNote: 'Create a free API key at dashboard.exa.ai, then paste it here (or keep it in the API server’s .env as ${EXA_API_KEY}).',
+    docsUrl: 'https://docs.exa.ai/reference/exa-mcp',
+    brand: { initial: 'Ex', color: '#1f6feb' },
+  },
+  {
+    id: 'arxiv',
+    title: 'arXiv',
+    vendor: 'arXiv (community server)',
+    category: 'research',
+    description: 'Search academic papers and read their metadata and full text from arXiv.',
+    authKind: 'local',
+    serverName: 'arxiv',
+    config: {
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', '@cyanheads/arxiv-mcp-server'],
+    },
+    setupNote: 'Runs locally via npx — requires Node.js on the API host. No account or key needed.',
+    docsUrl: 'https://github.com/cyanheads/arxiv-mcp-server',
+    brand: { initial: 'aX', color: '#b31b1b' },
+  },
+  {
+    id: 'wikipedia',
+    title: 'Wikipedia',
+    vendor: 'Wikipedia (community server)',
+    category: 'research',
+    description: 'Search Wikipedia and read article summaries and full content — general world knowledge.',
+    authKind: 'local',
+    serverName: 'wikipedia',
+    config: {
+      transport: 'stdio',
+      command: 'uvx',
+      args: ['wikipedia-mcp'],
+    },
+    setupNote: 'Runs locally via uvx — requires uv/Python on the API host. No account or key needed.',
+    docsUrl: 'https://github.com/Rudra-ravi/wikipedia-mcp',
+    brand: { initial: 'W', color: '#636466' },
+  },
   {
     id: 'google-drive',
     title: 'Google Drive',
@@ -292,13 +373,26 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     vendor: 'Stripe',
     category: 'business',
     description: 'Customers, payments, subscriptions, and invoices from your Stripe account.',
-    authKind: 'oauth-dcr',
+    // Stripe's OAuth has no dynamic client registration (needs a dashboard app),
+    // so its documented path for MCP clients is a restricted key as a Bearer token.
+    authKind: 'api-key',
     serverName: 'stripe',
     config: {
       transport: 'streamable_http',
       url: 'https://mcp.stripe.com/',
-      auth: { type: 'oauth' },
     },
+    inputs: [
+      {
+        key: 'restricted_key',
+        label: 'Restricted API key',
+        placeholder: 'rk_live_… (or ${STRIPE_MCP_KEY})',
+        required: true,
+        secret: true,
+        hint: 'Use a RESTRICTED key (rk_…) scoped to only what the agent should do — never your secret key.',
+        apply: (c, v) => ({ ...c, headers: { ...(c.headers ?? {}), Authorization: `Bearer ${v.trim()}` } }),
+      },
+    ],
+    setupNote: 'Create a restricted key (rk_…) at dashboard.stripe.com/apikeys with only the permissions you want the agent to have, then paste it here (or keep it in the API server’s .env as ${STRIPE_MCP_KEY}).',
     docsUrl: 'https://docs.stripe.com/mcp',
     brand: { initial: 'S', color: '#635bff' },
   },
@@ -351,6 +445,21 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     brand: { initial: 'CF', color: '#f38020' },
   },
   {
+    id: 'aws-knowledge',
+    title: 'AWS Knowledge',
+    vendor: 'Amazon Web Services',
+    category: 'knowledge',
+    description: 'Official AWS docs, API references, and Well-Architected guidance. Open — no sign-in needed.',
+    authKind: 'none',
+    serverName: 'aws-knowledge',
+    config: {
+      transport: 'streamable_http',
+      url: 'https://knowledge-mcp.global.api.aws/mcp',
+    },
+    docsUrl: 'https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server',
+    brand: { initial: 'AWS', color: '#ff9900' },
+  },
+  {
     id: 'context7',
     title: 'Context7',
     vendor: 'Upstash',
@@ -396,7 +505,7 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     id: 'hugging-face',
     title: 'Hugging Face',
     vendor: 'Hugging Face',
-    category: 'knowledge',
+    category: 'research',
     description: 'Search models, datasets, papers, and Spaces on the Hugging Face Hub.',
     authKind: 'none',
     serverName: 'hugging-face',
@@ -453,7 +562,7 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     id: 'playwright',
     title: 'Playwright',
     vendor: 'Microsoft',
-    category: 'local',
+    category: 'dev',
     description: 'Drive a real browser — navigate, click, fill forms, and screenshot (runs locally via npx).',
     authKind: 'local',
     serverName: 'playwright',
@@ -470,7 +579,7 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     id: 'filesystem',
     title: 'Filesystem',
     vendor: 'Model Context Protocol',
-    category: 'local',
+    category: 'dev',
     description: 'Read and write files under a directory you choose (runs locally via npx).',
     authKind: 'local',
     serverName: 'filesystem',
@@ -512,15 +621,31 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
   },
 ];
 
-/** Categories in display order, with section labels. */
-export const CATALOG_CATEGORIES: { id: CatalogEntry['category']; label: string }[] = [
+/** Fine categories → in-tab sub-headers. Order here sets display order within
+ *  a lens. Every id is claimed by exactly one lens in {@link LENSES}. */
+export const CATALOG_CATEGORIES: { id: CatalogCategory; label: string }[] = [
+  { id: 'web', label: 'Web & Search' },
+  { id: 'research', label: 'Research & Reference' },
+  { id: 'knowledge', label: 'Docs & APIs' },
+  { id: 'dev', label: 'Code & Dev' },
   { id: 'productivity', label: 'Productivity' },
-  { id: 'dev', label: 'Development' },
-  { id: 'knowledge', label: 'Knowledge' },
   { id: 'design', label: 'Design' },
   { id: 'business', label: 'Business & Payments' },
   { id: 'files', label: 'Files & Storage' },
-  { id: 'local', label: 'Local servers' },
+  { id: 'local', label: 'Memory & Local' },
+];
+
+/**
+ * Top-level **intelligence lenses** — the catalog's tabs, wedge-ranked. Each
+ * owns a disjoint set of categories (the UI iterates lens → its categories →
+ * tiles). Global leads to surface the real-world / research reach that the
+ * dev-heavy remote-MCP ecosystem under-serves; the partition is asserted in
+ * connectorCatalog.test.ts.
+ */
+export const LENSES: { id: string; label: string; categoryIds: CatalogCategory[] }[] = [
+  { id: 'global', label: 'Global Intelligence', categoryIds: ['web', 'research'] },
+  { id: 'technical', label: 'Technical Intelligence', categoryIds: ['knowledge', 'dev'] },
+  { id: 'workspace', label: 'Workspace & Apps', categoryIds: ['productivity', 'design', 'business', 'files', 'local'] },
 ];
 
 /** ServerForm draft for a catalog entry (the "Open full form" escape hatch). */

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.216 -->
+<!-- release-version: 0.21.217 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -22,17 +22,21 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 ### Highlights
 
 - **The Tools menu grew into Connectors & Tools** — a control center for your agents' reach into
-  the real world: a stats strip, a curated **connector catalog** of ~20 known-good connectors
-  grouped by category (Notion, Linear, Atlassian, Asana, monday.com, Zapier, GitHub, Sentry,
-  Vercel, Stripe, PayPal, Figma, Canva, Context7, Hugging Face, DeepWiki, Microsoft Learn, and
-  more), and live search of the public MCP registry. Each connector is one clickable tile with a
-  status pip; clicking it opens a single dialog that guides setup, shows live status, or connects —
-  no wall of Add buttons. Adding a server is simpler too: the OAuth form is just "sign in via
-  browser" + optional scope, with pre-registered client credentials tucked into Advanced for the
-  rare provider that needs them. Connector sign-ins now toast on success, a revoked or re-scoped
-  grant fails fast with a clear "Reset auth, then Connect" message instead of a silent timeout, and
-  sessions that die mid-conversation self-heal (evict → reconnect → retry) instead of failing every
-  call with a cryptic error. *(Google Drive and the other Google Workspace connectors are marked
+  the real world: a stats strip, a curated **connector catalog** of ~24 known-good connectors
+  organized into three **intelligence lenses** (tabs) — *Global* (Exa web/company research, arXiv,
+  Wikipedia, Hugging Face), *Technical* (AWS Knowledge, GitHub, Sentry, Context7, Microsoft Learn,
+  DeepWiki, Vercel, Cloudflare, Playwright…), and *Workspace* (Notion, Linear, Atlassian, Asana,
+  monday.com, Zapier, Figma, Canva, Stripe, PayPal…) — so agents are well-rounded across
+  real-world *and* software knowledge, not just dev tools. Each connector is one clickable tile
+  with a glanceable auth badge (No sign-in / OAuth / API key / Local) and a status pip; clicking it
+  opens a single dialog that guides setup, shows live status, or connects — no wall of Add buttons.
+  The search box now filters the shelf live (type a name, jump to its tile) and falls back to the
+  public MCP registry for anything off-catalog. Adding a server is simpler too: the OAuth form is
+  just "sign in via browser" + optional scope, with pre-registered client credentials tucked into
+  Advanced for the rare provider that needs them. Connector sign-ins now toast on success, a revoked
+  or re-scoped grant fails fast with a clear "Reset auth, then Connect" message instead of a silent
+  timeout, and sessions that die mid-conversation self-heal (evict → reconnect → retry) instead of
+  failing every call with a cryptic error. *(Google Drive and the other Google Workspace connectors are marked
   "Coming soon" — they require Google's Workspace Developer Preview enrollment, which consumer
   Google accounts can't get.)*
 - **Skills** — teach agents *how you want things done*: named instruction packs with a markdown

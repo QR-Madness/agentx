@@ -454,9 +454,22 @@ is reactive, on first use of a dead session) — backlog.
 
 The Connectors & Tools page (user-facing rename of the Toolkit — internal ids/CSS keep `toolkit`,
 Workspaces→Projects precedent) opens with a **Connector Catalog**: a curated, data-only shelf in
-`client/src/lib/connectorCatalog.ts` (~22 entries across 7 categories — Productivity, Development,
-Knowledge, Design, Business & Payments, Files & Storage, Local — every remote URL probed live
-before inclusion; brand tiles are initials, no external fetches). The shelf renders **compact
+`client/src/lib/connectorCatalog.ts` (~24 entries; every remote URL probed live before inclusion;
+brand tiles are initials, no external fetches). **Two-lens organization (v0.21.217):** entries are
+grouped into wedge-ranked **intelligence lenses** — a data-driven `LENSES` array (`Global`
+Intelligence → `Technical` → `Workspace`), each owning a disjoint set of the fine `CatalogCategory`
+values (`web`/`research` · `knowledge`/`dev` · `productivity`/`design`/`business`/`files`/`local`);
+the partition is asserted in `connectorCatalog.test.ts`. Global leads to round out the real-world /
+research reach the dev-heavy remote-MCP ecosystem under-serves (added **Exa** api-key, **arXiv** +
+**Wikipedia** local stdio, **AWS Knowledge** open; **Hugging Face** moved to research). The catalog
+UI (`ConnectorCatalog.tsx`) renders a `SegmentedControl` **lens tab bar** → the lens's categories
+as light `.toolkit-catalog-category` sub-headers → `.toolkit-connector-tile` grid, each tile
+carrying a subtle **auth badge** (`AUTH_BADGE`: No sign-in / OAuth / API key / Local — `none` gets a
+success tint). The search box **filters the curated shelf instantly, client-side** (hides the tabs,
+shows a flat match grid) with the debounced **registry** search as a labelled fallback beneath —
+fixing the old bug where a curated name jumped to the registry. **Stripe** is `api-key` (restricted
+`rk_` key as `Authorization: Bearer` — its OAuth has no DCR, so "Add & sign in" would 401 like
+Google did); **Exa** uses an `x-api-key` header (never the URL). The shelf renders **compact
 clickable tiles** (`.toolkit-connector-tile` — brand + name + status pip, NO per-tile buttons);
 clicking one opens **`ConnectorDialog`**, a single modal covering the whole lifecycle: not-added →
 guided quick-add (setup + only the entry's declared fields; OAuth chains create→connect→browser

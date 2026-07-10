@@ -319,6 +319,31 @@
   background: var(--bg-hover, rgba(255, 255, 255, 0.06));
 }
 
+/* Subtle "what setup does this need" cue — muted so it never competes with the
+   Added/Soon status pip. "No sign-in" (open) gets a faint success tint. */
+.toolkit-auth-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line-subtle, var(--accent-tint-soft));
+  white-space: nowrap;
+}
+
+.toolkit-auth-badge.open {
+  color: var(--feedback-success);
+  border-color: color-mix(in srgb, var(--feedback-success) 35%, transparent);
+}
+
+/* Lens tab bar above the catalog grid. */
+.toolkit-lens-tabs {
+  margin: 4px 0 14px;
+  width: 100%;
+}
+
 .toolkit-card {
   background: var(--glass-layer-1);
   backdrop-filter: blur(var(--blur-medium));

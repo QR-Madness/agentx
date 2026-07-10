@@ -10,7 +10,7 @@
  * to the complete ServerForm. Registry search results always open the full
  * form — they're untrusted and deserve review.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Clock, ExternalLink, Loader2, Plus, Search } from 'lucide-react';
 import { api, apiErrorMessage } from '../../lib/api';
@@ -18,9 +18,9 @@ import type { MCPRegistryResult } from '../../lib/api';
 import type { McpServersState } from '../../lib/hooks';
 import { useNotify } from '../../contexts/NotificationContext';
 import { openExternal } from '../../lib/openExternal';
-import { Button, Input, StatusDot } from '../ui';
+import { Button, Input, SegmentedControl, StatusDot } from '../ui';
 import {
-  AUTH_KIND_LABELS, CATALOG_CATEGORIES, CONNECTOR_CATALOG,
+  AUTH_BADGE, AUTH_KIND_LABELS, CATALOG_CATEGORIES, CONNECTOR_CATALOG, LENSES,
   applyQuickInputs, catalogEntryConfigured, draftFromCatalogEntry, draftFromRegistryResult,
   findConfiguredServer,
   type CatalogEntry, type ServerDraft,
@@ -28,26 +28,84 @@ import {
 import { ServerForm } from './ServerForm';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 
+/** A single connector tile: brand + name + description, a subtle auth badge,
+ *  and (when relevant) an Added/Soon status pip. The whole tile opens the
+ *  ConnectorDialog. Shared by the browse (per-lens) and search (flat) modes. */
+function ConnectorTile({
+  entry, configured, onOpen,
+}: {
+  entry: CatalogEntry;
+  configured: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`toolkit-connector-tile${entry.comingSoon ? ' toolkit-connector-tile--soon' : ''}`}
+      title={entry.comingSoon ?? entry.description}
+      onClick={onOpen}
+    >
+      <span
+        className="toolkit-brand-tile"
+        style={{ background: `${entry.brand.color}26`, color: entry.brand.color }}
+      >
+        {entry.brand.initial}
+      </span>
+      <span className="toolkit-connector-tile-info">
+        <span className="name">{entry.title}</span>
+        <span className="desc">{entry.description}</span>
+      </span>
+      <span
+        className={`toolkit-auth-badge${entry.authKind === 'none' ? ' open' : ''}`}
+      >
+        {AUTH_BADGE[entry.authKind]}
+      </span>
+      {entry.comingSoon ? (
+        <span className="toolkit-connector-tile-status soon"><Clock size={12} /> Soon</span>
+      ) : configured ? (
+        <span className="toolkit-connector-tile-status added"><Check size={12} /> Added</span>
+      ) : null}
+    </button>
+  );
+}
+
 export function ConnectorCatalogView({ mcp }: { mcp: McpServersState }) {
   const { servers } = mcp;
   const [quickAdd, setQuickAdd] = useState<CatalogEntry | null>(null);
   // Full-form drafts (registry results + the quick-add escape hatch).
   const [formDraft, setFormDraft] = useState<ServerDraft | null>(null);
 
-  // Registry search — debounced; empty query clears results back to the shelf.
+  // Which intelligence lens (tab) is showing while browsing. Default = the
+  // first (Global) so the shelf leads with real-world reach.
+  const [lens, setLens] = useState<string>(LENSES[0].id);
+
+  // One search box. Typing filters the CURATED shelf instantly, client-side
+  // (title/vendor/description). The public-registry search is a separate,
+  // debounced fallback beneath — so "notion" shows the Notion tile, not a
+  // registry jump.
   const [q, setQ] = useState('');
+  const query = q.trim().toLowerCase();
+  const searchActive = query.length > 0;
+
+  const shelfMatches = useMemo(() => {
+    if (!searchActive) return [];
+    return CONNECTOR_CATALOG.filter(e =>
+      `${e.title} ${e.vendor} ${e.description}`.toLowerCase().includes(query),
+    );
+  }, [query, searchActive]);
+
+  // Registry fallback (debounced) — only fetched while a query is active.
   const [results, setResults] = useState<MCPRegistryResult[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
-    const query = q.trim();
-    if (!query) { setResults(null); setSearchError(null); setSearching(false); return; }
+    if (!searchActive) { setResults(null); setSearchError(null); setSearching(false); return; }
     let cancelled = false;
     setSearching(true);
     const t = window.setTimeout(async () => {
       try {
-        const r = await api.searchMCPRegistry(query);
+        const r = await api.searchMCPRegistry(q.trim());
         if (!cancelled) { setResults(r.results); setSearchError(null); }
       } catch (err) {
         if (!cancelled) { setResults([]); setSearchError(apiErrorMessage(err)); }
@@ -56,9 +114,9 @@ export function ConnectorCatalogView({ mcp }: { mcp: McpServersState }) {
       }
     }, 450);
     return () => { cancelled = true; window.clearTimeout(t); };
-  }, [q]);
+  }, [q, searchActive]);
 
-  const searchActive = q.trim().length > 0;
+  const activeLens = LENSES.find(l => l.id === lens) ?? LENSES[0];
 
   return (
     <>
@@ -69,80 +127,87 @@ export function ConnectorCatalogView({ mcp }: { mcp: McpServersState }) {
         icon={<Search size={16} />}
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Search the MCP registry…"
+        placeholder="Search connectors…"
       />
 
       {searchActive ? (
-        /* ── Registry results (untrusted → always the full review form) ── */
-        searching && !results ? (
-          <div className="toolkit-empty"><Loader2 className="spin" /> Searching the registry…</div>
-        ) : searchError ? (
-          <div className="toolkit-error-banner"><span>{searchError}</span></div>
-        ) : !results || results.length === 0 ? (
-          <div className="toolkit-empty">No registry entries match “{q.trim()}”.</div>
-        ) : (
-          <div className="toolkit-registry-list">
-            {results.map(r => (
-              <div key={r.name} className="toolkit-registry-row">
-                <div className="info">
-                  <span className="name">{r.name}</span>
-                  <span className="desc">{r.description || 'No description'}</span>
-                </div>
-                <span className="toolkit-chip">
-                  {r.remotes.length > 0 ? 'remote' : r.packages[0]?.registry_type ?? 'package'}
-                </span>
-                <Button variant="secondary" size="sm" onClick={() => setFormDraft(draftFromRegistryResult(r))}>
-                  <Plus size={14} /> Add
-                </Button>
-              </div>
-            ))}
-          </div>
-        )
-      ) : (
-        /* ── Curated shelf ── */
-        CATALOG_CATEGORIES.map(cat => {
-          const entries = CONNECTOR_CATALOG.filter(e => e.category === cat.id);
-          if (entries.length === 0) return null;
-          return (
-            <div key={cat.id}>
-              <div className="toolkit-catalog-category">{cat.label}</div>
-              <div className="toolkit-card-grid">
-                {entries.map(entry => {
-                  const configured = catalogEntryConfigured(entry, servers);
-                  return (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      className={`toolkit-connector-tile${entry.comingSoon ? ' toolkit-connector-tile--soon' : ''}`}
-                      title={entry.comingSoon ?? entry.description}
-                      onClick={() => setQuickAdd(entry)}
-                    >
-                      <span
-                        className="toolkit-brand-tile"
-                        style={{ background: `${entry.brand.color}26`, color: entry.brand.color }}
-                      >
-                        {entry.brand.initial}
-                      </span>
-                      <span className="toolkit-connector-tile-info">
-                        <span className="name">{entry.title}</span>
-                        <span className="desc">{entry.description}</span>
-                      </span>
-                      {entry.comingSoon ? (
-                        <span className="toolkit-connector-tile-status soon">
-                          <Clock size={12} /> Soon
-                        </span>
-                      ) : configured ? (
-                        <span className="toolkit-connector-tile-status added">
-                          <Check size={12} /> Added
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
+        /* ── Search: curated matches (flat, across all lenses) then registry ── */
+        <>
+          {shelfMatches.length > 0 && (
+            <div className="toolkit-card-grid" style={{ marginTop: 12 }}>
+              {shelfMatches.map(entry => (
+                <ConnectorTile
+                  key={entry.id}
+                  entry={entry}
+                  configured={catalogEntryConfigured(entry, servers)}
+                  onOpen={() => setQuickAdd(entry)}
+                />
+              ))}
             </div>
-          );
-        })
+          )}
+
+          <div className="toolkit-catalog-category" style={{ marginTop: 16 }}>
+            Not in the catalog? Search the public MCP registry
+          </div>
+          {searching && !results ? (
+            <div className="toolkit-empty"><Loader2 className="spin" /> Searching the registry…</div>
+          ) : searchError ? (
+            <div className="toolkit-error-banner"><span>{searchError}</span></div>
+          ) : !results || results.length === 0 ? (
+            <div className="toolkit-empty">
+              No registry entries match “{q.trim()}”.
+              {shelfMatches.length === 0 && ' Nothing in the catalog either.'}
+            </div>
+          ) : (
+            <div className="toolkit-registry-list">
+              {results.map(r => (
+                <div key={r.name} className="toolkit-registry-row">
+                  <div className="info">
+                    <span className="name">{r.name}</span>
+                    <span className="desc">{r.description || 'No description'}</span>
+                  </div>
+                  <span className="toolkit-chip">
+                    {r.remotes.length > 0 ? 'remote' : r.packages[0]?.registry_type ?? 'package'}
+                  </span>
+                  <Button variant="secondary" size="sm" onClick={() => setFormDraft(draftFromRegistryResult(r))}>
+                    <Plus size={14} /> Add
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        /* ── Browse: lens tabs → the lens's categories → tiles ── */
+        <>
+          <SegmentedControl<string>
+            className="toolkit-lens-tabs"
+            ariaLabel="Connector intelligence lens"
+            value={activeLens.id}
+            onChange={setLens}
+            options={LENSES.map(l => ({ value: l.id, label: l.label }))}
+          />
+          {activeLens.categoryIds.map(catId => {
+            const cat = CATALOG_CATEGORIES.find(c => c.id === catId);
+            const entries = CONNECTOR_CATALOG.filter(e => e.category === catId);
+            if (!cat || entries.length === 0) return null;
+            return (
+              <div key={catId}>
+                <div className="toolkit-catalog-category">{cat.label}</div>
+                <div className="toolkit-card-grid">
+                  {entries.map(entry => (
+                    <ConnectorTile
+                      key={entry.id}
+                      entry={entry}
+                      configured={catalogEntryConfigured(entry, servers)}
+                      onOpen={() => setQuickAdd(entry)}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </>
       )}
 
       {quickAdd && (

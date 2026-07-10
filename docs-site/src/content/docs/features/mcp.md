@@ -4,9 +4,17 @@ AgentX acts as an MCP (Model Context Protocol) client, connecting to external to
 
 ## Connector Catalog
 
-The fastest way to give agents real-world reach. The catalog is a shelf of compact, clickable connector tiles grouped by category — **Productivity** (Notion, Linear, Atlassian, Asana, monday.com, Zapier), **Development** (GitHub, Sentry, Vercel, Cloudflare Browser Rendering), **Knowledge** (Context7, Cloudflare Docs, Hugging Face, DeepWiki, Microsoft Learn), **Design** (Figma, Canva), **Business & Payments** (Stripe, PayPal), **Files & Storage** (Google Drive), and **Local servers** (Filesystem, Playwright, Knowledge-Graph memory). A tile shows a status pip — nothing, "Added", or "Coming soon" — and clicking it opens **one connector dialog** that covers the whole lifecycle: guided quick-add for a new connector (setup steps + only the fields it needs; OAuth chains straight into browser sign-in), live status + Connect for an added one, or the gate reason for a "Coming soon" entry. Full server management (rename, tool access, reset auth, remove) stays in the Servers section above.
+The fastest way to give agents real-world reach. The catalog is organized into three wedge-ranked **intelligence lenses** (tabs), so it's well-rounded across both kinds of intelligence an agent needs:
 
-Below the shelf, a search box queries the **official MCP registry** (`registry.modelcontextprotocol.io`) through the API proxy (`GET /api/mcp/registry/search`); any result maps into the prefilled server form (remote endpoints directly; npm/PyPI/OCI packages as `npx` / `uvx` / `docker run` stdio commands). Registry entries are community-published — review commands and URLs before saving.
+- **Global Intelligence** — the real world beyond your codebase: *Web & Search* (Exa), *Research & Reference* (arXiv, Wikipedia, Hugging Face).
+- **Technical Intelligence** — software & systems: *Docs & APIs* (AWS Knowledge, Context7, Microsoft Learn, Cloudflare Docs, DeepWiki), *Code & Dev* (GitHub, Sentry, Vercel, Cloudflare Browser Rendering, Filesystem, Playwright).
+- **Workspace & Apps** — your tools & content: *Productivity* (Notion, Linear, Atlassian, Asana, monday.com, Zapier), *Design* (Figma, Canva), *Business & Payments* (Stripe, PayPal), *Files & Storage* (Google Drive), *Memory & Local* (Knowledge-Graph memory).
+
+Each connector is a compact tile with a glanceable **auth badge** (*No sign-in* / *OAuth* / *API key* / *Local*) and a status pip (*Added* / *Coming soon*). Clicking a tile opens **one connector dialog** that covers the whole lifecycle: guided quick-add for a new connector (setup steps + only the fields it needs; OAuth chains straight into browser sign-in), live status + Connect for an added one, or the gate reason for a "Coming soon" entry. Full server management (rename, tool access, reset auth, remove) stays in the Servers section above.
+
+The **search box filters the shelf live** — typing a connector's name jumps straight to its tile. When you're after something not in the catalog, the same box falls back to the **official MCP registry** (`registry.modelcontextprotocol.io`) via the API proxy (`GET /api/mcp/registry/search`); any result maps into the prefilled server form (remote endpoints directly; npm/PyPI/OCI packages as `npx` / `uvx` / `docker run` stdio commands). Registry entries are community-published — review commands and URLs before saving.
+
+> **Stripe** authenticates with a **restricted API key** (`rk_…`) passed as a Bearer header — its OAuth has no dynamic client registration. **Exa** uses a free API key sent as an `x-api-key` header. **arXiv** and **Wikipedia** run locally via `npx`/`uvx` (Node/`uv` on the API host). **AWS Knowledge**, **Cloudflare Docs**, **DeepWiki**, **Microsoft Learn**, and **Hugging Face** are open — no sign-in.
 
 ### Google Workspace connectors — Developer Preview only
 
