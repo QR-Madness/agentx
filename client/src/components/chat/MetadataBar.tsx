@@ -3,9 +3,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Zap, Clock, Cpu, User, DollarSign } from 'lucide-react';
+import { Zap, Clock, Cpu, User, DollarSign, Brain, Telescope } from 'lucide-react';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { formatCost, formatLatency, getModelShortName } from '../../lib/format';
+import { THINKING_MODE_LABELS } from '../../lib/thinkingModes';
 import './MetadataBar.css';
 
 export interface MetadataBarProps {
@@ -17,6 +18,10 @@ export interface MetadataBarProps {
   costCurrency?: string;
   latencyMs?: number;
   agentName?: string;
+  /** Thinking pattern the turn ran with — renders a small mode badge. */
+  thinkingPattern?: string;
+  /** Turn ran in Research Mode (patterns suppressed) — Research badge wins. */
+  research?: boolean;
 }
 
 interface DerivedCost {
@@ -33,6 +38,8 @@ export function MetadataBar({
   costCurrency,
   latencyMs,
   agentName,
+  thinkingPattern,
+  research,
 }: MetadataBarProps) {
   // Backfill cost when the backend didn't compute one (older turns, or
   // providers that don't populate pricing in get_capabilities — e.g. the
@@ -76,10 +83,19 @@ export function MetadataBar({
   const effectiveCurrency = costCurrency ?? derivedCost?.currency ?? 'USD';
   const hasCost = effectiveCost !== undefined && effectiveCost > 0;
 
+  // The mode badge: Research wins (patterns are suppressed on research turns);
+  // otherwise the pattern the turn actually ran with. 'native' stays unbadged —
+  // it's the ordinary case, a badge would be noise.
+  const modeBadge = research
+    ? { icon: <Telescope size={10} />, label: 'Research' }
+    : thinkingPattern && thinkingPattern !== 'native'
+      ? { icon: <Brain size={10} />, label: THINKING_MODE_LABELS[thinkingPattern] ?? thinkingPattern }
+      : null;
+
   // Don't render if no metadata
   if (
     !model && !tokensInput && !tokensOutput && !tokensUsed
-    && !hasCost && !latencyMs && !agentName
+    && !hasCost && !latencyMs && !agentName && !modeBadge
   ) {
     return null;
   }
@@ -102,6 +118,18 @@ export function MetadataBar({
         <span className="metadata-item agent">
           <User size={10} />
           <span>{agentName}</span>
+        </span>
+      )}
+
+      {modeBadge && (
+        <span
+          className="metadata-item mode"
+          title={research
+            ? 'This turn ran in Research Mode (thinking patterns don’t apply there)'
+            : 'Thinking pattern this turn ran with'}
+        >
+          {modeBadge.icon}
+          <span>{modeBadge.label}</span>
         </span>
       )}
 

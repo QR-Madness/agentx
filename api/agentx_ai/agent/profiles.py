@@ -8,6 +8,7 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -101,6 +102,51 @@ RESEARCHER_DEFAULT = AgentProfile(  # pyright: ignore[reportCallIssue]
     ),
 )
 
+# A ready image maker: any chat agent can delegate "make me an image" to it and
+# the finished image lands in the parent conversation (the AlloyExecutor's
+# image-output branch — no tool loop, the task string IS the brief). Seeded on
+# fresh installs AND once onto existing installs via the `seeded_defaults`
+# marker (delete stays deleted). Kept in sync with api/defaults/agent_profiles.yaml.
+IMAGE_CREATOR_DEFAULT = AgentProfile(  # pyright: ignore[reportCallIssue]
+    id="image-creator",
+    name="Deluxe Image Creator",
+    avatar="palette",
+    description=(
+        "Image maker — turns a visual brief into a finished image, right in the "
+        "conversation. Powered by Gemini Flash Image (nano banana) via OpenRouter."
+    ),
+    default_model="openrouter:google/gemini-3.1-flash-image",
+    temperature=0.7,
+    reasoning_strategy=ReasoningStrategy.AUTO,
+    # Gemini image models advertise text+image output, so the image-only
+    # auto-force never fires — direct chats need the explicit flag to route
+    # through image generation (delegation routes on output modality alone).
+    direct_mode=True,
+    system_prompt=(
+        "You are an image creation specialist. Each message you receive is a "
+        "visual brief — render it as one vivid, coherent image. Honor explicit "
+        "style, mood, composition, and aspect wishes; where the brief is silent, "
+        "make bold, tasteful choices rather than asking questions."
+    ),
+    enable_memory=False,
+    memory_channel="_global",
+    enable_tools=False,
+    available_for_delegation=True,
+    delegation_hint=(
+        "Image maker — send a vivid visual brief and the finished image lands in "
+        "this conversation. Before the first image, ask the user for style/detail/"
+        "spend preferences — or offer to surprise them."
+    ),
+)
+
+# One-time seeds for EXISTING installs: marker → profile. A marker in the
+# store's `seeded_defaults` list means "this seed already ran" — the profile
+# is added at most once, so a user's deletion is forever (unlike
+# `_ensure_ambassador_defaults`, which is deliberately a reconciler).
+_ONE_TIME_SEEDS: dict[str, AgentProfile] = {
+    "image-creator-v1": IMAGE_CREATOR_DEFAULT,
+}
+
 
 def _warn_unqualified_tool_names(profile: AgentProfile) -> None:
     """
@@ -148,12 +194,20 @@ class ProfileManager:
 
         self.config_path = config_path
         self._profiles: dict[str, AgentProfile] = {}
+        # Markers for one-time seeds already applied to this store (persisted
+        # at the YAML root as `seeded_defaults`). A recorded marker means the
+        # seed never runs again — deleting the seeded profile sticks.
+        self._seeded_markers: list[str] = []
 
         # Load from file or initialize defaults
         if config_path.exists():
             self._load_config(config_path)
         else:
             self._init_defaults()
+
+        # Apply any one-time seeds this store hasn't seen (existing installs
+        # pick up newly shipped defaults exactly once).
+        self._ensure_seeded_defaults()
 
         # Ensure the Ambassador-as-profile-kind invariants (migrate legacy, seed
         # a default ambassador). Idempotent — only writes when something changed.
@@ -162,16 +216,44 @@ class ProfileManager:
     def _init_defaults(self) -> None:
         """Initialize with default profiles (fresh install only).
 
-        Seeds the mutable default agent (AgentX) plus a ready web-research
-        delegation target (Researcher). Kept in sync with the shipped seed
+        Seeds the mutable default agent (AgentX), a ready web-research
+        delegation target (Researcher), and the image maker (Deluxe Image
+        Creator). Kept in sync with the shipped seed
         `api/defaults/agent_profiles.yaml` (the cluster/manager copy path).
         """
         self._profiles[DEFAULT_PROFILE.id] = DEFAULT_PROFILE
         self._profiles[RESEARCHER_DEFAULT.id] = RESEARCHER_DEFAULT
+        self._profiles[IMAGE_CREATOR_DEFAULT.id] = IMAGE_CREATOR_DEFAULT
+        # Fresh installs have every one-time seed by construction — record the
+        # markers so nothing re-seeds later.
+        self._seeded_markers = list(_ONE_TIME_SEEDS.keys())
 
         # Save defaults to disk
         self.save_config()
         logger.info("Initialized agent profiles with defaults")
+
+    def _ensure_seeded_defaults(self) -> None:
+        """Apply one-time seeds to stores created before they shipped.
+
+        Marker semantics: absent → add the profile (unless an id/name collision
+        says the user already has their own) and record the marker; present →
+        never touch it again, so a deletion is forever. This is deliberately
+        NOT a reconciler (contrast `_ensure_ambassador_defaults`).
+        """
+        changed = False
+        for marker, seed in _ONE_TIME_SEEDS.items():
+            if marker in self._seeded_markers:
+                continue
+            collision = seed.id in self._profiles or any(
+                p.name == seed.name for p in self._profiles.values()
+            )
+            if not collision:
+                self._profiles[seed.id] = seed
+                logger.info(f"Seeded default profile {seed.name!r} ({marker})")
+            self._seeded_markers.append(marker)
+            changed = True
+        if changed:
+            self.save_config()
 
     def _ensure_ambassador_defaults(self) -> None:
         """Migrate legacy ambassadors to `kind='ambassador'` and guarantee a default
@@ -244,6 +326,10 @@ class ProfileManager:
                 self._init_defaults()
                 return
 
+            # One-time-seed markers ride at the YAML root (absent on stores
+            # created before the mechanism — exactly the ones seeds target).
+            self._seeded_markers = list(config.get("seeded_defaults") or [])
+
             for profile_data in config["profiles"]:
                 # Handle datetime fields
                 if "created_at" in profile_data and isinstance(profile_data["created_at"], str):
@@ -270,7 +356,7 @@ class ProfileManager:
         # Ensure parent directory exists
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        config = {
+        config: dict[str, Any] = {
             "profiles": [
                 {
                     "id": p.id,
@@ -316,6 +402,11 @@ class ProfileManager:
             {k: v for k, v in p.items() if v is not None}
             for p in config["profiles"]
         ]
+
+        # One-time-seed markers (see _ensure_seeded_defaults) — losing these
+        # would resurrect deleted seeded profiles on the next boot.
+        if self._seeded_markers:
+            config["seeded_defaults"] = list(self._seeded_markers)
 
         with open(save_path, "w") as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)

@@ -14,8 +14,8 @@ import {
   Crown,
   Box,
   Orbit,
-  Database,
-  DatabaseZap,
+  MemoryStick,
+  Ghost,
   Cpu,
   X,
   ArrowRightLeft,
@@ -25,16 +25,20 @@ import {
   UserX,
   Telescope,
   Brain,
+  Lightbulb,
+  Map as MapIcon,
+  ImagePlus,
 } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from '../ui/DropdownMenu';
 import { api } from '../../lib/api';
 import { contextChipState } from '../../lib/contextChip';
+import {
+  RESEARCH_MODE,
+  THINKING_MODE_LABELS,
+  availableThinkingModes,
+  thinkingModeOf,
+  thinkingModeTabPatch,
+} from '../../lib/thinkingModes';
+import { ThinkingModeMenu } from './ThinkingModeMenu';
 import { MessageImages } from './MessageImages';
 import { ConversationStateBadge } from './ConversationStateBadge';
 import type { ChatImageRef } from '../../lib/api/types';
@@ -93,20 +97,28 @@ import './ChatPanel.css';
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const MAX_IMAGE_BYTES = 8_000_000;
 
-// Thinking Patterns — the composer chip's per-conversation override menu.
-// '' = Auto (profile/auto chain). Values mirror the server's chat patterns.
-const THINKING_PATTERN_OPTIONS: { value: string; label: string; hint: string }[] = [
-  { value: '', label: 'Auto', hint: 'Pick the best pattern per message' },
-  { value: 'native', label: 'Native', hint: 'The model thinks freely — no scaffold' },
-  { value: 'cot', label: 'Step-by-step', hint: 'Explicit numbered reasoning steps' },
-  { value: 'step_back', label: 'Step-back', hint: 'Distill governing principles first' },
-  { value: 'reflection', label: 'Reflect', hint: 'Draft, self-critique, improve — one pass' },
-  { value: 'deep_reflection', label: 'Reflect deeply', hint: 'Live draft → critique → final (extra calls)' },
-  { value: 'self_consistency', label: 'Consensus', hint: 'Sample several solutions, keep the agreement (extra calls)' },
+// Thinking Mode — the unified per-conversation selection (patterns + Research).
+// Options/labels/gating + the tab-patch + wire derivation live in
+// lib/thinkingModes.ts; the menu itself in ThinkingModeMenu.tsx.
+
+// New-conversation starters: tap → the prompt lands in the composer (never
+// auto-sends — the user finishes the thought). Abstract, thinking-platform
+// flavored; the image one shows off delegation to the seeded image maker.
+const WELCOME_STARTERS: { icon: typeof Brain; label: string; prompt: string }[] = [
+  { icon: Lightbulb, label: 'Untangle a decision', prompt: "Help me untangle a decision I've been wrestling with: " },
+  { icon: MapIcon, label: 'Plan something ambitious', prompt: 'Help me build a plan for something ambitious: ' },
+  { icon: Telescope, label: 'Research a topic', prompt: 'Research this and give me a cited brief: ' },
+  { icon: ImagePlus, label: 'Create an image', prompt: 'Can you create an image of ' },
 ];
-const THINKING_PATTERN_LABELS: Record<string, string> = Object.fromEntries(
-  THINKING_PATTERN_OPTIONS.filter(o => o.value).map(o => [o.value, o.label]),
-);
+
+/** Time-aware greeting for the welcome hero. */
+function welcomeGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 5) return 'Up late';
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
 
 export function ChatPanel() {
   const {
@@ -288,25 +300,19 @@ export function ChatPanel() {
     },
     [activeTab, updateTab],
   );
-  // Research Mode chip: per-conversation toggle. Like Solo mode it's per-turn and
-  // never locks. Sent as `research_mode`; server elevates the search budget and
-  // layers the research prompt when research.enabled is on.
-  const researchMode = activeTab?.researchMode ?? false;
-  const setResearchMode = useCallback(
-    (next: boolean) => {
-      if (activeTab) updateTab(activeTab.id, { researchMode: next });
+  // Thinking Mode: ONE per-conversation selection covering the thinking
+  // patterns AND Research Mode (mutually exclusive server-side — research
+  // turns never stack a pattern). '' = Auto. Per-turn; never locks. The mode
+  // derives the unchanged wire fields (`research_mode` / `thinking_pattern`).
+  const thinkingMode = thinkingModeOf(activeTab);
+  const setThinkingMode = useCallback(
+    (mode: string) => {
+      if (activeTab) updateTab(activeTab.id, thinkingModeTabPatch(mode));
     },
     [activeTab, updateTab],
   );
-  // Thinking Patterns chip: per-conversation pattern override (null/'' = Auto —
-  // the profile/auto chain decides). Sent as `thinking_pattern` per turn.
-  const thinkingPattern = activeTab?.thinkingPattern ?? null;
-  const setThinkingPattern = useCallback(
-    (next: string | null) => {
-      if (activeTab) updateTab(activeTab.id, { thinkingPattern: next });
-    },
-    [activeTab, updateTab],
-  );
+  const researchMode = thinkingMode === RESEARCH_MODE;
+  const thinkingPattern = !researchMode && thinkingMode ? thinkingMode : null;
   const agentName = supervisorProfile?.name ?? getAgentName();
 
   // Vision pre-warning: when images are attached, check whether the effective model
@@ -319,8 +325,13 @@ export function ChatPanel() {
   // Global ad-hoc delegation gate — decides whether the Solo/Team chip shows at
   // all (read from the same one-shot config fetch as the vision flag).
   const [adhocDelegationEnabled, setAdhocDelegationEnabled] = useState(true);
-  // Global Research Mode gate — decides whether the Research chip shows at all.
+  // Global Research Mode gate — decides whether the Research mode option shows.
   const [researchEnabled, setResearchEnabled] = useState(true);
+  // Per-pattern gates from Settings → Intelligence → Thinking (reasoning.*):
+  // disabled patterns drop out of the Mode menu (they'd silently no-op).
+  const [patternGates, setPatternGates] = useState({
+    patternsEnabled: true, cot: true, stepBack: true, reflection: true, selfConsistency: true,
+  });
   useEffect(() => {
     let alive = true;
     api.getConfig()
@@ -331,10 +342,35 @@ export function ChatPanel() {
           (cfg.alloy as { allow_adhoc_delegation?: boolean })?.allow_adhoc_delegation ?? true,
         );
         setResearchEnabled((cfg.research as { enabled?: boolean })?.enabled ?? true);
+        const reasoning = (cfg.reasoning ?? {}) as Record<string, unknown>;
+        setPatternGates({
+          patternsEnabled: (reasoning.chat_patterns_enabled as boolean | undefined) ?? true,
+          cot: (reasoning.cot_enabled as boolean | undefined) ?? true,
+          stepBack: (reasoning.step_back_enabled as boolean | undefined) ?? true,
+          reflection: (reasoning.reflection_enabled as boolean | undefined) ?? true,
+          selfConsistency: (reasoning.self_consistency_enabled as boolean | undefined) ?? true,
+        });
       })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+  // The Mode menu's offered options given the gates. Research is additionally
+  // suppressed inside a workflow (team runs are their own mode).
+  const thinkingModeOptions = useMemo(
+    () => availableThinkingModes({
+      ...patternGates,
+      research: researchEnabled && !activeTab?.workflowId,
+    }),
+    [patternGates, researchEnabled, activeTab?.workflowId],
+  );
+  // Solo/Team visibility: only when delegation is actually possible this turn —
+  // outside a workflow (a team run IS delegation), global gate on, and at least
+  // one other agent on the roster. Shared by the composer chip and the Relay tile.
+  const showSoloToggle =
+    !activeTab?.workflowId && adhocDelegationEnabled &&
+    profiles.some(p =>
+      p.kind === 'agent' && p.availableForDelegation && p.agentId !== tabProfile?.agentId,
+    );
   const [modelSupportsVision, setModelSupportsVision] = useState<boolean | null>(null);
   useEffect(() => {
     if (!hasPendingImages || !effectiveModel) {
@@ -389,6 +425,9 @@ export function ChatPanel() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
   const relayButtonRef = useRef<HTMLButtonElement>(null);
+  // Mobile: the chip row is hidden — the agent selector anchors to a compact
+  // avatar chip inside the input row instead (identity stays one tap away).
+  const mobileAgentBtnRef = useRef<HTMLButtonElement>(null);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -791,19 +830,59 @@ export function ChatPanel() {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Copilot-style expanded composer: a tall, newline-first drafting box —
+  // Enter inserts a line, Ctrl/Cmd+Enter (or the Send button) submits. One
+  // sticky global preference (not per-tab); the slim handle above the input
+  // toggles it on both desktop and mobile (where the default box is tiny).
+  const [composerExpanded, setComposerExpanded] = useState(() => {
+    try { return localStorage.getItem('agentx:composerExpanded') === '1'; } catch { return false; }
+  });
+  const toggleComposerExpanded = useCallback(() => {
+    setComposerExpanded(v => {
+      const next = !v;
+      try { localStorage.setItem('agentx:composerExpanded', next ? '1' : '0'); } catch { /* private mode */ }
+      return next;
+    });
+    // Keep the caret where the user is working.
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
+
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
+    // Expanded: CSS owns the tall fixed box — clear any inline height so the
+    // textarea fills it and scrolls internally.
+    if (composerExpanded) {
+      el.style.height = '';
+      return;
+    }
     // Cap the grow height; on phones use a viewport-relative ceiling so a long
     // draft can expand but never swallow the screen (CSS max-height mirrors this).
+    // Measure via 'auto' (a '0px' reset makes Chromium report a stale, sticky
+    // scrollHeight here); the freshly-collapsed case never measures at all —
+    // the effect below snaps it to the minimum.
     const cap = isMobile ? Math.round(window.innerHeight * 0.4) : 200;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, cap)}px`;
-  }, [isMobile]);
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 24), cap)}px`;
+  }, [isMobile, composerExpanded]);
 
   useEffect(() => {
     autoResize();
   }, [input, autoResize]);
+
+  // A FRESHLY collapsed editor lands at the minimum height — never a
+  // carried-over tall box (post-collapse scrollHeight is unreliable, so we
+  // don't measure here at all). Auto-grow takes back over on the next input.
+  // Declared after the autoResize effect so it runs last on the collapse
+  // commit and wins.
+  const wasExpandedRef = useRef(composerExpanded);
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (wasExpandedRef.current && !composerExpanded && el) {
+      el.style.height = '24px';
+    }
+    wasExpandedRef.current = composerExpanded;
+  }, [composerExpanded]);
 
   // Handle prompt enhancement
   const handleEnhancePrompt = async () => {
@@ -846,6 +925,16 @@ export function ChatPanel() {
       setTitling(false);
     }
   };
+
+  // Palette → composer bridge: "Open the Relay" reaches ChatPanel via a window
+  // event (the command registry can't hold refs into this component). The rest
+  // of the conversation tools live INSIDE the relay — it is the conversation's
+  // command surface; the palette stays app-level.
+  useEffect(() => {
+    const openRelay = () => setShowRelay(true);
+    window.addEventListener('agentx:relay-open', openRelay);
+    return () => window.removeEventListener('agentx:relay-open', openRelay);
+  }, []);
 
   // Steer the running turn: fold the typed message into the in-flight run
   // instead of starting a new one. The steer bubble is appended when the server
@@ -898,7 +987,15 @@ export function ChatPanel() {
         return;
       }
     }
+    // Ctrl/Cmd+Enter always sends — the expanded box's explicit submit.
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      submit();
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
+      // Expanded drafting box: Enter is a newline, not a send.
+      if (composerExpanded) return;
       e.preventDefault();
       submit();
     }
@@ -1024,6 +1121,17 @@ export function ChatPanel() {
 
   return (
     <div className="chat-panel">
+      {/* Shared aurora gradient for icon strokes (relay tiles, welcome hero) —
+          stops ride the theme's accent tokens, so every theme keeps its own
+          two-tone identity. Mounted here so it exists whenever chat renders. */}
+      <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden focusable="false">
+        <defs>
+          <linearGradient id="ax-aurora-grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="var(--accent-primary, #8b5cf6)" />
+            <stop offset="100%" stopColor="var(--accent-secondary, #06b6d4)" />
+          </linearGradient>
+        </defs>
+      </svg>
       {/* Header */}
       <div className="chat-panel-header">
         <div className="chat-panel-info">
@@ -1092,7 +1200,7 @@ export function ChatPanel() {
 
       {activeTab.noMemorization && (
         <div className="no-memo-banner" role="status">
-          <Database size={14} />
+          <Ghost size={14} />
           <span>
             <strong>No Memorization is on.</strong> This conversation will not be
             stored or recalled — treat its contents as ephemeral and avoid
@@ -1105,8 +1213,45 @@ export function ChatPanel() {
       <div className="chat-panel-messages" ref={messagesContainerRef}>
         {messages.length === 0 && (
           <div className="chat-panel-welcome">
-            <Bot size={32} />
-            <p>Start a conversation by typing a message below</p>
+            <div className="welcome-orb" aria-hidden>
+              {activeWorkflow
+                ? <Crown size={30} />
+                : <AgentAvatar avatar={tabProfile?.avatar} size={34} fill />}
+            </div>
+            <h2 className="welcome-title">
+              {welcomeGreeting()} — {activeWorkflow
+                ? `team ${activeWorkflow.name} is assembled.`
+                : `I'm ${tabProfile?.name || 'AgentX'}.`}
+            </h2>
+            <p className="welcome-sub">
+              {researchMode
+                ? 'Research Mode is armed — give me a question worth digging into.'
+                : 'What are we thinking through today?'}
+            </p>
+            <div className="welcome-starters">
+              {WELCOME_STARTERS.map(s => {
+                const Icon = s.icon;
+                return (
+                  <button
+                    key={s.label}
+                    className="welcome-starter"
+                    onClick={() => {
+                      setInput(s.prompt);
+                      requestAnimationFrame(() => {
+                        const el = textareaRef.current;
+                        if (el) {
+                          el.focus();
+                          el.setSelectionRange(el.value.length, el.value.length);
+                        }
+                      });
+                    }}
+                  >
+                    <Icon size={13} />
+                    <span>{s.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -1246,7 +1391,7 @@ export function ChatPanel() {
           <AgentSelectorDropdown
             isOpen={showAgentSelector}
             onClose={() => setShowAgentSelector(false)}
-            anchorRef={profileButtonRef}
+            anchorRef={isMobile ? mobileAgentBtnRef : profileButtonRef}
           />
 
           {/* Inline model chip — per-conversation model override */}
@@ -1272,18 +1417,13 @@ export function ChatPanel() {
                   : 'Memorization locked once the conversation has started'
             }
           >
-            {activeTab?.noMemorization ? <DatabaseZap size={12} /> : <Database size={12} />}
+            {activeTab?.noMemorization ? <Ghost size={12} /> : <MemoryStick size={12} />}
             <span>{activeTab?.noMemorization ? 'No memory' : 'Memory'}</span>
           </button>
 
-          {/* Solo/Team chip — per-conversation ad-hoc delegation toggle. Shown
-              only when delegation is actually possible this turn: outside a
-              workflow (a team run IS delegation), global gate on, and at least
-              one other agent on the roster. Never locks (per-turn semantics). */}
-          {!activeTab?.workflowId && adhocDelegationEnabled &&
-            profiles.some(p =>
-              p.kind === 'agent' && p.availableForDelegation && p.agentId !== tabProfile?.agentId,
-            ) && (
+          {/* Solo/Team chip — per-conversation ad-hoc delegation toggle.
+              Never locks (per-turn semantics). Visibility: showSoloToggle. */}
+          {showSoloToggle && (
             <button
               className={`composer-chip ${soloMode ? '' : 'active'}`}
               onClick={() => setNoDelegation(!soloMode)}
@@ -1298,54 +1438,23 @@ export function ChatPanel() {
             </button>
           )}
 
-          {/* Research Mode chip — per-conversation toggle for a rigorous, cited,
-              self-reviewing research engagement with an elevated search budget.
-              Shown when the feature is globally enabled and outside a workflow
-              (team runs are their own mode). Per-turn; never locks. */}
-          {!activeTab?.workflowId && researchEnabled && (
+          {/* Thinking Mode chip — ONE per-conversation selection covering the
+              thinking patterns AND Research Mode (they're mutually exclusive
+              server-side; presenting them as one choice makes that visible).
+              Auto (default) lets the profile/auto chain decide. */}
+          <ThinkingModeMenu
+            value={thinkingMode}
+            onChange={setThinkingMode}
+            options={thinkingModeOptions}
+          >
             <button
-              className={`composer-chip ${researchMode ? 'active' : ''}`}
-              onClick={() => setResearchMode(!researchMode)}
-              title={
-                researchMode
-                  ? 'Research Mode on — deep, cited research with an elevated search budget; click to turn off'
-                  : 'Research Mode off — click to run a rigorous, cited research engagement'
-              }
+              className={`composer-chip ${thinkingMode ? 'active' : ''}`}
+              title="Thinking mode — how the agent works this conversation (Auto picks per message; Research replaces thinking patterns)"
             >
-              <Telescope size={12} />
-              <span>Research</span>
+              {researchMode ? <Telescope size={12} /> : <Brain size={12} />}
+              <span>{THINKING_MODE_LABELS[thinkingMode] ?? 'Thinking'}</span>
             </button>
-          )}
-
-          {/* Thinking Patterns chip — per-conversation pattern override. Auto
-              (default) lets the profile/auto chain decide; a chosen pattern is
-              sent as `thinking_pattern` on every turn until changed. */}
-          <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <button
-                className={`composer-chip ${thinkingPattern ? 'active' : ''}`}
-                title="Thinking pattern — how the agent reasons this conversation (Auto picks per message)"
-              >
-                <Brain size={12} />
-                <span>{THINKING_PATTERN_LABELS[thinkingPattern ?? ''] ?? 'Thinking'}</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[15rem]">
-              <DropdownMenuRadioGroup
-                value={thinkingPattern ?? ''}
-                onValueChange={v => setThinkingPattern(v || null)}
-              >
-                {THINKING_PATTERN_OPTIONS.map(opt => (
-                  <DropdownMenuRadioItem key={opt.value} value={opt.value} title={opt.hint}>
-                    <span className="flex flex-col items-start">
-                      <span>{opt.label}</span>
-                      <span className="text-2xs text-fg-muted">{opt.hint}</span>
-                    </span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          </ThinkingModeMenu>
         </div>
         {(pendingImages.length > 0 || uploadingImages > 0) && (
           <div className="composer-images">
@@ -1363,7 +1472,20 @@ export function ChatPanel() {
             )}
           </div>
         )}
-        <div className="input-container">
+        <button
+          className={`composer-expand-toggle${composerExpanded ? ' expanded' : ''}`}
+          onClick={toggleComposerExpanded}
+          aria-expanded={composerExpanded}
+          aria-label={composerExpanded ? 'Collapse the drafting box' : 'Expand the drafting box'}
+          title={
+            composerExpanded
+              ? 'Collapse — Enter sends again'
+              : 'Expand the drafting box — Enter makes a new line, Ctrl+Enter sends'
+          }
+        >
+          {composerExpanded ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+        </button>
+        <div className={`input-container${composerExpanded ? ' expanded' : ''}`}>
           <input
             ref={imageInputRef}
             type="file"
@@ -1386,6 +1508,19 @@ export function ChatPanel() {
               e.target.value = '';
             }}
           />
+          {isMobile && (
+            <button
+              ref={mobileAgentBtnRef}
+              className={`mobile-agent-chip ${showAgentSelector ? 'active' : ''}`}
+              onClick={() => setShowAgentSelector(v => !v)}
+              title="Select agent profile"
+              aria-label="Select agent profile"
+            >
+              {activeWorkflow
+                ? <Crown size={16} />
+                : <AgentAvatar avatar={tabProfile?.avatar} size={18} fill />}
+            </button>
+          )}
           <button
             ref={relayButtonRef}
             className={`relay-trigger ${showRelay ? 'active' : ''} ${
@@ -1423,6 +1558,24 @@ export function ChatPanel() {
             onAutoTitle={handleAutoTitle}
             canAutoTitle={(activeTab?.messages.length ?? 0) > 0}
             titling={titling}
+            thinkingMode={thinkingMode}
+            onThinkingModeChange={setThinkingMode}
+            thinkingModeOptions={thinkingModeOptions}
+            useMemory={useMemory}
+            canToggleMemory={canToggleMemory}
+            onToggleMemory={() => setNoMemorization(!(activeTab?.noMemorization ?? false))}
+            showSoloToggle={showSoloToggle}
+            soloMode={soloMode}
+            onToggleSolo={() => setNoDelegation(!soloMode)}
+            modelLabel={modelLabel}
+            modelOverridden={!!activeTab?.modelOverride}
+            onOpenModelPicker={() => setShowModelPicker(true)}
+            contextChip={contextChip}
+            agentName={tabProfile?.name}
+            conversationId={activeTab?.sessionId ?? undefined}
+            onOpenState={() =>
+              openModal({ ...SURFACES.conversationState, props: { conversationId: activeTab?.sessionId } })
+            }
           />
           <textarea
             ref={textareaRef}
@@ -1448,8 +1601,14 @@ export function ChatPanel() {
             }}
             placeholder={
               isTyping
-                ? 'Steer the running agent... (Shift+Enter for new line)'
-                : 'Type your message... (Shift+Enter for new line)'
+                ? (isMobile || composerExpanded
+                    ? 'Steer the running agent…'
+                    : 'Steer the running agent... (Shift+Enter for new line)')
+                : composerExpanded
+                  ? (isMobile
+                      ? 'Draft freely — the send button submits'
+                      : 'Draft freely — Enter for a new line, Ctrl+Enter to send')
+                  : (isMobile ? 'Type your message…' : 'Type your message... (Shift+Enter for new line)')
             }
             rows={1}
           />

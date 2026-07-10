@@ -28,6 +28,15 @@
   color: var(--accent-primary);
 }
 
+/* Mode badge — the turn's thinking pattern / Research Mode. Quiet accent so
+   it reads as provenance, not decoration. */
+.metadata-item.mode {
+  color: var(--accent-primary);
+  background: var(--accent-tint-soft, rgba(139, 92, 246, 0.12));
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
 .metadata-item.model {
   color: var(--text-secondary);
   font-family: 'JetBrains Mono', monospace;

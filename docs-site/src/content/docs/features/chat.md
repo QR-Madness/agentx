@@ -53,6 +53,32 @@ Full pipeline with task planning and reasoning. Used by `POST /api/agent/run`.
 
 Flow: task decomposition → reasoning strategy selection → execution → memory storage.
 
+## The Relay — the conversation's command center
+
+The **Orbit button** beside the composer opens the Relay: a glass control center for
+*this conversation*. A status strip reads out the active agent, model, and context
+usage; below it, a tile grid holds every per-conversation control:
+
+- **Thinking mode** (the wide tile) — one selection covering the thinking patterns *and*
+  Research Mode (they're mutually exclusive; the menu makes that visible).
+- Toggles: **Memory** (locks once the conversation starts), **Solo/Team** delegation,
+  **Background** (arm the next send to run detached).
+- Openers: **Model**, **Project**, **Conversation state**, **Attach image / file**,
+  **Enhance prompt**, **Auto-title**.
+- Below the grid: **Live runs** (recover a detached run) and the **Background runs**
+  inbox.
+
+On desktop the Relay is a popover above the composer and the most-used controls also
+stay as chips in the composer row. **On mobile the chip row disappears entirely** — the
+input row becomes *agent avatar · message · Relay · send*, and the Relay opens as a
+bottom sheet holding everything. The command palette stays app-level; the Relay is the
+conversation-level command surface (the palette's "Open the Relay" jumps straight in).
+
+A slim handle above the input toggles the **expanded drafting box** (sticky preference):
+the composer becomes a tall canvas where **Enter inserts a new line** and
+**Ctrl/Cmd+Enter (or the send button) submits** — the long-form drafting mode, and the
+cure for the tiny default input on phones.
+
 ## Streaming
 
 `POST /api/agent/chat/stream` returns the same response as `POST /api/agent/chat`, but as

@@ -18,9 +18,12 @@ Delegation comes in two flavors:
   each teammate's specialty (`delegation_hint`, falling back to the profile description)
   with deliberately soft guidance: handle it yourself by default, delegate when a
   teammate is clearly better suited. Enabled by default (`alloy.allow_adhoc_delegation`);
-  nothing delegates until profiles opt onto the roster. A per-conversation **Solo/Team**
-  toggle (composer chip or command palette) sends `disable_delegation` to suppress it
-  for a chat — ignored under a workflow, since a team run *is* delegation.
+  nothing delegates until profiles opt onto the roster. AgentX ships two already-opted-in
+  specialists — the **Researcher** (web search, cited answers) and the **Deluxe Image
+  Creator** (delegate a visual brief; the finished image lands in the conversation) —
+  edit or delete them freely; they never re-seed. A per-conversation **Solo/Team**
+  toggle (composer chip, Relay tile, or command palette) sends `disable_delegation` to
+  suppress it for a chat — ignored under a workflow, since a team run *is* delegation.
 
 ```mermaid
 graph TD

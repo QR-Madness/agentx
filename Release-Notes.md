@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.205 -->
+<!-- release-version: 0.21.206 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,6 +21,24 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
+- **The Relay is now the conversation's command center** — the Orbit button opens a glass
+  control panel: a status strip (agent · model · context %), tiled controls with aurora gradient
+  icons (thinking mode, memory, team, background send, model, project, state, attach, enhance,
+  auto-title), plus the live-runs and background inbox. On mobile the chip pile is gone — the
+  input row is just avatar · message · relay · send, and the Relay opens as a bottom sheet.
+- **One Thinking Mode picker** — thinking patterns and Research Mode are now a single choice
+  (they were always mutually exclusive server-side; the menu finally says so), and every turn
+  wears a badge showing the mode it actually ran with.
+- **An expanded drafting box** — a slim handle above the input swaps the composer into a tall
+  Copilot-style canvas: Enter makes a new line, Ctrl/Cmd+Enter sends. Sticky preference; the cure
+  for the tiny phone input.
+- **A warmer first hello** — new conversations open on the agent's aurora orb, a time-aware
+  greeting, and tappable starters (untangle a decision, plan something ambitious, research a
+  topic, create an image).
+- **"Can you generate an image?" now just works** — a seeded **Deluxe Image Creator** agent
+  (Gemini Flash Image via OpenRouter) joins the delegation roster: any agent can hand it a visual
+  brief and the finished image lands in the conversation. It seeds once — edit or delete it and
+  it stays gone.
 - **Research Mode** — a per-conversation toggle (the 🔭 chip in the composer) that turns a chat into
   a rigorous research engagement: an elevated, cost-aware search budget, a preference for deep
   research, and a self-reviewing prompt that gathers real, cited evidence (concrete stats + named

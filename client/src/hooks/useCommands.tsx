@@ -15,6 +15,7 @@ import {
   Home, LayoutDashboard, Bot, Plus, X, Settings, Wrench, Database, ListChecks,
   BookMarked, Languages, BrainCircuit, Eye, EyeOff, Zap, KeyRound, LogOut, Radio,
   ScrollText, Monitor, MessagesSquare, FileStack, FolderOpen, Users,
+  Orbit, Telescope,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useModal } from '../contexts/ModalContext';
@@ -24,6 +25,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useOpenAmbassador } from './useOpenAmbassador';
 import { SURFACES, type SurfaceKey } from '../lib/surfaces';
+import { RESEARCH_MODE, thinkingModeOf, thinkingModeTabPatch } from '../lib/thinkingModes';
 import { THEMES, type ThemePreference } from '../lib/theme';
 import { THEME_ICONS } from '../components/common/themeIcons';
 import type { PageId } from '../layouts/TopBar';
@@ -126,6 +128,33 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
         run: () => { updateTab(activeTabId, { noDelegation: !activeTab?.noDelegation }); onClose(); },
       });
       cmds.push({ id: 'conv-close', group: 'Conversation', label: 'Close conversation', hint: '⌘W', icon: <X size={16} />, keywords: ['tab', 'remove'], run: () => { closeTab(activeTabId); onClose(); } });
+
+      // Relay bridge: these reach ChatPanel state via window events (the
+      // registry can't hold refs into the composer). Navigate to the chat
+      // page first so the panel is mounted to hear the event.
+      const fire = (evt: string) => () => {
+        onNavigate('agentx');
+        onClose();
+        setTimeout(() => window.dispatchEvent(new Event(evt)), 80);
+      };
+      cmds.push({
+        id: 'open-relay', group: 'Conversation',
+        label: 'Open the Relay',
+        icon: <Orbit size={16} />,
+        keywords: ['relay', 'command', 'center', 'orbit', 'background', 'attach', 'mode', 'tiles'],
+        run: fire('agentx:relay-open'),
+      });
+      const researchOn = thinkingModeOf(activeTab) === RESEARCH_MODE;
+      cmds.push({
+        id: 'toggle-research', group: 'Conversation',
+        label: researchOn ? 'Turn off Research mode' : 'Turn on Research mode',
+        icon: <Telescope size={16} />,
+        keywords: ['research', 'deep', 'cited', 'mode', 'thinking'],
+        run: () => {
+          updateTab(activeTabId, thinkingModeTabPatch(researchOn ? '' : RESEARCH_MODE));
+          onClose();
+        },
+      });
     }
 
     // Account (only when auth is enabled + signed in)

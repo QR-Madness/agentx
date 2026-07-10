@@ -383,10 +383,16 @@ export interface ConversationTab {
   // Research Mode: elevated search budget + a rigorous, evidence-grounded,
   // self-reviewing research prompt that lands a durable, cited report in the
   // attached Project. Sent as `research_mode` on the stream request.
+  // LEGACY: kept in lockstep by thinkingModeTabPatch; `thinkingMode` wins on read.
   researchMode?: boolean;
   // Per-conversation thinking-pattern override (Thinking Patterns). null/'' ⇒
   // profile/auto chain. Sent as `thinking_pattern` on the stream request.
+  // LEGACY: kept in lockstep by thinkingModeTabPatch; `thinkingMode` wins on read.
   thinkingPattern?: string | null;
+  // The unified thinking-mode selection ('' = Auto, a pattern value, or
+  // 'research'). One choice — Research and patterns are mutually exclusive
+  // server-side. See lib/thinkingModes.ts for derivation + wire mapping.
+  thinkingMode?: string;
   // Per-conversation model override (e.g. "openrouter:anthropic/claude-..."),
   // chosen from the composer's inline model chip. Falls back to the profile's
   // model when unset. Sent as `model` on the stream request.
@@ -439,6 +445,9 @@ export function getConversationTabs(serverId?: string): ConversationTab[] {
     noDelegation: t.noDelegation ?? false,
     researchMode: t.researchMode ?? false,
     thinkingPattern: t.thinkingPattern ?? null,
+    // Unified thinking mode — migrate tabs persisted before it existed from
+    // the legacy pair (research wins; else the pattern; else Auto).
+    thinkingMode: t.thinkingMode ?? (t.researchMode ? 'research' : (t.thinkingPattern ?? '')),
     modelOverride: t.modelOverride ?? null,
   }));
 }

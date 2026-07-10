@@ -64,6 +64,10 @@ export interface StreamCallbacks {
     finish_reason?: string | null;
     /** True when the answer was cut off by max_tokens (finish_reason "length"). */
     truncated?: boolean;
+    /** Thinking pattern the turn ran with (native/cot/…); absent = none. */
+    thinking_pattern?: string | null;
+    /** Turn ran in Research Mode (thinking patterns are suppressed there). */
+    research?: boolean;
   }) => void;
   /** First event of a detached run — carries the run_id to persist + re-attach to. */
   onRunStarted?: (data: { run_id: string }) => void;

@@ -7864,7 +7864,8 @@ class ProfileUnqualifiedToolWarningTest(TestCase):
 
 
 class ProfileSeedAndReorderTest(TestCase):
-    """Fresh-install seed set (AgentX + Researcher) and reorder-by-ids."""
+    """Fresh-install seed set (AgentX + Researcher + Image Creator),
+    one-time-seed markers, and reorder-by-ids."""
 
     def _fresh_manager(self):
         import pathlib
@@ -7875,10 +7876,10 @@ class ProfileSeedAndReorderTest(TestCase):
         path = pathlib.Path(tempfile.mkdtemp()) / "agent_profiles.yaml"
         return ProfileManager(config_path=path), path
 
-    def test_fresh_install_seeds_agentx_and_researcher(self) -> None:
+    def test_fresh_install_seeds_agentx_researcher_image_creator(self) -> None:
         pm, _ = self._fresh_manager()
         agents = {p.id: p for p in pm.list_profiles_by_kind("agent")}
-        self.assertEqual(set(agents), {"default", "researcher"})
+        self.assertEqual(set(agents), {"default", "researcher", "image-creator"})
         self.assertTrue(agents["default"].is_default)
         self.assertEqual(agents["default"].avatar, "atom")
         researcher = agents["researcher"]
@@ -7887,6 +7888,81 @@ class ProfileSeedAndReorderTest(TestCase):
         self.assertEqual(researcher.allowed_tools, ["_internal.web_search"])
         self.assertTrue(researcher.delegation_hint)
         self.assertTrue(researcher.system_prompt)
+        creator = agents["image-creator"]
+        self.assertEqual(creator.avatar, "palette")
+        self.assertTrue(creator.direct_mode)  # gemini image = text+image out; no auto-force
+        self.assertTrue(creator.available_for_delegation)
+        self.assertEqual(
+            creator.default_model, "openrouter:google/gemini-3.1-flash-image",
+        )
+        self.assertFalse(creator.enable_memory)
+
+    def test_one_time_seed_lands_once_on_a_legacy_store(self) -> None:
+        """A pre-seed store (no marker) gains the image creator exactly once."""
+        import pathlib
+        import tempfile
+
+        import yaml as _yaml
+
+        from agentx_ai.agent.profiles import ProfileManager
+
+        path = pathlib.Path(tempfile.mkdtemp()) / "agent_profiles.yaml"
+        path.write_text(_yaml.safe_dump({"profiles": [
+            {"id": "default", "name": "AgentX", "is_default": True},
+        ]}))
+        pm = ProfileManager(config_path=path)
+        self.assertIsNotNone(pm.get_profile("image-creator"))
+        # Marker persisted at the YAML root.
+        stored = _yaml.safe_load(path.read_text())
+        self.assertIn("image-creator-v1", stored.get("seeded_defaults", []))
+
+    def test_deleting_a_seeded_profile_sticks_across_reboots(self) -> None:
+        """The marker makes the seed one-time: delete → reload → still gone
+        (this is NOT the ambassador reconciler)."""
+        from agentx_ai.agent.profiles import ProfileManager
+
+        pm, path = self._fresh_manager()
+        pm.delete_profile("image-creator")
+        reloaded = ProfileManager(config_path=path)
+        self.assertIsNone(reloaded.get_profile("image-creator"))
+
+    def test_seed_skips_a_name_collision_but_records_the_marker(self) -> None:
+        """A user's own profile named like the seed is never clobbered — and
+        the marker still lands so we don't retry forever."""
+        import pathlib
+        import tempfile
+
+        import yaml as _yaml
+
+        from agentx_ai.agent.profiles import ProfileManager
+
+        path = pathlib.Path(tempfile.mkdtemp()) / "agent_profiles.yaml"
+        path.write_text(_yaml.safe_dump({"profiles": [
+            {"id": "default", "name": "AgentX", "is_default": True},
+            {"id": "mine", "name": "Deluxe Image Creator", "temperature": 0.1},
+        ]}))
+        pm = ProfileManager(config_path=path)
+        self.assertIsNone(pm.get_profile("image-creator"))
+        mine = pm.get_profile("mine")
+        assert mine is not None
+        self.assertEqual(mine.temperature, 0.1)
+        stored = _yaml.safe_load(path.read_text())
+        self.assertIn("image-creator-v1", stored.get("seeded_defaults", []))
+
+    def test_image_creator_is_on_the_adhoc_roster(self) -> None:
+        from unittest.mock import patch
+
+        from agentx_ai.alloy.delegation_tool import list_adhoc_delegation_targets
+
+        pm, _ = self._fresh_manager()
+        default = pm.get_profile("default")
+        assert default is not None
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            targets = list_adhoc_delegation_targets(default.agent_id)
+        names = [name for _, name, _ in targets]
+        self.assertIn("Deluxe Image Creator", names)
+        hint = next(h for _, name, h in targets if name == "Deluxe Image Creator")
+        self.assertIn("surprise", hint)
 
     def test_reorder_rebuilds_and_persists(self) -> None:
         from agentx_ai.agent.profiles import ProfileManager
@@ -14158,6 +14234,60 @@ class ThinkingReasoningProbeTest(TestCase):
         cold = SimpleNamespace(supports_reasoning=False)
         self.assertFalse(asyncio.run(
             supports_reasoning_hardened(provider, "m", cold)))
+
+
+class ThinkingStampTest(TestCase):
+    """Turn-metadata stamps: pattern + had_thinking + the research flag (the
+    mode badge's persistence path — reloaded turns must badge honestly)."""
+
+    def test_stamp_carries_pattern_and_research(self):
+        from types import SimpleNamespace
+        from agentx_ai.views import _stamp_thinking_meta
+
+        meta: dict = {}
+        session = SimpleNamespace(metadata={})
+        _stamp_thinking_meta(
+            meta,
+            SimpleNamespace(pattern="reflection"),
+            SimpleNamespace(has_thinking=True),
+            session,
+            research=False,
+        )
+        self.assertEqual(meta["thinking_pattern"], "reflection")
+        self.assertTrue(meta["had_thinking"])
+        self.assertNotIn("research", meta)
+        self.assertTrue(session.metadata["had_thinking"])
+
+    def test_research_stamps_and_pattern_stays_absent(self):
+        """Research turns run with EMPTY_PLAN (pattern None) — the stamp says
+        research, not a pattern."""
+        from types import SimpleNamespace
+        from agentx_ai.views import _stamp_thinking_meta
+
+        meta: dict = {}
+        _stamp_thinking_meta(
+            meta,
+            SimpleNamespace(pattern=None),
+            SimpleNamespace(has_thinking=False),
+            SimpleNamespace(metadata={}),
+            research=True,
+        )
+        self.assertTrue(meta["research"])
+        self.assertNotIn("thinking_pattern", meta)
+
+    def test_interrupted_twin_stamps_research(self):
+        from types import SimpleNamespace
+        from agentx_ai.views import _stamp_interrupted_thinking
+
+        meta: dict = {}
+        _stamp_interrupted_thinking(
+            meta,
+            SimpleNamespace(pattern=None),
+            SimpleNamespace(has_thinking=False),
+            research=True,
+        )
+        self.assertTrue(meta["research"])
+        self.assertFalse(meta["had_thinking"])
 
 
 class StepBackPrecallTest(TestCase):

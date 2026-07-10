@@ -487,24 +487,34 @@ def _thinking_blocks(plan) -> list:
     return list(plan.blocks)
 
 
-def _stamp_thinking_meta(asst_metadata: dict, thinking_plan, parsed, session) -> None:
+def _stamp_thinking_meta(
+    asst_metadata: dict, thinking_plan, parsed, session, research: bool = False,
+) -> None:
     """Stamp the turn's thinking telemetry: `had_thinking` on the persisted
     metadata (the catalog-proof "this model actually thinks" signal, mirrored
-    onto the live session for same-process turns) and the pattern used.
+    onto the live session for same-process turns), the pattern used, and
+    whether Research Mode ran (patterns are suppressed under it — the stamp
+    lets reloaded turns badge the mode honestly).
     Branches live here, not in the generator (pyright flow budget)."""
     asst_metadata["had_thinking"] = parsed.has_thinking
     if parsed.has_thinking:
         session.metadata["had_thinking"] = True
     if thinking_plan.pattern:
         asst_metadata["thinking_pattern"] = thinking_plan.pattern
+    if research:
+        asst_metadata["research"] = True
 
 
-def _stamp_interrupted_thinking(interrupted_meta: dict, thinking_plan, partial) -> None:
+def _stamp_interrupted_thinking(
+    interrupted_meta: dict, thinking_plan, partial, research: bool = False,
+) -> None:
     """The hard-stop twin of `_stamp_thinking_meta` (no session mirror — the
     partial turn shouldn't vouch for the model's thinking)."""
     interrupted_meta["had_thinking"] = partial.has_thinking
     if thinking_plan.pattern:
         interrupted_meta["thinking_pattern"] = thinking_plan.pattern
+    if research:
+        interrupted_meta["research"] = True
 
 
 def _append_coverage_read_blocks(blocks: list, session) -> None:
@@ -2957,6 +2967,9 @@ async def agent_chat_stream(request):
                 'truncated': was_truncated,
                 # Thinking Patterns: which pattern shaped this turn (None = plain).
                 'thinking_pattern': thinking_plan.pattern,
+                # Research Mode ran this turn (patterns are suppressed under it) —
+                # lets the client badge the turn honestly.
+                'research': research_active,
             }
             done_json = json.dumps(done_data)
             logger.debug(f"Done event JSON length: {len(done_json)} chars")
@@ -2983,7 +2996,9 @@ async def agent_chat_stream(request):
                     "context_used": final_context_tokens,
                 }
                 # had_thinking signal + the pattern used (helper: flow budget).
-                _stamp_thinking_meta(asst_metadata, thinking_plan, parsed, session)
+                _stamp_thinking_meta(
+                    asst_metadata, thinking_plan, parsed, session, research=research_active,
+                )
                 if cost is not None:
                     asst_metadata["cost_estimate"] = cost["cost_total"]
                     asst_metadata["cost_currency"] = cost["currency"]
@@ -3031,7 +3046,9 @@ async def agent_chat_stream(request):
                         "tokens_output": loop_result.tokens_out,
                         "interrupted": True,
                     }
-                    _stamp_interrupted_thinking(interrupted_meta, thinking_plan, partial)
+                    _stamp_interrupted_thinking(
+                        interrupted_meta, thinking_plan, partial, research=research_active,
+                    )
                     _icost = _estimate_cost(caps, loop_result.tokens_in, loop_result.tokens_out) if caps else None
                     if _icost is not None:
                         interrupted_meta["cost_estimate"] = _icost["cost_total"]

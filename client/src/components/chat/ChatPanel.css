@@ -197,20 +197,121 @@
   padding-bottom: 24px;
 }
 
+/* === New-conversation hero ===
+   The agent leads: its avatar in an aurora-ringed orb over a soft halo,
+   a time-aware greeting, and tappable starters that drop a prompt into the
+   composer. Halo + ring are plain gradients (no blur — WebKitGTK rule). */
 .chat-panel-welcome {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
-  gap: 12px;
+  gap: 6px;
   color: var(--text-muted);
   text-align: center;
+  padding: 24px;
 }
 
-.chat-panel-welcome svg {
-  opacity: 0.5;
-  color: var(--cosmic-violet);
+.welcome-orb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  color: var(--cosmic-violet, var(--accent-primary));
+  border: 1px solid transparent;
+  background:
+    linear-gradient(
+      var(--surface-raised, rgba(255, 255, 255, 0.04)),
+      var(--surface-raised, rgba(255, 255, 255, 0.04))
+    ) padding-box,
+    var(--gradient-aurora, var(--accent-tint-strong, rgba(139, 92, 246, 0.5))) border-box;
+  animation: welcome-orb-breathe 4.2s ease-in-out infinite;
+}
+
+/* Soft radial halo behind the orb — theme-tinted, vanishes gracefully on
+   flat themes whose tints are subtle. */
+.welcome-orb::before {
+  content: '';
+  position: absolute;
+  inset: -46px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-tint-soft, rgba(139, 92, 246, 0.15)), transparent 68%);
+  pointer-events: none;
+}
+
+.welcome-orb svg,
+.welcome-orb img {
+  position: relative;
+}
+
+@keyframes welcome-orb-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); }
+  50% { box-shadow: 0 0 26px var(--accent-tint-medium, transparent); transform: scale(1.02); }
+}
+
+.welcome-title {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.welcome-sub {
+  font-size: 13.5px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+}
+
+.welcome-starters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.welcome-starter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 15px;
+  border-radius: 999px;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle, transparent);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+.welcome-starter:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-tint-medium);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  transform: translateY(-1px);
+}
+
+.welcome-starter svg {
+  stroke: url(#ax-aurora-grad);
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-orb {
+    animation: none;
+    box-shadow: 0 0 20px var(--accent-tint-soft, transparent);
+  }
+
+  .welcome-starter,
+  .welcome-starter:hover {
+    transform: none;
+  }
 }
 
 /* Message-bubble / avatar / text / meta styling now lives in MessageBubble.css
@@ -450,25 +551,75 @@
 }
 
 .send-button {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--gradient-aurora);
+  background-size: 170% 170%;
   color: white;
-  transition: all 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.15s ease;
+}
+
+/* Ready state: the aurora drifts and the glow breathes — same 3.2s rhythm as
+   the relay orbit, so the composer's two live elements pulse in sync. NO_GLOW
+   themes keep the drift but their transparent glow token stays invisible. */
+.send-button:not(:disabled):not(.armed):not(.steer) {
+  animation: send-ready 3.2s ease-in-out infinite;
+}
+
+@keyframes send-ready {
+  0%, 100% { background-position: 0% 40%; box-shadow: 0 0 0 0 transparent; }
+  50% { background-position: 90% 60%; box-shadow: var(--glow-purple, 0 0 0 0 transparent); }
+}
+
+/* Hover: lift + a single diagonal shine sweep across the face. */
+.send-button::after {
+  content: '';
+  position: absolute;
+  top: -40%;
+  bottom: -40%;
+  left: -60%;
+  width: 45%;
+  transform: skewX(-20deg) translateX(-120%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.38), transparent);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .send-button:hover:not(:disabled) {
-  transform: scale(1.05);
+  transform: translateY(-1px) scale(1.05);
   box-shadow: var(--glow-purple);
 }
 
+.send-button:hover:not(:disabled):not(.armed):not(.steer)::after {
+  animation: send-shine 0.55s ease forwards;
+}
+
+@keyframes send-shine {
+  from { transform: skewX(-20deg) translateX(-120%); opacity: 1; }
+  to { transform: skewX(-20deg) translateX(460%); opacity: 0; }
+}
+
+.send-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
 .send-button:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .send-button,
+  .send-button::after {
+    animation: none !important;
+  }
 }
 
 /* Background-armed send: distinct look so it's clear the next send is queued. */
@@ -667,13 +818,70 @@
   color: var(--status-warning);
 }
 
+/* Copilot-style expand handle — a slim centered pill above the input that
+   swaps the composer into a tall, newline-first drafting box (Enter = new
+   line, Ctrl+Enter sends). Quiet at rest; accent-lit while expanded. */
+.composer-expand-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 20px;
+  margin: 0 auto 6px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid var(--border-subtle, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.composer-expand-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-tint-medium);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+}
+
+.composer-expand-toggle.expanded {
+  color: var(--cosmic-violet, var(--accent-primary));
+  border-color: var(--accent-tint-medium);
+  background: var(--accent-tint-soft);
+}
+
+/* The expanded drafting box: a firm tall canvas (the textarea fills it and
+   scrolls internally — autoResize hands height control to CSS here), with a
+   quiet accent border so the mode reads at a glance. Buttons stay pinned to
+   the bottom edge via the container's flex-end alignment. */
+.input-container.expanded {
+  border-color: var(--accent-tint-medium);
+}
+
+.input-container.expanded textarea {
+  height: 38vh;
+  max-height: 38vh;
+  min-height: 220px;
+}
+
+/* Mobile agent mini-chip — the identity control that survives the chip-row
+   removal on small screens. Hidden on desktop (the full profile chip shows). */
+.mobile-agent-chip {
+  display: none;
+}
+
 /* === Mobile composer (≤600px, mirrors useIsMobile) ===
-   The composer had no mobile tuning: tighten the gutter, grow hit-regions to a
-   thumb-friendly ≥44px, and use a 16px textarea font so iOS doesn't zoom on
-   focus. `env(safe-area-inset-bottom)` keeps the send row above the home bar. */
+   The chip row is GONE on mobile — every conversation control lives in the
+   Relay (bottom sheet). The input row becomes [agent] [textarea] [relay]
+   [send]: identity one tap on the left, the relay in its own spot beside
+   Send in the thumb zone. Hit-regions ≥44px; 16px textarea font so iOS
+   doesn't zoom; `env(safe-area-inset-bottom)` clears the home bar. */
 @media (max-width: 600px) {
   .chat-panel-input {
     padding: 6px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The whole chip row folds into the Relay on mobile. */
+  .chat-panel-input .input-controls {
+    display: none;
   }
 
   .input-container {
@@ -685,6 +893,41 @@
   .input-container textarea {
     font-size: 16px;
     max-height: 40vh;
+    order: 1;
+  }
+
+  .mobile-agent-chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    order: 0;
+    border-radius: 12px;
+    background: transparent;
+    border: 1px solid var(--border-subtle, transparent);
+    color: var(--cosmic-violet, var(--accent-primary));
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .mobile-agent-chip.active {
+    background: var(--accent-tint-soft);
+    border-color: var(--accent-tint-medium);
+  }
+
+  /* The relay gets its own spot beside Send — the conversation's command
+     button, visually separated from the send cluster by the textarea. */
+  .relay-trigger {
+    order: 2;
+  }
+
+  .stop-button {
+    order: 3;
+  }
+
+  .send-button {
+    order: 4;
   }
 
   .relay-trigger,
@@ -695,15 +938,17 @@
     height: 44px;
   }
 
-  .input-controls {
-    gap: 6px;
-    row-gap: 6px;
+  /* Thumb-sized expand handle; the tall box claims a bit more of the phone
+     viewport (the keyboard eats the rest). */
+  .composer-expand-toggle {
+    width: 96px;
+    height: 26px;
   }
 
-  /* Comfortable tap targets for the inline chips + profile selector */
-  .profile-indicator,
-  .composer-chip {
-    padding: 8px 12px;
+  .input-container.expanded textarea {
+    height: 42vh;
+    max-height: 42vh;
+    min-height: 160px;
   }
 
   .input-stats {

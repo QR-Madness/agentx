@@ -34,14 +34,19 @@ calls. A one-line status tells you when a degradation applied.
 
 ## Choosing a pattern
 
-Resolution per turn: **composer chip** (per-conversation override) → **agent profile**
-(`reasoning_strategy`, the "Thinking pattern" control in the profile editor) →
-**global default** (`preferences.default_reasoning_strategy`) → **Auto**.
+Resolution per turn: **Thinking mode** (per-conversation override — the composer chip on
+desktop, the Relay's Mode tile everywhere) → **agent profile** (`reasoning_strategy`, the
+"Thinking pattern" control in the profile editor) → **global default**
+(`preferences.default_reasoning_strategy`) → **Auto**.
 
-The composer's 🧠 **Thinking** chip switches the pattern mid-conversation; the turn's
-pattern is reported on the done event (`thinking_pattern`) and stamped on the persisted
-turn. Multi-pass phases surface as live status lines ("Drafting…", "Critiquing the
-draft…", "Sampling 3 independent solutions…").
+The **Thinking mode** picker unifies the patterns with **Research Mode** as one choice —
+they're mutually exclusive by design (a research turn keeps its own rigorous prompt and
+never stacks a pattern), so picking Research in the same menu makes that rule visible
+instead of letting a chosen pattern silently no-op. Options the settings disable drop out
+of the menu. The turn's mode is reported on the done event (`thinking_pattern` +
+`research`), stamped on the persisted turn, and badged on the message. Multi-pass phases
+surface as live status lines ("Drafting…", "Critiquing the draft…", "Sampling 3
+independent solutions…").
 
 ## Settings → Intelligence → Thinking Patterns
 

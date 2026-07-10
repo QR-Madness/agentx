@@ -1,16 +1,39 @@
+/**
+ * RelayMenu — the conversation command center behind the composer's Orbit
+ * button. Control-center layout: a status strip, a tiled action grid (wide
+ * Thinking-Mode tile + toggle/opener tiles), then the Live-runs and
+ * Background-runs sections. Desktop: glass popover anchored above the
+ * composer. Mobile: bottom sheet — on small screens the composer chip row is
+ * hidden entirely and THIS is where every conversation control lives.
+ *
+ * Glass discipline: the container is the hero glass surface; tiles stay
+ * opaque (`--surface-raised`) — see the WebKitGTK paint-cost note in
+ * ui/DropdownMenu.tsx.
+ */
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { ReactNode } from 'react';
 import {
   Box,
+  Brain,
+  Cpu,
   FolderOpen,
+  Ghost,
+  Gauge,
   Image as ImageIcon,
   Inbox,
-  Mic,
+  MemoryStick,
+  NotebookPen,
+  Orbit,
   Paperclip,
   Play,
   Radio,
-  Send,
   Sparkles,
+  Telescope,
+  User,
+  Users,
+  UserX,
   WandSparkles,
   X,
 } from 'lucide-react';
@@ -20,6 +43,8 @@ import { useConversation } from '../../../contexts/ConversationContext';
 import { orphanedRuns } from '../../../contexts/conversation/orphanedRuns';
 import { DropdownPortal } from '../../ui/DropdownPortal';
 import { useIsMobile } from '../../../lib/hooks';
+import { RESEARCH_MODE, THINKING_MODE_LABELS, type ThinkingModeOption } from '../../../lib/thinkingModes';
+import { ThinkingModeMenu } from '../ThinkingModeMenu';
 import './RelayMenu.css';
 
 interface RelayMenuProps {
@@ -39,7 +64,7 @@ interface RelayMenuProps {
   /** Open the image picker — attaches images to the next message (vision input). */
   onAttachImage?: () => void;
   uploadingImage?: boolean;
-  /** Whether the active model/profile supports vision (gates the image item). */
+  /** Whether the active model/profile supports vision (gates the image tile). */
   visionEnabled?: boolean;
   /** Open the Projects hub for this conversation's project. */
   onOpenProject?: () => void;
@@ -50,6 +75,59 @@ interface RelayMenuProps {
   onAutoTitle?: () => void;
   canAutoTitle?: boolean;
   titling?: boolean;
+  // — Command-center tiles —
+  /** Unified thinking mode ('' = Auto … 'research'). */
+  thinkingMode: string;
+  onThinkingModeChange: (mode: string) => void;
+  thinkingModeOptions: ThinkingModeOption[];
+  useMemory: boolean;
+  canToggleMemory: boolean;
+  onToggleMemory: () => void;
+  showSoloToggle: boolean;
+  soloMode: boolean;
+  onToggleSolo: () => void;
+  modelLabel: string;
+  modelOverridden: boolean;
+  onOpenModelPicker: () => void;
+  contextChip: { label: string; warn: boolean; title: string } | null;
+  agentName?: string;
+  /** Open the Conversation State drawer (goals/decisions/threads). */
+  onOpenState: () => void;
+  conversationId?: string;
+}
+
+/** One control-center tile: icon + label (+hint), tinted when ON. */
+function RelayTile({
+  icon, label, hint, on, warn, wide, disabled, title, onClick, pill,
+}: {
+  icon: ReactNode;
+  label: string;
+  hint?: string;
+  on?: boolean;
+  warn?: boolean;
+  wide?: boolean;
+  disabled?: boolean;
+  title?: string;
+  onClick?: () => void;
+  pill?: string;
+}) {
+  return (
+    <button
+      className={
+        `relay-tile${wide ? ' relay-tile--wide' : ''}${on ? ' on' : ''}${warn ? ' warn' : ''}`
+      }
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+    >
+      <span className="relay-tile-top">
+        <span className="relay-tile-icon">{icon}</span>
+        {pill && <span className="relay-tile-pill">{pill}</span>}
+      </span>
+      <span className="relay-tile-label">{label}</span>
+      {hint && <span className="relay-tile-hint">{hint}</span>}
+    </button>
+  );
 }
 
 export function RelayMenu({
@@ -74,6 +152,21 @@ export function RelayMenu({
   onAutoTitle,
   canAutoTitle,
   titling,
+  thinkingMode,
+  onThinkingModeChange,
+  thinkingModeOptions,
+  useMemory,
+  canToggleMemory,
+  onToggleMemory,
+  showSoloToggle,
+  soloMode,
+  onToggleSolo,
+  modelLabel,
+  modelOverridden,
+  onOpenModelPicker,
+  contextChip,
+  agentName,
+  onOpenState,
 }: RelayMenuProps) {
   const isMobile = useIsMobile();
   const [jobs, setJobs] = useState<BackgroundChatJob[]>([]);
@@ -151,138 +244,168 @@ export function RelayMenu({
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen, isMobile, onClose]);
 
+  const research = thinkingMode === RESEARCH_MODE;
+  const modeLabel = THINKING_MODE_LABELS[thinkingMode] ?? 'Auto';
+  const modeHint =
+    thinkingModeOptions.find(o => o.value === thinkingMode)?.hint
+    ?? 'Pick the best pattern per message';
+
   const body = (
     <div
       className={`relay-menu${isMobile ? ' relay-menu--sheet' : ''}`}
       role="dialog"
-      aria-label="Relay Module"
+      aria-label="Relay — conversation command center"
     >
+      {isMobile && <div className="relay-sheet-handle" aria-hidden />}
       <div className="relay-menu-header">
-        <Box size={14} />
+        <Orbit size={14} />
         <span>Relay</span>
         <button className="relay-close" onClick={onClose} aria-label="Close">
           <X size={14} />
         </button>
       </div>
 
-      <div className="relay-section">
-        <div className="relay-section-title">Project</div>
-        <button
-          className="relay-item"
-          onClick={() => { onOpenProject?.(); onClose(); }}
-          disabled={!onOpenProject}
-          title={hasProject ? 'Open this conversation’s project' : 'Browse projects and attach one'}
+      {/* Status strip — a read-only pulse of the conversation. */}
+      {(contextChip || modelLabel || agentName) && (
+        <div className="relay-status">
+          {agentName && (
+            <span className="relay-status-item" title="Active agent">
+              <User size={11} />
+              <span>{agentName}</span>
+            </span>
+          )}
+          {modelLabel && (
+            <span className="relay-status-item" title="Active model">
+              <Cpu size={11} />
+              <span>{modelLabel}</span>
+            </span>
+          )}
+          {contextChip && (
+            <span
+              className={`relay-status-item${contextChip.warn ? ' warn' : ''}`}
+              title={contextChip.title}
+            >
+              <Gauge size={11} />
+              <span>{contextChip.label}</span>
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="relay-grid">
+        {/* Thinking Mode — the wide hero tile. Research replaces patterns. */}
+        <ThinkingModeMenu
+          value={thinkingMode}
+          onChange={onThinkingModeChange}
+          options={thinkingModeOptions}
         >
-          <FolderOpen size={14} />
-          <div className="relay-item-body">
-            <span className="relay-item-label">
-              {hasProject ? (projectName || 'Open project') : 'Projects'}
-            </span>
-            <span className="relay-item-hint">
-              {hasProject
-                ? 'Open this conversation’s project — files, instructions, chats.'
-                : 'Browse projects, or attach files below to start one.'}
-            </span>
-          </div>
-        </button>
-        {visionEnabled && (
           <button
-            className={`relay-item ${uploadingImage ? 'active' : ''}`}
-            onClick={() => { onAttachImage?.(); onClose(); }}
-            disabled={!onAttachImage || uploadingImage}
-            title="Attach an image to the next message (vision input) — or just paste one into the composer"
+            className={`relay-tile relay-tile--wide relay-tile--mode${thinkingMode ? ' on' : ''}${research ? ' research' : ''}`}
+            title="Thinking mode — how the agent works this conversation"
           >
-            <ImageIcon size={14} />
-            <div className="relay-item-body">
-              <span className="relay-item-label">{uploadingImage ? 'Uploading…' : 'Attach image'}</span>
-              <span className="relay-item-hint">
-                Add a PNG / JPEG / WebP / GIF for the model to see. Paste works too.
+            <span className="relay-tile-top">
+              <span className="relay-tile-icon">
+                {research ? <Telescope size={16} /> : <Brain size={16} />}
               </span>
-            </div>
+              <span className="relay-tile-pill">{modeLabel}</span>
+            </span>
+            <span className="relay-tile-label">Thinking mode</span>
+            <span className="relay-tile-hint">{modeHint}</span>
           </button>
+        </ThinkingModeMenu>
+
+        <RelayTile
+          icon={useMemory ? <MemoryStick size={16} /> : <Ghost size={16} />}
+          label={useMemory ? 'Memory' : 'No memory'}
+          hint={useMemory ? 'This chat is remembered' : 'Ephemeral chat'}
+          on={useMemory}
+          warn={!useMemory}
+          disabled={!canToggleMemory}
+          onClick={onToggleMemory}
+          title={
+            canToggleMemory
+              ? 'Toggle memorization for this chat'
+              : 'Memorization locked once the conversation has started'
+          }
+        />
+        {showSoloToggle && (
+          <RelayTile
+            icon={soloMode ? <UserX size={16} /> : <Users size={16} />}
+            label={soloMode ? 'Solo' : 'Team'}
+            hint={soloMode ? 'No delegation' : 'May delegate to teammates'}
+            on={!soloMode}
+            onClick={onToggleSolo}
+            title="Toggle ad-hoc delegation for this conversation"
+          />
         )}
-        <button
-          className={`relay-item ${attachingFile ? 'active' : ''}`}
-          onClick={() => { onAttachFile?.(); onClose(); }}
-          disabled={!onAttachFile || attachingFile}
-          title="Attach a document to this conversation's project — the agent can search it (Document RAG)"
-        >
-          <Paperclip size={14} />
-          <div className="relay-item-body">
-            <span className="relay-item-label">{attachingFile ? 'Attaching…' : 'Attach file'}</span>
-            <span className="relay-item-hint">
-              Add a PDF / text / code file to this conversation's project.
-            </span>
-          </div>
-        </button>
-      </div>
-
-      <div className="relay-section">
-        <div className="relay-section-title">Send</div>
-        <button
-          className={`relay-item toggle ${backgroundArmed ? 'on' : ''}`}
-          onClick={() => {
-            onToggleBackground();
-            onClose();
-          }}
+        <RelayTile
+          icon={<Box size={16} />}
+          label="Background"
+          hint={backgroundArmed ? 'Next send runs detached' : 'Arm the next send'}
+          on={backgroundArmed}
           disabled={!canArmBackground}
-          title="Stage the next message to run in the background; the result lands in this inbox when done."
-        >
-          <Send size={14} />
-          <div className="relay-item-body">
-            <span className="relay-item-label">
-              {backgroundArmed ? 'Background mode armed' : 'Send next to background'}
-            </span>
-            <span className="relay-item-hint">
-              {backgroundArmed
-                ? 'Your next message runs in the background. Click to cancel.'
-                : 'Arms the next send — it surfaces below when complete.'}
-            </span>
-          </div>
-          <span className="relay-toggle-pill">{backgroundArmed ? 'ON' : 'OFF'}</span>
-        </button>
-        <button
-          className={`relay-item ${isEnhancing ? 'active' : ''}`}
-          onClick={() => {
-            onEnhance();
-          }}
+          onClick={onToggleBackground}
+          pill={backgroundArmed ? 'ARMED' : undefined}
+          title="Stage the next message to run in the background; the result lands in the inbox below."
+        />
+        <RelayTile
+          icon={<Cpu size={16} />}
+          label={modelLabel || 'Model'}
+          hint={modelOverridden ? 'Overridden for this chat' : 'From the profile'}
+          on={modelOverridden}
+          onClick={() => { onClose(); onOpenModelPicker(); }}
+          title="Choose the model for this conversation"
+        />
+        <RelayTile
+          icon={<FolderOpen size={16} />}
+          label={hasProject ? (projectName || 'Project') : 'Projects'}
+          hint={hasProject ? 'Files, instructions, chats' : 'Browse or attach one'}
+          on={!!hasProject}
+          disabled={!onOpenProject}
+          onClick={() => { onOpenProject?.(); onClose(); }}
+          title={hasProject ? 'Open this conversation’s project' : 'Browse projects'}
+        />
+        <RelayTile
+          icon={<NotebookPen size={16} />}
+          label="State"
+          hint="Goals · decisions · threads"
+          onClick={() => { onClose(); onOpenState(); }}
+          title="View and edit this conversation's structured state"
+        />
+        {visionEnabled && (
+          <RelayTile
+            icon={<ImageIcon size={16} />}
+            label={uploadingImage ? 'Uploading…' : 'Attach image'}
+            hint="For the model to see"
+            disabled={!onAttachImage || uploadingImage}
+            onClick={() => { onAttachImage?.(); onClose(); }}
+            title="Attach an image to the next message — or just paste one into the composer"
+          />
+        )}
+        <RelayTile
+          icon={<Paperclip size={16} />}
+          label={attachingFile ? 'Attaching…' : 'Attach file'}
+          hint="Into the project (RAG)"
+          disabled={!onAttachFile || attachingFile}
+          onClick={() => { onAttachFile?.(); onClose(); }}
+          title="Attach a document the agent can search (Document RAG)"
+        />
+        <RelayTile
+          icon={<Sparkles size={16} />}
+          label={isEnhancing ? 'Enhancing…' : 'Enhance'}
+          hint="Rewrite the draft"
           disabled={!canEnhance || isEnhancing}
-        >
-          <Sparkles size={14} />
-          <div className="relay-item-body">
-            <span className="relay-item-label">
-              {isEnhancing ? 'Enhancing…' : 'Enhance prompt'}
-            </span>
-            <span className="relay-item-hint">
-              Rewrite the current draft using the prompt enhancer.
-            </span>
-          </div>
-        </button>
-        <button
-          className={`relay-item ${titling ? 'active' : ''}`}
-          onClick={() => { onAutoTitle?.(); onClose(); }}
+          onClick={onEnhance}
+          title="Rewrite the current draft using the prompt enhancer"
+        />
+        <RelayTile
+          icon={<WandSparkles size={16} />}
+          label={titling ? 'Titling…' : 'Auto-title'}
+          hint="Name this chat"
           disabled={!onAutoTitle || !canAutoTitle || titling}
-          title="Generate a concise title for this conversation from its content"
-        >
-          <WandSparkles size={14} />
-          <div className="relay-item-body">
-            <span className="relay-item-label">{titling ? 'Titling…' : 'Auto-title this chat'}</span>
-            <span className="relay-item-hint">
-              Name this conversation from its state and messages.
-            </span>
-          </div>
-        </button>
-      </div>
-
-      <div className="relay-section">
-        <div className="relay-section-title">Tools</div>
-        <button className="relay-item" disabled title="Coming soon">
-          <Mic size={14} />
-          <div className="relay-item-body">
-            <span className="relay-item-label">Voice input</span>
-            <span className="relay-item-hint">Coming soon.</span>
-          </div>
-        </button>
+          onClick={() => { onAutoTitle?.(); onClose(); }}
+          title="Generate a concise title for this conversation"
+        />
       </div>
 
       {liveRuns.length > 0 && (
@@ -379,7 +502,7 @@ export function RelayMenu({
       anchorRef={anchorRef}
       preferredSide="top"
       align="start"
-      estimatedHeight={520}
+      estimatedHeight={560}
     >
       {body}
     </DropdownPortal>

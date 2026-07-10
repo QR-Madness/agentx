@@ -45,6 +45,8 @@ export function AssistantBubble({ message, agentName, avatarId, onRegenerate, on
           costEstimate={message.costEstimate}
           costCurrency={message.costCurrency}
           latencyMs={message.latencyMs}
+          thinkingPattern={message.thinkingPattern}
+          research={message.research}
         />
 
         <MessageActions

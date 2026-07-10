@@ -1,18 +1,208 @@
-/* Positioning is owned by DropdownPortal; this rule covers visuals only. */
+/* Positioning is owned by DropdownPortal; this rule covers visuals only.
+   The container is the ONE hero glass surface (control-center feel); the
+   tiles inside stay opaque — WebKitGTK pays dearly for stacked blurs. */
 .relay-menu {
-  width: 360px;
+  width: 384px;
   max-width: calc(100vw - 24px);
-  max-height: 60vh;
+  max-height: 68vh;
   overflow-y: auto;
-  background: var(--bg-elevated, rgba(20, 18, 36, 0.96));
+  background: var(--glass-bg, var(--bg-elevated, rgba(20, 18, 36, 0.96)));
   border: 1px solid var(--border-default, var(--accent-tint-medium));
-  border-radius: 12px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(16px);
-  padding: 8px;
+  border-radius: 16px;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(var(--blur-medium, 16px)) saturate(140%);
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+}
+
+/* Grab handle — sheet affordance on mobile. */
+.relay-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-default, rgba(255, 255, 255, 0.18));
+  margin: 2px auto 4px;
+  flex-shrink: 0;
+}
+
+/* === Status strip — read-only conversation pulse === */
+.relay-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 0 8px 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.relay-status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.relay-status-item span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.relay-status-item svg {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.relay-status-item.warn {
+  color: var(--cosmic-amber, var(--feedback-warning));
+}
+
+/* === Tile grid — the control center === */
+.relay-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 2px;
+}
+
+.relay-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  min-height: 72px;
+  padding: 10px 11px;
+  text-align: left;
+  background: var(--surface-raised, var(--bg-subtle, rgba(255, 255, 255, 0.04)));
+  border: 1px solid var(--border-subtle, transparent);
+  border-radius: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.relay-tile:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  transform: translateY(-1px);
+}
+
+.relay-tile:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.relay-tile:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.relay-tile.on {
+  background: var(--accent-tint-soft);
+  border-color: var(--accent-tint-medium);
+}
+
+.relay-tile.warn {
+  background: var(--feedback-warning-tint);
+  border-color: var(--feedback-warning-border);
+}
+
+.relay-tile--wide {
+  grid-column: 1 / -1;
+  min-height: 64px;
+}
+
+/* The Thinking-Mode hero tile gets an aurora ring when a mode is engaged —
+   a gradient border (no blur, cheap) that reads as the holographic accent. */
+.relay-tile--mode.on {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(
+      var(--surface-raised, rgba(255, 255, 255, 0.04)),
+      var(--surface-raised, rgba(255, 255, 255, 0.04))
+    ) padding-box,
+    var(--gradient-aurora, var(--accent-tint-strong, rgba(139, 92, 246, 0.5))) border-box;
+}
+
+.relay-tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.relay-tile-icon {
+  display: inline-flex;
+  color: var(--text-secondary);
+}
+
+/* Aurora icon strokes — the shared gradient defs live at the ChatPanel root
+   (<linearGradient id="ax-aurora-grad">, always mounted) and ride the theme's
+   accent tokens. Cheap: plain SVG paint, no filters/blur. */
+.relay-tile-icon svg,
+.relay-menu-header > svg {
+  stroke: url(#ax-aurora-grad);
+}
+
+/* Semantic states keep their solid color — amber must read as a warning at a
+   glance, and a disabled tile shouldn't sparkle. */
+.relay-tile.warn .relay-tile-icon {
+  color: var(--cosmic-amber, var(--feedback-warning));
+}
+
+.relay-tile.warn .relay-tile-icon svg,
+.relay-tile:disabled .relay-tile-icon svg {
+  stroke: currentColor;
+}
+
+.relay-tile:disabled .relay-tile-icon {
+  color: var(--text-muted);
+}
+
+.relay-tile-pill {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-subtle, rgba(255, 255, 255, 0.06));
+  color: var(--text-muted);
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-tile.on .relay-tile-pill {
+  background: var(--accent-tint-medium);
+  color: var(--text-primary);
+}
+
+.relay-tile-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relay-tile-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relay-tile,
+  .relay-tile:hover:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
 }
 
 .relay-menu-header {
@@ -311,18 +501,29 @@
 .relay-menu--sheet {
   width: 100%;
   max-width: 100%;
-  max-height: 78vh;
-  border-radius: 16px 16px 0 0;
+  max-height: 82vh;
+  border-radius: 18px 18px 0 0;
   border-left: none;
   border-right: none;
   border-bottom: none;
-  padding: 10px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 12px calc(14px + env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
   animation: relay-sheet-up 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.relay-menu--sheet .relay-item {
-  padding: 12px 10px;
+/* Sheet tiles: bigger tap targets, roomier grid. */
+.relay-menu--sheet .relay-grid {
+  gap: 10px;
+}
+
+.relay-menu--sheet .relay-tile {
+  min-height: 82px;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.relay-menu--sheet .relay-tile--wide {
+  min-height: 70px;
 }
 
 @keyframes relay-sheet-fade {
@@ -444,8 +645,11 @@
   color: var(--text-primary);
 }
 
+/* Narrow-viewport fallback for the DESKTOP popover only (a desktop window
+   squeezed under 600px before useIsMobile re-renders). The bottom sheet
+   positions itself — keep it out of this rule. */
 @media (max-width: 600px) {
-  .relay-menu {
+  .relay-menu:not(.relay-menu--sheet) {
     position: fixed;
     bottom: 88px;
     left: 12px;

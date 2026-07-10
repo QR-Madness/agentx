@@ -627,6 +627,8 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
             costCurrency: data.cost_currency ?? undefined,
             model: data.model ?? undefined,
             truncated: data.truncated === true || undefined,
+            thinkingPattern: data.thinking_pattern ?? undefined,
+            research: data.research || undefined,
           };
           optsRef.current.appendMessage(msg);
         }

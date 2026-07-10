@@ -70,6 +70,10 @@ export interface AssistantMessage extends BaseMessage {
   interrupted?: boolean;
   /** Answer hit the model's token limit (finish_reason "length"); content is partial. */
   truncated?: boolean;
+  /** Thinking pattern the turn ran with (from the done event) — badges the mode. */
+  thinkingPattern?: string;
+  /** Turn ran in Research Mode (patterns don't apply there — the badge says so). */
+  research?: boolean;
 }
 
 export interface ToolCallMessage extends BaseMessage {

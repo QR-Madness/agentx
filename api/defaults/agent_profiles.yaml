@@ -34,3 +34,35 @@ profiles:
       Web researcher — delegate any question needing current facts or sources;
       it searches the web and returns a concise, cited answer.
     is_default: false
+
+  - id: image-creator
+    name: Deluxe Image Creator
+    avatar: palette
+    description: >-
+      Image maker — turns a visual brief into a finished image, right in the
+      conversation. Powered by Gemini Flash Image (nano banana) via OpenRouter.
+    default_model: openrouter:google/gemini-3.1-flash-image
+    temperature: 0.7
+    reasoning_strategy: auto
+    # Gemini image models advertise text+image output, so the image-only
+    # auto-force never fires — direct chats need the explicit flag.
+    direct_mode: true
+    system_prompt: >-
+      You are an image creation specialist. Each message you receive is a
+      visual brief — render it as one vivid, coherent image. Honor explicit
+      style, mood, composition, and aspect wishes; where the brief is silent,
+      make bold, tasteful choices rather than asking questions.
+    enable_memory: false
+    memory_channel: _global
+    enable_tools: false
+    available_for_delegation: true
+    delegation_hint: >-
+      Image maker — send a vivid visual brief and the finished image lands in
+      this conversation. Before the first image, ask the user for
+      style/detail/spend preferences — or offer to surprise them.
+    is_default: false
+
+# One-time-seed markers already present in this shipped store — a fresh
+# cluster starts with every seed applied, so nothing re-seeds on boot.
+seeded_defaults:
+  - image-creator-v1
