@@ -40,9 +40,11 @@ export type Phase = "down" | "initializing" | "degraded" | "up";
 export type JobStatus = "running" | "done" | "failed";
 
 export interface Meta {
-  version: string;
+  version: string; // the manager's own version
   root: string;
   mode: Mode;
+  /** `api.version` from the checkout's versions.yaml (null in bundle mode). */
+  repo_version: string | null;
 }
 
 export interface ClusterSpec {
@@ -77,6 +79,26 @@ export interface Cluster {
   dir: string;
   url: string;
   ports: ClusterPorts;
+  /** Version reported by the running API ("" when down/unreachable). */
+  api_version: string;
+}
+
+/** Share-link ingredients — the gateway token only ever travels through this. */
+export interface ConnectionInfo {
+  name: string;
+  url: string;
+  public_host: string;
+  api_port: number;
+  gateway_enabled: boolean;
+  tunnel: Tunnel;
+  gateway_token: string;
+  cors_origins: string[];
+  auth_enabled: boolean;
+}
+
+export interface GatewayResult {
+  generated: Record<string, string>;
+  notes: string[];
 }
 
 export interface ServiceUsage {
@@ -191,6 +213,15 @@ export const api = {
     request("/api/clusters", {
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+
+  connection: (name: string): Promise<ConnectionInfo> =>
+    request(`/api/clusters/${encodeURIComponent(name)}/connection`),
+
+  enableGateway: (name: string, tunnel: Tunnel): Promise<GatewayResult> =>
+    request(`/api/clusters/${encodeURIComponent(name)}/gateway`, {
+      method: "POST",
+      body: JSON.stringify({ tunnel }),
     }),
 
   job: (id: string): Promise<Job> =>

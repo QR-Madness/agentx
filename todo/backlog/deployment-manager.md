@@ -67,7 +67,11 @@ persisted in `.manager-state.json` and editable via `agentx-manager set`, but th
   combo 422, unknown cluster 404, auth 401. Extend the CLI `set` test if the refactor
   moves code.
 
-### 2. Gateway enable from the GUI (surface the existing endpoint)
+### 2. Gateway enable from the GUI (surface the existing endpoint) — ✅ shipped `[v0.21.207]`
+
+> Landed early (ahead of the rest of this plan) alongside the **per-cluster Share/connection-link
+> modal**, the `GET /api/clusters/{name}/connection` endpoint, version chips (checkout vs
+> running API, manager version relocated), and `task cluster:diff` — see Release-Notes 0.21.207.
 
 `POST /api/clusters/{name}/gateway` already exists (scaffolds `gateway/` files,
 generates `AGENTX_GATEWAY_TOKEN`, sets `AGENTX_TRUST_PROXY=true`, flips the spec) but
@@ -188,7 +192,7 @@ CLI/server (`POST .../adopt`) but the GUI neither offers it nor detects the need
 ## Item checklist
 
 - [ ] 1 · Spec editing (PATCH + GUI modal + shared apply helper)
-- [ ] 2 · Gateway enable in the GUI (+ endpoint tests)
+- [x] 2 · Gateway enable in the GUI (+ endpoint tests) `[v0.21.207]` — shipped with the Share-links change
 - [ ] 3 · Jobs survive reload (`active_job`, `GET /api/jobs`, GUI resume)
 - [ ] 4 · `AGENTX_DEPLOY_ROOT` Windows-safe mount (+ env/docs)
 - [ ] 5 · Adopt detection + button

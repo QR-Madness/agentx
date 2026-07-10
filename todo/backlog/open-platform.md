@@ -63,6 +63,15 @@
       custom domain `agx.thejpnet.net`); `client/.env.production` sets `VITE_PUBLIC_APP_URL` so
       desktop-issued share links resolve to the hosted app; `_redirects`/`_headers` for SPA fallback
       + SW freshness. A redeploy ships a PWA update via the existing `onNeedRefresh` prompt.
+- [x] **Manager share links (per-cluster)** — shipped `[v0.21.207]`. The deployment manager GUI
+      builds connection links per cluster (Share modal: URL from `AGENTX_PUBLIC_HOST`, embedded
+      `AGENTX_GATEWAY_TOKEN`, app-base input, CORS/localhost/auth warnings) over
+      `GET /api/clusters/{name}/connection`; encoder parity with `lib/connectionString.ts` is
+      test-pinned. **This is the seed of the tenant story**: tenants linked to clusters, purchased
+      from an AgX portal, will consume the same connection-grant shape. Cluster taxonomy direction
+      (2026-07): repo/local clusters (the real multi-person workflow today) phase into isolated
+      clusters at scale; isolated (bundle) clusters phase into guided configurations for
+      self-serving local users; **cloud clusters** are the eventual third tier (shape TBD).
 - [ ] **Hosted API posture + automated rollout** — the remaining PaaS bits: the API a PWA connects to
       must allow the PWA origin (`AGENTX_PUBLIC_HOST`/`CORS_ALLOWED_ORIGINS` + `AGENTX_AUTH_ENABLED=true`,
       reachable via tunnel); and move the manual `client:deploy:pages` to CI (`CLOUDFLARE_API_TOKEN`)

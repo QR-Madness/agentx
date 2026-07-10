@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.206 -->
+<!-- release-version: 0.21.207 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -84,6 +84,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   conversation that shows the image still works).
 - **Deployment manager, on by default in the bundle** — web dashboard + CLI;
   zero-config first Start.
+- **Share a cluster from the manager** — every cluster card gets a **Share** modal that builds a
+  ready-to-send connection link (server URL + gateway token, aimed at the hosted web app, with
+  CORS/localhost/auth warnings before you copy), an **Enable gateway…** action that shows the
+  generated token once, and honest **version chips** (running API vs checkout — see stale
+  deployments at a glance); plus `task cluster:diff` to spot template drift, keys only.
 - **Hardened self-hosting**: token gateway; safe no-env boots.
 - **Memory brain upgrade**: windowed extraction, an `eval_recall` harness, and
   **two-stage recall** (+20pp MRR).

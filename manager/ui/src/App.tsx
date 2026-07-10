@@ -15,7 +15,12 @@ import {
 import { BundleDashboard } from "./components/BundleDashboard";
 import { ClusterCard } from "./components/ClusterCard";
 import { LogsPanel } from "./components/LogsPanel";
-import { DestroyModal, NewClusterModal } from "./components/modals";
+import {
+  DestroyModal,
+  EnableGatewayModal,
+  NewClusterModal,
+  ShareModal,
+} from "./components/modals";
 import { ToastProvider, useToast } from "./components/ui";
 import { usePolling } from "./hooks";
 
@@ -78,6 +83,8 @@ function Dashboard({ onLocked }: { onLocked: () => void }) {
   const [busy, setBusy] = useState<Record<string, string | null>>({});
   const [logsFor, setLogsFor] = useState<Cluster | null>(null);
   const [destroyFor, setDestroyFor] = useState<Cluster | null>(null);
+  const [shareFor, setShareFor] = useState<Cluster | null>(null);
+  const [gatewayFor, setGatewayFor] = useState<Cluster | null>(null);
   const [creating, setCreating] = useState(false);
 
   const bail = useCallback(
@@ -137,12 +144,15 @@ function Dashboard({ onLocked }: { onLocked: () => void }) {
     <div className="mx-auto max-w-5xl px-4 py-6">
       <header className="mb-6 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold text-fg">AgentX Manager</h1>
-        {meta && (
+        {meta && meta.mode === "repo" && (
           <span className="rounded-md border border-line bg-sunken px-2 py-0.5 font-mono text-[11px] text-fg-muted">
-            {meta.mode === "repo" ? `repo · ${meta.root} · ` : ""}v{meta.version}
+            repo · {meta.root}
+            {meta.repo_version ? ` · v${meta.repo_version}` : ""}
           </span>
         )}
-        <span className="text-[11px] text-fg-muted">live · pauses in background tabs</span>
+        <span className="text-[11px] text-fg-muted">
+          {meta ? `manager v${meta.version} · ` : ""}live · pauses in background tabs
+        </span>
         <div className="ml-auto flex gap-2">
           {meta?.mode === "repo" && (
             <button
@@ -185,12 +195,15 @@ function Dashboard({ onLocked }: { onLocked: () => void }) {
             <ClusterCard
               key={cluster.name}
               cluster={cluster}
+              repoVersion={meta?.repo_version ?? null}
               busy={busy[cluster.name] ?? null}
               onAction={(action) =>
                 void runAction(cluster, action, () => api.action(cluster.name, action))
               }
               onDestroy={() => setDestroyFor(cluster)}
               onLogs={() => setLogsFor(cluster)}
+              onShare={() => setShareFor(cluster)}
+              onEnableGateway={() => setGatewayFor(cluster)}
             />
           ))}
         </div>
@@ -201,6 +214,17 @@ function Dashboard({ onLocked }: { onLocked: () => void }) {
           cluster={logsFor}
           title={meta?.mode === "bundle" ? "Activity Log" : undefined}
           onClose={() => setLogsFor(null)}
+        />
+      )}
+      {shareFor && <ShareModal cluster={shareFor} onClose={() => setShareFor(null)} />}
+      {gatewayFor && (
+        <EnableGatewayModal
+          name={gatewayFor.name}
+          onEnable={(tunnel) => api.enableGateway(gatewayFor.name, tunnel)}
+          onClose={() => {
+            setGatewayFor(null);
+            void refresh(); // spec.gateway may have flipped
+          }}
         />
       )}
       {destroyFor && (

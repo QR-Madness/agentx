@@ -45,16 +45,22 @@ const PORT_LABELS: [key: keyof Cluster["ports"], label: string][] = [
 
 export function ClusterCard({
   cluster,
+  repoVersion,
   busy,
   onAction,
   onDestroy,
   onLogs,
+  onShare,
+  onEnableGateway,
 }: {
   cluster: Cluster;
+  repoVersion: string | null; // checkout version (repo mode), for drift hints
   busy: string | null; // running action name, if any
   onAction: (action: LifecycleAction) => void;
   onDestroy: () => void;
   onLogs: () => void;
+  onShare: () => void;
+  onEnableGateway: () => void;
 }) {
   const [usage, setUsage] = useState<ClusterUsage | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -84,6 +90,19 @@ export function ClusterCard({
             <div className="flex flex-wrap items-center gap-2.5">
               <h3 className="text-[15px] font-semibold tracking-tight text-fg">{cluster.name}</h3>
               <PhaseBadge phase={cluster.phase} />
+              {cluster.api_version && (
+                <span className="rounded-md border border-line bg-sunken px-1.5 py-0.5 font-mono text-[11px] text-fg-muted">
+                  api v{cluster.api_version}
+                </span>
+              )}
+              {cluster.api_version && repoVersion && cluster.api_version !== repoVersion && (
+                <span
+                  title="Running image differs from the checkout — Rebuild, then Up to roll it out"
+                  className="rounded-md border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[11px] text-amber-300"
+                >
+                  checkout v{repoVersion}
+                </span>
+              )}
               {busy && (
                 <span className="flex items-center gap-1.5 text-xs text-accent">
                   <span className="size-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -197,6 +216,21 @@ export function ClusterCard({
           >
             Logs
           </button>
+          <button
+            onClick={onShare}
+            className="min-h-9 rounded-lg border border-line bg-overlay px-3 text-sm text-fg-secondary hover:border-line-strong hover:text-fg"
+          >
+            Share
+          </button>
+          {!cluster.spec.gateway && (
+            <button
+              disabled={busy !== null}
+              onClick={onEnableGateway}
+              className="min-h-9 rounded-lg border border-line bg-overlay px-3 text-sm text-fg-secondary hover:border-line-strong hover:text-fg disabled:opacity-40"
+            >
+              Enable gateway…
+            </button>
+          )}
           <button
             disabled={busy !== null}
             onClick={onDestroy}

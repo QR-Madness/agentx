@@ -63,6 +63,7 @@ bind-mounted config changed. `task manager:serve` opens the web GUI.
 | `cluster:makemigrations` | Generate new Django migrations inside the container |
 | `cluster:auth:setup` / `cluster:warmup` | Set the root password / pre-load the embedding model |
 | `cluster:list` | List clusters with kind + overlay tags |
+| `cluster:diff CLUSTER=<name>` | Drift report vs `clusters/template/`: `.env` compared by **key only** (values never printed), `nginx.conf` / `cloudflared/config.yml` vs their examples, `config/` filenames vs `api/defaults/`. Run it after pulling template changes to see what your cluster is missing. |
 
 Compose invocation is assembled by the manager — for example `up` on a gateway cluster runs roughly:
 
@@ -167,6 +168,27 @@ separate from user [authentication](authentication.md).
     `nginx.conf` is bind-mounted as a single file, whose inode the container pins at create
     time. After editing it, recreate (don't just restart) nginx so the change is picked up:
     `docker compose … up -d --force-recreate nginx`.
+
+## Sharing access
+
+A **connection link** hands someone everything their client needs to reach a cluster — the
+API URL, an optional display name, and the gateway token — encoded in the URL **fragment**
+(`https://<web-app>/#connect=…`), which browsers never send to any server. The recipient
+opens the link in the deployed web client, confirms on the connect screen, and signs in with
+their password (never part of the link). Desktop users can enter the same URL + gateway token
+by hand in the sign-in screen's server picker.
+
+The easiest way to build one is the **[manager GUI's Share button](manager.md#the-web-gui)**
+on each cluster card. It prefills the server URL from `AGENTX_PUBLIC_HOST`, embeds the
+cluster's `AGENTX_GATEWAY_TOKEN`, and warns about the foot-guns before you copy:
+
+- **A localhost URL doesn't travel** — share the tunnel hostname (set `AGENTX_PUBLIC_HOST`).
+- **The web app's origin must be CORS-allowed.** `AGENTX_PUBLIC_HOST` whitelists only its
+  *own* origin; a client hosted elsewhere (e.g. `https://app.example.com`) must be added to
+  `CORS_ALLOWED_ORIGINS` in the cluster `.env`, then applied with **Up** (Restart doesn't
+  re-read env). Otherwise every API call fails in the browser's preflight.
+- **Treat the link as a secret** — it embeds the gateway token. Share it over a private
+  channel, and rotate `AGENTX_GATEWAY_TOKEN` if a link leaks.
 
 ## GPU Acceleration (NVIDIA overlay)
 

@@ -92,6 +92,25 @@ false alarm), CPU/memory gauges (5s polling), per-service state + usage drill-in
 buttons, a live log stream with service filter, typed-confirmation destroy, and (repo mode)
 a New Cluster form that shows generated secrets exactly once.
 
+**Share** (per cluster) builds a [connection link](clusters.md#sharing-access) without
+touching `.env` by hand: server URL (prefilled from `AGENTX_PUBLIC_HOST`, editable), display
+name, and the web-app base where your deployed client lives (remembered per browser). The
+link embeds the cluster's gateway token — treat it like a secret; the recipient's password is
+never included. The modal warns inline about the classic foot-guns: a localhost URL that
+won't travel, a missing gateway token, a web-app origin absent from `CORS_ALLOWED_ORIGINS`
+(browsers would block every call), and auth being disabled.
+
+**Enable gateway…** appears on cards without a token gateway: pick a tunnel flavor
+(none / Cloudflare token / named), and it scaffolds `nginx.conf` + generates
+`AGENTX_GATEWAY_TOKEN` (shown once), same as `task cluster:gateway:enable`. Run **Up** to
+apply — Restart won't create the gateway service or re-read env.
+
+**Version chips** keep the build→tag→restart loop honest: the header shows the checkout's
+`versions.yaml` version (repo mode), each running cluster shows the version its API actually
+reports, and an amber `checkout v…` chip appears when the two differ (rebuild, then Up, to
+roll the image out). The manager's own version lives in the muted header caption
+(`manager v0.x.y`) — it versions independently of the platform.
+
 In bundle mode the GUI drops the docker vocabulary entirely and becomes a plain-language
 single-deployment dashboard: a status hero (**Stopped / Starting up… / Running / Needs
 attention**) with **Start / Stop / Restart** and an **Open AgentX** link, resource tiles
@@ -109,9 +128,26 @@ Lifecycle actions run as background jobs — the GUI stays responsive and toasts
     It drives the Docker socket. Accordingly: it binds **127.0.0.1** by default and refuses a
     non-loopback bind without an explicit `AGENTX_MANAGER_BIND`; every `/api` request requires
     the bearer token (printed on first start, stored at `<root>/.manager-token`, mode 0600, or
-    supplied via `AGENTX_MANAGER_TOKEN`); and it must **never** be routed through the
-    gateway/tunnel — the shipped nginx template has no route to it. For remote access use SSH
-    port forwarding: `ssh -L 12320:127.0.0.1:12320 <host>`.
+    supplied via `AGENTX_MANAGER_TOKEN`); and it must **never** be routed through a
+    **cluster's** gateway/tunnel — the shipped nginx template has no route to it. For remote
+    access use SSH port forwarding: `ssh -L 12320:127.0.0.1:12320 <host>`.
+
+!!! note "Remote access over a dedicated tunnel"
+    If SSH isn't convenient (e.g. switching clusters from a phone), a Cloudflare Tunnel can
+    front the manager — but treat it as the sensitive service it is:
+
+    - **Keep the loopback bind.** Run a *host-level* `cloudflared` (or a standalone tunnel
+      container with `extra_hosts: ["host.docker.internal:host-gateway"]`) whose ingress
+      points at `http://127.0.0.1:12320` (`http://host.docker.internal:12320` from a
+      container). No `AGENTX_MANAGER_BIND` needed, and no CORS setup either — the GUI is
+      served by the manager itself, so everything stays same-origin.
+    - **Give the manager its own tunnel**, not a hostname on a cluster's `cloudflared` —
+      otherwise downing that cluster takes your remote control plane with it.
+    - **Front the hostname with Cloudflare Access** (email OTP / identity provider). The
+      bearer token is strong, but a root-equivalent endpoint on the public internet deserves
+      a second gate; with Access in place the token becomes your second factor.
+    - Side benefit: the tunnel's HTTPS makes the browser treat the GUI as a secure context,
+      so Share-modal clipboard copies work remotely.
 
 ## Running it
 

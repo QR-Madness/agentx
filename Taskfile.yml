@@ -1460,6 +1460,37 @@ tasks:
     cmds:
       - 'uv run --project manager agentx-manager --root . list'
 
+  cluster:diff:
+    desc: "Show drift between a cluster and clusters/template (CLUSTER=name; env compared by KEY only, values never shown)"
+    silent: true
+    cmds:
+      - |
+        set -u
+        DIR="clusters/{{.CLUSTER}}"
+        [ -d "$DIR" ] || { echo "no such cluster: $DIR"; exit 0; }
+        keys() { grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$1" 2>/dev/null | sed 's/=$//' | sort -u; }
+        echo "── .env keys vs clusters/template/.env.example"
+        MISSING=$(comm -23 <(keys clusters/template/.env.example) <(keys "$DIR/.env"))
+        EXTRA=$(comm -13 <(keys clusters/template/.env.example) <(keys "$DIR/.env"))
+        [ -n "$MISSING" ] && printf '  missing in cluster (template has):\n%s\n' "$(echo "$MISSING" | sed 's/^/    /')"
+        [ -n "$EXTRA" ] && printf '  extra in cluster (template lacks):\n%s\n' "$(echo "$EXTRA" | sed 's/^/    /')"
+        [ -z "$MISSING$EXTRA" ] && echo "  in sync"
+        if [ -f "$DIR/nginx.conf" ]; then
+          echo "── nginx.conf vs template example"
+          diff -u clusters/template/nginx.conf.example "$DIR/nginx.conf" || true
+        fi
+        if [ -f "$DIR/cloudflared/config.yml" ]; then
+          echo "── cloudflared/config.yml vs template example (tunnel id/hostname edits are expected)"
+          diff -u clusters/template/cloudflared/config.yml.example "$DIR/cloudflared/config.yml" || true
+        fi
+        echo "── config/ files vs api/defaults"
+        CFG_MISSING=$(comm -23 <(ls api/defaults | sort) <(ls "$DIR/config" 2>/dev/null | sort))
+        if [ -n "$CFG_MISSING" ]; then
+          printf '  missing in cluster config/:\n%s\n' "$(echo "$CFG_MISSING" | sed 's/^/    /')"
+        else
+          echo "  all default config files present"
+        fi
+
 # ============================================================================
 # DEPLOYMENT MANAGER
 # ============================================================================

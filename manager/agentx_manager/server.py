@@ -17,13 +17,15 @@ import json
 import os
 import secrets
 import threading
+import time
+import urllib.request
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 from collections.abc import Callable
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -54,6 +56,51 @@ def _cluster_url(env: dict[str, str]) -> str:
     if host:
         return f"https://{host}"
     return f"http://localhost:{env.get('API_PORT', '12319').strip() or '12319'}"
+
+
+def read_repo_version(root: Path) -> str | None:
+    """`api.version` from the checkout's versions.yaml, or None (bundle roots).
+
+    Tiny line-parser on purpose — the manager has no yaml dependency and this
+    file's shape is owned by the same repo (top-level `api:` block, first
+    `version:` line inside it).
+    """
+    path = root / "versions.yaml"
+    if not path.is_file():
+        return None
+    in_api = False
+    try:
+        text = path.read_text()
+    except OSError:
+        return None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        if not line[0].isspace():
+            in_api = line.strip() == "api:"
+            continue
+        if in_api and line.strip().startswith("version:"):
+            value = line.strip().removeprefix("version:").strip().strip("\"'")
+            return value or None
+    return None
+
+
+def _fetch_api_version(port: int, timeout: float = 0.8) -> str:
+    """Version of a running cluster API via its auth-exempt /api/version.
+
+    Loopback-only by construction (the manager runs on the cluster's host).
+    Any failure — down, still booting, non-JSON — reads as "" (unknown).
+    """
+    try:
+        with urllib.request.urlopen(  # noqa: S310 — fixed http://127.0.0.1 URL
+            f"http://127.0.0.1:{port}/api/version", timeout=timeout
+        ) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 — best-effort probe; absence is a valid answer
+        return ""
+    version = data.get("version", "") if isinstance(data, dict) else ""
+    return version if isinstance(version, str) else ""
 
 
 def _cluster_ports(env: dict[str, str]) -> dict[str, int]:
@@ -134,12 +181,31 @@ def create_app(root: Path) -> FastAPI:
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
 
+    # Running-API version probe cache: cluster → (monotonic ts, version).
+    # Successes only — a just-booted API should surface within one poll, not
+    # after a stale-failure TTL.
+    api_version_cache: dict[str, tuple[float, str]] = {}
+    api_version_ttl = 60.0
+
+    def cluster_api_version(name: str, api_port: int, phase: str) -> str:
+        if phase == "down":
+            return ""
+        now = time.monotonic()
+        cached = api_version_cache.get(name)
+        if cached and now - cached[0] < api_version_ttl:
+            return cached[1]
+        version = _fetch_api_version(api_port)
+        if version:
+            api_version_cache[name] = (now, version)
+        return version
+
     @app.get("/api/meta", dependencies=[guarded])
     def meta() -> dict[str, Any]:
         return {
             "version": __version__,
             "root": str(root),
             "mode": registry.detect_mode(root),
+            "repo_version": read_repo_version(root),
         }
 
     @app.get("/api/clusters", dependencies=[guarded])
@@ -148,6 +214,7 @@ def create_app(root: Path) -> FastAPI:
         for cluster in registry.discover(root):
             cluster_status = health.status(cluster, runner)
             env = cluster.env
+            ports = _cluster_ports(env)
             out.append({
                 "name": cluster.name,
                 "spec": cluster.spec.to_dict(),
@@ -155,13 +222,46 @@ def create_app(root: Path) -> FastAPI:
                 "services": [asdict(s) for s in cluster_status.services],
                 "dir": str(cluster.cluster_dir),
                 "url": _cluster_url(env),
-                "ports": _cluster_ports(env),
+                "ports": ports,
+                "api_version": cluster_api_version(
+                    cluster.name, ports["api"], cluster_status.phase
+                ),
             })
         return out
 
     @app.get("/api/clusters/{name}/usage", dependencies=[guarded])
     def usage(name: str) -> dict[str, Any]:
         return asdict(health.usage(get_cluster(name), runner, rates=net_rates))
+
+    @app.get("/api/clusters/{name}/connection", dependencies=[guarded])
+    def connection(name: str, response: Response) -> dict[str, Any]:
+        """Everything the GUI needs to build a client connection link.
+
+        Deliberately includes the env-stored gateway token: every caller holds
+        the manager bearer token, which already implies Docker-socket control
+        of this host, so .env readback grants nothing new. The token stays out
+        of the clusters listing and out of logs; no-store keeps it out of any
+        HTTP cache.
+        """
+        cluster = get_cluster(name)
+        env = cluster.env
+        response.headers["Cache-Control"] = "no-store"
+        auth_raw = env.get("AGENTX_AUTH_ENABLED", "true").strip().lower()
+        return {
+            "name": cluster.name,
+            "url": _cluster_url(env),
+            "public_host": env.get("AGENTX_PUBLIC_HOST", "").strip(),
+            "api_port": _cluster_ports(env)["api"],
+            "gateway_enabled": cluster.spec.gateway,
+            "tunnel": cluster.spec.tunnel,
+            "gateway_token": env.get("AGENTX_GATEWAY_TOKEN", "").strip(),
+            "cors_origins": [
+                origin.strip()
+                for origin in env.get("CORS_ALLOWED_ORIGINS", "").split(",")
+                if origin.strip()
+            ],
+            "auth_enabled": auth_raw not in ("false", "0", "no", "off"),
+        }
 
     @app.post("/api/clusters", dependencies=[guarded])
     def create(payload: dict[str, Any]) -> dict[str, Any]:
