@@ -558,6 +558,43 @@ def _stamp_interrupted_thinking(
         interrupted_meta["research"] = True
 
 
+def _turn_cost_meta(caps, loop_result, tokens_in: int, tokens_out: int) -> dict:
+    """Resolve a turn's cost fields, preferring provider-billed truth.
+
+    OpenRouter's usage accounting reports the actual charge — reasoning tokens
+    (hidden thinking billed as output, invisible to text-side estimates) and
+    cache discounts included; the list-price estimate is the fallback for
+    providers that don't report billing. Conditionals live here, not in the
+    generator (pyright flow budget).
+    """
+    from .providers.pricing import estimate_cost
+
+    cost = estimate_cost(caps, tokens_in, tokens_out) if caps else None
+    provider_cost = float(getattr(loop_result, "provider_cost", 0.0) or 0.0) if loop_result else 0.0
+    reasoning = int(getattr(loop_result, "reasoning_tokens", 0) or 0) if loop_result else 0
+    total = provider_cost if provider_cost > 0 else (cost["cost_total"] if cost else None)
+    return {
+        "cost_estimate": total,
+        "cost_currency": (cost["currency"] if cost else ("USD" if provider_cost > 0 else None)),
+        "pricing_snapshot": cost["pricing_snapshot"] if cost else None,
+        "cost_source": "provider" if provider_cost > 0 else ("estimate" if cost else None),
+        "tokens_reasoning": reasoning,
+    }
+
+
+def _stamp_cost_meta(meta: dict, cost_meta: dict) -> None:
+    """Fold `_turn_cost_meta`'s fields into persisted turn metadata (skipping
+    nulls so cost-less turns don't grow noise keys)."""
+    if cost_meta["cost_estimate"] is not None:
+        meta["cost_estimate"] = cost_meta["cost_estimate"]
+        meta["cost_currency"] = cost_meta["cost_currency"]
+        if cost_meta["pricing_snapshot"] is not None:
+            meta["pricing_snapshot"] = cost_meta["pricing_snapshot"]
+        meta["cost_source"] = cost_meta["cost_source"]
+    if cost_meta["tokens_reasoning"]:
+        meta["tokens_reasoning"] = cost_meta["tokens_reasoning"]
+
+
 def _append_coverage_read_blocks(blocks: list, session) -> None:
     """Register the read-back coverage blocks: the legacy prose summary (older
     conversations / state-compaction-off installs) and the rehydration-overflow
@@ -3050,10 +3087,10 @@ async def agent_chat_stream(request):
                 f"(in={estimated_input:,}, out={estimated_output:,}, chars={final_context_chars:,})"
             )
 
-            # Estimate per-turn cost from model pricing metadata (None when the
-            # model has no pricing, e.g. local LM Studio).
-            from .providers.pricing import estimate_cost
-            cost = estimate_cost(caps, estimated_input, estimated_output)
+            # Per-turn cost: provider-billed truth when reported (OpenRouter
+            # usage accounting — reasoning tokens included), else the
+            # list-price estimate; None when the model has no pricing at all.
+            cost_meta = _turn_cost_meta(caps, loop_result, estimated_input, estimated_output)
 
             # Truncation surfacing: "length" means the answer was cut off by
             # max_tokens (even after any auto-continue round). None on the
@@ -3086,10 +3123,9 @@ async def agent_chat_stream(request):
                 'context_dropped_turns': (
                     ledger_result.history_dropped if ledger_result is not None else 0
                 ),
-                # Per-turn cost (null when no pricing available)
-                'cost_estimate': cost['cost_total'] if cost else None,
-                'cost_currency': cost['currency'] if cost else None,
-                'pricing_snapshot': cost['pricing_snapshot'] if cost else None,
+                # Per-turn cost (null when no pricing available). Provider-billed
+                # when the provider reports it, else a list-price estimate.
+                **cost_meta,
                 'finish_reason': final_finish_reason,
                 'truncated': was_truncated,
                 # Thinking Patterns: which pattern shaped this turn (None = plain).
@@ -3126,10 +3162,7 @@ async def agent_chat_stream(request):
                 _stamp_thinking_meta(
                     asst_metadata, thinking_plan, parsed, session, research=research_active,
                 )
-                if cost is not None:
-                    asst_metadata["cost_estimate"] = cost["cost_total"]
-                    asst_metadata["cost_currency"] = cost["currency"]
-                    asst_metadata["pricing_snapshot"] = cost["pricing_snapshot"]
+                _stamp_cost_meta(asst_metadata, cost_meta)
                 if was_truncated:
                     asst_metadata["truncated"] = True
                 # Thinking/CoT is process, not result — streamed live but never
@@ -3162,7 +3195,6 @@ async def agent_chat_stream(request):
             if use_memory and agent.memory and loop_result is not None and not persisted:
                 try:
                     from .agent.output_parser import parse_output as _parse_output
-                    from .providers.pricing import estimate_cost as _estimate_cost
 
                     partial = _parse_output(loop_result.content)
                     interrupted_meta = {
@@ -3176,11 +3208,12 @@ async def agent_chat_stream(request):
                     _stamp_interrupted_thinking(
                         interrupted_meta, thinking_plan, partial, research=research_active,
                     )
-                    _icost = _estimate_cost(caps, loop_result.tokens_in, loop_result.tokens_out) if caps else None
-                    if _icost is not None:
-                        interrupted_meta["cost_estimate"] = _icost["cost_total"]
-                        interrupted_meta["cost_currency"] = _icost["currency"]
-                        interrupted_meta["pricing_snapshot"] = _icost["pricing_snapshot"]
+                    # Provider-billed truth (usage chunks that landed before
+                    # the stop) beats the list-price estimate — same policy as
+                    # the normal-completion path.
+                    _stamp_cost_meta(interrupted_meta, _turn_cost_meta(
+                        caps, loop_result, loop_result.tokens_in, loop_result.tokens_out,
+                    ))
                     # CoT not persisted (process, not result) — even on a hard-stop.
                     _ian = getattr(agent_profile, "name", None)
                     if _ian:

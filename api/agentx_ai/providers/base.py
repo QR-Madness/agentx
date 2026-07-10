@@ -272,7 +272,11 @@ class StreamChunk(BaseModel):
     content: str = ""
     finish_reason: str | None = None
     tool_calls: list[ToolCall] | None = None
-    usage: dict[str, int] | None = None  # Token usage (available on final chunk)
+    # Token usage, available on the final chunk. Beyond the token counts this
+    # may carry provider extensions: `cost` (the provider's actually-billed
+    # USD for the request) and `reasoning_tokens` (hidden thinking tokens —
+    # billed as output but invisible to any text-side estimate).
+    usage: dict[str, Any] | None = None
 
 
 class CompletionResult(BaseModel):

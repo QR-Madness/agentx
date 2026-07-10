@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.214 -->
+<!-- release-version: 0.21.215 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -45,9 +45,15 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Tool calls stopped shouting** — the blocky left-border cards are gone. Tool activity is now
   quiet holographic chips that shimmer while running and fade when done, consecutive calls stack
   into one "Ran N tools" pill, and only failures speak up. Tool output opens as a rendered
-  document (headings, bold, lists) with a Raw toggle. Streaming also keeps its pulse: the
-  indicator no longer vanishes after delegation results or between tool rounds, and reopening a
-  running conversation no longer blanks the transcript while it re-attaches.
+  document (headings, bold, lists) with a Raw toggle. The recalled **Memory context** block wears
+  the same quiet chip style. Streaming also keeps its pulse: the indicator no longer vanishes
+  after delegation results or between tool rounds, and reopening a running conversation no longer
+  blanks the transcript while it re-attaches.
+- **Costs stopped lying for reasoning models** — turn costs on OpenRouter now come from the
+  provider's own usage accounting: hidden reasoning tokens (billed as output but invisible in the
+  text) are finally counted, and the displayed cost is what OpenRouter actually charged, not a
+  list-price guess (a gpt-5.6 Sol Pro turn previously showed ~10x under reality). Turns also
+  record their reasoning-token count and whether the cost is provider-billed or estimated.
 - **The Relay is now the conversation's command center** — the Orbit button opens a glass
   control panel: a status strip (agent · model · context %), tiled controls with aurora gradient
   icons (thinking mode, memory, team, background send, model, project, state, attach, enhance,

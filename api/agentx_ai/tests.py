@@ -12937,6 +12937,116 @@ class ReasoningDeltaTest(TestCase):
         self.assertEqual(chunks[-1].finish_reason, "length")
 
 
+class OpenRouterStreamUsageTest(TestCase):
+    """Streaming must request OpenRouter usage accounting and surface the
+    trailing usage chunk (it arrives with EMPTY `choices`, which the loop
+    previously skipped): authoritative token counts INCLUDE hidden reasoning
+    tokens, and `cost` is the actually-billed USD. Without this, tokens fell
+    back to visible-text estimates — a gpt-5.6-sol-pro turn metered 10x low
+    because thousands of reasoning tokens billed at output rate were never
+    counted."""
+
+    def test_stream_yields_trailing_usage_with_cost_and_reasoning(self):
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import Message, ProviderConfig
+        from agentx_ai.providers.openrouter_provider import OpenRouterProvider
+
+        provider = OpenRouterProvider(ProviderConfig(api_key="k"))
+        captured: dict = {}
+
+        def _chunk(content=None, finish=None):
+            delta = SimpleNamespace(
+                content=content, tool_calls=None, reasoning=None, reasoning_content=None,
+            )
+            return SimpleNamespace(
+                choices=[SimpleNamespace(delta=delta, finish_reason=finish)], usage=None,
+            )
+
+        usage = SimpleNamespace(
+            prompt_tokens=2749, completion_tokens=4770, total_tokens=7519,
+            model_extra={"cost": 0.156845},
+            completion_tokens_details=SimpleNamespace(reasoning_tokens=4700),
+        )
+        final_usage_chunk = SimpleNamespace(choices=[], usage=usage)
+
+        async def fake_create(**kwargs):
+            captured.update(kwargs)
+
+            async def gen():
+                yield _chunk(content="Answer.")
+                yield _chunk(finish="stop")
+                yield final_usage_chunk
+
+            return gen()
+
+        client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create)),
+            close=AsyncMock(),
+        )
+
+        async def run():
+            out = []
+            with patch.object(provider, "_get_client", return_value=client):
+                async for c in provider.stream(
+                    [Message(role="user", content="hi")], "openai/gpt-5.6-sol-pro"
+                ):
+                    out.append(c)
+            return out
+
+        chunks = asyncio.run(run())
+
+        # The request opted into usage accounting.
+        self.assertEqual(captured.get("extra_body"), {"usage": {"include": True}})
+        # Visible content still streamed normally.
+        self.assertEqual(chunks[0].content, "Answer.")
+        # Trailing chunk carries the normalized usage payload.
+        last = chunks[-1]
+        assert last.usage is not None
+        self.assertEqual(last.usage["prompt_tokens"], 2749)
+        self.assertEqual(last.usage["completion_tokens"], 4770)  # reasoning INCLUDED
+        self.assertEqual(last.usage["reasoning_tokens"], 4700)
+        self.assertAlmostEqual(last.usage["cost"], 0.156845)
+
+    def test_stream_without_usage_stays_quiet(self):
+        # Providers/models that never send a usage chunk must not emit a bogus
+        # trailing chunk (downstream token estimates remain the fallback).
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import Message, ProviderConfig
+        from agentx_ai.providers.openrouter_provider import OpenRouterProvider
+
+        provider = OpenRouterProvider(ProviderConfig(api_key="k"))
+
+        def _chunk(content=None, finish=None):
+            delta = SimpleNamespace(
+                content=content, tool_calls=None, reasoning=None, reasoning_content=None,
+            )
+            return SimpleNamespace(
+                choices=[SimpleNamespace(delta=delta, finish_reason=finish)], usage=None,
+            )
+
+        async def fake_create(**kwargs):
+            async def gen():
+                yield _chunk(content="ok")
+                yield _chunk(finish="stop")
+
+            return gen()
+
+        client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create)),
+            close=AsyncMock(),
+        )
+
+        async def run():
+            out = []
+            with patch.object(provider, "_get_client", return_value=client):
+                async for c in provider.stream([Message(role="user", content="hi")], "m"):
+                    out.append(c)
+            return out
+
+        chunks = asyncio.run(run())
+        self.assertTrue(all(c.usage is None for c in chunks))
+
+
 class OpenRouterSpeechTest(TestCase):
     """OpenRouter's /audio/speech synthesis + the supports_speech capability."""
 

@@ -93,11 +93,11 @@ export function MemoryInjectionBlock({ facts, entities, relevantTurns, queryUsed
 
   const totalItems = facts.length + entities.length + relevantTurns.length;
 
-  // Build count parts dynamically
+  // Build count parts dynamically (·-separated meta, like the tool chips)
   const countParts: string[] = [];
-  if (facts.length > 0) countParts.push(`${facts.length} facts`);
-  if (entities.length > 0) countParts.push(`${entities.length} entities`);
-  if (relevantTurns.length > 0) countParts.push(`${relevantTurns.length} turns`);
+  if (relevantTurns.length > 0) countParts.push(`${relevantTurns.length} turn${relevantTurns.length === 1 ? '' : 's'}`);
+  if (facts.length > 0) countParts.push(`${facts.length} fact${facts.length === 1 ? '' : 's'}`);
+  if (entities.length > 0) countParts.push(`${entities.length} entit${entities.length === 1 ? 'y' : 'ies'}`);
 
   return (
     <div className="memory-injection-block">
@@ -106,9 +106,12 @@ export function MemoryInjectionBlock({ facts, entities, relevantTurns, queryUsed
           <Database size={14} />
         </div>
         <div className="memory-info">
-          <span className="memory-title">Memory Context</span>
-          <span className="memory-count">
-            {countParts.join(', ') || 'No items'}
+          <span className="memory-title">Memory</span>
+          {queryUsed && <span className="memory-preview">"{queryUsed}"</span>}
+          <span className="memory-meta">
+            {countParts.length > 0
+              ? countParts.map(part => <span key={part}>{part}</span>)
+              : <span>nothing relevant</span>}
           </span>
         </div>
         <button className="memory-toggle">

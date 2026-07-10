@@ -33,6 +33,30 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
+
+def _usage_to_dict(usage: Any) -> dict[str, Any]:
+    """Normalize the SDK's usage object into the StreamChunk.usage dict.
+
+    OpenRouter's usage-accounting extensions (`cost` — the actually-billed
+    USD — and `completion_tokens_details.reasoning_tokens`) aren't fields on
+    the OpenAI SDK model, so they arrive via `model_extra`/nested objects.
+    """
+    out: dict[str, Any] = {
+        "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+        "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
+        "total_tokens": getattr(usage, "total_tokens", 0) or 0,
+    }
+    extra = getattr(usage, "model_extra", None) or {}
+    cost = extra.get("cost") if isinstance(extra, dict) else None
+    if isinstance(cost, (int, float)):
+        out["cost"] = float(cost)
+    details = getattr(usage, "completion_tokens_details", None)
+    reasoning = getattr(details, "reasoning_tokens", None) if details is not None else None
+    if reasoning:
+        out["reasoning_tokens"] = int(reasoning)
+    return out
+
+
 # OpenRouter API base URL
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -220,11 +244,24 @@ class OpenRouterProvider(ModelProvider):
 
         client = self._get_client()
         try:
-            stream = await client.chat.completions.create(**request_params)
+            stream = await client.chat.completions.create(
+                **request_params,
+                # OpenRouter usage accounting: the stream's final chunk then
+                # carries authoritative token counts (reasoning tokens
+                # INCLUDED — hidden thinking is billed as output but invisible
+                # to any text-side estimate; a gpt-5.6-sol-pro turn metered
+                # 10x low without this) plus the actually-billed cost.
+                extra_body={"usage": {"include": True}},
+            )
             pending_tool_calls: dict[int, dict[str, Any]] = {}
             in_reasoning = False
+            usage_payload: dict[str, Any] | None = None
 
             async for chunk in stream:
+                # Usage rides a trailing chunk with EMPTY `choices` — read it
+                # before the choices guard skips that chunk entirely.
+                if getattr(chunk, "usage", None) is not None:
+                    usage_payload = _usage_to_dict(chunk.usage)
                 if not chunk.choices:
                     continue
 
@@ -275,6 +312,9 @@ class OpenRouterProvider(ModelProvider):
                         pending_tool_calls.clear()
                     elif finish_reason != "tool_calls":
                         yield StreamChunk(content="", finish_reason=finish_reason)
+
+            if usage_payload is not None:
+                yield StreamChunk(content="", usage=usage_payload)
         finally:
             await client.close()
 

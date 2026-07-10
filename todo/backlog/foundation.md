@@ -60,6 +60,12 @@
    outputs** debugging surface shipped `[v0.21.101]`: a command-palette "Tool Outputs" drawer
    (`components/toolkit/ToolOutputsPanel.tsx`) lists/filters/reads/prunes the Redis-backed store over
    the existing `/api/tool-outputs` API. **Foundation #5 complete.**
+   **Metering truth follow-up (v0.21.215):** OpenRouter streams now request usage accounting —
+   authoritative tokens (hidden reasoning INCLUDED; a gpt-5.6-sol-pro turn metered 10x low from
+   visible-text estimates) + the actually-billed `cost`, preferred over the list-price estimate
+   (`cost_source: provider|estimate` on the done event/turn metadata). **Remaining gap:** the other
+   providers' `stream()`s (OpenAI `stream_options.include_usage`, Anthropic `message_delta` usage,
+   LM Studio, Vercel) still never emit usage — streamed turns there stay estimate-only.
 6. ~~**Tech-debt sweep**~~ — **shipped (v0.21.102).** All token estimators now flow through one
    `tiktoken`-backed module (`api/agentx_ai/tokens.py`: `estimate_tokens`/`estimate_messages`, chars/4
    fallback + a >20K-char fast path); the ledger's `shrink_tail` verifies against it instead of assuming a

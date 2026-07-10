@@ -57,6 +57,12 @@ class ToolLoopResult:
     tools_used: list[str] = field(default_factory=list)
     tokens_in: int = 0
     tokens_out: int = 0
+    # Provider-billed cost (USD) summed from usage-accounting chunks — 0.0 when
+    # the provider doesn't report billing; callers prefer this over a
+    # list-price estimate. reasoning_tokens = hidden thinking tokens (billed
+    # as output; already inside tokens_out) for display/telemetry.
+    provider_cost: float = 0.0
+    reasoning_tokens: int = 0
     tool_turns_data: list[dict] = field(default_factory=list)
     # Mid-turn steers folded in (for persistence). Each: {content, round,
     # after_tools, phase} where phase is "tool_boundary" or "would_end".
@@ -756,6 +762,8 @@ async def _run_tool_loop(
             if chunk.usage:
                 result.tokens_in += chunk.usage.get("prompt_tokens", 0)
                 result.tokens_out += chunk.usage.get("completion_tokens", 0)
+                result.provider_cost += float(chunk.usage.get("cost") or 0.0)
+                result.reasoning_tokens += int(chunk.usage.get("reasoning_tokens") or 0)
             if chunk.finish_reason:
                 round_finish = chunk.finish_reason
             if chunk.content:
@@ -990,6 +998,8 @@ async def _run_tool_loop(
             if chunk.usage:
                 result.tokens_in += chunk.usage.get("prompt_tokens", 0)
                 result.tokens_out += chunk.usage.get("completion_tokens", 0)
+                result.provider_cost += float(chunk.usage.get("cost") or 0.0)
+                result.reasoning_tokens += int(chunk.usage.get("reasoning_tokens") or 0)
             if chunk.finish_reason:
                 result.finish_reason = chunk.finish_reason
             if chunk.content:
