@@ -389,9 +389,11 @@ def hydrate_session_from_history(
     ``max_rows`` defaults to ``context.rehydrate_max_turns`` (the knob was
     previously defined but never wired — hydrate was silently bound by the
     module ``_MAX_ROWS``). When the row cap is hit AND no persisted summary was
-    restored, ``session.metadata["history_overflow"]`` is set so the coverage
-    gap is surfaced (INV-CTX-1) — the JIT pre-assembly summarizer backfills the
-    summary on the next turn instead of the elder turns silently vanishing.
+    restored, ``session.metadata["history_overflow"]`` is set. Turns beyond the
+    cap were never loaded, so no compaction pass can cover them — the chat path
+    surfaces the flag as an honest ``history_overflow_notice`` ledger block
+    (the earliest turns stay reachable via memory recall / ``read_thread``)
+    instead of letting them silently vanish (INV-CTX-1).
     """
     if session is None or session.messages or session.metadata.get("hydrated"):
         return 0
@@ -430,6 +432,7 @@ def hydrate_session_from_history(
         session.metadata["history_overflow"] = True
         logger.warning(
             f"Rehydration hit the {max_rows}-row cap for '{conversation_id}' with no "
-            "persisted summary — flagged history_overflow (JIT summary will backfill)"
+            "persisted summary — flagged history_overflow (the chat path surfaces an "
+            "in-prompt notice; earlier turns stay reachable via recall/read_thread)"
         )
     return len(msgs)

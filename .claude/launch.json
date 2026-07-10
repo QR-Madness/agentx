@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "client",
       "port": 1420
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "uvicorn", "agentx_api.asgi:application", "--host", "127.0.0.1", "--port", "12319"],
+      "cwd": "api",
+      "port": 12319
     }
   ]
 }

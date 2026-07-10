@@ -235,6 +235,10 @@ export interface ChatRequest {
   // Research Mode: elevated search budget + rigorous, evidence-grounded,
   // self-reviewing research prompt (gated server-side by research.enabled).
   research_mode?: boolean;
+  // Thinking Patterns: per-turn pattern override (native | cot | step_back |
+  // reflection | deep_reflection | self_consistency, or a legacy strategy
+  // value the server degrades honestly). Unset ⇒ profile/auto chain.
+  thinking_pattern?: string;
   workflow_id?: string;  // Optional Agent Alloy workflow — supervisor takes over the chat
   workspace_id?: string;  // Optional attached document workspace (Document RAG)
   images?: ChatImageRef[];  // Vision input: refs to uploaded images the model should see
@@ -488,7 +492,11 @@ export interface TemplateTag {
 
 // === Agent Profile Types ===
 
-export type ReasoningStrategy = 'auto' | 'cot' | 'tot' | 'react' | 'reflection';
+// `tot`/`react` are legacy offline-kit values (chat degrades them honestly:
+// tot→cot, react→native+tool narration); kept valid for existing profiles.
+export type ReasoningStrategy =
+  | 'auto' | 'native' | 'cot' | 'step_back' | 'tot' | 'react'
+  | 'reflection' | 'deep_reflection' | 'self_consistency';
 
 export interface AgentProfile {
   id: string;
@@ -774,11 +782,66 @@ export interface ConfigUpdate {
     tavily_api_key?: string;
     brave_api_key?: string;
   };
-  /** Context compaction knobs (verbatim window + rolling-summary trigger). */
+  /** Conversation-context management (the Conversation Context settings section). */
   context?: {
     verbatim_budget_ratio?: number;
     summary_trigger_ratio?: number;
     recent_floor?: number;
+    preassembly_summary_enabled?: boolean;
+    conversation_state_enabled?: boolean;
+    conversation_state_compaction_enabled?: boolean;
+    rehydrate_max_turns?: number;
+    /** Optional per-turn input spend guard for the tool loop; 0 = off. */
+    max_input_tokens?: number;
+  };
+  /** Compaction summarizer (shared by the state digest + legacy prose summary). */
+  session?: {
+    rolling_summary?: {
+      enabled?: boolean;
+      /** "" = follow the summarizer model role. */
+      model?: string;
+      max_tokens?: number;
+    };
+  };
+  /** In-turn tool-loop round compression (older rounds → Knowledge block). */
+  trajectory_compression?: {
+    enabled?: boolean;
+    threshold_ratio?: number;
+    preserve_recent_rounds?: number;
+    /** "" = follow the summarizer model role. */
+    model?: string;
+    max_knowledge_chars?: number;
+  };
+  /** Task-aware compression of oversized single tool outputs. */
+  compression?: {
+    enabled?: boolean;
+    /** "" = follow the summarizer model role. */
+    model?: string;
+    max_summary_chars?: number;
+  };
+  /** Memory feature toggles (ConfigManager namespace, not the memory kit). */
+  memory?: {
+    episodic_leads_enabled?: boolean;
+    project_channels?: boolean;
+  };
+  /** Thinking Patterns (Settings → Intelligence → Thinking). */
+  reasoning?: {
+    chat_patterns_enabled?: boolean;
+    auto_classifier_enabled?: boolean;
+    /** "" = follow the fast_utility model role. */
+    classifier_model?: string;
+    classifier_min_chars?: number;
+    /** "" = the active turn model. */
+    step_back_model?: string;
+    step_back_timeout_seconds?: number;
+    cot_enabled?: boolean;
+    step_back_enabled?: boolean;
+    reflection_enabled?: boolean;
+    self_consistency_enabled?: boolean;
+    /** "" = the active turn model. */
+    sc_model?: string;
+    sc_k?: number;
+    min_output_tokens?: number;
   };
   alloy?: {
     allow_adhoc_delegation?: boolean;

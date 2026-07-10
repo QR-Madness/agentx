@@ -1,141 +1,76 @@
-# Reasoning Framework
+# Thinking Patterns & Reasoning
 
-The reasoning framework provides structured thinking strategies for complex tasks. An orchestrator classifies tasks and selects the appropriate strategy automatically.
+AgentX has two reasoning systems, and it's worth knowing which one you're using:
 
-## Architecture
+- **Thinking Patterns** — how agents reason **in chat**. A pattern is compiled into the
+  live streamed turn (directives, hidden pre-calls, multi-pass streams) so tools,
+  steering, and the thinking bubble all keep working. This is the system you interact
+  with every day.
+- **The offline reasoning kit** — the classic CoT / ToT / ReAct / Reflection strategy
+  classes behind `POST /api/agent/run` (blocking, non-streaming). Kept for programmatic
+  task execution.
 
-```mermaid
-graph TD
-    T[Task Input] --> O[Orchestrator]
-    O --> CL[_classify_task]
-    CL --> |math, analytical| CoT[Chain-of-Thought]
-    CL --> |planning| ToT[Tree-of-Thought]
-    CL --> |research| ReAct[ReAct]
-    CL --> |creative, code| Ref[Reflection]
+Models with **native reasoning** (they emit their own `<think>` deltas) stream that
+thinking live into the chat's thinking bubble regardless of pattern — patterns shape
+*how* that thinking happens, and give non-reasoning models a visible thinking process
+of their own.
 
-    CoT --> P[Provider]
-    ToT --> P
-    ReAct --> P
-    Ref --> P
-    ReAct --> TE[Tool Executor]
+## The patterns
 
-    P --> R[ReasoningResult]
+| Pattern | What it does | Extra LM calls |
+|---------|--------------|----------------|
+| **Auto** | Picks per message: instant keyword heuristics; an optional bounded LLM tiebreak when unsure. Never stacks a scaffold on a native reasoner. | 0 (rarely 1 tiny) |
+| **Native** | The model thinks freely — no scaffold, raised output floor so thinking can't starve the answer. | 0 |
+| **Step-by-step** (`cot`) | Explicit numbered reasoning steps inside the thinking block — gives non-reasoning models a verifiable chain. | 0 |
+| **Step-back** (`step_back`) | A hidden pre-call distills the governing principles first; the turn then applies them explicitly. | 1 small |
+| **Reflection** (`reflection`) | One completion structured as draft → self-critique → improved final answer (critique stays in thinking). | 0 |
+| **Deep reflection** (`deep_reflection`) | True multi-pass: the draft and critique stream **live into the thinking bubble**, then the improved final answer streams with tools. | 2 |
+| **Consensus** (`self_consistency`) | k independent samples (2–5, tool-less) surface as thinking; a judged final answer streams. Auto only picks it for short calculation/logic turns with no tools. | k (+judge rides the final turn) |
 
-    CoT -.-> |fallback| FB[Fallback Strategy]
-    ToT -.-> |fallback| FB
-    ReAct -.-> |fallback| FB
-    Ref -.-> |fallback| FB
+Legacy values keep working with honest degradations in chat: **Tree-of-Thought** runs
+step-by-step (full ToT stays on `/agent/run`), and **ReAct** maps to native thinking
+with tool narration — chat's tool loop already *is* reason+act with real function
+calls. A one-line status tells you when a degradation applied.
+
+## Choosing a pattern
+
+Resolution per turn: **composer chip** (per-conversation override) → **agent profile**
+(`reasoning_strategy`, the "Thinking pattern" control in the profile editor) →
+**global default** (`preferences.default_reasoning_strategy`) → **Auto**.
+
+The composer's 🧠 **Thinking** chip switches the pattern mid-conversation; the turn's
+pattern is reported on the done event (`thinking_pattern`) and stamped on the persisted
+turn. Multi-pass phases surface as live status lines ("Drafting…", "Critiquing the
+draft…", "Sampling 3 independent solutions…").
+
+## Settings → Intelligence → Thinking Patterns
+
+- **Patterns** — master kill-switch + per-pattern availability (both explicit selection
+  and Auto respect these).
+- **Auto selection** — the LLM tiebreak toggle, its model (empty = the Fast Utility
+  role), and the minimum message length below which it never fires.
+- **Pattern models & budgets** — step-back and consensus-sampling models (empty = the
+  conversation's own model), consensus `k`, and the thinking output floor
+  (`0` = automatic: floored whenever a pattern is active or the model reasons natively,
+  so thinking tokens can't starve the visible answer).
+
+Config lives under `reasoning.*` (`/api/config/update`, allowlisted). The classifier is
+a Fast Utility role member; `step_back_model`/`sc_model` inherit the active turn model.
+
+## The offline kit (`/api/agent/run`)
+
+`ReasoningOrchestrator` classifies the task (shared heuristics with chat Auto —
+`reasoning/selection.py`) and runs the full strategy classes: Chain-of-Thought
+(zero-shot/few-shot), Tree-of-Thought (BFS/DFS/beam over branching thoughts), ReAct
+(reason+act with registered tools), Reflection (iterative critique/revision cycles,
+prompts in `system_prompts.yaml`). Strategy execution is wall-clock bounded
+(`OrchestratorConfig.timeout_seconds`), falls back to Chain-of-Thought on failure, and
+resolves models through the provider fallback chain like every other feature.
+
+```
+POST /api/agent/run
+{"task": "…", "reasoning_strategy": "tot"}
 ```
 
-## Strategies
-
-| Strategy | Class | Use Case | How It Works |
-|----------|-------|----------|--------------|
-| Chain-of-Thought | `ChainOfThought` | Math, analytical, simple | Step-by-step reasoning with explicit intermediate steps |
-| Tree-of-Thought | `TreeOfThought` | Planning, design | Explores multiple solution branches (BFS/DFS/beam search) |
-| ReAct | `ReActAgent` | Research, tool-heavy tasks | Interleaves reasoning with tool actions (Reason-Act-Observe loop) |
-| Reflection | `ReflectiveReasoner` | Creative, code | Generates, self-critiques, and revises through multiple rounds |
-
-## Task Classification
-
-The orchestrator classifies tasks by keyword matching in `_classify_task()`:
-
-| Task Type | Keywords | Default Strategy |
-|-----------|----------|-----------------|
-| `math` | calculate, compute, solve, equation, formula | CoT |
-| `code` | code, program, function, implement, debug | Reflection |
-| `research` | search, find information, look up, research | ReAct |
-| `planning` | plan, design, strategy, organize, roadmap | ToT |
-| `creative` | write, create, compose, draft, story, poem | Reflection |
-| `analytical` | analyze, compare, evaluate, assess, review | CoT |
-| `simple` | what is, who is, when did, define, list | CoT |
-| `unknown` | (no match) | CoT (fallback) |
-
-## Strategy Configs
-
-### Chain-of-Thought (`CoTConfig`)
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `model` | `"llama3.2"` | Model to use |
-| `mode` | `"zero_shot"` | `"zero_shot"` or `"few_shot"` |
-| `examples` | `[]` | Few-shot examples (if `few_shot` mode) |
-| `max_steps` | `10` | Maximum reasoning steps |
-
-### Tree-of-Thought (`ToTConfig`)
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `model` | `"llama3.2"` | Model to use |
-| `branching_factor` | `3` | Branches per node |
-| `max_depth` | `3` | Maximum tree depth |
-| `search_strategy` | `"bfs"` | `"bfs"`, `"dfs"`, or `"beam"` |
-| `beam_width` | `2` | Beam width (if beam search) |
-
-### ReAct (`ReActConfig`)
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `model` | `"llama3.2"` | Model to use |
-| `tools` | `[]` | Available `Tool` objects |
-| `max_iterations` | `10` | Max reason-act-observe cycles |
-
-### Reflection (`ReflectionConfig`)
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `model` | `"llama3.2"` | Model to use |
-| `max_revisions` | `3` | Maximum self-revision rounds |
-| `critique_model` | `null` | Optional separate model for critique |
-
-## Result Structure
-
-`ReasoningResult` contains:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `answer` | string | Final response |
-| `strategy` | string | Strategy used |
-| `status` | ReasoningStatus | `"complete"` or `"failed"` |
-| `steps` | list[ThoughtStep] | Full reasoning trace |
-| `total_steps` | int | Step count |
-| `branches_explored` | int | ToT branches explored |
-| `actions_taken` | int | ReAct actions executed |
-| `revisions` | int | Reflection revision count |
-| `total_tokens` | int | Token usage |
-| `total_time_ms` | float | Elapsed time |
-
-## Orchestrator Config
-
-```python
-from agentx_ai.reasoning.orchestrator import ReasoningOrchestrator, OrchestratorConfig
-
-config = OrchestratorConfig(
-    default_model="llama3.2",
-    fallback_strategy="cot",    # Fallback if primary fails
-    enable_fallback=True,
-)
-
-orchestrator = ReasoningOrchestrator(config)
-result = await orchestrator.reason("Plan a week-long trip to Japan")
-# result.strategy == "tot" (auto-classified as planning)
-```
-
-The strategy map can be overridden in `OrchestratorConfig.strategy_map` to change which strategy handles each task type.
-
-## Integration
-
-The Agent uses reasoning through `Agent.run()`:
-
-1. Agent receives a task
-2. `TaskPlanner` decomposes into subtasks
-3. For each subtask, `ReasoningOrchestrator.reason()` is called
-4. Results are aggregated into the final `AgentResult`
-
-In chat mode (`Agent.chat(simple_mode=True)`), reasoning is bypassed — the agent uses direct provider completion instead.
-
-## Related
-
-- [Agent Core](../architecture/overview.md) — How reasoning fits into the agent pipeline
-- [API: Agent Run](../api/endpoints.md#run-task) — Endpoint with `reasoning_strategy` parameter
-- [API Models: ReasoningResult](../api/models.md#agent-models) — Result schema
+Chat-first pattern values (`native`, `step_back`, `deep_reflection`,
+`self_consistency`) alias to their nearest kit strategy on this endpoint.

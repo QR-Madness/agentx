@@ -18,6 +18,7 @@ import {
   GitBranch,
   Repeat2,
   RefreshCw,
+  Orbit,
   Sliders,
   Volume2,
   Mic,
@@ -60,13 +61,23 @@ const panelVariants = {
 
 const MAX_TAGS = 4;
 
-/** Reasoning strategies as segmented options (short label + glyph). */
+/** Thinking patterns as segmented options (short label + glyph). Legacy
+ * `tot`/`react` are no longer offered for new selection (chat degrades them:
+ * tot→cot, react→native) but a profile still set to one keeps its segment so
+ * the control never shows "nothing selected". */
 const REASONING_SEGMENTS: { value: ReasoningStrategy; label: string; icon: ReactNode; title: string }[] = [
-  { value: 'auto', label: 'Auto', icon: <Sparkles size={13} />, title: 'Automatically select based on task' },
-  { value: 'cot', label: 'CoT', icon: <ListOrdered size={13} />, title: 'Chain of Thought — step-by-step' },
-  { value: 'tot', label: 'ToT', icon: <GitBranch size={13} />, title: 'Tree of Thought — explore paths' },
-  { value: 'react', label: 'ReAct', icon: <Repeat2 size={13} />, title: 'Reason + Act iteratively' },
-  { value: 'reflection', label: 'Reflect', icon: <RefreshCw size={13} />, title: 'Self-critique and improve' },
+  { value: 'auto', label: 'Auto', icon: <Sparkles size={13} />, title: 'Pick the best pattern per message' },
+  { value: 'native', label: 'Native', icon: <Orbit size={13} />, title: 'The model thinks freely — no scaffold' },
+  { value: 'cot', label: 'Steps', icon: <ListOrdered size={13} />, title: 'Step-by-step — explicit numbered reasoning' },
+  { value: 'step_back', label: 'StepBack', icon: <GitBranch size={13} />, title: 'Distill governing principles first' },
+  { value: 'reflection', label: 'Reflect', icon: <RefreshCw size={13} />, title: 'Draft, self-critique, improve' },
+  { value: 'deep_reflection', label: 'Reflect+', icon: <RefreshCw size={13} />, title: 'Live draft → critique → final (extra calls)' },
+  { value: 'self_consistency', label: 'Consensus', icon: <Repeat2 size={13} />, title: 'Sample several solutions, keep the agreement' },
+];
+
+const LEGACY_SEGMENTS: { value: ReasoningStrategy; label: string; icon: ReactNode; title: string }[] = [
+  { value: 'tot', label: 'ToT', icon: <GitBranch size={13} />, title: 'Tree of Thought (offline tasks; chat runs step-by-step)' },
+  { value: 'react', label: 'ReAct', icon: <Repeat2 size={13} />, title: 'ReAct (offline tasks; chat tools already reason+act)' },
 ];
 
 /** Temperature → a human label that tracks the value. */
@@ -420,13 +431,16 @@ export function ProfileContent({
                     </div>
 
                     <div className="profile-form-group">
-                      <label>Reasoning strategy</label>
+                      <label>Thinking pattern</label>
                       <SegmentedControl
                         size="sm"
-                        ariaLabel="Reasoning strategy"
+                        ariaLabel="Thinking pattern"
                         value={reasoningStrategy}
                         onChange={(v) => setReasoningStrategy(v)}
-                        options={REASONING_SEGMENTS}
+                        options={[
+                          ...REASONING_SEGMENTS,
+                          ...LEGACY_SEGMENTS.filter(s => s.value === reasoningStrategy),
+                        ]}
                       />
                     </div>
                   </ControlCard>

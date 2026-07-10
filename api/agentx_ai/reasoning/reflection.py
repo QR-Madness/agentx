@@ -34,16 +34,12 @@ class ReflectionConfig:
     max_revisions: int = 3
     reflection_model: str | None = None  # Use different model for critique
     
-    # Prompts
-    critique_prompt: str = (
-        "Review the following response critically. "
-        "Identify any errors, weaknesses, or areas for improvement. "
-        "Be specific and constructive."
-    )
-    revision_prompt: str = (
-        "Based on the critique, revise and improve the response. "
-        "Address all the issues mentioned while maintaining what was good."
-    )
+    # Prompts. Empty ⇒ the YAML templates (`reasoning.reflection.critique` /
+    # `.revision` in system_prompts.yaml) — previously these inline strings
+    # shadowed the YAML keys, leaving them dead; now an explicit value here is
+    # the override and YAML is the source of truth.
+    critique_prompt: str = ""
+    revision_prompt: str = ""
     
     # Stopping criteria
     min_improvement_threshold: float = 0.1  # Stop if improvement is below this
@@ -265,12 +261,25 @@ class ReflectiveReasoner(ReasoningStrategy):
                 content=loader.get("reasoning.reflection.initial"),
             ),
         ]
+        return self._with_context(messages, context, task)
 
+    def _prompt(self, stage: str, override: str) -> str:
+        """The stage's system prompt: explicit config override, else the YAML
+        template (`reasoning.reflection.{stage}`). The templates were dead
+        before — the inline dataclass defaults always shadowed them."""
+        if override:
+            return override
+        try:
+            return get_prompt_loader().get(f"reasoning.reflection.{stage}")
+        except Exception as e:  # noqa: BLE001 — a template miss never kills a run
+            logger.warning(f"reflection template {stage} unavailable: {e}")
+            return "Review the response and improve it."
+
+    @staticmethod
+    def _with_context(messages, context, task) -> list[Message]:
         if context:
             messages.extend(context)
-
         messages.append(Message(role=MessageRole.USER, content=task))
-
         return messages
     
     async def _critique(
@@ -284,7 +293,7 @@ class ReflectiveReasoner(ReasoningStrategy):
         messages = [
             Message(
                 role=MessageRole.SYSTEM,
-                content=self.ref_config.critique_prompt,
+                content=self._prompt("critique", self.ref_config.critique_prompt),
             ),
             Message(
                 role=MessageRole.USER,
@@ -326,7 +335,7 @@ class ReflectiveReasoner(ReasoningStrategy):
         messages = [
             Message(
                 role=MessageRole.SYSTEM,
-                content=self.ref_config.revision_prompt,
+                content=self._prompt("revision", self.ref_config.revision_prompt),
             ),
             Message(
                 role=MessageRole.USER,

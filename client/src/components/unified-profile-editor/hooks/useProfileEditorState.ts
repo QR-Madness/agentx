@@ -9,11 +9,13 @@ import {
 import { useAgentProfile } from '../../../contexts/AgentProfileContext';
 
 export const REASONING_OPTIONS: { value: ReasoningStrategy; label: string; description: string }[] = [
-  { value: 'auto', label: 'Auto', description: 'Automatically select based on task' },
-  { value: 'cot', label: 'Chain of Thought', description: 'Step-by-step reasoning' },
-  { value: 'tot', label: 'Tree of Thought', description: 'Explore multiple paths' },
-  { value: 'react', label: 'ReAct', description: 'Reason + Act iteratively' },
-  { value: 'reflection', label: 'Reflection', description: 'Self-critique and improve' },
+  { value: 'auto', label: 'Auto', description: 'Pick the best pattern per message' },
+  { value: 'native', label: 'Native', description: 'The model thinks freely — no scaffold' },
+  { value: 'cot', label: 'Step-by-step', description: 'Explicit numbered reasoning steps' },
+  { value: 'step_back', label: 'Step-back', description: 'Distill governing principles first' },
+  { value: 'reflection', label: 'Reflection', description: 'Draft, self-critique, improve' },
+  { value: 'deep_reflection', label: 'Deep reflection', description: 'Live draft → critique → final (extra calls)' },
+  { value: 'self_consistency', label: 'Consensus', description: 'Sample several solutions, keep the agreement' },
 ];
 
 export function useProfileEditorState(profile: AgentProfile | null) {

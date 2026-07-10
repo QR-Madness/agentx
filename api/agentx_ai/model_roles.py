@@ -92,6 +92,10 @@ ROLE_MEMBERS: dict[str, dict[str, str]] = {
         "role": "fast_utility", "label": "Ambassador aide digests",
         "kind": "config", "source": "ambassador.aide.model",
     },
+    "thinking_classifier": {
+        "role": "fast_utility", "label": "Thinking-pattern classifier",
+        "kind": "config", "source": "reasoning.classifier_model",
+    },
     # deep_reasoning
     "combined_extraction": {
         "role": "deep_reasoning", "label": "Combined extraction",
@@ -144,6 +148,8 @@ INHERITS_AGENT_MODEL: dict[str, str] = {
     "ambassador.model": "the ambassador answers on its own profile's model",
     "reasoning_model": "AgentConfig: `reasoning_model or default_model`",
     "drafting_model": "AgentConfig: `drafting_model or default_model`",
+    "reasoning.step_back_model": "step_back pre-call thinks on the active turn's model",
+    "reasoning.sc_model": "self-consistency samples on the active turn's model",
 }
 
 # Bucket (c): not a general-purpose text LLM (a family can't describe it), or a

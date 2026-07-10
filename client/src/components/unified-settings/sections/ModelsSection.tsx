@@ -1,10 +1,11 @@
 /**
- * ModelsSection ("Model Limits") — local model context limits + compaction.
+ * ModelsSection ("Model Limits") — local model context limits + per-model
+ * window overrides.
  *
- * Context limits are built on the settings field kit + autosave
- * (useSettingsAutosave); the diff is top-level-key based, so nested edits
- * replace the whole `lmstudio` object. (The global default model lives in the
- * Model Roles section.)
+ * Built on the settings field kit + autosave (useSettingsAutosave); the diff
+ * is top-level-key based, so nested edits replace the whole `lmstudio` object.
+ * (The global default model lives in Model Roles; the compaction knobs moved
+ * to Memory → Conversation Context.)
  */
 
 import { useState } from 'react';
@@ -13,7 +14,6 @@ import {
   Server,
   RefreshCw,
   AlertTriangle,
-  Gauge,
   Trash2,
 } from 'lucide-react';
 import { api } from '../../../lib/api';
@@ -21,26 +21,12 @@ import { useSettingsAutosave } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { Button, Card, Badge, SectionHeader, IconButton } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
-import { NumberField, SliderField, SaveStatusChip } from '../../settings/fields';
+import { NumberField, SaveStatusChip } from '../../settings/fields';
 
 interface ContextLimits extends Record<string, unknown> {
   lmstudio: { context_window: number; max_output_tokens: number };
   models: Record<string, { context_window: number; max_output_tokens: number }>;
 }
-
-// Compaction knobs (context.* config). Sizing the verbatim window + the
-// rolling-summary trigger point so the digest kicks in near the REAL budget.
-interface ContextRatios extends Record<string, unknown> {
-  verbatim_budget_ratio: number;
-  summary_trigger_ratio: number;
-  recent_floor: number;
-}
-
-const RATIO_DEFAULTS: ContextRatios = {
-  verbatim_budget_ratio: 0.9,
-  summary_trigger_ratio: 0.85,
-  recent_floor: 4,
-};
 
 // Sane default for a fresh per-model override — the user tunes it to their
 // model's real window (the whole point of this escape hatch).
@@ -58,27 +44,6 @@ export default function ModelsSection() {
       await api.updateContextLimits(changed);
     },
     onError: err => notifyError(err, 'Context limits'),
-  });
-
-  // Compaction knobs (context.* — verbatim window + rolling-summary trigger).
-  const {
-    settings: ratios,
-    update: updateRatios,
-    status: ratioStatus,
-  } = useSettingsAutosave<ContextRatios>({
-    load: async () => {
-      const cfg = await api.getConfig();
-      const c = (cfg.context ?? {}) as Partial<ContextRatios>;
-      return {
-        verbatim_budget_ratio: c.verbatim_budget_ratio ?? RATIO_DEFAULTS.verbatim_budget_ratio,
-        summary_trigger_ratio: c.summary_trigger_ratio ?? RATIO_DEFAULTS.summary_trigger_ratio,
-        recent_floor: c.recent_floor ?? RATIO_DEFAULTS.recent_floor,
-      };
-    },
-    save: async changed => {
-      await api.updateConfig({ context: changed });
-    },
-    onError: err => notifyError(err, 'Context compaction'),
   });
 
   // Per-model context-window overrides (escape hatch for any provider — e.g. an
@@ -251,46 +216,10 @@ export default function ModelsSection() {
         </Card>
       )}
 
-      <SectionHeader
-        icon={<Gauge size={20} />}
-        title="Context Compaction"
-        description="When the rolling summary kicks in and how much of the window stays verbatim. Set these against the model's REAL window — with a correct window, most chats never compact."
-        actions={<SaveStatusChip status={ratioStatus} />}
-      />
-      {ratios && (
-        <div className="providers-list">
-          <Card className="provider-card">
-            <div className="context-limits-form">
-              <SliderField
-                label="Verbatim window budget"
-                value={ratios.verbatim_budget_ratio}
-                min={0.5}
-                max={0.98}
-                step={0.01}
-                onChange={v => updateRatios({ verbatim_budget_ratio: v })}
-                format={v => `${Math.round(v * 100)}%`}
-              />
-              <SliderField
-                label="Rolling-summary trigger"
-                value={ratios.summary_trigger_ratio}
-                min={0.5}
-                max={0.98}
-                step={0.01}
-                onChange={v => updateRatios({ summary_trigger_ratio: v })}
-                format={v => `${Math.round(v * 100)}%`}
-              />
-              <NumberField
-                label="Recent turns kept verbatim (floor)"
-                value={ratios.recent_floor}
-                min={1}
-                max={50}
-                fallback={RATIO_DEFAULTS.recent_floor}
-                onChange={v => updateRatios({ recent_floor: v })}
-              />
-            </div>
-          </Card>
-        </div>
-      )}
+      <p className="setting-hint">
+        Compaction tuning (verbatim window, digest triggers, in-turn compression) lives in
+        Memory → Conversation Context.
+      </p>
     </div>
   );
 }

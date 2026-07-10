@@ -99,14 +99,14 @@ One-liners for orientation. **Deep internals for the starred subsystems are in
 - `providers/` — abstract `ModelProvider` (LM Studio/Anthropic/OpenAI/OpenRouter/Vercel); `models.yaml` configs + defaults, `pricing.py` cost. Resolution/fallback ★
 - `config.py` — `ConfigManager` singleton; persists `data/config.json`, dot-notation access + env-var fallback
 - `drafting/` — speculative decoding, multi-stage pipelines, N-best candidates; `drafting_strategies.yaml`
-- `reasoning/` — CoT, ToT (BFS/DFS/beam), ReAct, Reflection; `orchestrator.py` picks strategy by task type
+- `reasoning/` — **Thinking Patterns**: chat patterns compiled into the streaming turn (`chat_patterns.py` + `streaming/thinking_exec.py` — native/cot/step_back/reflection/deep_reflection/self_consistency; `selection.py` = the shared auto brain) + the offline CoT/ToT/ReAct/Reflection kit for `/agent/run`. ★
 - `agent/` — `Agent` orchestrates reasoning + drafting + tools; `TaskPlanner` decomposes (chat path composes plans with the main agent model; legacy `plan()` for non-chat callers ★); `SessionManager` for conversations.
 - `agent/profiles.py` — `ProfileManager` CRUD (`data/agent_profiles.yaml`); Docker-style `agent_id` + `self_channel`. **Rule:** `kind` ∈ `agent`|`ambassador`, and ambassadors are **excluded from chat** (default/routing/`delegate_to` filter `kind=='agent'`). ★
 - `alloy/` — **Agent Teams** (user-facing name; internals/routes/config keep `alloy` — Workspaces→Projects precedent): Team (workflow) CRUD (`data/workflows.yaml`), `delegate_to` tool + `AlloyExecutor`; supervisor prompt in workflows, **soft ad-hoc roster block** in normal chats (opt-in `available_for_delegation` + `delegation_hint`; per-conversation `disable_delegation`). ★
 - `agent/tool_output_compressor.py` / `tool_output_chunker.py` — task-aware LLM compression for oversized tool outputs (section detection, JSON-path, semantic search)
 - `streaming/trajectory_compression.py` — Focus-style intra-trajectory compression for multi-round tool loops
 - `prompts/` — `PromptManager` + durable layered system-prompt stack (`LayerStore`). ★
-- `agent/context.py` — per-turn `assemble_turn_context` (verbatim budget + rolling summary + checkpoints/scratchpad). ★
+- `agent/context.py` — per-turn `assemble_turn_context` (verbatim budget + conversation-state digest compaction + checkpoints/scratchpad); knobs in Settings → Memory → Conversation Context. ★
 - `agent/ambassador.py` (+ `ambassador_storage.py`) — parallel briefer/relay; sidecar-only, never pollutes the transcript. ★
 - `logging_kit/` — centralized logging (queue handler → console/ring-buffer/`/api/logs` + daily encrypted archives), `AGENTX_LOG_*` flags. ★
 

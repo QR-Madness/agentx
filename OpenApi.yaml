@@ -4804,9 +4804,19 @@ paths:
         Sectioned partial update. `models` accepts only `roles.{fast_utility,
         deep_reasoning,summarizer}` — each "" (clear) or a concrete
         provider:model (`role:` refs and non-`provider:model` strings 400).
-        `images` and `vision` accept their whitelisted keys. `context` accepts
-        the compaction knobs `verbatim_budget_ratio`, `summary_trigger_ratio`,
-        `recent_floor` (allowlisted).
+        `images` and `vision` accept their whitelisted keys. The Conversation
+        Context family (Settings → Memory → Conversation Context) is
+        allowlisted per section — `context` (`verbatim_budget_ratio`,
+        `summary_trigger_ratio`, `recent_floor`, `preassembly_summary_enabled`,
+        `conversation_state_enabled`, `conversation_state_compaction_enabled`,
+        `rehydrate_max_turns`, `max_input_tokens`), `session.rolling_summary`
+        (`enabled`, `model`, `max_tokens`), `trajectory_compression`
+        (`enabled`, `threshold_ratio`, `preserve_recent_rounds`, `model`,
+        `max_knowledge_chars`), `compression` (`enabled`, `model`,
+        `max_summary_chars`), `memory` (`episodic_leads_enabled`,
+        `project_channels`), and `reasoning` (Thinking Patterns —
+        allowlisted per-pattern enables, classifier/step-back/sampling
+        models, `sc_k`, `min_output_tokens`).
       requestBody:
         required: true
         content:

@@ -10,7 +10,7 @@
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.202** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.203** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -84,6 +84,9 @@ hold the literature and citations.
 |------|----------|
 | [2026-07-extraction-research.md](todo/research/2026-07-extraction-research.md) | SOTA survey — memory extraction (write path); feeds Memory-Roadmap §2.10 |
 | [2026-07-memory-recall-research.md](todo/research/2026-07-memory-recall-research.md) | SOTA survey — recall accuracy + stable long-term growth (read path); feeds §2.11 + enrichments |
+| [Archive/2026-07-conversation-context-research.md](todo/research/Archive/2026-07-conversation-context-research.md) | Prior-art benchmark — conversation memory & context management; drove the conversation-state/digest slices + the v0.21.203 compaction unification |
+| [Archive/2026-07-extraction-research-raw.md](todo/research/Archive/2026-07-extraction-research-raw.md) | Raw deep-research report behind the extraction survey (unedited source) |
+| [Archive/2026-07-memory-recall-research-raw.md](todo/research/Archive/2026-07-memory-recall-research-raw.md) | Raw deep-research report behind the recall survey (unedited source) |
 
 > **Companion roadmap:** [`Memory-Roadmap.md`](Memory-Roadmap.md) — the memory-system hardening &
 > experimental roadmap, reconciled against the ⭐ backlog tracks above.

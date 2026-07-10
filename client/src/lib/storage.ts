@@ -384,6 +384,9 @@ export interface ConversationTab {
   // self-reviewing research prompt that lands a durable, cited report in the
   // attached Project. Sent as `research_mode` on the stream request.
   researchMode?: boolean;
+  // Per-conversation thinking-pattern override (Thinking Patterns). null/'' ⇒
+  // profile/auto chain. Sent as `thinking_pattern` on the stream request.
+  thinkingPattern?: string | null;
   // Per-conversation model override (e.g. "openrouter:anthropic/claude-..."),
   // chosen from the composer's inline model chip. Falls back to the profile's
   // model when unset. Sent as `model` on the stream request.
@@ -435,6 +438,7 @@ export function getConversationTabs(serverId?: string): ConversationTab[] {
     noMemorization: t.noMemorization ?? false,
     noDelegation: t.noDelegation ?? false,
     researchMode: t.researchMode ?? false,
+    thinkingPattern: t.thinkingPattern ?? null,
     modelOverride: t.modelOverride ?? null,
   }));
 }

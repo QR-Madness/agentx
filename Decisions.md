@@ -106,6 +106,22 @@ whenever the structured pass fails; (e) **coverage flows from the value, not a r
 the just-evicted turns uncovered *this* turn. **Guard:** `ConversationContextTest` JIT-coverage tests +
 `ConversationStateTest` digest/compaction/fresh-digest tests (`tests.py`).
 
+**One target gate + budget-anchored triggers (v0.21.203).** Rule (c) HAD drifted: the post-turn
+pre-warm still called `maybe_update_summary`, so on big-window models the prose summary did the real
+compaction while the state digest sat stale (and on small windows the pre-warm never fired at all —
+its `window × ratio` anchor sat above the JIT trigger's real budget). Locked in the fix: (f) **every
+compaction call site** — the JIT backstop, the post-turn pre-warm, and the background `Agent.chat`
+path — resolves its target through the ONE shared gate `agent/session.py::compaction_uses_state`;
+never inline the two flags at a call site. (g) Compaction **triggers anchor to the turn's real
+history budget** (ledger `input_budget` − granted block tokens), not the raw window — and the JIT
+backstop projects the conversation_state/summary blocks that register after it, so the ledger can't
+drop a band of turns those blocks displace with no digest coverage. (h) The tool loop's in-turn
+ceiling derives from the model's **real window** (output-reserved, 4096 floor) — never a flat cap
+(the retired 32k `MAX_INPUT_TOKENS` truncated every tool result to ~500 chars on long big-window
+conversations); `context.max_input_tokens` (default 0 = off) is the only deliberate cap.
+**Guard:** `ConversationContextTest` pre-warm/projection tests + `TrajectoryCompressionTest`
+oldest-first truncation test.
+
 ---
 
 ## Decisions
