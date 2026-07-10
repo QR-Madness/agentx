@@ -6207,20 +6207,25 @@ class ConversationStateEndpointTest(MockRedisTestBase):
 
     def setUp(self) -> None:
         super().setUp()
+        import uuid as _uuid
         from django.test import Client
         self.client = Client()
         self.mock_redis.get.return_value = None  # start from an empty stored state
+        # Run-unique id: when a real Redis is reachable the storage can slip
+        # past the mock and persist writes — a shared "conv-1" made one run's
+        # PATCH test bleed into the next run's empty-state assertion.
+        self.conv = f"conv-state-test-{_uuid.uuid4().hex[:10]}"
 
     def test_get_returns_empty_state(self):
-        resp = self.client.get("/api/conversations/conv-1/state")
+        resp = self.client.get(f"/api/conversations/{self.conv}/state")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertEqual(data["conversation_id"], "conv-1")
+        self.assertEqual(data["conversation_id"], self.conv)
         self.assertEqual(data["state"]["decisions"], [])
 
     def test_patch_replaces_slot_as_user(self):
         resp = self.client.patch(
-            "/api/conversations/conv-1/state",
+            f"/api/conversations/{self.conv}/state",
             data=json.dumps({"slot": "decisions", "entries": ["go additive first"]}),
             content_type="application/json",
         )
@@ -6233,7 +6238,7 @@ class ConversationStateEndpointTest(MockRedisTestBase):
 
     def test_patch_round_trips_provenance(self):
         resp = self.client.patch(
-            "/api/conversations/conv-1/state",
+            f"/api/conversations/{self.conv}/state",
             data=json.dumps({"slot": "open_threads", "entries": [
                 {"text": "verify episodic join", "author": "agent", "source_turn": 2},
                 {"text": "user-added note", "author": "user"},
@@ -6248,7 +6253,7 @@ class ConversationStateEndpointTest(MockRedisTestBase):
 
     def test_patch_rejects_unknown_slot(self):
         resp = self.client.patch(
-            "/api/conversations/conv-1/state",
+            f"/api/conversations/{self.conv}/state",
             data=json.dumps({"slot": "bogus", "entries": []}),
             content_type="application/json",
         )
@@ -6256,14 +6261,14 @@ class ConversationStateEndpointTest(MockRedisTestBase):
 
     def test_patch_rejects_non_list_entries(self):
         resp = self.client.patch(
-            "/api/conversations/conv-1/state",
+            f"/api/conversations/{self.conv}/state",
             data=json.dumps({"slot": "goals", "entries": "nope"}),
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 400)
 
     def test_post_not_allowed(self):
-        resp = self.client.post("/api/conversations/conv-1/state")
+        resp = self.client.post(f"/api/conversations/{self.conv}/state")
         self.assertEqual(resp.status_code, 405)
 
 
