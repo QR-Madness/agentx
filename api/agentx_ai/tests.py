@@ -5591,6 +5591,25 @@ class ConversationStateTest(MockRedisTestBase):
         super().setUp()
         # Default to an empty stored state so append/round-trip stay deterministic.
         self.mock_redis.get.return_value = None
+        # Stub the durable Postgres tier (write-through/read-through) so unit
+        # tests never touch a real connection; the durable-tier tests below
+        # drive these mocks directly. (Individual cleanups — patch.stopall
+        # would double-stop the base class's Redis patcher.)
+        for attr, target, kwargs in (
+            ("pg_save", "_pg_save", {}),
+            ("pg_load", "_pg_load", {"return_value": None}),
+            ("pg_delete", "_pg_delete", {}),
+        ):
+            patcher = patch(
+                f"agentx_ai.agent.conversation_state_storage.{target}", **kwargs
+            )
+            setattr(self, attr, patcher.start())
+            self.addCleanup(patcher.stop)
+        # Re-arm the durable-tier breaker (module-global) so a trip in an
+        # earlier test never bleeds into this one.
+        from agentx_ai.agent import conversation_state_storage as _css
+
+        _css._pg_retry_at = 0.0
 
     # --- pure transforms (no Redis) ---
     def test_apply_update_appends_and_stamps_provenance(self):
@@ -5780,7 +5799,8 @@ class ConversationStateTest(MockRedisTestBase):
         update_slot("conv-1", "artifacts", ["draft plan v1"])
         payload = self.mock_redis.set.call_args[0][1]
         self.assertIn("draft plan v1", payload)
-        self.mock_redis.expire.assert_called()  # 30-day TTL applied
+        # 30-day TTL applied atomically with the write (no set→expire gap).
+        self.assertTrue(self.mock_redis.set.call_args.kwargs.get("ex"))
 
         # Feed the persisted payload back for the render read.
         self.mock_redis.get.return_value = payload.encode()
@@ -14307,3 +14327,209 @@ class ThinkingConfigEndpointTest(TestCase):
         cfg.set.assert_any_call("reasoning.sc_k", 4)
         set_keys = [c.args[0] for c in cfg.set.call_args_list]
         self.assertNotIn("reasoning.not_a_real_key", set_keys)
+
+
+# =============================================================================
+# Durable conversation state (Postgres tier) + digest expandability
+# =============================================================================
+
+class ConversationStateDurabilityTest(MockRedisTestBase):
+    """The durable Postgres tier under the Redis hot cache (Alembic 0006)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.mock_redis.get.return_value = None
+        # Re-arm the durable-tier breaker (module-global) between tests.
+        from agentx_ai.agent import conversation_state_storage as _css
+
+        _css._pg_retry_at = 0.0
+
+    def test_save_writes_through_to_postgres(self):
+        from unittest.mock import patch as _patch
+        from agentx_ai.agent.conversation_state_storage import (
+            ConversationState, StateEntry, save_state,
+        )
+
+        state = ConversationState(goals=[StateEntry(text="finish the report")])
+        with _patch("agentx_ai.agent.conversation_state_storage._pg_save") as pg:
+            save_state("conv-durable", state)
+        pg.assert_called_once()
+        conv_id, payload = pg.call_args.args
+        self.assertEqual(conv_id, "conv-durable")
+        self.assertIn("finish the report", payload)
+        # Redis hot cache written too.
+        self.mock_redis.set.assert_called_once()
+
+    def test_redis_miss_reads_through_and_rewarns_cache(self):
+        from unittest.mock import patch as _patch
+        from agentx_ai.agent.conversation_state_storage import (
+            ConversationState, get_state,
+        )
+
+        durable = ConversationState(digest="what happened earlier").model_dump_json()
+        with _patch(
+            "agentx_ai.agent.conversation_state_storage._pg_load", return_value=durable,
+        ):
+            state = get_state("conv-parked")
+        self.assertEqual(state.digest, "what happened earlier")
+        # The hot cache is re-warmed so the next read stays on Redis.
+        self.mock_redis.set.assert_called_once()
+
+    def test_both_tiers_missing_yields_empty_state(self):
+        from unittest.mock import patch as _patch
+        from agentx_ai.agent.conversation_state_storage import get_state
+
+        with _patch(
+            "agentx_ai.agent.conversation_state_storage._pg_load", return_value=None,
+        ):
+            state = get_state("conv-fresh")
+        self.assertTrue(state.is_empty())
+
+    def test_postgres_failure_never_raises(self):
+        from unittest.mock import patch as _patch
+        from agentx_ai.agent import conversation_state_storage as _css
+        from agentx_ai.agent.conversation_state_storage import (
+            ConversationState, get_state, save_state,
+        )
+
+        with _patch(
+            "agentx_ai.agent.conversation_state_storage._pg_save",
+            side_effect=RuntimeError("pg down"),
+        ):
+            save_state("conv-x", ConversationState(digest="d"))  # must not raise
+        _css._pg_retry_at = 0.0  # re-arm so the read path is exercised too
+        with _patch(
+            "agentx_ai.agent.conversation_state_storage._pg_load",
+            side_effect=RuntimeError("pg down"),
+        ):
+            self.assertTrue(get_state("conv-x").is_empty())
+
+    def test_pg_failure_trips_breaker_and_backs_off(self):
+        """One failure silences the durable tier for the backoff window — a
+        down/unconfigured Postgres must not add a connect timeout per read."""
+        from unittest.mock import patch as _patch
+        from agentx_ai.agent.conversation_state_storage import get_state
+
+        with _patch(
+            "agentx_ai.agent.conversation_state_storage._pg_load",
+            side_effect=RuntimeError("pg down"),
+        ) as pg:
+            get_state("conv-a")
+            get_state("conv-b")  # within the backoff → durable tier skipped
+        self.assertEqual(pg.call_count, 1)
+
+    def test_corrupt_hot_cache_falls_through_to_durable(self):
+        """A truthy-but-unparseable Redis payload must not mask the durable
+        copy — bad hot-cache data is exactly what the durable tier covers."""
+        from unittest.mock import patch as _patch
+        from agentx_ai.agent.conversation_state_storage import (
+            ConversationState, get_state,
+        )
+
+        self.mock_redis.get.return_value = b"{not json"
+        durable = ConversationState(digest="still covered").model_dump_json()
+        with _patch(
+            "agentx_ai.agent.conversation_state_storage._pg_load", return_value=durable,
+        ):
+            state = get_state("conv-bitrot")
+        self.assertEqual(state.digest, "still covered")
+        # The corrupt hot-cache entry is repaired with the durable payload.
+        self.mock_redis.set.assert_called_once()
+
+    def test_both_tiers_miss_is_negative_cached_briefly(self):
+        """A stateless conversation is read per turn — the miss is cached with
+        a short TTL so it doesn't re-query Postgres on every get_state."""
+        from unittest.mock import patch as _patch
+        from agentx_ai.agent.conversation_state_storage import (
+            STATE_NEGATIVE_TTL_SECONDS, get_state,
+        )
+
+        with _patch(
+            "agentx_ai.agent.conversation_state_storage._pg_load", return_value=None,
+        ):
+            get_state("conv-fresh")
+        self.assertEqual(
+            self.mock_redis.set.call_args.kwargs.get("ex"), STATE_NEGATIVE_TTL_SECONDS
+        )
+
+    def test_clear_state_deletes_both_tiers(self):
+        from unittest.mock import patch as _patch
+        from agentx_ai.agent.conversation_state_storage import clear_state
+
+        with _patch("agentx_ai.agent.conversation_state_storage._pg_delete") as pg:
+            clear_state("conv-gone")
+        pg.assert_called_once()
+        self.mock_redis.delete.assert_called_once()
+
+    def test_digest_render_carries_the_readable_anchor(self):
+        """Pointers, not payloads: the digest block tells the model the verbatim
+        turns behind it stay readable via read_thread(current)."""
+        from agentx_ai.agent.conversation_state_storage import (
+            ConversationState, render_state,
+        )
+
+        block = render_state(ConversationState(digest="early discussion recap"))
+        self.assertIn("Summary of earlier turns", block)
+        self.assertIn('read_thread(conversation_id="current"', block)
+
+
+class ReadThreadCurrentTest(TestCase):
+    """read_thread accepts "current" — the digest-expandability path. The
+    current conversation reads the durable transcript (`conversation_logs`,
+    what rehydration uses), NOT episodic memory — expansion must work even
+    with the memory system off; past threads keep the episodic pull."""
+
+    def _call(self, conversation_id, ctx_conv=None):
+        from agentx_ai.mcp import internal_tools
+        from agentx_ai.mcp.internal_context import (
+            InternalToolContext, reset_context, set_context,
+        )
+
+        memory = MagicMock()
+        memory.read_thread.return_value = [
+            {"index": 0, "role": "user", "timestamp": "", "content": "the very first ask"},
+        ]
+        loader = MagicMock(return_value=[
+            {"index": 0, "role": "user", "timestamp": "", "content": "the very first ask"},
+        ])
+        ctx = (
+            InternalToolContext(user_id="default", conversation_id=ctx_conv)
+            if ctx_conv is not None else None
+        )
+        token = set_context(ctx)
+        try:
+            with (
+                patch.object(internal_tools, "_memory_for_ctx", return_value=(memory, None)),
+                patch("agentx_ai.agent.conversation_history.load_turn_window", loader),
+            ):
+                return internal_tools.read_thread(conversation_id, center_turn=0), memory, loader
+        finally:
+            reset_context(token)
+
+    def test_current_resolves_to_active_conversation(self):
+        result, memory, loader = self._call("current", ctx_conv="conv-live-123")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["conversation_id"], "conv-live-123")
+        loader.assert_called_once_with("conv-live-123", center_turn=0)
+        memory.read_thread.assert_not_called()  # transcript, not episodic
+        self.assertEqual(result["turn_count"], 1)
+
+    def test_current_without_context_errors_cleanly(self):
+        result, memory, loader = self._call("current", ctx_conv=None)
+        self.assertFalse(result["success"])
+        memory.read_thread.assert_not_called()
+        loader.assert_not_called()
+
+    def test_explicit_active_id_reads_transcript_too(self):
+        """The literal current-conversation id routes like "current" — the
+        substrate choice keys off identity, not the alias spelling."""
+        result, memory, loader = self._call("conv-live-123", ctx_conv="conv-live-123")
+        self.assertTrue(result["success"])
+        loader.assert_called_once_with("conv-live-123", center_turn=0)
+        memory.read_thread.assert_not_called()
+
+    def test_explicit_id_passes_through(self):
+        result, memory, loader = self._call("conv-past-9", ctx_conv="conv-live-123")
+        self.assertTrue(result["success"])
+        memory.read_thread.assert_called_once_with("conv-past-9", center_turn=0)
+        loader.assert_not_called()

@@ -58,6 +58,73 @@ def _default_reader(conversation_id: str, limit: int) -> list[tuple[str, str, di
         conn.close()
 
 
+def load_turn_window(
+    conversation_id: str,
+    *,
+    center_turn: int | None = None,
+    radius: int = 6,
+    limit: int = 15,
+) -> list[dict[str, Any]]:
+    """Verbatim user/assistant turns from the durable transcript
+    (``conversation_logs``) — the digest-expansion read behind
+    ``read_thread(conversation_id="current")``.
+
+    This reads the same substrate rehydration uses, NOT episodic memory, so
+    aged-out turns stay readable even when the memory system is off or Neo4j
+    holds nothing for the conversation. With ``center_turn``: the window of
+    turns around that 0-based index. Without it: the EARLIEST turns — digest
+    expansion wants the aged-out start of the thread; the recent turns are
+    already in the live window. Content is capped per turn like the episodic
+    reader. Best-effort: returns ``[]`` on any error (including non-UUID
+    session ids, which have no durable transcript).
+    """
+    from ..kit.agent_memory.connections import PostgresConnection
+
+    try:
+        conn: Any = PostgresConnection.get_engine().raw_connection()
+    except Exception as e:
+        logger.debug(f"turn window unavailable: {e}")
+        return []
+    rows: list[tuple] = []
+    try:
+        with conn.cursor() as cur:
+            if center_turn is not None:
+                lo = max(0, int(center_turn) - radius)
+                cur.execute(
+                    """
+                    SELECT turn_index, role, timestamp, content FROM conversation_logs
+                    WHERE conversation_id = %s AND role IN ('user', 'assistant')
+                      AND turn_index BETWEEN %s AND %s
+                    ORDER BY turn_index ASC
+                    """,
+                    (conversation_id, lo, int(center_turn) + radius),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT turn_index, role, timestamp, content FROM conversation_logs
+                    WHERE conversation_id = %s AND role IN ('user', 'assistant')
+                    ORDER BY turn_index ASC
+                    LIMIT %s
+                    """,
+                    (conversation_id, limit),
+                )
+            rows = cur.fetchall()
+    except Exception as e:  # non-UUID id, table missing, PG down — never break the tool
+        logger.debug(f"turn window read failed: {e}")
+    finally:
+        conn.close()
+    return [
+        {
+            "index": r[0],
+            "role": r[1],
+            "timestamp": str(r[2] or ""),
+            "content": (r[3] or "")[:1500],
+        }
+        for r in rows
+    ]
+
+
 def _default_labeled_reader(
     conversation_id: str, limit: int
 ) -> list[tuple[str, str, str | None]]:

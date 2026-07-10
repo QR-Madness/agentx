@@ -29,9 +29,9 @@ each one and how it feeds the others.
 | Recall (5 techniques) | recall | shipped | `RecallLayer.recall` (hybrid, entity-centric, query-expansion, HyDE, self-query) | `[active, _self_, _global]` |
 | Two-stage rerank | recall | shipped | `RecallLayer._cross_encoder_stage` — 50-candidate pool → post-fusion cross-encoder, bounded demotion (cap 2); default-ON | `[active, _self_, _global]` |
 | Stable salient core | recall | shipped | `AgentMemory.get_salient_core` → `get_salient_facts`/`get_salient_entities` (`memory/semantic.py`); injected as the prio-70 ledger block (`agent/context_ledger.py`) | `[active, _self_, _global]` |
-| Episodic thread leads ("threads to pull") | recall | shipped | `AgentMemory.derive_thread_leads` (fact `source_turn_id` → origin turn) → prio-28 pointer block; `read_thread` pull tool. Gated on episodic intent (`memory.episodic_leads_enabled`) | past conversations (excludes current) |
+| Episodic thread leads ("threads to pull") | recall | shipped | `AgentMemory.derive_thread_leads` (fact `source_turn_id` → origin turn) → prio-28 pointer block; `read_thread` pull tool (also `conversation_id="current"` — the digest-expandability path, served from the durable transcript so it works even with memory off) | leads: past conversations; pulls: any incl. current |
 | Context gating | context | shipped | `ToolOutputCompressor`, `tool_output_chunker`, trajectory compression | active |
-| Structured conversation state | working | shipped | `conversation_state_storage.py`; `update_conversation_state` tool + `GET/PATCH /api/conversations/{id}/state` | conversation |
+| Structured conversation state | working | shipped | `conversation_state_storage.py` (Redis hot cache + durable Postgres `conversation_state`); `update_conversation_state` tool + `GET/PATCH /api/conversations/{id}/state` | conversation (durable) |
 | Conversation context ledger | context | shipped | `assemble_ledger` (`agent/context_ledger.py`) — priority blocks + verbatim budget | per turn |
 | State compaction (rolling digest) | context | shipped | `SessionManager.maybe_compact_to_state` → `ConversationState.digest`; `_ensure_summary_coverage` (INV-CTX-1) | conversation |
 | Memory-tool coaching | prompts | shipped | `memory-tools` built-in prompt layer (`prompts/layers.py`) — ASSUME INTERRUPTION, recall-gating, leads-vs-transcript, untrusted content | — |
@@ -144,12 +144,12 @@ double-compress the same content).
 | Technique | Scope | Fires when | Writes / renders | Key settings |
 |-----------|-------|-----------|------------------|--------------|
 | **Verbatim window** | between turns | every turn | the recent transcript, word-for-word, newest-first | `context.verbatim_budget_ratio`, `context.recent_floor` |
-| **Conversation-state slots** | between turns | agent tool call / user edit | goals · decisions · open threads · artifacts · narrative (provenance-stamped, bounded) | `context.conversation_state_enabled` |
-| **State digest (compaction)** | between turns | history nears its budget (pre-warm at `summary_trigger_ratio`; JIT backstop before assembly) | `ConversationState.digest`, re-summarized in place | `context.conversation_state_compaction_enabled`, `context.preassembly_summary_enabled`, `session.rolling_summary.*` |
+| **Conversation-state slots** | between turns | agent tool call / user edit | goals · decisions · open threads · artifacts · narrative (provenance-stamped, bounded; Redis hot cache + durable Postgres) | `context.conversation_state_enabled` |
+| **State digest (compaction)** | between turns | history nears its budget (pre-warm at `summary_trigger_ratio`; JIT backstop before assembly) | `ConversationState.digest`, re-summarized in place — durable, and **expandable**: `read_thread("current")` pulls the verbatim turns behind it | `context.conversation_state_compaction_enabled`, `context.preassembly_summary_enabled`, `session.rolling_summary.*` |
 | **Legacy prose summary** | between turns | only when state compaction is off (+ read-back for old chats) | `session.summary` (Redis) | `session.rolling_summary.enabled` |
 | **`history_digest` fallback** | between turns | summarizer unavailable while over budget | deterministic one-line-per-turn digest block | (automatic) |
 | **Checkpoints / scratchpad** | between turns | agent tool call | Redis notes re-injected every turn (compression can't strip them) | (always on) |
-| **Rehydration** | conversation resume | cold session | reloads the durable transcript; overflow → notice block + recall | `context.rehydrate_max_turns` |
+| **Rehydration** | conversation resume | cold session | reloads the durable transcript; beyond-cap turns → notice block pointing at `read_thread("current")` + recall | `context.rehydrate_max_turns` |
 | **Episodic thread leads** | between turns | episodic phrasing ("when did we…") | ≤5 pointers into past conversations; `read_thread` pulls detail | `memory.episodic_leads_enabled` |
 | **Trajectory compression** | within a turn | tool loop crosses `threshold_ratio` of the in-turn ceiling | older tool rounds → one `[KNOWLEDGE]` block | `trajectory_compression.*` |
 | **Tool-output compression** | within a turn | one tool result is oversized | task-aware summary + structure index; full output stays retrievable | `compression.*` |

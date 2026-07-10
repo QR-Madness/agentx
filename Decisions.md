@@ -122,6 +122,23 @@ conversations); `context.max_input_tokens` (default 0 = off) is the only deliber
 **Guard:** `ConversationContextTest` pre-warm/projection tests + `TrajectoryCompressionTest`
 oldest-first truncation test.
 
+**Durable coverage + readable anchors (v0.21.205).** (i) The conversation state (slots + digest)
+has a durable Postgres tier under the Redis hot cache (`conversation_state` table, Alembic 0006;
+write-through / read-through + re-warm; TEXT key — **both tiers key on the full conversation id**,
+no truncation, so the tiers can never disagree on identity) — compaction coverage must never
+evaporate with a Redis TTL or wipe, a corrupt hot-cache payload falls through to the durable copy,
+and the durable tier is a *bonus*, never a tax: both-tiers misses are negative-cached and PG
+failures trip a short breaker so Redis-only deployments degrade clean. (ii) The digest is a
+summary, **not the record**: the verbatim turns behind it stay readable via
+`read_thread(conversation_id="current", center_turn=N)` (ambient-context resolved; the one
+spelling lives in `READ_THREAD_CURRENT_CALL`), and the digest render/coaching/overflow-notice all
+say so — a turn may leave the live window only when it is covered (digest) AND retrievable.
+(iii) **The current conversation's pull reads the durable transcript** (`conversation_logs` via
+`load_turn_window`), not episodic memory — retrievability must hold even with the memory system
+off, and no `center_turn` returns the *earliest* turns (the aged-out ones; recent turns are
+already in view). **Guard:** `ConversationStateDurabilityTest` + `ReadThreadCurrentTest`
+(`tests.py`).
+
 ---
 
 ## Decisions

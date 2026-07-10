@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.204 -->
+<!-- release-version: 0.21.205 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -145,7 +145,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   still fed the old prose summary, so on big-window models the conversation-state digest sat stale
   while a hidden second summary did the work (and on small windows the pre-warm never fired). Every
   compaction path now targets the state digest, triggers anchor to the turn's real budget, and a
-  recall-first compaction prompt preserves goals/decisions/identifiers over brevity.
+  recall-first compaction prompt preserves goals/decisions/identifiers over brevity. The state
+  (digest + slots) is now **durable** — a Postgres copy under the Redis cache, so a conversation
+  parked past the 30-day TTL keeps its coverage — and the digest is **expandable**: the agent can
+  pull the verbatim turns behind the summary on demand (and is told so, in-prompt).
 - **Big-window models no longer get their tool results shredded** — a legacy flat 32k input cap made
   mid-turn compression fire constantly and truncated every tool result to ~500 chars once a
   conversation grew past 32k tokens; the in-turn ceiling now follows the model's real window (an

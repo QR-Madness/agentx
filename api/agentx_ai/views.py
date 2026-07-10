@@ -521,14 +521,18 @@ def _append_coverage_read_blocks(blocks: list, session) -> None:
             shrink_fn=shrink_tail,
         ))
     if session.metadata.get("history_overflow"):
+        from .agent.conversation_state_storage import READ_THREAD_CURRENT_CALL
+
         blocks.append(LedgerBlock(
             key="history_overflow_notice",
             priority=58,
             content=(
                 "Note: this conversation is longer than the rehydration "
                 "window — its earliest turns are not in view (and not in the "
-                "summary). They remain in durable memory: use memory recall "
-                "and `read_thread` if early details are needed."
+                "summary). They remain readable: "
+                f"{READ_THREAD_CURRENT_CALL} pulls "
+                "the verbatim turns (earliest start at N=0); memory recall "
+                "finds the facts."
             ),
         ))
 

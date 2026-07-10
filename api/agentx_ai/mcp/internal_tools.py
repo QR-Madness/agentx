@@ -516,44 +516,84 @@ def recall_user_history(
 @register_tool(
     name="read_thread",
     description=(
-        "Pull the verbatim turns of a PAST conversation — use it to see what was "
-        "actually said in a thread surfaced under 'Threads you can pull'. Pass the "
-        "`conversation_id` from a lead (and its `center_turn` to focus on the "
-        "relevant part). Returns the real turns (both sides), not a summary. Use "
-        "sparingly — at most a couple of pulls per turn; read the one-line lead "
-        "first and pull only when the specifics matter."
+        "Pull verbatim conversation turns on demand. Two uses: (1) a PAST "
+        "conversation surfaced under 'Threads you can pull' — pass the lead's "
+        "`conversation_id` (and its `center_turn`); (2) THIS conversation's "
+        "earlier turns that have rolled into the summary digest — pass "
+        "conversation_id=\"current\", with `center_turn` N for the window "
+        "around that turn (the earliest turns start at 0) or without it for "
+        "the earliest turns. Returns the real turns (both sides), not a "
+        "summary. Use sparingly — at most a couple of pulls per turn; rely on "
+        "the digest/lead first and pull only when the exact wording matters."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "conversation_id": {
                 "type": "string",
-                "description": "The conversation to pull, from a 'Threads you can pull' lead.",
+                "description": (
+                    "The conversation to pull: an id from a 'Threads you can pull' "
+                    "lead, or \"current\" for this conversation's aged-out turns."
+                ),
             },
             "center_turn": {
                 "type": "integer",
-                "description": "Optional turn index (from the lead) to center the window on.",
+                "description": "Optional turn index to center the window on (0 = the very start).",
             },
         },
         "required": ["conversation_id"],
     },
 )
 def read_thread(conversation_id: str, center_turn: int | None = None) -> dict[str, Any]:
-    """Load a past thread's verbatim turns on demand (episodic pull)."""
+    """Load a thread's verbatim turns on demand. A PAST conversation reads the
+    episodic store; the CURRENT conversation — the digest-expandability path —
+    reads the durable transcript (`conversation_logs`, the substrate rehydration
+    uses), so turns compacted out of the live window stay readable (pointers,
+    not payloads) even when the memory system is off or unavailable."""
     if not conversation_id or not conversation_id.strip():
         return {"error": "conversation_id is required", "success": False}
+
+    from .internal_context import current_context
+
+    ctx = current_context()
+    active_id = ctx.conversation_id if ctx is not None else None
+    conv_id = conversation_id.strip()
+    if conv_id.lower() in ("current", "this"):
+        if not active_id:
+            return {
+                "error": "No active conversation to read — pass an explicit conversation_id.",
+                "success": False,
+            }
+        conv_id = active_id
+
+    if active_id and conv_id == active_id:
+        # Digest expansion: the live conversation reads the durable transcript,
+        # not episodic memory. No center_turn ⇒ the earliest (aged-out) turns —
+        # the recent ones are already in the live window.
+        from ..agent.conversation_history import load_turn_window
+
+        turns = load_turn_window(conv_id, center_turn=center_turn)
+        out: dict[str, Any] = {
+            "conversation_id": conv_id,
+            "turns": turns,
+            "turn_count": len(turns),
+            "success": True,
+        }
+        if not turns:
+            out["note"] = "No stored turns in that range."
+        return out
 
     memory, err = _memory_for_ctx()
     if memory is None:
         return err or {"error": "Memory system unavailable", "success": False}
 
     try:
-        turns = memory.read_thread(conversation_id.strip(), center_turn=center_turn)
+        turns = memory.read_thread(conv_id, center_turn=center_turn)
     except Exception as e:  # noqa: BLE001 — a tool error never breaks the turn
         return {"error": f"read_thread failed: {e}", "success": False}
 
     return {
-        "conversation_id": conversation_id,
+        "conversation_id": conv_id,
         "turns": turns,
         "turn_count": len(turns),
         "success": True,

@@ -93,7 +93,7 @@ BUILTIN_LAYERS: list[PromptLayer] = [
         id="memory-tools",
         title="Using Memory Well",
         kind="builtin",
-        default_version=1,
+        default_version=2,
         order=22,
         default=(
             "Using your memory tools well:\n"
@@ -115,6 +115,11 @@ BUILTIN_LAYERS: list[PromptLayer] = [
             "those are pointers to past discussions. Read the one-line lead first, and call "
             "`read_thread` only when the exact wording matters — at most a couple of pulls "
             "per turn.\n"
+            "- The 'Summary of earlier turns' digest is a summary, not the record: when the "
+            "exact earlier wording of THIS conversation matters, "
+            "`read_thread(conversation_id=\"current\", center_turn=N)` returns the verbatim "
+            "turns behind it (the earliest turns start at N=0; omit center_turn for the "
+            "earliest turns).\n"
             "- Keep your state coherent: supersede stale entries (use replace) rather than "
             "piling up contradictions, and prefer a few high-signal entries over many."
         ),

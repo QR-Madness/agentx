@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -32,6 +34,14 @@ logger = logging.getLogger(__name__)
 
 STATE_PREFIX = "conv_state:"
 STATE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days
+STATE_NEGATIVE_TTL_SECONDS = 60 * 10  # both-tiers miss cached briefly (bounds PG re-checks)
+PG_BACKOFF_SECONDS = 60.0  # durable-tier breaker: skip PG this long after a failure
+
+# The one true spelling of the digest-expansion call — shared by the digest
+# render and the rehydration-overflow notice so the taught signature can't
+# drift between surfaces. (The memory-tools coaching layer repeats it as
+# *versioned* prose: layer content only changes via a default_version bump.)
+READ_THREAD_CURRENT_CALL = 'read_thread(conversation_id="current", center_turn=N)'
 
 # Named slots + the freeform catch-all. Tuple order is render order.
 NAMED_SLOTS: tuple[str, ...] = ("goals", "decisions", "open_threads", "artifacts")
@@ -204,13 +214,30 @@ def render_state(state: ConversationState) -> str:
             lines.append(f"- {e.text}{marker}")
     # The rolling digest of aged-out turns comes last — it's background continuity
     # for turns no longer in the verbatim window (the INV-CTX-1 coverage surface).
+    # The digest is a summary, not the record: the anchor line tells the model the
+    # verbatim turns behind it stay readable on demand (pointers, not payloads).
     if state.digest:
         lines.append("### Summary of earlier turns")
         lines.append(state.digest)
+        lines.append(
+            f"(The verbatim turns behind this summary remain readable: "
+            f"{READ_THREAD_CURRENT_CALL} — earliest turns are N=0.)"
+        )
     return "\n".join(lines)
 
 
-# --- Redis storage -----------------------------------------------------------
+# --- Storage: Redis hot cache + durable Postgres copy ------------------------
+#
+# Redis (30-day TTL) serves every per-turn read; Postgres (`conversation_state`
+# table, Alembic 0006) is the durable copy so compaction coverage — the digest
+# is the only surviving view of aged-out turns (INV-CTX-1) — outlives the TTL
+# and a Redis wipe. Write-through on save; read-through + re-warm on a Redis
+# miss (a both-tiers miss is negative-cached briefly so stateless conversations
+# don't re-query PG per turn). Both sides are best-effort — storage must never
+# fail a turn — and PG failures trip a short breaker so a down/unconfigured
+# durable tier degrades to Redis-only instead of stalling on connect timeouts.
+# Keys are the FULL conversation id in both tiers (`conversation_state` is
+# TEXT-keyed): Redis and Postgres must never disagree on identity.
 
 def _redis():
     from ..kit.agent_memory.connections import RedisConnection
@@ -222,32 +249,147 @@ def _key(conversation_id: str) -> str:
     return f"{STATE_PREFIX}{conversation_id}"
 
 
-def get_state(conversation_id: str) -> ConversationState:
-    """Return the persisted state, or an empty state on miss/error."""
+_pg_retry_at = 0.0  # monotonic deadline; durable-tier ops skipped until then
+
+
+def _pg_ready() -> bool:
+    return time.monotonic() >= _pg_retry_at
+
+
+def _pg_trip_breaker(op: str, exc: Exception) -> None:
+    """One warning per trip, then silence for the backoff window — a down or
+    unconfigured Postgres must degrade to Redis-only, not stall every turn on
+    a connect timeout."""
+    global _pg_retry_at
+    _pg_retry_at = time.monotonic() + PG_BACKOFF_SECONDS
+    logger.warning(
+        f"conversation state durable {op} failed "
+        f"(backing off {int(PG_BACKOFF_SECONDS)}s): {exc}"
+    )
+
+
+@contextmanager
+def _pg_cursor(commit: bool = False):
+    """One durable-tier round-trip: engine-pooled raw connection, cursor,
+    optional commit; close() always returns the connection to the pool
+    (rolling back any open transaction)."""
+    from ..kit.agent_memory.connections import PostgresConnection
+
+    conn: Any = PostgresConnection.get_engine().raw_connection()
     try:
-        raw = _redis().get(_key(conversation_id))
-    except Exception as e:  # pragma: no cover — Redis offline
-        logger.debug(f"conversation state read failed: {e}")
-        return ConversationState()
-    if not raw:
-        return ConversationState()
+        with conn.cursor() as cur:
+            yield cur
+        if commit:
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def _pg_save(conversation_id: str, state_json: str) -> None:
+    """Upsert the durable copy. Raises on failure (caller trips the breaker)."""
+    with _pg_cursor(commit=True) as cur:
+        cur.execute(
+            """
+            INSERT INTO conversation_state (conversation_id, state, updated_at)
+            VALUES (%s, %s::jsonb, NOW())
+            ON CONFLICT (conversation_id)
+            DO UPDATE SET state = EXCLUDED.state, updated_at = NOW()
+            """,
+            (conversation_id, state_json),
+        )
+
+
+def _pg_load(conversation_id: str) -> str | None:
+    """Read the durable copy's JSON, or None. Raises on failure (caller trips the breaker)."""
+    with _pg_cursor() as cur:
+        cur.execute(
+            "SELECT state FROM conversation_state WHERE conversation_id = %s",
+            (conversation_id,),
+        )
+        row = cur.fetchone()
+        if row is None or row[0] is None:
+            return None
+        value = row[0]
+        return value if isinstance(value, str) else json.dumps(value)
+
+
+def _pg_delete(conversation_id: str) -> None:
+    with _pg_cursor(commit=True) as cur:
+        cur.execute(
+            "DELETE FROM conversation_state WHERE conversation_id = %s",
+            (conversation_id,),
+        )
+
+
+def _parse_state(raw: str | bytes) -> ConversationState | None:
     try:
         data = json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else str(raw))
         return ConversationState.model_validate(data)
     except Exception as e:  # pragma: no cover — corrupt payload
         logger.debug(f"conversation state parse failed: {e}")
-        return ConversationState()
+        return None
+
+
+def _redis_set(key: str, payload: str, ttl: int = STATE_TTL_SECONDS) -> None:
+    """Single atomic SET-with-expiry — no set→expire gap to strand a TTL-less key."""
+    _redis().set(key, payload, ex=ttl)
+
+
+def get_state(conversation_id: str) -> ConversationState:
+    """Return the persisted state, or an empty state on miss/error.
+
+    Redis first (the hot path every turn). On a miss — or a corrupt hot-cache
+    payload — fall back to the durable Postgres copy and re-warm Redis, so a
+    conversation resumed after the Redis TTL keeps its digest coverage instead
+    of silently starting blank. A true both-tiers miss is negative-cached
+    briefly so stateless conversations don't re-query Postgres on every
+    per-turn read.
+    """
+    raw: Any = None
+    try:
+        raw = _redis().get(_key(conversation_id))
+    except Exception as e:  # pragma: no cover — Redis offline
+        logger.debug(f"conversation state read failed: {e}")
+    if raw:
+        cached = _parse_state(raw)
+        if cached is not None:
+            return cached
+        # Corrupt hot-cache payload: fall through to the durable copy.
+
+    durable: str | None = None
+    if _pg_ready():
+        try:
+            durable = _pg_load(conversation_id)
+        except Exception as e:
+            _pg_trip_breaker("read", e)
+    state = _parse_state(durable) if durable else None
+    try:  # re-warm so the next read stays on Redis (miss ⇒ short negative TTL)
+        if state is not None and durable is not None:
+            _redis_set(_key(conversation_id), durable)
+        else:
+            _redis_set(
+                _key(conversation_id),
+                ConversationState().model_dump_json(),
+                ttl=STATE_NEGATIVE_TTL_SECONDS,
+            )
+    except Exception as e:  # pragma: no cover — Redis offline
+        logger.debug(f"conversation state re-warm skipped: {e}")
+    return state or ConversationState()
 
 
 def save_state(conversation_id: str, state: ConversationState) -> None:
-    """Persist (replace) the state object for a conversation."""
+    """Persist (replace) the state object: Redis hot cache + durable Postgres
+    (write-through). Both sides best-effort — storage must never fail a turn."""
+    payload = state.model_dump_json()
     try:
-        client = _redis()
-        key = _key(conversation_id)
-        client.set(key, state.model_dump_json())
-        client.expire(key, STATE_TTL_SECONDS)
+        _redis_set(_key(conversation_id), payload)
     except Exception as e:  # pragma: no cover — Redis offline
         logger.warning(f"conversation state write failed: {e}")
+    if _pg_ready():
+        try:
+            _pg_save(conversation_id, payload)
+        except Exception as e:
+            _pg_trip_breaker("write", e)
 
 
 def update_slot(
@@ -288,11 +430,16 @@ def update_digest(conversation_id: str, digest: str) -> ConversationState:
 
 
 def clear_state(conversation_id: str) -> None:
-    """Delete the persisted state for a conversation."""
+    """Delete the persisted state for a conversation (both stores)."""
     try:
         _redis().delete(_key(conversation_id))
     except Exception as e:  # pragma: no cover — Redis offline
         logger.debug(f"conversation state clear failed: {e}")
+    if _pg_ready():
+        try:
+            _pg_delete(conversation_id)
+        except Exception as e:
+            _pg_trip_breaker("clear", e)
 
 
 def render_state_block(conversation_id: str) -> str:

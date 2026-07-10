@@ -37,16 +37,20 @@
 - [ ] **Redis/Postgres-backed live session store** — rehydrate-from-logs (shipped) re-reads the DB on
       a cold session; a durable session store would survive restarts without the per-turn read and
       across workers.
-- [ ] **Rolling digest as a first-class `conversations` column** (vs. the current Redis 30-day TTL)
-      for durability beyond 30 days — applies to `ConversationState` (digest + slots) now that it is
-      the compaction target.
+- [x] **Durable conversation state** — shipped `[v0.21.205]`. The state object (digest + slots)
+      gained a durable Postgres tier (`conversation_state` table, Alembic 0006) under the Redis hot
+      cache: write-through on save, read-through + re-warm on a Redis miss — compaction coverage
+      survives the 30-day TTL and a Redis wipe.
 - [ ] **Hydrate the Alloy / plan-executor paths** too — the streaming chat and the background
       `Agent.chat` path now rehydrate + budget-fit; Alloy specialists are task-scoped by contract
       (deliberate), but the plan-resume path still builds its own context.
-- [ ] **>rehydrate-cap coverage** — turns beyond `context.rehydrate_max_turns` (400) can never be
-      digested (they're never loaded); today an honest `history_overflow_notice` block points the
-      model at recall/`read_thread`. A durable per-conversation digest column (above) would close
-      this properly.
+- [x] **Digest expandability + >rehydrate-cap coverage** — shipped `[v0.21.205]`. The digest is a
+      summary, not the record: `read_thread(conversation_id="current", center_turn=N)` now pulls the
+      verbatim turns behind it — served from the durable transcript (`conversation_logs` via
+      `load_turn_window`), not episodic memory, so it works even with the memory system off; no
+      `center_turn` returns the earliest (aged-out) turns (ambient-context resolved; anchor line in
+      the digest render, coaching layer v2, and the overflow notice all teach it). With the durable
+      digest above, coverage OR retrievability always exists — including beyond the rehydration cap.
 - [x] **Stable memory core (kill transient memory injection)** — shipped (Foundation #3): the
       salient core is the prio-70 maintained-not-searched block; `remember(query)` is the prio-30
       supplement, deduped against the core. (Record fixed — this had shipped but was never checked
