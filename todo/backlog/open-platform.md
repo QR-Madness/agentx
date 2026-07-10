@@ -100,6 +100,14 @@
       failures; expired-token OAuth sessions also want a refresh-then-reconnect pass.
 - [ ] **Tauri deep-link OAuth callback** — for Phase-19 cloud mode where the API isn't on the user's
       localhost; the loopback callback covers desktop + browser today (`AGENTX_OAUTH_REDIRECT_URL`).
+- [ ] **Docs-surfaces debt (RISK)** — the same feature knowledge now lives in N places: the
+      docs-site, in-app copy, CLAUDE.md/Development-Notes, and (new, v0.21.209) the seeded
+      **capability skills** (`agentx-capabilities`, `memory-and-consolidation`) that agents answer
+      "what can you do?" from. Each shipped feature widens the drift surface — a stale skill makes
+      agents *confidently wrong about the app itself*. Someday: settle the debt with a single
+      source (generate/refresh capability skills + docs pages from one structured description;
+      the planned settings agent will lean on the same foundation). Until then: touching a
+      feature's behavior means checking the capability skills too.
 - [ ] **Catalog-bundled skills** — let a connector catalog entry ship a suggested skill (usage
       know-how installed alongside the server), completing the "connectors = tools + skills" pairing.
 - [ ] **Skills index beyond streaming chat** — `_skills_block` rides the chat-stream ledger only;

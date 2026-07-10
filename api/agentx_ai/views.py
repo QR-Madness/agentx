@@ -412,7 +412,10 @@ def _skills_block(agent) -> list:
                 "## Skills\n"
                 "Named instruction packs from your skill library. When a task "
                 "matches one, call the use_skill tool with its id to load the "
-                "full instructions BEFORE doing that task:\n" + lines
+                "full instructions BEFORE doing that task. This includes "
+                "questions about yourself: asked what you can do, what your "
+                "capabilities are, or how this app or its memory works, load "
+                "the matching skill first and answer from it:\n" + lines
             ),
             shrink_fn=shrink_tail,
         )

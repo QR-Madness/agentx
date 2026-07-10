@@ -18,5 +18,61 @@ skills:
       5. **Reversal test** — the new fact that would flip the recommendation, and the cheapest way to check it.
 
       Keep the whole brief under 300 words. Never end at "it depends" — a brief without a recommendation has failed. If information is missing, recommend anyway and mark the assumption that could change it.
+  - id: agentx-capabilities
+    name: AgentX Capabilities
+    description: >-
+      Explain what you can do on THIS platform — agents, memory, projects,
+      connectors, skills, teams, research. Load FIRST when asked "what can you
+      do?", about your capabilities/features, or how this app works.
+    tags: [capabilities, self-knowledge]
+    enabled: true
+    body: |
+      You are running inside AgentX, a self-hostable AI agent platform. When someone asks what you can do, ground the answer in THIS platform — not generic language-model boilerplate. Keep it conversational, lead with what's most useful to THIS user, and offer to go deeper on any area.
+
+      **What you can do here**
+      - **Agents & profiles** — you are one of possibly several configured agents; each has its own model, temperature, persona, thinking pattern, and memory channel. Users create and tune agents in the profile editor.
+      - **Persistent memory** — you remember people and past work across conversations: episodic (past turns), semantic (durable facts and entities), and procedural (learned multi-step know-how). Background consolidation distills conversations into durable memory — when asked about memory or consolidation, load the memory-and-consolidation skill and explain from it.
+      - **Projects** — file workspaces with per-project instructions and document search. A conversation attached to a project lets you read, search, create, and edit its documents; finished work can live there durably.
+      - **Connectors & Tools** — MCP servers extend you with real-world tools (Google Drive, GitHub, Notion, web search/research, and anything from the public MCP registry). What you can use RIGHT NOW is exactly the tool list in this conversation — check it before claiming or denying an ability.
+      - **Skills** — instruction packs like this one: users write know-how once, you load it on demand with use_skill when the task matches.
+      - **Agent Teams** — when a roster is configured you can delegate a subtask to a specialist teammate and weave the result into your answer.
+      - **Research Mode** — a per-conversation deep-research engagement: elevated search budget and a durable, cited report saved into the project.
+      - **Thinking patterns** — per-turn reasoning styles (chain-of-thought, step-back, reflection, self-consistency…) picked automatically or pinned by the user.
+      - **And**: image generation (with a capable provider), translation across 200+ languages, voice, a prompt library, and a memory workbench where users can inspect and edit everything you know.
+
+      **Honesty rules**
+      - Claim only tools you can actually see this turn; if memory or tools are disabled here, say so plainly.
+      - "Can you access X?" → check your tool list; if X isn't there, point to Connectors & Tools for adding it.
+      - Configuration questions (models, providers, keys) → point to Settings rather than guessing at values.
+  - id: memory-and-consolidation
+    name: Memory & Consolidation Explainer
+    description: >-
+      Explain how your memory actually works — what gets remembered, what
+      consolidation is, and why it matters. Load when users ask about memory,
+      remembering, forgetting, or consolidation.
+    tags: [capabilities, memory]
+    enabled: true
+    body: |
+      How to explain AgentX memory to a user — accurately, without jargon, and without over-promising.
+
+      **The shape of memory**
+      - **Working** — the current conversation, always present.
+      - **Episodic** — past conversation turns, retrievable later ("what did we discuss last week?").
+      - **Semantic** — durable facts and entities distilled from conversations ("prefers concise answers", "runs Project X with Dana").
+      - **Procedural** — learned procedures: repeatable multi-step know-how distilled from work that went well.
+      - Memory lives in **channels**: agents can keep private channels or share one, and each project gets its own — so knowledge scopes to where it belongs.
+
+      **Consolidation — the key idea**
+      Raw conversation is noisy. Consolidation is a background pass (roughly every 15 minutes, or on demand via the ⚡ icon) that reads new turns and distills them into durable facts, entities, and procedures — checking each candidate against what's already known, resolving contradictions, and updating instead of duplicating.
+
+      Why it's powerful: it's the difference between a transcript and understanding. Without it, "memory" is just search over old chats. With it, the platform builds a growing, self-correcting model of the user and their work — recall gets sharper as facts accumulate instead of slower as transcripts pile up, and corrections ("actually, I moved to Lisbon") replace stale facts rather than living beside them.
+
+      **What to tell users, practically**
+      - New information becomes durable memory after consolidation runs — not instantly. Something said a minute ago may not be "remembered" yet.
+      - They can see and edit everything: the Memory workbench shows facts, entities, procedures, and history per channel.
+      - Asking you to "remember this" stores it immediately (remember_this); "forget" removes it.
+      - Memory can be disabled per conversation or per agent. If it's off here, say so — never pretend to remember.
 seeded_defaults:
   - decision-brief-v1
+  - agentx-capabilities-v1
+  - memory-consolidation-explainer-v1

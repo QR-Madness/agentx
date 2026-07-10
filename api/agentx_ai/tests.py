@@ -708,6 +708,13 @@ class SkillsTest(TestCase):
         from agentx_ai.agent.skills import SkillsManager
         return SkillsManager(config_path=Path(tmp) / "skills.yaml")
 
+    def _empty_manager(self, tmp: str):
+        """A store with every shipped seed removed — for exact-list assertions."""
+        m = self._manager(tmp)
+        for s in m.list_skills():
+            m.delete_skill(s.id)
+        return m
+
     # --- store ---
 
     def test_fresh_store_seeds_defaults_and_deletion_sticks(self) -> None:
@@ -718,10 +725,31 @@ class SkillsTest(TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             m = self._manager(tmp)
             self.assertIsNotNone(m.get_skill("decision-brief"))
-            # Delete the seed, reload the store → it must NOT come back.
+            self.assertIsNotNone(m.get_skill("agentx-capabilities"))
+            self.assertIsNotNone(m.get_skill("memory-and-consolidation"))
+            # Delete a seed, reload the store → it must NOT come back.
             self.assertTrue(m.delete_skill("decision-brief"))
             reloaded = SkillsManager(config_path=Path(tmp) / "skills.yaml")
             self.assertIsNone(reloaded.get_skill("decision-brief"))
+
+    def test_capability_seeds_advertise_their_triggers(self) -> None:
+        # The seeded self-knowledge skills must SAY when to load themselves —
+        # the index nudge is description-matching, so the trigger phrases are
+        # the contract ("what can you do" / memory / consolidation).
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            m = self._manager(tmp)
+            caps = m.get_skill("agentx-capabilities")
+            mem = m.get_skill("memory-and-consolidation")
+            assert caps is not None and mem is not None
+            self.assertIn("what can you do", caps.description.lower())
+            self.assertIn("capabilities", caps.tags)
+            self.assertIn("consolidation", mem.description.lower())
+            self.assertIn("consolidation", mem.body.lower())
+            # Available to every agent by default.
+            self.assertIsNone(caps.allowed_agent_ids)
+            self.assertTrue(caps.enabled and mem.enabled)
 
     def test_crud_round_trip_and_slug_uniqueness(self) -> None:
         import tempfile
@@ -753,8 +781,7 @@ class SkillsTest(TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            m = self._manager(tmp)
-            m.delete_skill("decision-brief")
+            m = self._empty_manager(tmp)
             m.create_skill(name="Open", description="all agents")
             m.create_skill(name="Gated", allowed_agent_ids=["agent-a"])
             m.create_skill(name="Nobody", allowed_agent_ids=[])
@@ -826,13 +853,17 @@ class SkillsTest(TestCase):
                 self.assertEqual(len(blocks), 1)
                 self.assertEqual(blocks[0].key, "skills_index")
                 self.assertIn("decision-brief", blocks[0].content)
+                self.assertIn("agentx-capabilities", blocks[0].content)
                 self.assertIn("use_skill", blocks[0].content)
+                # The capability nudge rides the index header.
+                self.assertIn("what you can do", blocks[0].content)
                 # Tools off → no index (the agent couldn't act on it).
                 agent.config.enable_tools = False
                 self.assertEqual(_skills_block(agent), [])
-                # No skills → no block.
+                # No skills at all → no block.
                 agent.config.enable_tools = True
-                m.delete_skill("decision-brief")
+                for s in m.list_skills():
+                    m.delete_skill(s.id)
                 self.assertEqual(_skills_block(agent), [])
 
     # --- endpoints ---

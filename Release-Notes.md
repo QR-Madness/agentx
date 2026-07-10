@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.208 -->
+<!-- release-version: 0.21.209 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -29,6 +29,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Skills** — teach agents *how you want things done*: named instruction packs with a markdown
   body, per-agent access, and an enable toggle. Agents see a compact index and load a skill's full
   instructions only when a task calls for it, so your library can grow without bloating every turn.
+  Ships with self-knowledge built in: ask any agent **"what can you do?"** and it loads the AgentX
+  Capabilities skill and answers about *this* platform — including a proper explanation of memory
+  and why consolidation matters — instead of generic chatbot boilerplate.
 - **OAuth connectors stop lying about sign-in** — a connector whose session expired (and can't
   refresh itself) now says "session expired — sign in again on connect" instead of "signed in",
   and the new-conversation nudge catches it.

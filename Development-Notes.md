@@ -457,7 +457,13 @@ never auto-create/connect. Tests: `MCPRegistrySearchTest` + `connectorCatalog.te
 (pydantic: `id` slug, `name`, `description`, `body` markdown, `tags`, `enabled`,
 `allowed_agent_ids` — server-style access: `None`=all/`[]`=none/whitelist) persisted by
 `SkillsManager` in `data/skills.yaml` (ProfileManager pattern: one-time `seeded_defaults` markers,
-deletions stick; shipped seed "Structured Decision Brief" mirrored in `api/defaults/skills.yaml`).
+deletions stick; seeds mirrored in `api/defaults/skills.yaml`). Shipped seeds (v0.21.209):
+"Structured Decision Brief" plus two **capability skills** — `agentx-capabilities` ("what can you
+do?" answered about THIS platform, with honesty rules incl. check-your-actual-tool-list) and
+`memory-and-consolidation` (memory shapes + why consolidation matters); the index block carries an
+explicit self-knowledge nudge, live-verified (the model loads the skill before answering). These
+seed the ground for the future settings agent; content-drift risk tracked as **docs-surfaces
+debt** in `todo/backlog/open-platform.md`.
 Per turn, `views._skills_block(agent)` emits ONE shrinkable ledger block (`skills_index`,
 priority 62, gated on `enable_tools` — an index the agent can't act on is noise) listing
 `id — name: description`; the agent loads a body on demand with the **`use_skill` internal tool**
