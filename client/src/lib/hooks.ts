@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   api,
   toApiError,
+  AgentSkill,
   HealthResponse,
   ProviderInfo,
   ProvidersHealthResponse,
@@ -274,6 +275,14 @@ export function useMCPTools() {
     []
   );
   return { tools: data?.tools ?? [], loading, error, refresh };
+}
+
+export function useSkills() {
+  const { data, loading, error, refresh } = useApi<{ skills: AgentSkill[] }>(
+    () => api.listSkills(),
+    []
+  );
+  return { skills: data?.skills ?? [], loading, error, refresh };
 }
 
 export function useAgentStatus(opts?: UseApiOptions) {

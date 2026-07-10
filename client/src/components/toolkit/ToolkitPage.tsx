@@ -12,7 +12,7 @@ import * as Accordion from '@radix-ui/react-accordion';
 import {
   X, Server, Wrench, Tag, Shield, Code, Plus, Pencil, Trash2,
   Plug, Unplug, RefreshCw, Search, Loader2, AlertTriangle, Save, ChevronDown, KeyRound,
-  ExternalLink,
+  ExternalLink, GraduationCap,
 } from 'lucide-react';
 import { useMCPServers, useMCPTools } from '../../lib/hooks';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
@@ -29,6 +29,7 @@ import {
 import { openExternal } from '../../lib/openExternal';
 import { ServerForm } from './ServerForm';
 import { ConnectorCatalogView } from './ConnectorCatalog';
+import { SkillsSection } from './SkillsSection';
 import './ToolkitPage.css';
 
 interface ToolkitPageProps {
@@ -111,7 +112,7 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
               {/* Everything else folds into collapsible cards in the same scroll. */}
               <Accordion.Root
                 type="multiple"
-                defaultValue={['connectors', 'meta', 'access', 'catalog']}
+                defaultValue={['connectors', 'skills', 'meta', 'access', 'catalog']}
                 className="toolkit-accordion-root"
               >
                 <ToolkitSection
@@ -121,6 +122,14 @@ export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
                   subtitle="Add known-good connectors, or search the MCP registry"
                 >
                   <ConnectorCatalogView />
+                </ToolkitSection>
+                <ToolkitSection
+                  value="skills"
+                  icon={<GraduationCap size={15} />}
+                  title="Skills"
+                  subtitle="Instruction packs agents load on demand with use_skill"
+                >
+                  <SkillsSection />
                 </ToolkitSection>
                 <ToolkitSection
                   value="meta"

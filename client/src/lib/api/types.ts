@@ -158,6 +158,32 @@ export interface MCPServer {
   allowed_agent_ids?: string[] | null;
 }
 
+/** A named instruction pack from the skill library. Only the compact index
+ *  (id — name: description) rides the agent's system prompt; the body loads
+ *  on demand via the use_skill internal tool. `allowed_agent_ids` mirrors MCP
+ *  servers: null = all agents, [] = none, else an agent_id whitelist. */
+export interface AgentSkill {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+  tags: string[];
+  enabled: boolean;
+  allowed_agent_ids: string[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** Client-writable skill fields (id is server-assigned from the name). */
+export interface AgentSkillInput {
+  name: string;
+  description?: string;
+  body?: string;
+  tags?: string[];
+  enabled?: boolean;
+  allowed_agent_ids?: string[] | null;
+}
+
 /** One flattened result from GET /api/mcp/registry/search (the official MCP
  *  registry, proxied + normalized server-side). Untrusted input — used only
  *  to PREFILL the Add Server form for user review. */

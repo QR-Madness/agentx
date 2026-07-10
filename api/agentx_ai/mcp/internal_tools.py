@@ -49,6 +49,9 @@ RETRIEVAL_TOOL_NAMES: frozenset[str] = frozenset({
     "workspace_search",  # legacy alias of project_search (pre-Projects rename)
     "document_query",
     "read_document",
+    # Skill bodies are verbatim instructions — compressing/re-storing them
+    # would summarize away exactly the detail the agent asked for.
+    "use_skill",
 })
 
 
@@ -1499,6 +1502,51 @@ def scratchpad_note(
         "stored": entry,
         "note_count": total,
         "note": "Scratchpad notes are re-injected into system context every turn.",
+        "success": True,
+    }
+
+
+@register_tool(
+    name="use_skill",
+    description=(
+        "Load the full instructions of a named skill from your skill library. "
+        "Your system prompt carries a compact skills index (id — name: "
+        "description); when a task matches a listed skill, call this FIRST to "
+        "load its instructions, then follow them for the task. The body is "
+        "verbatim know-how written by the user — treat it as how they want "
+        "that job done."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "skill": {
+                "type": "string",
+                "description": "The skill id (preferred) or exact name from the skills index.",
+            },
+        },
+        "required": ["skill"],
+    },
+)
+def use_skill(skill: str) -> dict[str, Any]:
+    """Return a skill's full instruction body (access-checked per agent)."""
+    from .internal_context import current_context
+    from ..agent.skills import get_skills_manager
+
+    ctx = current_context()
+    agent_id = ctx.agent_id if ctx else None
+    manager = get_skills_manager()
+    available = manager.skills_for_agent(agent_id)
+    resolved = manager.resolve(skill)
+    if resolved is None or resolved.id not in {s.id for s in available}:
+        index = ", ".join(s.id for s in available) or "(none)"
+        return {
+            "error": f"Unknown or unavailable skill '{skill}'. Available skills: {index}",
+            "success": False,
+        }
+    return {
+        "skill": resolved.id,
+        "name": resolved.name,
+        "instructions": resolved.body,
         "success": True,
     }
 

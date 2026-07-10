@@ -19,6 +19,7 @@ import { translationApi } from './translation';
 import { promptsApi } from './prompts';
 import { promptTemplatesApi } from './promptTemplates';
 import { profilesApi } from './profiles';
+import { skillsApi } from './skills';
 import { alloyApi } from './alloy';
 import { configApi } from './config';
 import { memoryApi } from './memory';
@@ -47,6 +48,7 @@ export const api = {
   ...promptsApi,
   ...promptTemplatesApi,
   ...profilesApi,
+  ...skillsApi,
   ...alloyApi,
   ...configApi,
   ...memoryApi,

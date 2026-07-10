@@ -381,6 +381,44 @@ def _research_blocks(research_active: bool) -> list:
     ]
 
 
+def _skills_block(agent) -> list:
+    """Compact skills index as a ledger block — empty when the agent has none.
+
+    Progressive disclosure: only `id — name: description` lines ride the prompt;
+    the agent pulls a full body on demand via the `use_skill` internal tool
+    (which is also why this is gated on tools being enabled — an index the
+    agent can't act on is just noise).
+    """
+    try:
+        if not getattr(agent.config, "enable_tools", True):
+            return []
+        from .agent.skills import get_skills_manager
+        skills = get_skills_manager().skills_for_agent(
+            getattr(agent.config, "agent_id", None)
+        )
+    except Exception as e:  # noqa: BLE001 — skills are additive, never fail a turn
+        logger.debug(f"Skills block skipped: {e}")
+        return []
+    if not skills:
+        return []
+    from .agent.context_ledger import LedgerBlock, shrink_tail
+
+    lines = "\n".join(f"- {s.id} — {s.name}: {s.description}" for s in skills)
+    return [
+        LedgerBlock(
+            key="skills_index",
+            priority=62,
+            content=(
+                "## Skills\n"
+                "Named instruction packs from your skill library. When a task "
+                "matches one, call the use_skill tool with its id to load the "
+                "full instructions BEFORE doing that task:\n" + lines
+            ),
+            shrink_fn=shrink_tail,
+        )
+    ]
+
+
 def _research_tool_rounds(research_active: bool, default: int) -> int:
     """Elevated tool-round cap for a research turn, else the standard default."""
     if not research_active:
@@ -2355,6 +2393,9 @@ async def agent_chat_stream(request):
             # the ad-hoc delegation roster. Extracted to a helper (see its docstring)
             # to keep this generator under the type-checker's complexity budget.
             _append_team_blocks(blocks, agent, active_workflow, session)
+
+            # Skills index (progressive disclosure — bodies load via use_skill).
+            blocks.extend(_skills_block(agent))
 
             # Re-inject any model-authored checkpoints for this conversation. They
             # live in Redis and are appended fresh each turn so trajectory
@@ -7905,6 +7946,96 @@ def context_limits(request):
 
 
 @csrf_exempt
+def _serialize_skill(s) -> dict:
+    """Client-facing skill payload (single source — used by every skills view)."""
+    return {
+        "id": s.id,
+        "name": s.name,
+        "description": s.description,
+        "body": s.body,
+        "tags": list(s.tags),
+        "enabled": s.enabled,
+        "allowed_agent_ids": (
+            list(s.allowed_agent_ids) if s.allowed_agent_ids is not None else None
+        ),
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+    }
+
+
+@csrf_exempt
+def agent_skills_list(request):
+    """
+    GET /api/agent/skills - List all skills.
+    POST /api/agent/skills - Create a skill. Body: {name, description?, body?,
+    tags?, enabled?, allowed_agent_ids?}.
+    """
+    from .agent.skills import get_skills_manager
+
+    manager = get_skills_manager()
+
+    if request.method == "GET":
+        return JsonResponse({"skills": [_serialize_skill(s) for s in manager.list_skills()]})
+
+    if request.method == "POST":
+        data, error = parse_json_body(request)
+        if error:
+            return error
+        name = (data.get("name") or "").strip()
+        if not name:
+            return json_error("Missing required field: name")
+        try:
+            skill = manager.create_skill(
+                name=name,
+                description=data.get("description") or "",
+                body=data.get("body") or "",
+                tags=list(data.get("tags") or []),
+                enabled=bool(data.get("enabled", True)),
+                allowed_agent_ids=(
+                    list(data["allowed_agent_ids"])
+                    if data.get("allowed_agent_ids") is not None
+                    else None
+                ),
+            )
+        except Exception as e:
+            return json_error(str(e), status=400)
+        return JsonResponse({"skill": _serialize_skill(skill)}, status=201)
+
+    return json_error("Method not allowed", status=405)
+
+
+@csrf_exempt
+def agent_skill_detail(request, skill_id: str):
+    """GET / PUT / DELETE /api/agent/skills/{id}."""
+    from .agent.skills import get_skills_manager
+
+    manager = get_skills_manager()
+    skill = manager.get_skill(skill_id)
+    if skill is None:
+        return json_error(f"Skill '{skill_id}' not found", status=404)
+
+    if request.method == "GET":
+        return JsonResponse({"skill": _serialize_skill(skill)})
+
+    if request.method == "PUT":
+        data, error = parse_json_body(request)
+        if error:
+            return error
+        if "name" in data and not (data.get("name") or "").strip():
+            return json_error("'name' cannot be empty")
+        try:
+            updated = manager.update_skill(skill_id, data)
+        except Exception as e:
+            return json_error(str(e), status=400)
+        return JsonResponse({"skill": _serialize_skill(updated)})
+
+    if request.method == "DELETE":
+        manager.delete_skill(skill_id)
+        return JsonResponse({"status": "deleted", "skill": skill_id})
+
+    return json_error("Method not allowed", status=405)
+
+
 def agent_profiles_list(request):
     """
     GET /api/agent/profiles - List all agent profiles.

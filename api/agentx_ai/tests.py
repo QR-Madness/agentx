@@ -697,6 +697,193 @@ class MCPRegistrySearchTest(TestCase):
         self.assertIn("unreachable", resp.json()["error"])
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class SkillsTest(TestCase):
+    """Agent Skills v1: the YAML-backed store (seeding, CRUD, per-agent
+    access), the `use_skill` internal tool, the prompt index block, and the
+    /api/agent/skills endpoints."""
+
+    def _manager(self, tmp: str):
+        from pathlib import Path
+        from agentx_ai.agent.skills import SkillsManager
+        return SkillsManager(config_path=Path(tmp) / "skills.yaml")
+
+    # --- store ---
+
+    def test_fresh_store_seeds_defaults_and_deletion_sticks(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.agent.skills import SkillsManager
+
+        with tempfile.TemporaryDirectory() as tmp:
+            m = self._manager(tmp)
+            self.assertIsNotNone(m.get_skill("decision-brief"))
+            # Delete the seed, reload the store → it must NOT come back.
+            self.assertTrue(m.delete_skill("decision-brief"))
+            reloaded = SkillsManager(config_path=Path(tmp) / "skills.yaml")
+            self.assertIsNone(reloaded.get_skill("decision-brief"))
+
+    def test_crud_round_trip_and_slug_uniqueness(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.agent.skills import SkillsManager
+
+        with tempfile.TemporaryDirectory() as tmp:
+            m = self._manager(tmp)
+            a = m.create_skill(name="Meeting Notes!", description="d", body="b", tags=["x"])
+            self.assertEqual(a.id, "meeting-notes")
+            b = m.create_skill(name="Meeting Notes!")  # same slug → unique suffix
+            self.assertNotEqual(a.id, b.id)
+            self.assertTrue(b.id.startswith("meeting-notes-"))
+
+            updated = m.update_skill(a.id, {"body": "b2", "enabled": False, "id": "hax"})
+            assert updated is not None
+            self.assertEqual(updated.body, "b2")
+            self.assertEqual(updated.id, a.id)  # id is not client-writable
+            self.assertIsNotNone(updated.updated_at)
+
+            # Persists across a reload.
+            reloaded = SkillsManager(config_path=Path(tmp) / "skills.yaml")
+            got = reloaded.get_skill(a.id)
+            assert got is not None
+            self.assertEqual(got.body, "b2")
+            self.assertFalse(got.enabled)
+
+    def test_skills_for_agent_access_semantics(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            m = self._manager(tmp)
+            m.delete_skill("decision-brief")
+            m.create_skill(name="Open", description="all agents")
+            m.create_skill(name="Gated", allowed_agent_ids=["agent-a"])
+            m.create_skill(name="Nobody", allowed_agent_ids=[])
+            m.create_skill(name="Off", enabled=False)
+
+            self.assertEqual([s.name for s in m.skills_for_agent("agent-a")], ["Open", "Gated"])
+            self.assertEqual([s.name for s in m.skills_for_agent("agent-b")], ["Open"])
+            # Unknown agent (None) only sees unrestricted skills.
+            self.assertEqual([s.name for s in m.skills_for_agent(None)], ["Open"])
+
+    def test_resolve_by_id_and_name(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            m = self._manager(tmp)
+            s = m.create_skill(name="Structured Summary")
+            assert m.resolve("structured-summary") is not None
+            resolved = m.resolve("structured summary".title())
+            assert resolved is not None
+            self.assertEqual(resolved.id, s.id)
+            self.assertIsNone(m.resolve("nope"))
+
+    # --- use_skill tool ---
+
+    def test_use_skill_tool_respects_agent_access(self) -> None:
+        import tempfile
+        from agentx_ai.mcp.internal_tools import execute_internal_tool
+        from agentx_ai.mcp.internal_context import (
+            InternalToolContext, set_context, reset_context,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            m = self._manager(tmp)
+            m.create_skill(name="Gated", body="secret steps", allowed_agent_ids=["agent-a"])
+            def run_tool(agent_id: str) -> dict:
+                token = set_context(InternalToolContext(user_id="u", agent_id=agent_id))
+                try:
+                    result = execute_internal_tool("use_skill", {"skill": "gated"})
+                    return json.loads(result.content[0]["text"])
+                finally:
+                    reset_context(token)
+
+            with patch("agentx_ai.agent.skills.get_skills_manager", return_value=m):
+                allowed = run_tool("agent-a")
+                self.assertEqual(allowed.get("instructions"), "secret steps")
+                # A different agent is denied and told what IS available.
+                denied = run_tool("agent-b")
+                self.assertIn("Unknown or unavailable", denied.get("error", ""))
+
+    def test_use_skill_is_a_retrieval_tool(self) -> None:
+        # Skill bodies are verbatim instructions — they must bypass the
+        # oversized-output compress/store gate or long skills get summarized.
+        from agentx_ai.mcp.internal_tools import is_retrieval_tool
+        self.assertTrue(is_retrieval_tool("use_skill"))
+
+    # --- prompt index block ---
+
+    def test_skills_block_lists_index_and_gates_on_tools(self) -> None:
+        import tempfile
+        from agentx_ai.views import _skills_block
+
+        with tempfile.TemporaryDirectory() as tmp:
+            m = self._manager(tmp)
+            with patch("agentx_ai.agent.skills.get_skills_manager", return_value=m):
+                agent = MagicMock()
+                agent.config.agent_id = "agent-a"
+                agent.config.enable_tools = True
+                blocks = _skills_block(agent)
+                self.assertEqual(len(blocks), 1)
+                self.assertEqual(blocks[0].key, "skills_index")
+                self.assertIn("decision-brief", blocks[0].content)
+                self.assertIn("use_skill", blocks[0].content)
+                # Tools off → no index (the agent couldn't act on it).
+                agent.config.enable_tools = False
+                self.assertEqual(_skills_block(agent), [])
+                # No skills → no block.
+                agent.config.enable_tools = True
+                m.delete_skill("decision-brief")
+                self.assertEqual(_skills_block(agent), [])
+
+    # --- endpoints ---
+
+    def test_skills_endpoints_crud(self) -> None:
+        import tempfile
+        from django.test import Client
+
+        with tempfile.TemporaryDirectory() as tmp:
+            m = self._manager(tmp)
+            with patch("agentx_ai.agent.skills.get_skills_manager", return_value=m):
+                c = Client()
+                listed = c.get("/api/agent/skills").json()["skills"]
+                self.assertIn("decision-brief", [s["id"] for s in listed])
+
+                created = c.post(
+                    "/api/agent/skills",
+                    data=json.dumps({
+                        "name": "Weekly Review",
+                        "description": "d",
+                        "body": "steps",
+                        "allowed_agent_ids": ["agent-a"],
+                    }),
+                    content_type="application/json",
+                )
+                self.assertEqual(created.status_code, 201)
+                sid = created.json()["skill"]["id"]
+                self.assertEqual(sid, "weekly-review")
+
+                missing_name = c.post(
+                    "/api/agent/skills", data=json.dumps({"body": "x"}),
+                    content_type="application/json",
+                )
+                self.assertEqual(missing_name.status_code, 400)
+
+                got = c.get(f"/api/agent/skills/{sid}").json()["skill"]
+                self.assertEqual(got["allowed_agent_ids"], ["agent-a"])
+
+                updated = c.put(
+                    f"/api/agent/skills/{sid}",
+                    data=json.dumps({"enabled": False, "allowed_agent_ids": None}),
+                    content_type="application/json",
+                )
+                self.assertEqual(updated.status_code, 200)
+                self.assertFalse(updated.json()["skill"]["enabled"])
+                self.assertIsNone(updated.json()["skill"]["allowed_agent_ids"])
+
+                self.assertEqual(c.delete(f"/api/agent/skills/{sid}").status_code, 200)
+                self.assertEqual(c.get(f"/api/agent/skills/{sid}").status_code, 404)
+
+
 class MCPServerRegistryTest(TestCase):
     def test_server_config_creation(self) -> None:
         """Test creating a server configuration."""

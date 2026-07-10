@@ -1,0 +1,22 @@
+# Shipped default skills — the cluster/manager copy of the one-time seeds in
+# api/agentx_ai/agent/skills.py (_ONE_TIME_SEEDS). Keep the two in sync.
+# Runtime store: data/skills.yaml (seeded once per store via `seeded_defaults`
+# markers — user deletions stick).
+skills:
+  - id: decision-brief
+    name: Structured Decision Brief
+    description: Turn a fuzzy choice between options into a compact, opinionated decision brief.
+    tags: [thinking, writing]
+    enabled: true
+    body: |
+      When a decision needs to be made between competing options, produce a Decision Brief with this shape:
+
+      1. **Frame** — one sentence stating the decision and its stakes/deadline.
+      2. **Options** — for each option: its strongest argument, its weakest point, and what it costs (time, money, risk).
+      3. **Criteria** — the 3-5 factors that actually matter to the decider, ranked. If you had to guess the ranking, say so and ask.
+      4. **Recommendation** — one option, stated plainly, with the two strongest reasons and the main risk being accepted.
+      5. **Reversal test** — the new fact that would flip the recommendation, and the cheapest way to check it.
+
+      Keep the whole brief under 300 words. Never end at "it depends" — a brief without a recommendation has failed. If information is missing, recommend anyway and mark the assumption that could change it.
+seeded_defaults:
+  - decision-brief-v1
