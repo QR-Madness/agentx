@@ -535,7 +535,7 @@ Replays the buffered SSE events for a detached run from the start, then follows 
 GET /api/agent/chat/runs
 ```
 
-Lists the caller's detached chat runs (newest first, capped at 50). Recovery surfaces — the Relay inbox and the conversation selector — use this to find runs whose owning tab was closed and offer to re-attach. Runs are indexed per user, so callers only see their own. Each entry: `{run_id, status, message, session_id, created_at, updated_at}`.
+Lists the caller's detached chat runs (newest first, capped at 50). Recovery surfaces — the Relay inbox and the conversation selector — use this to find runs whose owning tab was closed and offer to re-attach. Runs are indexed per user, so callers only see their own. Each entry: `{run_id, status, message, session_id, created_at, updated_at}`. Orphaned runs — a driver process that died mid-run stops refreshing its liveness beacon — are settled to `failed` here instead of listing as eternally `running`.
 
 ### Cancel a Run
 
@@ -543,7 +543,7 @@ Lists the caller's detached chat runs (newest first, capped at 50). Recovery sur
 POST /api/agent/chat/runs/{run_id}/cancel
 ```
 
-Cooperatively cancels a detached run; the runner checks the flag at SSE-event boundaries and stops pulling from the provider. Returns `{"run_id": "...", "cancel_requested": bool}`.
+Cooperatively cancels a detached run; the runner checks the flag at SSE-event boundaries and stops pulling from the provider. An **orphaned** run (no driver left to honor the flag) is settled to `cancelled` immediately. Returns `{"run_id": "...", "cancel_requested": bool, "status": "cancelled" | "running" | null}`.
 
 ### Steer a Run (live steering)
 

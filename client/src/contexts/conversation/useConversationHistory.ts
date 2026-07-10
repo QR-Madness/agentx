@@ -21,6 +21,7 @@ import {
 import { api, type ConversationSummary } from '../../lib/api';
 import { mapServerMessages } from './mapServerMessages';
 import { getTitleOverride } from '../../lib/conversationTitles';
+import { createMessageId } from '../../lib/messages';
 
 interface UseConversationHistoryArgs {
   activeServer: ServerConfig | null;
@@ -73,7 +74,7 @@ export function useConversationHistory({
   // tab so ChatPanel re-attaches on mount (used by run recovery).
   const restoreConversation = useCallback(async (
     conversationId: string,
-    opts?: { activeRun?: { runId: string } },
+    opts?: { activeRun?: { runId: string }; seedUserMessage?: string },
   ): Promise<string> => {
     // Check if already open
     const existing = tabs.find(t => t.sessionId === conversationId);
@@ -88,6 +89,20 @@ export function useConversationHistory({
 
     const response = await api.getConversationMessages(conversationId);
     const messages = mapServerMessages(response.messages);
+
+    // A still-running turn's user message exists nowhere server-side (turns
+    // persist only at turn END) — seed it from the run's stored label so the
+    // reopened tab shows what was asked instead of a blank while the attach
+    // replay streams the assistant side in.
+    const seed = opts?.activeRun ? opts?.seedUserMessage : undefined;
+    if (seed && !messages.some(m => m.type === 'user' && m.content.startsWith(seed))) {
+      messages.push({
+        id: createMessageId(),
+        type: 'user',
+        content: seed,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     const derived = messages.find(m => m.type === 'user')?.content.slice(0, 40) || 'Restored Conversation';
     const fallbackTitle = derived.length >= 40 ? derived + '...' : derived;

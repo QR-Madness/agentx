@@ -83,4 +83,10 @@
 - [ ] **Shares plumbing** — the same boundary still wants to power **Blocking tool-call approval** +
       the in-run **Exhibit `choice`** round-trip (see Future Enhancements). The drain boundary +
       `current_run_id` contextvar are now in place to build on.
+- [ ] **Run-aware conversation opens (StartPage/selector)** — v0.21.214 gave the Relay inbox
+      run lifecycle truth (liveness beacon settles orphans; Stop; resume falls back + seeds the
+      in-flight user bubble), but opening a conversation from **StartPage Recent / the selector**
+      still restores history only — it doesn't check `listChatRuns` for a live run on that
+      session, so a running turn stays invisible there until it completes. Extend those opens to
+      consult the runs index (or expose runs via context) and route through `resumeRun`.
 

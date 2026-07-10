@@ -6498,6 +6498,82 @@ class ConversationStateTest(MockRedisTestBase):
 
 
 @override_settings(AGENTX_AUTH_ENABLED=False)
+class ChatRunLifecycleTest(TestCase):
+    """Orphaned detached runs (driver process died mid-run) must settle instead
+    of haunting the Relay inbox as eternally-"running" until the 2h TTL, and
+    Stop must work on them even though no driver is left to honor the flag."""
+
+    def _state(self, status="running", alive_ago=None, updated_ago=None):
+        from datetime import datetime, timedelta, UTC
+        s: dict = {"status": status}
+        now = datetime.now(UTC)
+        if alive_ago is not None:
+            s["alive_at"] = (now - timedelta(seconds=alive_ago)).isoformat()
+        if updated_ago is not None:
+            s["updated_at"] = (now - timedelta(seconds=updated_ago)).isoformat()
+        return s
+
+    def test_stale_detection_uses_liveness_beacon(self) -> None:
+        from agentx_ai.streaming.chat_run import _is_stale_running
+
+        self.assertFalse(_is_stale_running(self._state(alive_ago=10)))
+        self.assertTrue(_is_stale_running(self._state(alive_ago=300)))
+        # A fresh beacon wins even when updated_at is ancient — updated_at only
+        # changes on status marks, never during healthy streaming.
+        self.assertFalse(_is_stale_running(self._state(alive_ago=10, updated_ago=3600)))
+        # Legacy entries (written before the beacon) use the coarse fallback.
+        self.assertFalse(_is_stale_running(self._state(updated_ago=60)))
+        self.assertTrue(_is_stale_running(self._state(updated_ago=16 * 60)))
+        # Settled runs are never stale.
+        self.assertFalse(_is_stale_running(self._state(status="done", alive_ago=9999)))
+
+    def test_cancel_run_settles_orphans_immediately(self) -> None:
+        from agentx_ai.streaming import chat_run
+
+        marked: list[tuple[str, str]] = []
+        with patch.object(chat_run.store, "get_state", return_value=self._state(alive_ago=300)), \
+                patch.object(chat_run.store, "request_cancel", return_value=True), \
+                patch.object(chat_run.store, "mark",
+                             side_effect=lambda rid, st: marked.append((rid, st))):
+            out = chat_run.cancel_run("r-orphan")
+        self.assertEqual(out["status"], "cancelled")
+        self.assertTrue(out["cancel_requested"])
+        self.assertEqual(marked, [("r-orphan", "cancelled")])
+
+    def test_cancel_run_live_stays_cooperative(self) -> None:
+        from agentx_ai.streaming import chat_run
+
+        with patch.object(chat_run.store, "get_state", return_value=self._state(alive_ago=5)), \
+                patch.object(chat_run.store, "request_cancel", return_value=True), \
+                patch.object(chat_run.store, "mark") as mark:
+            out = chat_run.cancel_run("r-live")
+        self.assertEqual(out["status"], "running")
+        self.assertTrue(out["cancel_requested"])
+        mark.assert_not_called()
+
+    def test_cancel_run_missing(self) -> None:
+        from agentx_ai.streaming import chat_run
+
+        with patch.object(chat_run.store, "get_state", return_value=None):
+            out = chat_run.cancel_run("r-gone")
+        self.assertIsNone(out["status"])
+        self.assertFalse(out["cancel_requested"])
+
+    def test_list_runs_settles_stale_running_entries(self) -> None:
+        from agentx_ai.streaming import chat_run
+
+        stale = self._state(alive_ago=300)
+        stale.update({"message": "orphaned turn", "session_id": "", "created_at": ""})
+        with patch.object(chat_run, "_redis") as redis_fn, \
+                patch.object(chat_run.store, "get_state", return_value=stale), \
+                patch.object(chat_run.store, "mark") as mark:
+            redis_fn.return_value.zrevrange.return_value = [b"r-stale"]
+            runs = chat_run.store.list_runs("default")
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["status"], "failed")
+        mark.assert_called_once_with("r-stale", "failed")
+
+
 class ConversationStateEndpointTest(MockRedisTestBase):
     """GET/PATCH /api/conversations/<id>/state — the editable state surface (Slice 1b)."""
 

@@ -62,8 +62,12 @@ export const agentApi = {
     );
   },
 
-  /** Cooperatively cancel a detached chat run (the Stop button when streaming). */
-  async cancelChatRun(runId: string): Promise<{ run_id: string; cancel_requested: boolean }> {
+  /** Cooperatively cancel a detached chat run (the Stop button when streaming).
+   * `status` reports the post-cancel state — orphaned runs (driver process
+   * died) are settled to "cancelled" immediately server-side. */
+  async cancelChatRun(
+    runId: string,
+  ): Promise<{ run_id: string; cancel_requested: boolean; status?: string | null }> {
     return apiRequest(`/api/agent/chat/runs/${encodeURIComponent(runId)}/cancel`, {
       method: 'POST',
     });

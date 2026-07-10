@@ -41,7 +41,9 @@ RUN_TTL_SECONDS = 2 * 60 * 60          # 2h — outlives a reasonable reopen win
 EVENTS_MAXLEN = 5000                   # cap buffered events per run
 STEER_MAXLEN = 10                      # cap pending steer messages per run
 TAIL_BLOCK_MS = 2000                   # XREAD block timeout while tailing
-STALE_RUNNING_SECONDS = 15 * 60        # a "running" run older than this is orphaned
+STALE_RUNNING_SECONDS = 15 * 60        # legacy orphan threshold (no alive_at field)
+HEARTBEAT_SECONDS = 20                 # driver-thread liveness beacon period
+ALIVE_STALE_SECONDS = 90               # no beacon for this long ⇒ the driver is dead
 MAX_INDEX = 50                         # cap runs retained per user in the index
 MESSAGE_LABEL_MAX = 200                # truncate the stored message used as a label
 
@@ -109,6 +111,7 @@ class ChatRunStore:
                     "status": "running",
                     "created_at": now,
                     "updated_at": now,
+                    "alive_at": now,
                     "user_id": user_id or "default",
                     "message": (message or "")[:MESSAGE_LABEL_MAX],
                     "session_id": session_id or "",
@@ -152,6 +155,16 @@ class ChatRunStore:
             client.expire(_events_key(run_id), RUN_TTL_SECONDS)
         except Exception as e:
             logger.warning(f"chat_run append_event failed: {e}")
+
+    def touch_alive(self, run_id: str) -> None:
+        """Liveness beacon from the driver thread. A run whose beacon stops is
+        orphaned (process died mid-run) — stale detection keys off this."""
+        try:
+            client = _redis()
+            client.hset(_state_key(run_id), "alive_at", datetime.now(UTC).isoformat())
+            client.expire(_state_key(run_id), RUN_TTL_SECONDS)
+        except Exception as e:
+            logger.debug(f"chat_run touch_alive failed: {e}")
 
     def mark(self, run_id: str, status: str) -> None:
         try:
@@ -222,7 +235,12 @@ class ChatRunStore:
             return []
 
     def list_runs(self, user_id: str, *, limit: int = MAX_INDEX) -> list[dict]:
-        """Return this user's runs newest-first, pruning stale index entries."""
+        """Return this user's runs newest-first, pruning stale index entries.
+
+        Settles orphans in passing: a "running" run whose driver stopped
+        beaconing (process died mid-run) is marked failed here instead of
+        haunting the Relay inbox as eternally-running until its 2h TTL.
+        """
         try:
             client = _redis()
             index_key = _index_key(user_id)
@@ -242,10 +260,14 @@ class ChatRunStore:
                 except Exception:
                     pass
                 continue
+            status = state.get("status", "running")
+            if _is_stale_running(state):
+                self.mark(run_id, "failed")
+                status = "failed"
             runs.append(
                 {
                     "run_id": run_id,
-                    "status": state.get("status", "running"),
+                    "status": status,
                     "message": state.get("message", ""),
                     "session_id": state.get("session_id") or None,
                     "created_at": state.get("created_at", ""),
@@ -299,6 +321,19 @@ def _drive_run(run_id: str, gen_factory: GenFactory) -> None:
     """Consume the generator in a fresh event loop, fanning events into Redis."""
     from .status import clear_run_throttle, current_run_id
 
+    # Liveness beacon on a sibling thread: immune to the event loop blocking on
+    # a slow provider/tool. If this process dies, the beacon stops and stale
+    # detection settles the run instead of leaving an eternal "running" orphan.
+    hb_stop = threading.Event()
+
+    def _heartbeat() -> None:
+        while not hb_stop.wait(HEARTBEAT_SECONDS):
+            store.touch_alive(run_id)
+
+    threading.Thread(
+        target=_heartbeat, name=f"chat-run-hb-{run_id}", daemon=True
+    ).start()
+
     async def _run() -> None:
         # Make the run resolvable ambiently so any phase in the generator's call
         # tree (recall, context assembly, tool loop) can publish a `status` event
@@ -343,20 +378,52 @@ def _drive_run(run_id: str, gen_factory: GenFactory) -> None:
             store.mark(run_id, "failed")
         except Exception:
             pass
+    finally:
+        hb_stop.set()
 
 
 def _is_stale_running(state: dict) -> bool:
+    """True when a "running" run's driver is evidently gone.
+
+    Primary signal: the ``alive_at`` beacon (refreshed every HEARTBEAT_SECONDS
+    by the driver's sibling thread) going quiet for ALIVE_STALE_SECONDS —
+    a process death shows up within ~2 beacon periods. Legacy entries written
+    before the beacon existed fall back to the coarse updated_at threshold.
+    """
     if state.get("status") != "running":
         return False
-    updated = state.get("updated_at")
-    if not updated:
+    stamp = state.get("alive_at")
+    threshold = ALIVE_STALE_SECONDS
+    if not stamp:
+        stamp = state.get("updated_at")
+        threshold = STALE_RUNNING_SECONDS
+    if not stamp:
         return False
     try:
-        ts = datetime.fromisoformat(updated)
+        ts = datetime.fromisoformat(stamp)
         age = (datetime.now(UTC) - ts).total_seconds()
-        return age > STALE_RUNNING_SECONDS
+        return age > threshold
     except Exception:
         return False
+
+
+def cancel_run(run_id: str) -> dict:
+    """Cancel a run, settling it immediately when its driver is already dead.
+
+    A live run is cancelled cooperatively (the driver checks the flag at SSE
+    event boundaries). An orphaned run has no driver to honor the flag — mark
+    it cancelled right here so Stop actually clears it from the inbox.
+    """
+    state = store.get_state(run_id)
+    if state is None:
+        return {"run_id": run_id, "cancel_requested": False, "status": None}
+    requested = store.request_cancel(run_id)
+    status = state.get("status", "running")
+    if _is_stale_running(state):
+        store.mark(run_id, "cancelled")
+        status = "cancelled"
+        logger.info(f"Settled orphaned chat run {run_id} as cancelled (driver gone)")
+    return {"run_id": run_id, "cancel_requested": requested, "status": status}
 
 
 async def tail_chat_run(run_id: str, last_id: str = "0") -> AsyncGenerator[str]:

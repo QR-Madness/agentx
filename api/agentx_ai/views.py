@@ -3976,10 +3976,11 @@ def agent_chat_run_cancel(request, run_id):
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
 
-    from .streaming.chat_run import store
+    from .streaming.chat_run import cancel_run
 
-    requested = store.request_cancel(run_id)
-    return JsonResponse({"run_id": run_id, "cancel_requested": requested})
+    # Settles orphaned runs (driver process died) immediately — there is no
+    # driver left to honor a cooperative flag, and Stop must actually stop.
+    return JsonResponse(cancel_run(run_id))
 
 
 @csrf_exempt

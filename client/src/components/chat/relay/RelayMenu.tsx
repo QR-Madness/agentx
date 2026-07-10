@@ -30,6 +30,7 @@ import {
   Play,
   Radio,
   Sparkles,
+  Square,
   Telescope,
   User,
   Users,
@@ -40,6 +41,7 @@ import {
 import { api } from '../../../lib/api';
 import type { ActiveChatRun, BackgroundChatJob } from '../../../lib/api';
 import { useConversation } from '../../../contexts/ConversationContext';
+import { useNotify } from '../../../contexts/NotificationContext';
 import { orphanedRuns } from '../../../contexts/conversation/orphanedRuns';
 import { DropdownPortal } from '../../ui/DropdownPortal';
 import { useIsMobile } from '../../../lib/hooks';
@@ -172,7 +174,9 @@ export function RelayMenu({
   const [jobs, setJobs] = useState<BackgroundChatJob[]>([]);
   const [runs, setRuns] = useState<ActiveChatRun[]>([]);
   const [loading, setLoading] = useState(false);
+  const [stopping, setStopping] = useState<string | null>(null);
   const { tabs, resumeRun } = useConversation();
+  const { notify, notifyError } = useNotify();
 
   // Runs still going whose owning tab is closed — the recoverable ones.
   const liveRuns = useMemo(() => orphanedRuns(runs, tabs), [runs, tabs]);
@@ -226,8 +230,30 @@ export function RelayMenu({
   }, [isOpen]);
 
   const handleResume = async (run: ActiveChatRun) => {
-    await resumeRun(run);
-    onClose();
+    try {
+      await resumeRun(run);
+      onClose();
+    } catch (err) {
+      notifyError(err);
+    }
+  };
+
+  const handleStop = async (run: ActiveChatRun) => {
+    setStopping(run.run_id);
+    try {
+      const res = await api.cancelChatRun(run.run_id);
+      // A live run settles cooperatively (next SSE boundary); an orphaned one
+      // is settled server-side immediately. Either way it leaves "running".
+      setRuns(prev => prev.map(r =>
+        r.run_id === run.run_id
+          ? { ...r, status: res.status && res.status !== 'running' ? res.status : 'cancelled' }
+          : r));
+      notify({ kind: 'success', title: 'Run stopped', message: run.message.slice(0, 80) || run.run_id });
+    } catch (err) {
+      notifyError(err);
+    } finally {
+      setStopping(null);
+    }
   };
 
   const dismiss = async (jobId: string) => {
@@ -424,14 +450,25 @@ export function RelayMenu({
                     {run.message.length > 80 ? '…' : ''}
                   </span>
                 </div>
-                <button
-                  className="relay-resume-btn"
-                  onClick={() => handleResume(run)}
-                  title="Reopen this run and continue streaming"
-                >
-                  <Play size={12} />
-                  <span>Resume</span>
-                </button>
+                <div className="relay-run-actions">
+                  <button
+                    className="relay-resume-btn"
+                    onClick={() => handleResume(run)}
+                    title="Reopen this run and continue streaming"
+                  >
+                    <Play size={12} />
+                    <span>Resume</span>
+                  </button>
+                  <button
+                    className="relay-stop-btn"
+                    onClick={() => handleStop(run)}
+                    disabled={stopping === run.run_id}
+                    title="Stop this run"
+                  >
+                    <Square size={12} />
+                    <span>Stop</span>
+                  </button>
+                </div>
               </li>
             ))}
           </ul>

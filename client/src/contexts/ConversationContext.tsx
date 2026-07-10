@@ -55,7 +55,7 @@ interface ConversationContextValue {
   isLoadingHistory: boolean;
   restoreConversation: (
     conversationId: string,
-    opts?: { activeRun?: { runId: string } },
+    opts?: { activeRun?: { runId: string }; seedUserMessage?: string },
   ) => Promise<string>;
   refreshHistory: () => Promise<void>;
 

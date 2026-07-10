@@ -1053,7 +1053,9 @@ paths:
       summary: Cancel a detached chat run
       description: >-
         Cooperative cancel — the detached runner checks the flag at SSE-event
-        boundaries and stops pulling from the provider.
+        boundaries and stops pulling from the provider. An **orphaned** run
+        (its driver process died mid-run, so no one is left to honor the flag)
+        is settled to `cancelled` immediately.
       parameters:
         - name: run_id
           in: path
@@ -1062,7 +1064,7 @@ paths:
             type: string
       responses:
         '200':
-          description: Cancellation requested
+          description: Cancellation requested (or settled, for orphaned runs)
           content:
             application/json:
               schema:
@@ -1072,6 +1074,13 @@ paths:
                     type: string
                   cancel_requested:
                     type: boolean
+                  status:
+                    type: string
+                    nullable: true
+                    description: >-
+                      Post-cancel status — `cancelled` when settled immediately
+                      (orphan), `running` while a live run winds down
+                      cooperatively, `null` when the run is unknown/expired.
         '405':
           description: POST required
 

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.213 -->
+<!-- release-version: 0.21.214 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -53,6 +53,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   icons (thinking mode, memory, team, background send, model, project, state, attach, enhance,
   auto-title), plus the live-runs and background inbox. On mobile the chip pile is gone — the
   input row is just avatar · message · relay · send, and the Relay opens as a bottom sheet.
+  Live runs now tell the truth: a run orphaned by a server restart settles itself within
+  ~90 seconds instead of spinning forever, every run row has a working **Stop**, and **Resume**
+  always lands — even when the conversation was deleted or its first turn hasn't persisted yet,
+  reopening shows your message and streams the rest in instead of a blank tab.
 - **One Thinking Mode picker** — thinking patterns and Research Mode are now a single choice
   (they were always mutually exclusive server-side; the menu finally says so), and every turn
   wears a badge showing the mode it actually ran with.
