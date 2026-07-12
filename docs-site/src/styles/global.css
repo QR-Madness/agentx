@@ -83,7 +83,15 @@ html {
 }
 
 body {
-  background: var(--color-bg-2);
+  /* Cosmic backdrop — faint monochrome light pooling over the dark base for
+     depth. Pure light, no hue, so content colours are untouched. Fixed so it
+     sits behind the scroll like a constant sky. */
+  background:
+    radial-gradient(1150px 740px at 14% -8%, color-mix(in oklab, var(--color-text) 8%, transparent), transparent 64%),
+    radial-gradient(960px 660px at 106% 2%, color-mix(in oklab, var(--color-text) 5.5%, transparent), transparent 58%),
+    radial-gradient(1000px 800px at 50% 116%, color-mix(in oklab, var(--color-text) 3%, transparent), transparent 60%),
+    var(--color-bg-2);
+  background-attachment: fixed;
   color: var(--color-text);
   font-family: var(--font-sans);
   line-height: 1.5;
@@ -196,6 +204,16 @@ a:hover {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   position: relative;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease,
+    border-color 0.25s ease;
+}
+/* Interactive glass cards lift out of the dark on hover — depth, not colour. */
+a.ax-glass:hover,
+.ax-glass-hover:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-border-2);
+  box-shadow: 0 16px 44px -20px rgba(0, 0, 0, 0.75),
+    0 0 0 1px color-mix(in oklab, var(--color-text) 6%, transparent);
 }
 .ax-glass::before {
   content: "";
@@ -383,6 +401,7 @@ a:hover {
 }
 .ax-prose a:not(.anchor):hover {
   text-decoration-color: var(--color-accent-hover);
+  text-shadow: 0 0 16px color-mix(in oklab, var(--color-accent-hover) 40%, transparent);
 }
 
 /* ── Inline code & code blocks ────────────────────────────────────────── */
