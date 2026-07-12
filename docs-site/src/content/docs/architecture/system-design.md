@@ -122,3 +122,65 @@ graph TD
     CD --> |no conflict| ST[Store<br/>upsert_entity + learn_fact]
     RS --> ST
 ```
+
+## MCP client architecture
+
+AgentX reaches [connectors](../features/mcp.md) through a `ToolExecutor` and a persistent
+`MCPClientManager`, which loads server definitions from `mcp_servers.json` and holds connections
+open over three transports — stdio, SSE, and streamable HTTP.
+
+```mermaid
+graph LR
+    subgraph AgentX
+        A[Agent] --> TE[ToolExecutor]
+        TE --> MCM[MCPClientManager]
+        MCM --> SR[ServerRegistry]
+        SR --> |loads| CF[mcp_servers.json]
+    end
+
+    subgraph Transports
+        MCM --> STDIO[stdio]
+        MCM --> SSE[SSE]
+        MCM --> HTTP[Streamable HTTP]
+    end
+
+    subgraph External["External MCP Servers"]
+        STDIO --> FS[Filesystem]
+        STDIO --> GH[GitHub]
+        SSE --> BS[Web Search]
+        HTTP --> PG[PostgreSQL]
+        HTTP --> Custom[Custom...]
+    end
+```
+
+## MCP tool execution
+
+Within a turn, the agent converts connected MCP tools into the provider's function-calling
+format, runs the model, and executes each returned tool call through the manager before looping
+back for a final answer. The day-to-day view is on the [Connectors & Tools](../features/mcp.md)
+page.
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant TE as ToolExecutor
+    participant MCM as MCPClientManager
+    participant S as MCP Server
+
+    A->>A: _get_tools_for_provider()
+    Note over A: Convert MCP tools to<br/>provider function-calling format
+
+    A->>A: Provider.complete(messages, tools)
+    Note over A: Model returns tool_calls
+
+    loop For each tool_call
+        A->>TE: find_tool(name) → ToolInfo
+        A->>MCM: call_tool_sync(name, args)
+        MCM->>S: Execute via MCP protocol
+        S-->>MCM: Result
+        MCM-->>A: ToolResult
+        A->>A: Append tool result to messages
+    end
+
+    A->>A: Provider.complete(messages) → final response
+```

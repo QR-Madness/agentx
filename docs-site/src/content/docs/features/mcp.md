@@ -1,196 +1,119 @@
-# Connectors & Tools (MCP Client)
+# Connectors & Tools
 
-AgentX acts as an MCP (Model Context Protocol) client, connecting to external tool servers that expose filesystem, database, search, and custom capabilities. The **Connectors & Tools** page in the client is the control center for all of it: your servers and their OAuth state, a curated connector catalog, live search of the public MCP registry, the discovered tool catalog, per-agent access, and the [skill library](../api/endpoints.md#skills).
+AgentX is an **MCP (Model Context Protocol) client** — it connects to external tool servers that
+give agents real-world reach: web search, filesystems, code hosts, docs, design and productivity
+apps, payments, and more. The **Connectors & Tools** page is the control center: your connected
+servers, a curated connector catalog, live search of the public MCP registry, the discovered
+tools, per-agent tool access, and the skill library.
 
-## Connector Catalog
+## The connector catalog
 
-The fastest way to give agents real-world reach. The catalog is organized into three wedge-ranked **intelligence lenses** (tabs), so it's well-rounded across both kinds of intelligence an agent needs:
+The fastest way to give agents real-world reach. Connectors are grouped into three
+**intelligence lenses**, so your agents stay well-rounded across the kinds of intelligence they
+need:
 
-- **Global Intelligence** — the real world beyond your codebase: *Web & Search* (Exa), *Research & Reference* (arXiv, Wikipedia, Hugging Face).
-- **Technical Intelligence** — software & systems: *Docs & APIs* (AWS Knowledge, Context7, Microsoft Learn, Cloudflare Docs, DeepWiki), *Code & Dev* (GitHub, Sentry, Vercel, Cloudflare Browser Rendering, Filesystem, Playwright).
-- **Workspace & Apps** — your tools & content: *Productivity* (Notion, Linear, Atlassian, Asana, monday.com, Zapier), *Design* (Figma, Canva), *Business & Payments* (Stripe, PayPal), *Files & Storage* (Google Drive), *Memory & Local* (Knowledge-Graph memory).
+- **Global Intelligence** — the world beyond your code: web & search (Exa), research & reference
+  (arXiv, Wikipedia, Hugging Face).
+- **Technical Intelligence** — software & systems: docs & APIs (AWS Knowledge, Context7,
+  Microsoft Learn, Cloudflare Docs, DeepWiki) and code & dev (GitHub, Sentry, Vercel, Playwright,
+  Filesystem).
+- **Workspace & Apps** — your tools & content: productivity (Notion, Linear, Atlassian, Asana,
+  monday.com, Zapier), design (Figma, Canva), payments (Stripe, PayPal), storage (Google Drive),
+  and local knowledge-graph memory.
 
-Each connector is a compact tile with a glanceable **auth badge** (*No sign-in* / *OAuth* / *API key* / *Local*) and a status pip (*Added* / *Coming soon*). Clicking a tile opens **one connector dialog** that covers the whole lifecycle: guided quick-add for a new connector (setup steps + only the fields it needs; OAuth chains straight into browser sign-in), live status + Connect for an added one, or the gate reason for a "Coming soon" entry. Full server management (rename, tool access, reset auth, remove) stays in the Servers section above.
+Each connector is a tile that shows at a glance how it signs in — from no sign-in, through
+OAuth, to an API key — and whether you've added it. Click one to open a single dialog that walks
+the whole lifecycle: guided quick-add with only the fields that connector needs (OAuth chains
+straight into browser sign-in), live status and **Connect** once it's added, or the reason it's
+still gated. Deeper server management — rename, tool access, reset auth, remove — lives in the
+**Servers** section above the catalog.
 
-The **search box filters the shelf live** — typing a connector's name jumps straight to its tile. When you're after something not in the catalog, the same box falls back to the **official MCP registry** (`registry.modelcontextprotocol.io`) via the API proxy (`GET /api/mcp/registry/search`); any result maps into the prefilled server form (remote endpoints directly; npm/PyPI/OCI packages as `npx` / `uvx` / `docker run` stdio commands). Registry entries are community-published — review commands and URLs before saving.
+The **search box filters the catalog live**; when what you want isn't there, the same box falls
+back to the official **MCP registry** (`registry.modelcontextprotocol.io`) and maps any result
+into a prefilled server form (remote endpoints directly; npm / PyPI / OCI packages as `npx` /
+`uvx` / `docker run` commands). Registry entries are community-published — review the commands
+and URLs before saving.
 
-> **Stripe** authenticates with a **restricted API key** (`rk_…`) passed as a Bearer header — its OAuth has no dynamic client registration. **Exa** uses a free API key sent as an `x-api-key` header. **arXiv** and **Wikipedia** run locally via `npx`/`uvx` (Node/`uv` on the API host). **AWS Knowledge**, **Cloudflare Docs**, **DeepWiki**, **Microsoft Learn**, and **Hugging Face** are open — no sign-in.
+### Google Workspace — Developer Preview only
 
-### Google Workspace connectors — Developer Preview only
+Google Drive and the other Google Workspace servers (Docs, Gmail, Slides, …) sit behind a
+**Coming soon** badge because they're part of Google's
+[Workspace Developer Preview Program](https://developers.google.com/workspace/preview):
+enrollment needs a Google **Workspace** account and a registered Cloud project — personal
+accounts can't enroll, and approval takes days. Until you're enrolled, sign-in *succeeds* but
+every tool call fails with `The caller does not have permission`.
 
-**Google Drive** (and every other Google Workspace MCP server — Docs, Gmail, Slides, …) is gated behind a **Coming soon** badge in the catalog because these servers are part of the [Google Workspace Developer Preview Program](https://developers.google.com/workspace/preview): enrollment requires a Google **Workspace** account plus a registered Cloud project (consumer/personal Google accounts can't enroll; approval takes days). Until your account and project are enrolled, sign-in succeeds but every tool call fails with `The caller does not have permission`. If you *are* enrolled, add the server manually via **Add Server** using the settings below — it needs a **pre-registered OAuth app** in your own Google Cloud project (there is no dynamic registration):
+If you are enrolled, add the server manually with **Add Server** — it needs a **pre-registered
+OAuth app** in your own Google Cloud project (no dynamic registration):
 
-1. In the Google Cloud console, create or select a project; enable the **Google Drive API** and the **Google Drive MCP API**.
-2. Configure the OAuth consent screen with the scopes `https://www.googleapis.com/auth/drive.readonly` and `https://www.googleapis.com/auth/drive.file`.
-3. Create an OAuth client ID (Web application) and add the AgentX callback as an authorized redirect URI: `http://localhost:12319/api/mcp/oauth/callback` (adjust if your API runs elsewhere — `AGENTX_OAUTH_REDIRECT_URL`).
-4. Set `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` in the API's `.env` (see `.env.example`) — the catalog quick-add references them as `${VAR}` so credentials never land in `mcp_servers.json` — or paste values directly into the dialog.
+1. Create or select a Cloud project; enable the **Google Drive API** and **Google Drive MCP API**.
+2. On the OAuth consent screen, add the scopes `…/auth/drive.readonly` and `…/auth/drive.file`.
+3. Create an OAuth client ID (Web application) and register AgentX's callback as an authorized
+   redirect URI: `http://localhost:12319/api/mcp/oauth/callback` (adjust for your host via
+   `AGENTX_OAUTH_REDIRECT_URL`).
+4. Set `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` in the API's `.env` — the catalog
+   references them as `${VAR}` so secrets never land in `mcp_servers.json` — or paste them into
+   the dialog.
 
-**One Google app for all your clusters.** A single OAuth client can list many authorized
-redirect URIs: add each cluster's `https://<cluster-host>/api/mcp/oauth/callback`, reuse the
-same client id/secret in every cluster's `.env`, set each cluster's
-`AGENTX_OAUTH_REDIRECT_URL` to its own callback, and DNS routes every consent redirect back
-to the right cluster. Gateway deployments already allow this: the browser redirect can't
-carry the gateway token, so the gateway passes exactly `/api/mcp/oauth/callback` through
-tokenless (state-validated by the API; see `clusters/template/nginx.conf.example`). Existing
-clusters need the updated `nginx.conf` and a force-recreate (`agentx-manager restart` handles
-the bind-mount inode). Connecting opens Google's consent page in your browser.
+One OAuth client can serve every cluster: list each cluster's
+`https://<host>/api/mcp/oauth/callback` as an authorized redirect URI and reuse the same
+credentials. Gateway deployments pass that tokenless callback through by design — see
+[Clusters & Gateway](../deployment/clusters.md).
 
-## Architecture
+## Adding a server by hand
 
-```mermaid
-graph LR
-    subgraph AgentX
-        A[Agent] --> TE[ToolExecutor]
-        TE --> MCM[MCPClientManager]
-        MCM --> SR[ServerRegistry]
-        SR --> |loads| CF[mcp_servers.json]
-    end
-
-    subgraph Transports
-        MCM --> STDIO[stdio]
-        MCM --> SSE[SSE]
-        MCM --> HTTP[Streamable HTTP]
-    end
-
-    subgraph External["External MCP Servers"]
-        STDIO --> FS[Filesystem]
-        STDIO --> GH[GitHub]
-        SSE --> BS[Brave Search]
-        HTTP --> PG[PostgreSQL]
-        HTTP --> Custom[Custom...]
-    end
-```
-
-## Connection Modes
-
-### Persistent (default for Django)
-
-Connections stay alive across HTTP requests on a background asyncio event loop. Used by all API endpoints.
-
-```python
-manager = get_mcp_manager()
-manager.connect("filesystem")         # Blocks until connected
-tools = manager.list_tools()           # Available across requests
-result = manager.call_tool_sync(       # Sync bridge to async MCP
-    "read_file", {"path": "/tmp/test"}
-)
-manager.disconnect("filesystem")
-```
-
-### Scoped (context manager)
-
-Connection lives within an `async with` block. Useful for one-off operations.
-
-```python
-async with manager.connect_server("filesystem") as conn:
-    tools = conn.tools
-    # connection closes when block exits
-```
-
-## Configuration
-
-Servers are defined in `mcp_servers.json` at the project root. Create from `mcp_servers.json.example`:
+Beyond the catalog, servers live in `mcp_servers.json` at the project root (copy
+`mcp_servers.json.example`). A server names its **transport** and how to reach it:
 
 ```json
 {
   "filesystem": {
     "transport": "stdio",
     "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"],
-    "env": {
-      "NODE_ENV": "production"
-    }
-  },
-  "github": {
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-github"],
-    "env": {
-      "GITHUB_PERSONAL_ACCESS_TOKEN": "$GITHUB_TOKEN"
-    }
-  },
-  "brave-search": {
-    "transport": "sse",
-    "url": "http://localhost:8080/sse",
-    "headers": {
-      "Authorization": "Bearer $BRAVE_API_KEY"
-    }
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/projects"]
   }
 }
 ```
 
-### Environment Variable Resolution
+Values prefixed with `$` in `env` and `headers` resolve from the environment at connect time, so
+secrets stay out of the file.
 
-Values prefixed with `$` in `env` and `headers` fields are resolved from the system environment at connection time. If a variable is not set, the literal string is used.
-
-### Transport Types
-
-| Transport | Use Case | Config Fields |
-|-----------|----------|---------------|
+| Transport | Use case | Key fields |
+|-----------|----------|------------|
 | `stdio` | Local process servers (most common) | `command`, `args`, `env` |
-| `sse` | Remote HTTP servers with SSE | `url`, `headers` |
+| `sse` | Remote servers over Server-Sent Events | `url`, `headers` |
 | `streamable_http` | Remote HTTP servers | `url`, `headers` |
 
-## Tool Execution Flow
+## Per-agent tool access
 
-```mermaid
-sequenceDiagram
-    participant A as Agent
-    participant TE as ToolExecutor
-    participant MCM as MCPClientManager
-    participant S as MCP Server
+Every [agent profile](agent-profiles.md) can narrow which tools it sees: an **allow-list**
+(`allowed_tools` — only these are exposed to the model) or a **block-list** (`blocked_tools` —
+these are hidden). With neither set, the agent gets every tool from its connected servers. This
+is how a specialist stays focused and a delegate can't reach beyond its remit.
 
-    A->>A: _get_tools_for_provider()
-    Note over A: Converts MCP tools to<br/>provider function-calling format
+## OAuth for remote connectors
 
-    A->>A: Provider.complete(messages, tools)
-    Note over A: Model returns tool_calls
+Remote servers can require **OAuth 2.1**, and AgentX handles the whole dance — discovery,
+dynamic client registration (or a pre-registered client for providers like Google), PKCE, and
+token refresh — opening your browser for consent on first connect. Tokens persist per server on
+the API host.
 
-    loop For each tool_call
-        A->>TE: find_tool(name) → ToolInfo
-        A->>MCM: call_tool_sync(name, args)
-        MCM->>S: Execute via MCP protocol
-        S-->>MCM: Result
-        MCM-->>A: ToolResult
-        A->>A: Append tool result to messages
-    end
+The server card tells you where a connection stands: signed in, refreshing on the next connect,
+or expired and needing a fresh browser sign-in (which also raises the new-conversation nudge).
+**Reset auth** forgets stored tokens for a clean start.
 
-    A->>A: Provider.complete(messages) → final response
-```
+## Under the hood
 
-## Tool Filtering
-
-`AgentConfig` supports tool filtering:
-
-| Field | Effect |
-|-------|--------|
-| `allowed_tools` | Only these tools are exposed to the model (whitelist) |
-| `blocked_tools` | These tools are hidden from the model (blacklist) |
-
-When both are `null`, all tools from connected servers are available.
-
-## OAuth 2.1 (remote connectors)
-
-Remote servers (`sse` / `streamable_http`) can carry an `auth: {"type": "oauth"}` block — AgentX handles discovery, dynamic client registration (or pre-registered `client_id`/`client_secret` for providers like Google), PKCE, and token refresh, opening your browser for consent on first connect. Tokens persist per server under `data/mcp_oauth/`.
-
-The server card tells the truth about session state: **signed in**, **signed in (refreshes on connect)** when the access token expired but a refresh token covers it, or **session expired — sign in again on connect** when the next connect must go back through the browser (this state also triggers the new-conversation nudge). "Reset auth" forgets stored tokens for a clean sign-in.
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/mcp/servers` | GET | List servers, connection status, and OAuth `auth_state` |
-| `/api/mcp/registry/search` | GET | Search the official MCP registry (proxied, prefill-only) |
-| `/api/mcp/tools` | GET | List available tools (filter: `?server=name`) |
-| `/api/mcp/resources` | GET | List available resources |
-| `/api/mcp/connect` | POST | Connect to server(s); OAuth consent → HTTP 202 + URL |
-| `/api/mcp/disconnect` | POST | Disconnect from server(s) |
-| `/api/agent/skills` | GET/POST | The skill library (see [Skills](../api/endpoints.md#skills)) |
-
-See [API Endpoints](../api/endpoints.md#mcp-model-context-protocol) for full details.
+The agent's [tool loop](chat.md#tool-use-loop) reaches connectors through a `ToolExecutor` and a
+persistent `MCPClientManager` that keeps connections alive across requests over stdio, SSE, or
+streamable HTTP. See the
+[MCP client architecture](../architecture/system-design.md#mcp-client-architecture) and the
+[tool-execution flow](../architecture/system-design.md#mcp-tool-execution) on the System Design
+page. The programmatic surface — listing servers and tools, connecting, and the registry proxy —
+is in the [API Reference](../api/endpoints.md#mcp-model-context-protocol).
 
 ## Related
 
-- [Architecture Overview](../architecture/overview.md) — System context
-- [API Models: MCP](../api/models.md#mcp-models) — ServerConfig, ToolInfo, ResourceInfo schemas
-- Config file: `mcp_servers.json` (create from `mcp_servers.json.example`)
+- [Chat](chat.md) — how tools run inside a turn
+- [Agent Profiles](agent-profiles.md) — per-agent tool access
+- [Architecture Overview](../architecture/overview.md) — where MCP sits in the system
