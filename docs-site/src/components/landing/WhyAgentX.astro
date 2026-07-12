@@ -1,7 +1,7 @@
 ---
-// "Why AgentX" — the differentiators band. Glass cards that link into the docs.
-// Data from config/landing.ts; styling follows the SubsystemsRail / token system.
-import { DIFFERENTIATORS } from '../../config/landing';
+// "Why AgentX" — three conversion pillars (It thinks · works as a team · is yours),
+// each a titled segment with its supporting cards. Data from config/landing.ts.
+import { PILLARS } from '../../config/landing';
 import MonoTag from '../ui/MonoTag.astro';
 import Dot from '../ui/Dot.astro';
 import ArrowRight from '../icons/ArrowRight.astro';
@@ -14,20 +14,34 @@ import ArrowRight from '../icons/ArrowRight.astro';
       <MonoTag>§ what makes it different</MonoTag>
     </div>
 
-    <div class="grid">
+    <div class="pillars">
       {
-        DIFFERENTIATORS.map((d) => (
-          <a class="card ax-glass ax-lift" href={d.href} style={`--accent:${d.color}`}>
-            <div class="card-top">
-              <Dot color={d.color} size={7} />
-              <MonoTag color={d.color}>{d.tag}</MonoTag>
+        PILLARS.map((p) => (
+          <div class="pillar" style={`--accent:${p.color}`}>
+            <div class="pillar-head">
+              <div class="pillar-name">
+                <Dot color={p.color} size={8} />
+                <h3 class="ax-wordmark pname">{p.name}</h3>
+              </div>
+              <p class="plede">{p.lede}</p>
             </div>
-            <h3 class="card-title">{d.title}</h3>
-            <p class="card-desc">{d.desc}</p>
-            <span class="card-more">
-              Learn more <ArrowRight size={12} />
-            </span>
-          </a>
+
+            <div class="grid">
+              {p.cards.map((d) => (
+                <a class="card ax-glass ax-lift" href={d.href} style={`--accent:${d.color}`}>
+                  <div class="card-top">
+                    <Dot color={d.color} size={7} />
+                    <MonoTag color={d.color}>{d.tag}</MonoTag>
+                  </div>
+                  <h4 class="card-title">{d.title}</h4>
+                  <p class="card-desc">{d.desc}</p>
+                  <span class="card-more">
+                    Learn more <ArrowRight size={12} />
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
         ))
       }
     </div>
@@ -46,12 +60,47 @@ import ArrowRight from '../icons/ArrowRight.astro';
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    margin-bottom: 24px;
+    margin-bottom: 30px;
   }
   .title {
     font-size: 32px;
     margin: 0;
     font-weight: 600;
+  }
+
+  .pillars {
+    display: grid;
+    gap: 44px;
+  }
+  .pillar-head {
+    display: flex;
+    align-items: baseline;
+    gap: 22px;
+    flex-wrap: wrap;
+    padding-bottom: 16px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .pillar-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+  }
+  .pname {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--color-text-strong);
+    margin: 0;
+  }
+  .plede {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text-muted);
+    max-width: 660px;
+    text-wrap: pretty;
   }
 
   .grid {
@@ -66,7 +115,6 @@ import ArrowRight from '../icons/ArrowRight.astro';
     padding: 22px;
     border-radius: var(--radius-card);
     color: var(--color-text);
-    /* a faint top accent drawn from the card's subsystem color */
     border-top: 2px solid color-mix(in oklab, var(--accent) 55%, transparent);
   }
   .card-top {
@@ -76,7 +124,7 @@ import ArrowRight from '../icons/ArrowRight.astro';
   }
   .card-title {
     font-family: var(--font-display);
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 600;
     letter-spacing: -0.015em;
     color: var(--color-text-strong);
@@ -112,6 +160,13 @@ import ArrowRight from '../icons/ArrowRight.astro';
   @media (max-width: 720px) {
     .why {
       padding: 8px 18px 16px;
+    }
+    .pillars {
+      gap: 34px;
+    }
+    .pillar-head {
+      flex-direction: column;
+      gap: 8px;
     }
     .grid {
       grid-template-columns: 1fr;

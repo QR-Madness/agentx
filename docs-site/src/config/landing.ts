@@ -111,7 +111,7 @@ export const TRACE: TraceLine[] = [
 
 // ── Hero stat row ───────────────────────────────────────────────────────────
 export const HERO_STATS: { l: string; v: string }[] = [
-  { l: 'deploy', v: 'Self-hosted · air-gappable' },
+  { l: 'deploy', v: 'Self-hosted · your infra' },
   { l: 'backend', v: 'Django 5.2' },
   { l: 'client', v: 'Tauri v2 · React 19' },
   { l: 'memory', v: 'Neo4j · pgvector · Redis' },
@@ -142,77 +142,106 @@ export const STORES: Store[] = [
 ];
 
 // ── "Why AgentX" — the differentiators band ─────────────────────────────────
-export type Differentiator = {
+export type PillarCard = {
   title: string;
   desc: string;
   color: string; // a --c-* token
   tag: string;
   href: string;
 };
+export type Pillar = { name: string; lede: string; color: string; cards: PillarCard[] };
 
-export const DIFFERENTIATORS: Differentiator[] = [
+export const PILLARS: Pillar[] = [
   {
-    title: 'Glassbox, not a black box',
-    desc: 'Watch every decision the loop makes — profile compose, memory recall, reasoning, delegation, and each tool call stream live. Nothing happens off-screen.',
+    name: 'It thinks',
+    lede: 'A mind you can watch work — reasoning, memory that learns, and a context window that never overflows.',
     color: 'var(--c-reasoning)',
-    tag: 'live trace',
-    href: '/docs/architecture/overview',
+    cards: [
+      {
+        title: 'Glassbox, not a black box',
+        desc: 'Watch the agent think, call tools, and hand work to teammates — live. The reasoning, every tool call and result, and each delegation stream to screen; nothing happens in the dark.',
+        color: 'var(--c-reasoning)',
+        tag: 'see everything',
+        href: '/docs/architecture/system-design',
+      },
+      {
+        title: 'Memory that actually learns',
+        desc: 'Four memory types — episodic, semantic, procedural, and working — with five recall techniques and background consolidation, so agents remember and sharpen across conversations.',
+        color: 'var(--c-memory)',
+        tag: 'remembers & learns',
+        href: '/docs/features/memory',
+      },
+      {
+        title: 'Context that never overflows',
+        desc: 'Oversized tool outputs are compressed and stored for retrieval, and Focus-style trajectory compression keeps long tool loops inside the window — so the agent stays coherent on long tasks.',
+        color: 'var(--c-drafting)',
+        tag: 'stays in the window',
+        href: '/docs/features/chat',
+      },
+      {
+        title: 'Prompts you compose',
+        desc: "Build an agent's persona from layered, reusable prompt sections over a global base — with an LLM-backed enhancer that sharpens a prompt on demand.",
+        color: 'var(--c-prompts)',
+        tag: 'shape the persona',
+        href: '/docs/features/prompts',
+      },
+    ],
   },
   {
-    title: 'Memory that actually learns',
-    desc: 'Episodic, semantic, procedural, and working memory — with five recall techniques, per-agent self-knowledge channels, and background consolidation. Agents remember across conversations.',
-    color: 'var(--c-memory)',
-    tag: '4 types · 5 recall',
-    href: '/docs/features/memory',
-  },
-  {
-    title: 'Agent Teams that actually collaborate',
-    desc: 'A lead agent hands subtasks to specialist teammates over a shared memory channel — with @-mention routing, ad-hoc agent-to-agent delegation, and per-agent tool isolation. You watch them work it out together.',
+    name: 'It works as a team',
+    lede: 'Not one overloaded assistant — a roster of specialists that delegate, coordinate, and keep you in the loop.',
     color: 'var(--c-agent)',
-    tag: 'lead · members',
-    href: '/docs/features/multi-agent',
+    cards: [
+      {
+        title: 'Agent Teams that collaborate',
+        desc: 'A lead hands subtasks to specialist teammates over a shared memory channel — with @-mention routing, ad-hoc agent-to-agent delegation, and per-agent tool isolation. Watch them work it out.',
+        color: 'var(--c-agent)',
+        tag: 'delegate & coordinate',
+        href: '/docs/features/multi-agent',
+      },
+      {
+        title: 'Ambassador — a parallel narrator',
+        desc: 'A dedicated agent runs alongside your conversation and briefs you on it — by voice or text — without ever entering the transcript. Step away, come back, and ask what your agents have been doing.',
+        color: 'var(--c-translation)',
+        tag: 'briefs you, live',
+        href: '/docs/features/multi-agent',
+      },
+      {
+        title: 'Tools in one line',
+        desc: 'Connect external tool servers over MCP, or turn any Python function into an agent tool with a single @register_tool decorator — no separate server for in-process tools.',
+        color: 'var(--c-mcp)',
+        tag: 'connect & extend',
+        href: '/docs/features/mcp',
+      },
+    ],
   },
   {
-    title: 'Self-hosted · bring your own models',
-    desc: 'Run your own server, air-gappable over DNS — no SaaS lock-in. One interface across LM Studio, Anthropic, OpenAI, OpenRouter, and Vercel AI Gateway.',
+    name: "It's yours",
+    lede: 'You own the whole stack — the server, the models, and every platform it runs on.',
     color: 'var(--c-providers)',
-    tag: 'you run it',
-    href: '/docs/features/providers',
-  },
-  {
-    title: 'Runs where you do',
-    desc: 'One Tauri v2 client across Windows, macOS, and Linux — plus an Android build (mobile-ready) and a browser/web mode. Same app, every platform.',
-    color: 'var(--color-accent)',
-    tag: 'desktop · mobile · web',
-    href: '/docs/getting-started/installation',
-  },
-  {
-    title: 'One-line internal tools',
-    desc: 'Turn any Python function into an agent tool with a single @register_tool decorator — no MCP server required for in-process tools.',
-    color: 'var(--c-mcp)',
-    tag: '@register_tool',
-    href: '/docs/features/mcp',
-  },
-  {
-    title: 'Context that never overflows',
-    desc: 'Oversized tool outputs are compressed and stored for retrieval; Focus-style trajectory compression keeps long tool loops inside the window.',
-    color: 'var(--c-drafting)',
-    tag: 'context gating',
-    href: '/docs/architecture/overview',
-  },
-  {
-    title: 'Ambassador — a parallel narrator',
-    desc: 'A dedicated agent runs alongside your conversation and briefs you on it — by voice or text — without ever entering or polluting the transcript. Come back and ask what your agents have been doing.',
-    color: 'var(--c-translation)',
-    tag: 'parallel relay · voice',
-    href: '/docs/features/multi-agent',
-  },
-  {
-    title: 'Composable prompts + enhancer',
-    desc: 'Profile-based prompt composition over a global layer, reusable templates, and an LLM-backed prompt enhancer that rewrites prompts on demand.',
-    color: 'var(--c-prompts)',
-    tag: 'profiles · enhancer',
-    href: '/docs/features/prompts',
+    cards: [
+      {
+        title: 'Self-hosted, bring your own models',
+        desc: 'Run your own server — no SaaS, no lock-in. One interface across LM Studio, Anthropic, OpenAI, OpenRouter, and Vercel AI Gateway; bring the models you already pay for.',
+        color: 'var(--c-providers)',
+        tag: 'your server',
+        href: '/docs/features/providers',
+      },
+      {
+        title: 'Runs where you do',
+        desc: 'One Tauri v2 client across Windows, macOS, and Linux, an Android build (mobile-ready), and a browser / PWA mode. Same app, everywhere you work.',
+        color: 'var(--color-accent)',
+        tag: 'desktop · mobile · web',
+        href: '/docs/getting-started/installation',
+      },
+      {
+        title: 'Open source, yours to keep',
+        desc: 'AgentX is MIT-licensed and built in the open — read every line, fork it, and run it as long as you like. No vendor can switch it off.',
+        color: 'var(--c-reasoning)',
+        tag: 'MIT · open',
+        href: 'https://github.com/QR-Madness/agentx',
+      },
+    ],
   },
 ];
 
