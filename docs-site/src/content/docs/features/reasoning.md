@@ -34,8 +34,8 @@ calls. A one-line status tells you when a degradation applied.
 
 ## Choosing a pattern
 
-Resolution per turn: **Thinking mode** (per-conversation override — the composer chip on
-desktop, the Relay's Mode tile everywhere) → **agent profile** (`reasoning_strategy`, the
+Resolution per turn: **Thinking mode** (a per-conversation override in the [Relay](chat.md)) →
+**agent profile** (`reasoning_strategy`, the
 "Thinking pattern" control in the profile editor) → **global default**
 (`preferences.default_reasoning_strategy`) → **Auto**.
 

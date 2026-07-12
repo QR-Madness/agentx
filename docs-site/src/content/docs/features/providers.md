@@ -25,8 +25,8 @@ discovered live from each provider's API, so the picker reflects what you can ac
 
 ## Which model runs a turn
 
-The active model is resolved top-down: an **explicit choice for the turn** (the Relay's Model
-tile or a per-request override) → the **agent profile's** default model → the **server default**.
+The active model is resolved top-down: an **explicit choice for the turn** (the Relay's model
+picker or a per-request override) → the **agent profile's** default model → the **server default**.
 That server default is itself layered — the **`DEFAULT_MODEL`** environment variable, then your
 **global preference** in Settings, then a built-in local-model floor. What `models.yaml` does
 *not* do is pin the runtime default; it holds provider settings only.

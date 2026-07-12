@@ -17,20 +17,15 @@ first surface worth learning.
 
 ## Open the editor
 
-Two ways in:
+Open the profile editor from the command palette (`⌘K` / `Ctrl K` → **Agent profiles**) or by
+clicking the agent's icon in the top bar.
 
-- **Command palette** — press `⌘K` / `Ctrl K` and choose **Agent profiles**.
-- **The agent badge** — click the agent's icon at the far left of the top bar ("Edit agent
-  profile").
+You'll see your profiles alongside the one you're editing. Each carries the agent's **name**,
+**avatar**, trait **tags**, a one-line **description**, and its immutable **agent id** — a
+Docker-style handle like `giddy-witty-falcon` that never changes even when you rename the agent, so
+teammates and memory keep pointing at the right one.
 
-The editor is a two-pane surface: your profiles on the left (**New Profile** at the bottom),
-the selected profile on the right. The header shows the agent's **name**, **avatar**, trait
-**tags**, a one-line **description**, and its immutable **agent id** (a Docker-style handle
-like `giddy-witty-falcon`). The id never changes even if you rename the agent, so teammates
-and memory keep pointing at the right agent.
-
-Edits **autosave** as you type — there's no Save button for an existing profile, and closing
-the panel keeps your changes. A new profile you're creating gets an explicit **Create** instead.
+Edits **autosave** as you type; a brand-new profile gets an explicit **Create** instead.
 
 ## Core — identity, model, thinking, prompt
 
@@ -63,9 +58,9 @@ This is the headline control — *how the agent reasons before it answers*:
 | **Deep reflection** | Watch the draft + self-critique stream live before the improved answer |
 | **Consensus** | Sample several solutions, keep the agreement (good for math/logic) |
 
-Set it per profile here, or override it for a single conversation from the composer's
-<span class="ax-icon ax-icon--brain" aria-hidden="true"></span> **Thinking** chip. Full behavior
-is documented in [Reasoning](/docs/features/reasoning).
+Set it per profile here, or override it for a single conversation in the
+[Relay](/docs/features/chat) <span class="ax-icon ax-icon--brain" aria-hidden="true"></span> — see
+[Reasoning](/docs/features/reasoning) for the full behavior.
 
 ### System prompt
 
@@ -138,4 +133,4 @@ default from its profile.
 - **Build a small bench, not one do-everything agent.** A focused planner (step-back thinking,
   no tools), a researcher (web tools, on the roster), a writer (creative temperature) beats a
   single overloaded profile — and it sets you up for [Agent Teams](/docs/features/multi-agent).
-- **`@-mention`** an agent by name or id in the composer to route one turn to it.
+- **`@-mention`** an agent by name or id to route one turn to it.

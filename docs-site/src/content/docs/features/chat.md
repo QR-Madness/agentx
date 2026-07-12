@@ -6,61 +6,46 @@ to), and everything it does streams back as it happens.
 
 ## Talking to an agent
 
-Type in the composer and send. The agent you're talking to is shown in the **agent chip** at
-the left of the input row — switch agents there, or `@-mention` one to route a single turn to
-it. Each turn, the agent recalls relevant memory, composes its prompt, and runs a tool-use
-loop until it has an answer.
+Type your message in the **message box** and send. The agent you're talking to is shown right
+beside it — switch agents there, or `@-mention` another to hand it a single turn. Each turn, the
+agent recalls relevant memory, composes its prompt, and works through a tool-use loop until it has
+an answer.
 
 ### The Relay — the conversation's command center
 
-The **Orbit button** <span class="ax-icon ax-icon--orbit" aria-hidden="true"></span> beside the
-composer opens the **Relay**: a glass control center for *this* conversation. A status strip reads out the active agent, model, and context usage;
-below it, a tile grid holds every per-conversation control:
+The **Relay** <span class="ax-icon ax-icon--orbit" aria-hidden="true"></span> — opened from the
+button beside the message box — is the control center for *this* conversation. It gathers
+everything that shapes the current chat in one place: the [thinking mode](reasoning.md) (the
+thinking patterns and Research Mode), **Memory** on or off, **Solo/Team**
+[delegation](multi-agent.md), the **model** and **project**, image and file attachments, prompt
+enhancement, and the **Background runs** inbox for detached work. Whatever you change here applies
+to this conversation only.
 
-- **Thinking mode** (the wide tile) — one selection covering the [thinking patterns](reasoning.md)
-  *and* Research Mode (they're mutually exclusive; the menu makes that visible).
-- Toggles: **Memory** (locks once the conversation starts), **Solo/Team**
-  [delegation](multi-agent.md), and **Background** (arm the next send to run detached).
-- Openers: **Model**, **Project**, **Conversation state**, **Attach image / file**,
-  **Enhance prompt**, and **Auto-title**.
-- Below the grid: **Live runs** (recover a detached run) and the **Background runs** inbox.
-
-On desktop the Relay is a popover above the composer, and the most-used controls also stay as
-chips in the composer row. **On mobile the chip row disappears** — the input row becomes
-*agent avatar · message · Relay · send*, and the Relay opens as a bottom sheet holding
-everything. (The command palette stays app-level; the Relay is the conversation-level surface —
-the palette's "Open the Relay" jumps straight in.)
-
-A slim handle above the input toggles the **expanded drafting box** (a sticky preference): the
-composer becomes a tall canvas where **Enter inserts a new line** and **Ctrl/Cmd+Enter (or the
-send button) submits** — long-form drafting, and the cure for the tiny default input on phones.
+!!! note "On mobile"
+    To save space, the composer's quick chips (model, thinking, and friends) tuck into the Relay —
+    open it from the button beside the message box to reach them.
 
 ## Streaming, and picking up where you left off
 
-Streaming responses arrive token-by-token over Server-Sent Events. The run is **detached from
-the HTTP connection** — it keeps generating server-side and persists its turns even if you close
-the tab or drop your network.
+Responses stream in token by token, and the run is **detached from your connection** — it keeps
+generating on the server and saves its turns even if you close the tab or drop your network.
 
-To recover a run you walked away from, two surfaces list every run still in progress that isn't
-already owned by an open tab: a **Live runs** section in the Relay inbox, and a **Resume
-Running** section atop the conversation selector. Click **Resume** to restore the conversation
-and re-attach.
+Walked away from one? Any run still going shows up for you to **resume** — in the Relay's runs
+inbox and atop the conversation list — so you can jump straight back into it, live.
 
 !!! tip "Background sends"
-    Arm **Background** in the Relay before you send and the turn runs detached from the start —
-    fire off a long research task, close the tab, and pick the result up from the Background runs
-    inbox later.
+    Flip on **Background** in the Relay before you send, and the turn runs detached from the start
+    — fire off a long task, close the tab, and collect the result from the Relay later.
 
 ## Sessions & memory
 
-A **session** carries context across the turns of one conversation. Sessions are keyed by a
-`session_id` (a UUID); if you don't pass one, a new session is created and returned — include it
-on later requests for continuity, and the agent sees all prior messages in the session.
+A **session** carries context across the turns of one conversation — keep chatting and the agent
+sees everything said earlier in it.
 
 With **Memory** on (the default), each turn also reaches beyond the current session: the agent
-stores the exchange to [memory](memory.md) and recalls relevant past turns, facts, entities, and
-strategies to fold into its context. Memory is best-effort — if the databases are unavailable,
-chat still works, just without recall.
+saves the exchange to [memory](memory.md) and recalls relevant past turns, facts, and strategies to
+fold into its context. Memory is best-effort — if its databases are unavailable, chat still works,
+just without recall.
 
 ## Under the hood
 

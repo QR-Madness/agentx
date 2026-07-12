@@ -22,8 +22,8 @@ Delegation comes in two flavors:
   specialists — the **Researcher** (web search, cited answers) and the **Deluxe Image
   Creator** (delegate a visual brief; the finished image lands in the conversation) —
   edit or delete them freely; they never re-seed. A per-conversation **Solo/Team**
-  toggle (composer chip, Relay tile, or command palette) sends `disable_delegation` to
-  suppress it for a chat — ignored under a workflow, since a team run *is* delegation.
+  toggle in the Relay sends `disable_delegation` to suppress it for a chat — ignored under a
+  workflow, since a team run *is* delegation.
 
 See the [multi-agent delegation diagram](../architecture/system-design.md#multi-agent-delegation)
 on the **System Design** page.
@@ -42,8 +42,7 @@ For teammates you reach for now and then, with no setup ceremony:
 2. That's it. In any ordinary chat, your active agent now *sees* those teammates in its prompt
    and can hand one a subtask when it's clearly the better fit. It still handles most things
    itself — delegation is an option, not a reflex.
-3. Want a chat to stay single-agent? Flip the **Solo/Team** toggle (the composer chip, the
-   Relay tile, or the command palette) to **Solo**.
+3. Want a chat to stay single-agent? Flip the **Solo/Team** toggle in the Relay to **Solo**.
 
 AgentX ships two agents already on the roster — the **Researcher** and the **Deluxe Image
 Creator** — so "research this" or "make me an image of…" delegates out of the box.
@@ -68,9 +67,9 @@ For a workflow you run repeatedly (a lead that always orchestrates a fixed set o
 ### What you'll see
 
 When an agent delegates, its teammate's work renders **inline** as a delegation card in the
-transcript — you watch the subtask run, not just its result. A **Trace** pill on the
-conversation opens the **Team Run Trace**: who delegated to whom, and each step's tokens, cost,
-and wall-clock time. Nothing happens off-screen.
+transcript — you watch the subtask run, not just its result. A **Trace** on the conversation opens
+the **Team Run Trace**: who delegated to whom, and each step's tokens, cost, and wall-clock time.
+Nothing happens off-screen.
 
 ## Data Model
 
