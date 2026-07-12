@@ -11,9 +11,9 @@ AgentX is two pieces: a **server** you run (agents, memory, tools) and a
 
 | Path | Best for | Guide |
 |---|---|---|
-| 🚀 **Self-host** — Docker image + web dashboard, nothing else on the host | Running AgentX to *use* it | **[Self-Hosting](../deployment/self-hosting.md)** |
-| 🛠️ **From source** — hot-reloading full stack (`task dev`) | Hacking on AgentX itself | **[Installation](installation.md)** |
-| 🧩 **Local clusters** — several isolated prod-like instances, one dashboard | Power users & staging | **[Clusters & Gateway](../deployment/clusters.md)** |
+| **Self-host** — Docker image + web dashboard, nothing else on the host | Running AgentX to *use* it | **[Self-Hosting](../deployment/self-hosting.md)** |
+| **From source** — hot-reloading full stack (`task dev`) | Hacking on AgentX itself | **[Installation](installation.md)** |
+| **Local clusters** — several isolated prod-like instances, one dashboard | Power users & staging | **[Clusters & Gateway](../deployment/clusters.md)** |
 
 The self-host path is three commands, and the bundled
 **[deployment manager](../deployment/manager.md)** takes it from there — watch the
@@ -23,7 +23,7 @@ dashboard instead of a terminal:
 ```bash
 tar xzf agentx-deploy.tar.gz && cd agentx-deploy
 cp .env.example .env      # fill 3 values — the file tells you which
-docker compose up -d      # then open http://127.0.0.1:12320 🎛️
+docker compose up -d      # then open http://127.0.0.1:12320
 ```
 
 ## 2 · Connect the client

@@ -243,7 +243,7 @@ double-compress the same content).
 ### Debug harness
 - `python manage.py debug_attribution --scenario directive --agents "Mobius,Jeff"` seeds a
   scripted multi-agent conversation, runs **real** consolidation, and reports which channel
-  every fact landed in (+ `[:ABOUT]` links) with ✅/❌ expectations. Non-destructive by
+  every fact landed in (+ `[:ABOUT]` links) with pass/fail expectations. Non-destructive by
   default (throwaway user, scoped cleanup); `--isolate` snapshots+wipes+restores for a sterile
   read. See [Task Commands](../development/tasks.md).
 

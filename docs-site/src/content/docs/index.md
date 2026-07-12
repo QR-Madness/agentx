@@ -1,6 +1,6 @@
 # AgentX Documentation
 
-AgentX is a self-hosted, **glassbox** AI agent platform: persistent multi-type memory, multi-agent **Agent Alloy** orchestration, four reasoning strategies, MCP tools, and your choice of model — all behind a Django REST API you run yourself, with every step of the agent loop observable.
+AgentX is a self-hosted, **glassbox** AI agent platform: persistent multi-type memory, **Agent Teams** that delegate, six thinking patterns, MCP tools, and your choice of model — all behind a Django REST API you run yourself, with every step of the agent loop observable.
 
 > **Current release:** v0.21.218 (the v0.20 milestone — "Mobile-Ready Alpha").
 
@@ -40,7 +40,7 @@ graph TB
 | **Agent Chat**  | Conversational AI with streaming, tool use, and session management  | [Chat](features/chat.md)               |
 | **Reasoning**   | Thinking patterns in chat + an offline CoT/ToT/ReAct/Reflection kit, plus multi-model drafting | [Reasoning](features/reasoning.md)     |
 | **MCP Client**  | Connect to external tool servers via stdio, SSE, or HTTP            | [MCP](features/mcp.md)                 |
-| **Multi-Agent** | Agent Alloy — supervisor delegates subtasks to specialist agents    | [Multi-Agent](features/multi-agent.md) |
+| **Agent Teams** | A lead delegates subtasks to specialist teammates                   | [Agent Teams](features/multi-agent.md) |
 | **Providers**   | Unified interface for LM Studio, Anthropic, OpenAI, OpenRouter, Vercel | [Providers](features/providers.md)     |
 | **Prompts**     | Profile-based prompt composition with global prompt layer           | [Prompts](features/prompts.md)         |
 | **Memory**      | 4-type persistent memory with recall, extraction, and consolidation | [Memory](features/memory.md)           |
@@ -93,7 +93,7 @@ graph TB
 **In Progress:**
 
 - Phase 15: Plan execution (Core Complete — executor, Redis-tracked state, streamed progress, cancellation)
-- Phase 16: Multi-agent — Agent Alloy v1 + routing, ad-hoc delegation, and @-mention routing shipped (~65%)
+- Phase 16: Multi-agent — Agent Teams v1 + routing, ad-hoc delegation, and @-mention routing shipped (~65%)
 - Phase 18: UX improvements + memory tuning (~93%)
 
 See the [Roadmap](roadmap.md) for detailed phase history.

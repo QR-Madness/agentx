@@ -87,7 +87,7 @@ the release matrix. Point it at your server's URL on first run and set the root
 password from its **setup screen** (auth is on by default; the terminal
 alternative is `docker compose exec api agentx setup-auth`).
 
-You're up. 🎉
+You're up.
 
 !!! note "Protocol matching"
     The client must speak the same API **protocol version** as your server
