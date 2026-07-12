@@ -88,8 +88,9 @@ const isHome = currentSlug === '';
   .ax-docs-layout {
     display: flex;
     align-items: flex-start;
-    max-width: var(--layout-docs-max);
-    margin: 0 auto;
+    /* Full-bleed: the sidebar pins to the viewport's left edge and the reading
+       column widens with the screen, instead of the whole shell centering and
+       leaving dead space at the left on wide monitors. */
   }
 
   main {
@@ -100,7 +101,7 @@ const isHome = currentSlug === '';
   }
   .article-shell {
     max-width: var(--layout-article-max);
-    margin: 0 auto;
+    margin: 0;
   }
 
   .ax-docs-toc {

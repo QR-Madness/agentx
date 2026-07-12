@@ -67,7 +67,7 @@
   --layout-sidebar-width: 17rem;
   --layout-toc-width: 14rem;
   --layout-docs-max: 90rem;       /* the docs 3-column shell (~1440px) */
-  --layout-article-max: 47.5rem;  /* the article column (~760px)       */
+  --layout-article-max: 56rem;    /* the reading column (~896px)        */
   --layout-content-max: 72rem;    /* generic centered content          */
 }
 
