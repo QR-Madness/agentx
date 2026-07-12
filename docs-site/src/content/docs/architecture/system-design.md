@@ -207,3 +207,32 @@ graph TD
     ORT --> |aggregator API| MANY[100+ models]
     VRC --> |gateway API| MANY
 ```
+
+## System-prompt composition
+
+Each turn composes a system prompt from durable layers — the global prompt, the auto-generated
+tools prompt, the active profile's ordered sections, and injected memory/overrides. The
+day-to-day view is on the [Prompts](../features/prompts.md) page.
+
+```mermaid
+graph LR
+    GP[Global Prompt] --> C[Composer]
+    MCP[MCP Tools Prompt<br/>auto-generated] --> C
+    P[Profile Sections<br/>ordered, toggleable] --> C
+    AC[Additional Context<br/>memory, overrides] --> C
+    C --> SP[Final System Prompt]
+```
+
+## Translation pipeline
+
+[Translation](../features/translation.md) runs in two stages: a fast detector identifies the
+source language, a lexicon bridges its code into the NLLB-200 code space, and the full model
+translates across 200+ languages.
+
+```mermaid
+graph LR
+    IN[Input Text] --> L1[Level I Detection<br/>~20 languages, fast]
+    L1 --> |ISO 639-1 code| LEX[LanguageLexicon<br/>Level I→II conversion]
+    LEX --> |NLLB-200 code| L2[Level II Translation<br/>200+ languages]
+    L2 --> OUT[Translated Text]
+```
