@@ -8,7 +8,32 @@ interface Props {
 }
 
 const { title, description = site.description } = Astro.props;
-const pageTitle = title ? `${title} · ${site.name}` : site.name;
+const pageTitle = title ? `${title} · ${site.name}` : `${site.name} — the self-hosted Cognitive OS`;
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL('/og-image.png', Astro.site);
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      '@id': `${Astro.site}#website`,
+      url: Astro.site?.href,
+      name: site.name,
+      description: site.description,
+    },
+    {
+      '@type': 'SoftwareApplication',
+      name: site.name,
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'Windows, macOS, Linux, Web',
+      description: site.description,
+      url: Astro.site?.href,
+      sameAs: [site.repoUrl],
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    },
+  ],
+};
 ---
 
 <!doctype html>
@@ -19,7 +44,30 @@ const pageTitle = title ? `${title} · ${site.name}` : site.name;
     <meta name="generator" content={Astro.generator} />
     <title>{pageTitle}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalURL} />
     <link rel="icon" href="/favicon.ico" sizes="any" />
+    <meta name="theme-color" content="#0a0d14" />
+    <meta name="robots" content="index, follow" />
+
+    {/* Open Graph */}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={site.name} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    {/* Twitter */}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
+    {/* Structured data + sitemap */}
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <link rel="sitemap" href="/sitemap.xml" />
 
     <!-- Geist / Geist Mono — the design system typefaces. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
