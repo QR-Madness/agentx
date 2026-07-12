@@ -631,6 +631,9 @@ a:hover {
 .ax-icon--brain {
   --icon: url('/icons/brain-circuit.svg');
 }
+.ax-icon--orbit {
+  --icon: url('/icons/orbit.svg');
+}
 
 /* ============================================================================
  * TOC (right rail)

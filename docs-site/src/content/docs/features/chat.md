@@ -13,8 +13,8 @@ loop until it has an answer.
 
 ### The Relay — the conversation's command center
 
-The **Orbit button** beside the composer opens the **Relay**: a glass control center for
-*this* conversation. A status strip reads out the active agent, model, and context usage;
+The **Orbit button** <span class="ax-icon ax-icon--orbit" aria-hidden="true"></span> beside the
+composer opens the **Relay**: a glass control center for *this* conversation. A status strip reads out the active agent, model, and context usage;
 below it, a tile grid holds every per-conversation control:
 
 - **Thinking mode** (the wide tile) — one selection covering the [thinking patterns](reasoning.md)
@@ -70,13 +70,11 @@ on the **System Design** page.
 
 ### Two modes
 
-- **Simple chat** — direct provider completion with a tool loop, no planning. This is what
-  `POST /api/agent/chat` and `POST /api/agent/chat/stream` (the everyday chat endpoints) use.
-  Flow: prompt composition → provider completion → tool-use loop → output parsing → memory
-  storage.
-- **Full agent** — the complete pipeline with task planning and reasoning, used by
-  `POST /api/agent/run`. Flow: task decomposition → reasoning-strategy selection → execution →
+- **Simple chat** — the everyday path: direct provider completion with a tool loop, no
+  planning. Flow: prompt composition → provider completion → tool-use loop → output parsing →
   memory storage.
+- **Full agent** — the complete pipeline with task planning and reasoning. Flow: task
+  decomposition → reasoning-strategy selection → execution → memory storage.
 
 ### Prompt composition
 
@@ -90,41 +88,21 @@ When MCP servers are connected, their tools are exposed to the model as function
 and the agent loops:
 
 1. The provider returns a completion with `tool_calls`.
-2. The agent executes each via `ToolExecutor.call_tool_sync()`.
+2. The agent executes each tool call.
 3. Tool results are appended as tool messages.
 4. The provider is called again with the updated messages.
 5. Repeat until there are no more tool calls, or `max_tool_rounds` (10) is reached.
 
 ### Output parsing
 
-The `OutputParser` extracts `<think>…</think>` content into `AgentResult.thinking` (setting
-`has_thinking` to `true`); the remaining content becomes `AgentResult.answer`.
+Any `<think>…</think>` content the model emits is split out into the message's **thinking**
+(what powers the thinking bubble); the remaining text becomes the visible **answer**.
 
-### Request parameters
+### Building on the API
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `message` | string | required | User message |
-| `session_id` | string | auto | Session for continuity |
-| `model` | string | from config | Model override |
-| `profile_id` | string | `"default"` | Prompt profile |
-| `temperature` | float | `0.7` | Sampling temperature |
-| `use_memory` | bool | `true` | Enable memory |
-
-### API endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/agent/chat` | POST | One-shot chat (JSON response) |
-| `/api/agent/chat/stream` | POST | Streaming chat (SSE) |
-| `/api/agent/run` | POST | Full agent pipeline (planning + reasoning) |
-| `/api/agent/chat/stream/attach` | GET | Re-attach to a detached run |
-| `/api/agent/chat/runs` | GET | List the caller's detached runs |
-| `/api/agent/chat/runs/{run_id}/cancel` | POST | Cancel a running turn |
-
-See [API Endpoints: Agent](../api/endpoints.md#agent) for full request/response details, and
-[Streaming & Detached Runs](../integrate/streaming.md) for the SSE event reference and the
-re-attach / cancel mechanics.
+Everything above is available programmatically, too. The REST contract — request schema,
+streaming (SSE) events, and the re-attach / cancel mechanics for detached runs — lives in the
+[API Reference](../api/endpoints.md) and [Streaming & Detached Runs](../integrate/streaming.md).
 
 ## Related
 
