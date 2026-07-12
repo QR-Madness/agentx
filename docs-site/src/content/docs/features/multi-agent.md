@@ -25,19 +25,8 @@ Delegation comes in two flavors:
   toggle (composer chip, Relay tile, or command palette) sends `disable_delegation` to
   suppress it for a chat — ignored under a workflow, since a team run *is* delegation.
 
-```mermaid
-graph TD
-    U[User message] --> S[Supervisor agent]
-    S -->|delegate_to| X[AlloyExecutor]
-    X --> A[Specialist A]
-    X --> B[Specialist B]
-    A --> CH[(Shared channel<br/>_alloy_&lt;workflow_id&gt;)]
-    B --> CH
-    S --> CH
-    A -->|result| S
-    B -->|result| S
-    S -->|synthesized answer| U
-```
+See the [multi-agent delegation diagram](../architecture/system-design.md#multi-agent-delegation)
+on the **System Design** page.
 
 ## Set it up
 

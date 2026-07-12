@@ -1,149 +1,106 @@
 # Chat
 
-The chat system provides multi-turn conversations with session management, memory integration, tool use, and streaming support.
+Chat is the everyday way you work with an agent — a multi-turn conversation with memory,
+tools, and live streaming. You talk, the agent thinks and acts (calling tools when it needs
+to), and everything it does streams back as it happens.
 
-## Chat Flow
+## Talking to an agent
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant A as Agent
-    participant PM as PromptManager
-    participant M as AgentMemory
-    participant P as Provider
-    participant T as ToolExecutor
+Type in the composer and send. The agent you're talking to is shown in the **agent chip** at
+the left of the input row — switch agents there, or `@-mention` one to route a single turn to
+it. Each turn, the agent recalls relevant memory, composes its prompt, and runs a tool-use
+loop until it has an answer.
 
-    C->>A: chat(message, session_id, profile_id)
-    A->>A: SessionManager.get_or_create(session_id)
-    A->>M: store_turn(user_turn)
-    A->>M: remember(message) → MemoryBundle
+### The Relay — the conversation's command center
 
-    A->>PM: get_system_prompt(profile_id)
-    A->>A: Build messages: system + context + memory + user
-    A->>A: _get_tools_for_provider() → MCP tools
+The **Orbit button** beside the composer opens the **Relay**: a glass control center for
+*this* conversation. A status strip reads out the active agent, model, and context usage;
+below it, a tile grid holds every per-conversation control:
 
-    loop Tool-use loop (max 10 rounds)
-        A->>P: complete(messages, tools)
-        alt Model requests tool calls
-            A->>T: Execute each tool call
-            T-->>A: Tool results
-            A->>A: Append results to messages
-        else No tool calls
-            Note over A: Break loop
-        end
-    end
-
-    A->>A: parse_output() → extract <think> tags
-    A->>A: Session.add_message(assistant)
-    A->>M: store_turn(assistant_turn)
-    A-->>C: AgentResult
-```
-
-## Two Modes
-
-### Simple Mode (default for chat)
-
-Direct provider completion without planning or reasoning. Used by `POST /api/agent/chat` and `POST /api/agent/chat/stream`.
-
-Flow: prompt composition → provider completion → tool-use loop → output parsing → memory storage.
-
-### Full Agent Mode
-
-Full pipeline with task planning and reasoning. Used by `POST /api/agent/run`.
-
-Flow: task decomposition → reasoning strategy selection → execution → memory storage.
-
-## The Relay — the conversation's command center
-
-The **Orbit button** beside the composer opens the Relay: a glass control center for
-*this conversation*. A status strip reads out the active agent, model, and context
-usage; below it, a tile grid holds every per-conversation control:
-
-- **Thinking mode** (the wide tile) — one selection covering the thinking patterns *and*
-  Research Mode (they're mutually exclusive; the menu makes that visible).
-- Toggles: **Memory** (locks once the conversation starts), **Solo/Team** delegation,
-  **Background** (arm the next send to run detached).
+- **Thinking mode** (the wide tile) — one selection covering the [thinking patterns](reasoning.md)
+  *and* Research Mode (they're mutually exclusive; the menu makes that visible).
+- Toggles: **Memory** (locks once the conversation starts), **Solo/Team**
+  [delegation](multi-agent.md), and **Background** (arm the next send to run detached).
 - Openers: **Model**, **Project**, **Conversation state**, **Attach image / file**,
-  **Enhance prompt**, **Auto-title**.
-- Below the grid: **Live runs** (recover a detached run) and the **Background runs**
-  inbox.
+  **Enhance prompt**, and **Auto-title**.
+- Below the grid: **Live runs** (recover a detached run) and the **Background runs** inbox.
 
-On desktop the Relay is a popover above the composer and the most-used controls also
-stay as chips in the composer row. **On mobile the chip row disappears entirely** — the
-input row becomes *agent avatar · message · Relay · send*, and the Relay opens as a
-bottom sheet holding everything. The command palette stays app-level; the Relay is the
-conversation-level command surface (the palette's "Open the Relay" jumps straight in).
+On desktop the Relay is a popover above the composer, and the most-used controls also stay as
+chips in the composer row. **On mobile the chip row disappears** — the input row becomes
+*agent avatar · message · Relay · send*, and the Relay opens as a bottom sheet holding
+everything. (The command palette stays app-level; the Relay is the conversation-level surface —
+the palette's "Open the Relay" jumps straight in.)
 
-A slim handle above the input toggles the **expanded drafting box** (sticky preference):
-the composer becomes a tall canvas where **Enter inserts a new line** and
-**Ctrl/Cmd+Enter (or the send button) submits** — the long-form drafting mode, and the
-cure for the tiny default input on phones.
+A slim handle above the input toggles the **expanded drafting box** (a sticky preference): the
+composer becomes a tall canvas where **Enter inserts a new line** and **Ctrl/Cmd+Enter (or the
+send button) submits** — long-form drafting, and the cure for the tiny default input on phones.
 
-## Streaming
+## Streaming, and picking up where you left off
 
-`POST /api/agent/chat/stream` returns the same response as `POST /api/agent/chat`, but as
-Server-Sent Events, using the same tool-use loop as the non-streaming endpoint. The run is
-detached from the HTTP connection — it keeps generating server-side and persists its turns even
-if the client disconnects.
+Streaming responses arrive token-by-token over Server-Sent Events. The run is **detached from
+the HTTP connection** — it keeps generating server-side and persists its turns even if you close
+the tab or drop your network.
 
-Two client surfaces let a user recover a detached run after closing its tab: a **"Live runs"**
-section in the Relay inbox, and a **"Resume Running"** section atop the conversation selector.
-Both list only runs still `running` and not owned by an open tab; clicking **Resume** restores
-the conversation and re-attaches.
+To recover a run you walked away from, two surfaces list every run still in progress that isn't
+already owned by an open tab: a **Live runs** section in the Relay inbox, and a **Resume
+Running** section atop the conversation selector. Click **Resume** to restore the conversation
+and re-attach.
 
-See [Streaming & Detached Runs](../integrate/streaming.md) for the full SSE event reference and
-the re-attach / cancel mechanics.
+!!! tip "Background sends"
+    Arm **Background** in the Relay before you send and the turn runs detached from the start —
+    fire off a long research task, close the tab, and pick the result up from the Background runs
+    inbox later.
 
-## Session Management
+## Sessions & memory
 
-`SessionManager` maintains conversation context across messages within a session.
+A **session** carries context across the turns of one conversation. Sessions are keyed by a
+`session_id` (a UUID); if you don't pass one, a new session is created and returned — include it
+on later requests for continuity, and the agent sees all prior messages in the session.
 
-- Sessions are identified by `session_id` (UUID)
-- If no `session_id` is provided, a new session is created
-- Include the returned `session_id` in subsequent requests for continuity
-- Context includes all prior messages in the session
+With **Memory** on (the default), each turn also reaches beyond the current session: the agent
+stores the exchange to [memory](memory.md) and recalls relevant past turns, facts, entities, and
+strategies to fold into its context. Memory is best-effort — if the databases are unavailable,
+chat still works, just without recall.
 
-## Memory Integration
+## Under the hood
 
-When `use_memory` is `true` (default):
+A turn is a single streaming pipeline. Everything above is what it looks like; here's what it
+does — the full [chat-turn sequence diagram](../architecture/system-design.md#the-chat-turn) lives
+on the **System Design** page.
 
-1. **Store user turn** — The user message is saved to episodic memory
-2. **Recall** — `AgentMemory.remember(query)` retrieves relevant turns, facts, entities, and strategies
-3. **Inject** — `ContextManager.inject_memory()` adds the `MemoryBundle` to the message context
-4. **Store assistant turn** — The response is saved with model/latency metadata
+### Two modes
 
-Memory operations are wrapped in try/except — the system works normally if databases are unavailable.
+- **Simple chat** — direct provider completion with a tool loop, no planning. This is what
+  `POST /api/agent/chat` and `POST /api/agent/chat/stream` (the everyday chat endpoints) use.
+  Flow: prompt composition → provider completion → tool-use loop → output parsing → memory
+  storage.
+- **Full agent** — the complete pipeline with task planning and reasoning, used by
+  `POST /api/agent/run`. Flow: task decomposition → reasoning-strategy selection → execution →
+  memory storage.
 
-## Prompt Composition
+### Prompt composition
 
-Each chat request composes a system prompt from:
+Each request composes a system prompt from the **global prompt** (core persona, always applied),
+the auto-generated **MCP tools prompt**, the selected **profile's sections** (via `profile_id`),
+and the injected **memory context**. See [Prompts](prompts.md) for the full layering.
 
-1. **Global prompt** — Core persona (always applied)
-2. **MCP tools prompt** — Auto-generated tool descriptions
-3. **Profile sections** — From the selected profile (via `profile_id`)
-4. **Memory context** — Injected relevant memories
+### Tool-use loop
 
-See [Prompts](prompts.md) for details.
+When MCP servers are connected, their tools are exposed to the model as function-calling tools,
+and the agent loops:
 
-## Tool-Use Loop
+1. The provider returns a completion with `tool_calls`.
+2. The agent executes each via `ToolExecutor.call_tool_sync()`.
+3. Tool results are appended as tool messages.
+4. The provider is called again with the updated messages.
+5. Repeat until there are no more tool calls, or `max_tool_rounds` (10) is reached.
 
-When MCP servers are connected, tools are exposed to the model as function-calling tools. The agent runs a tool-use loop:
+### Output parsing
 
-1. Provider returns a completion with `tool_calls`
-2. Agent executes each tool via `ToolExecutor.call_tool_sync()`
-3. Tool results are appended as tool messages
-4. Provider is called again with the updated messages
-5. Repeat until no more tool calls or `max_tool_rounds` (10) is reached
+The `OutputParser` extracts `<think>…</think>` content into `AgentResult.thinking` (setting
+`has_thinking` to `true`); the remaining content becomes `AgentResult.answer`.
 
-## Output Parsing
-
-The `OutputParser` extracts `<think>` tags from model output:
-
-- Content within `<think>...</think>` is separated into `AgentResult.thinking`
-- `has_thinking` is set to `true` when thinking is extracted
-- The remaining content becomes `AgentResult.answer`
-
-## Request Parameters
+### Request parameters
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -154,7 +111,7 @@ The `OutputParser` extracts `<think>` tags from model output:
 | `temperature` | float | `0.7` | Sampling temperature |
 | `use_memory` | bool | `true` | Enable memory |
 
-## API Endpoints
+### API endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -165,10 +122,13 @@ The `OutputParser` extracts `<think>` tags from model output:
 | `/api/agent/chat/runs` | GET | List the caller's detached runs |
 | `/api/agent/chat/runs/{run_id}/cancel` | POST | Cancel a running turn |
 
-See [API Endpoints: Agent](../api/endpoints.md#agent) for full request/response details.
+See [API Endpoints: Agent](../api/endpoints.md#agent) for full request/response details, and
+[Streaming & Detached Runs](../integrate/streaming.md) for the SSE event reference and the
+re-attach / cancel mechanics.
 
 ## Related
 
-- [Prompts](prompts.md) — Prompt composition system
-- [MCP](mcp.md) — Tool integration
-- [Memory](memory.md) — Memory system
+- [Agent Profiles](agent-profiles.md) — configure the agent you're chatting with
+- [Prompts](prompts.md) — the prompt composition system
+- [Connectors & Tools](mcp.md) — tool integration
+- [Memory](memory.md) — the memory system

@@ -59,6 +59,7 @@ export const nav: NavEntry[] = [
     label: 'Architecture',
     items: [
       { label: 'Overview', slug: 'architecture/overview' },
+      { label: 'System Design', slug: 'architecture/system-design' },
       { label: 'API Layer', slug: 'architecture/api' },
       { label: 'Client Layer', slug: 'architecture/client' },
       { label: 'Database Stack', slug: 'architecture/databases' },
