@@ -38,8 +38,7 @@ graph TB
 | Feature         | Description                                                         | Docs                                   |
 | --------------- | ------------------------------------------------------------------- | -------------------------------------- |
 | **Agent Chat**  | Conversational AI with streaming, tool use, and session management  | [Chat](features/chat.md)               |
-| **Reasoning**   | 4 strategies (CoT, ToT, ReAct, Reflection) with auto-selection      | [Reasoning](features/reasoning.md)     |
-| **Drafting**    | Speculative decoding, multi-stage pipelines, N-best candidates      | [Drafting](features/drafting.md)       |
+| **Reasoning**   | Thinking patterns in chat + an offline CoT/ToT/ReAct/Reflection kit, plus multi-model drafting | [Reasoning](features/reasoning.md)     |
 | **MCP Client**  | Connect to external tool servers via stdio, SSE, or HTTP            | [MCP](features/mcp.md)                 |
 | **Multi-Agent** | Agent Alloy — supervisor delegates subtasks to specialist agents    | [Multi-Agent](features/multi-agent.md) |
 | **Providers**   | Unified interface for LM Studio, Anthropic, OpenAI, OpenRouter, Vercel | [Providers](features/providers.md)     |

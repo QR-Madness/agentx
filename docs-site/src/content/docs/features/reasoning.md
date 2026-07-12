@@ -79,3 +79,60 @@ POST /api/agent/run
 
 Chat-first pattern values (`native`, `step_back`, `deep_reflection`,
 `self_consistency`) alias to their nearest kit strategy on this endpoint.
+
+## Advanced: multi-model drafting
+
+Thinking patterns shape how *one* model reasons. **Drafting** goes wider — orchestrating
+**several models** on a single generation to trade speed, quality, and cost. It's an
+advanced, opt-in layer: **off by default** (`enable_drafting = false`), with strategies
+defined in `drafting/drafting_strategies.yaml` and picked per task type. Three families:
+
+### Speculative decoding
+
+A fast **draft** model generates tokens that a stronger **target** model verifies,
+accepting or rejecting each batch — cheaper tokens whenever the two agree. See the
+[speculative-decoding flow](../architecture/system-design.md#speculative-decoding) on the
+System Design page.
+
+| Config | Description |
+|--------|-------------|
+| `draft_model` | The fast proposer |
+| `target_model` | The strong verifier |
+| `draft_tokens` | Tokens per draft batch (20–30) |
+| `acceptance_threshold` | Minimum score to accept (0.7–0.8) |
+| `max_iterations` | Maximum draft-verify cycles |
+
+Pre-configured: `fast_accurate`, `local_cloud`, `claude_fast`.
+
+### Pipeline
+
+Multi-stage generation where each stage uses a different model, prompt, and temperature for
+a specific role — analyze, critique/review, refine, summarize. Pre-configured: `code_review`
+(generate → review → refine), `writing_pipeline` (outline → draft → edit → polish),
+`analysis_pipeline` (decompose → research → synthesize).
+
+### Candidate generation
+
+Generate several candidates and pick the best with a scoring method — `majority_vote` (most
+common answer wins), `verifier` (a separate model scores each), or `length_preference`.
+Pre-configured: `consensus` (multi-model vote), `best_of_n` (N candidates + verifier),
+`diverse_ensemble` (varied models), `self_consistency` (same model, multiple samples).
+
+A run returns a **`DraftResult`**:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `content` | string | Final output |
+| `strategy` | string | Strategy name |
+| `status` | DraftStatus | `"complete"` or `"failed"` |
+| `draft_tokens` / `accepted_tokens` | int | Tokens drafted / accepted (speculative) |
+| `models_used` | list[string] | Every model involved |
+| `stages_completed` / `candidates_generated` | int | Pipeline stages · candidates produced |
+| `estimated_cost` | float | Estimated USD cost |
+| `total_time_ms` | float | Elapsed time |
+
+Task types map to a default strategy via the `defaults` block — `general → fast_accurate`,
+`code → code_review`, `writing → writing_pipeline`, `analysis → analysis_pipeline`,
+`consensus → consensus`. Full config lives in
+`api/agentx_ai/drafting/drafting_strategies.yaml`; the result schema is in
+[API Models](../api/models.md).

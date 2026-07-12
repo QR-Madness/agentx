@@ -39,7 +39,7 @@ export const FEATURES: Feature[] = [
     desc: 'Speculative decoding, multi-stage pipelines, N-best candidates.',
     color: 'var(--c-drafting)',
     tag: 'spec · pipe · cand',
-    href: '/docs/features/drafting',
+    href: '/docs/features/reasoning#advanced-multi-model-drafting',
   },
   {
     key: 'mcp',
