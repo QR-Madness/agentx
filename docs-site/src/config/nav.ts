@@ -28,10 +28,11 @@ export const nav: NavEntry[] = [
     label: 'Using the Platform',
     items: [
       { label: 'Chat', slug: 'features/chat', color: 'var(--c-agent)' },
+      { label: 'Agent Profiles', slug: 'features/agent-profiles', color: 'var(--c-agent)' },
       { label: 'Reasoning', slug: 'features/reasoning', color: 'var(--c-reasoning)' },
       { label: 'Drafting', slug: 'features/drafting', color: 'var(--c-drafting)' },
       { label: 'Connectors & Tools (MCP)', slug: 'features/mcp', color: 'var(--c-mcp)' },
-      { label: 'Multi-Agent', slug: 'features/multi-agent', color: 'var(--c-agent)' },
+      { label: 'Agent Teams', slug: 'features/multi-agent', color: 'var(--c-agent)' },
       { label: 'Providers', slug: 'features/providers', color: 'var(--c-providers)' },
       { label: 'Prompts', slug: 'features/prompts', color: 'var(--c-prompts)' },
       { label: 'Memory', slug: 'features/memory', color: 'var(--c-memory)' },

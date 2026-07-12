@@ -407,18 +407,22 @@ a:hover {
   overflow-x: auto;
 }
 .ax-prose thead {
-  background: color-mix(in oklab, var(--color-surface-2) 75%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--color-accent) 18%, var(--color-surface-2)),
+    color-mix(in oklab, var(--color-accent) 9%, var(--color-surface-2))
+  );
 }
 .ax-prose th {
   text-align: left;
   padding: 10px 14px;
   font-family: var(--font-mono);
   font-size: 11.5px;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-text-muted);
-  border-bottom: 1px solid var(--color-border);
+  color: var(--color-accent-hover);
+  border-bottom: 1px solid color-mix(in oklab, var(--color-accent) 35%, var(--color-border));
 }
 .ax-prose td {
   padding: 12px 14px;
@@ -426,11 +430,18 @@ a:hover {
   vertical-align: top;
   color: var(--color-text);
 }
+.ax-prose tbody td:first-child {
+  color: var(--color-text-strong);
+  font-weight: 500;
+}
+.ax-prose tbody tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--color-surface-2) 45%, transparent);
+}
 .ax-prose tbody tr:last-child td {
   border-bottom: 0;
 }
 .ax-prose tbody tr:hover td {
-  background: color-mix(in oklab, var(--color-surface) 60%, transparent);
+  background: color-mix(in oklab, var(--color-accent) 12%, transparent);
 }
 .ax-prose td code {
   font-size: 12.5px;
@@ -531,6 +542,7 @@ a:hover {
   border-radius: var(--radius-card);
   background: var(--color-surface);
   margin-top: 1.5em;
+  --admon-icon: url('/icons/adm-info.svg');
 }
 .ax-admon[data-kind="note"] {
   border-left-color: var(--c-agent);
@@ -553,6 +565,9 @@ a:hover {
   background: color-mix(in oklab, var(--color-danger) 7%, var(--color-surface));
 }
 .ax-admon-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.14em;
@@ -560,6 +575,24 @@ a:hover {
   font-weight: 500;
   margin: 0 0 6px;
   color: var(--color-accent);
+}
+.ax-admon-title::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 1.15em;
+  height: 1.15em;
+  background-color: currentColor;
+  -webkit-mask: var(--admon-icon) center / contain no-repeat;
+  mask: var(--admon-icon) center / contain no-repeat;
+}
+.ax-admon[data-kind="tip"] {
+  --admon-icon: url('/icons/adm-tip.svg');
+}
+.ax-admon[data-kind="warning"] {
+  --admon-icon: url('/icons/adm-warning.svg');
+}
+.ax-admon[data-kind="danger"] {
+  --admon-icon: url('/icons/adm-danger.svg');
 }
 .ax-admon[data-kind="note"] .ax-admon-title {
   color: var(--c-agent);
@@ -583,6 +616,20 @@ a:hover {
 }
 .ax-admon p + p {
   margin-top: 0.6em;
+}
+
+/* Inline lucide icons in prose — mask colored by currentColor, matching the app. */
+.ax-icon {
+  display: inline-block;
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.16em;
+  background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+.ax-icon--brain {
+  --icon: url('/icons/brain-circuit.svg');
 }
 
 /* ============================================================================

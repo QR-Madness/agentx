@@ -39,6 +39,50 @@ graph TD
     S -->|synthesized answer| U
 ```
 
+## Set it up
+
+Two ways to get agents working together — one takes seconds, the other gives you a repeatable team.
+
+### The quick path — an ad-hoc roster
+
+For teammates you reach for now and then, with no setup ceremony:
+
+1. Open each agent you want available ([Agent Profiles](/docs/features/agent-profiles)) →
+   **Core → Team membership** → turn on **Join the team roster** and write a one-line
+   **Specialty**.
+2. That's it. In any ordinary chat, your active agent now *sees* those teammates in its prompt
+   and can hand one a subtask when it's clearly the better fit. It still handles most things
+   itself — delegation is an option, not a reflex.
+3. Want a chat to stay single-agent? Flip the **Solo/Team** toggle (the composer chip, the
+   Relay tile, or the command palette) to **Solo**.
+
+AgentX ships two agents already on the roster — the **Researcher** and the **Deluxe Image
+Creator** — so "research this" or "make me an image of…" delegates out of the box.
+
+### The structured path — a saved Team
+
+For a workflow you run repeatedly (a lead that always orchestrates a fixed set of specialists):
+
+1. Command palette (`⌘K`) → **Manage agent teams** → **New team**.
+2. Pick a **Lead** — the agent that owns the conversation and decides when to delegate. Give it
+   a capable model; the orchestration is only as good as the lead.
+3. **Add member** for each specialist, each with an optional hint about what to send it.
+4. Save, then attach the Team to a conversation. The lead now runs the show under an
+   "orchestrate, don't execute" brief, delegating to members over a shared memory channel and
+   synthesizing their results into one answer.
+
+!!! note "Lead vs. Members"
+    A Team has exactly one **Lead** (the supervisor) and any number of **Members** (specialists).
+    Members run in isolation — they see only the task you route them, not the whole conversation —
+    and they can't re-delegate. Ambassadors are never team members.
+
+### What you'll see
+
+When an agent delegates, its teammate's work renders **inline** as a delegation card in the
+transcript — you watch the subtask run, not just its result. A **Trace** pill on the
+conversation opens the **Team Run Trace**: who delegated to whom, and each step's tokens, cost,
+and wall-clock time. Nothing happens off-screen.
+
 ## Data Model
 
 A workflow binds exactly one supervisor to zero or more specialists. Members are referenced
