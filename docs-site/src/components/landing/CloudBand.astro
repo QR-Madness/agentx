@@ -1,0 +1,145 @@
+---
+// Cloud teaser — hype for the (not-yet-launched) managed cloud. Self-host is the
+// path that ships today; the request / waitlist action is intentionally omitted
+// until it's wired (swap the "early access soon" marker for a real CTA then).
+import MonoTag from '../ui/MonoTag.astro';
+import Cta from '../ui/Cta.astro';
+import ArrowRight from '../icons/ArrowRight.astro';
+---
+
+<section id="cloud" class="cloud-band">
+  <div class="wash" aria-hidden="true"></div>
+  <div class="ax-grid-bg grid-wash" aria-hidden="true"></div>
+
+  <div class="inner">
+    <span class="badge">
+      <svg
+        class="cloud-ico"
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+      </svg>
+      <MonoTag>cloud · coming soon</MonoTag>
+    </span>
+
+    <h2 class="ax-wordmark title">
+      AgentX Cloud is coming.<br />
+      <span class="title-muted">Managed. Zero-ops. Your agents, hosted.</span>
+    </h2>
+
+    <p class="lede">
+      The same glassbox platform — persistent memory, agent teams, reasoning, and your choice of
+      model — without standing up a thing. Bring your keys; we run the rest.
+    </p>
+
+    <div class="cta-row">
+      <Cta kind="solid" href="/docs/getting-started/quickstart">
+        Self-host it today
+        <ArrowRight slot="icon" />
+      </Cta>
+      <span class="soon-pill">
+        <span class="soon-dot" aria-hidden="true"></span>
+        <span class="ax-mono">early access soon</span>
+      </span>
+    </div>
+  </div>
+</section>
+
+<style>
+  .cloud-band {
+    position: relative;
+    padding: 88px 48px;
+    border-top: 1px solid var(--color-border);
+    overflow: hidden;
+  }
+  .wash {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(50% 70% at 50% -10%, color-mix(in oklab, var(--color-text) 8%, transparent), transparent 70%),
+      radial-gradient(40% 60% at 85% 120%, color-mix(in oklab, var(--color-text) 5%, transparent), transparent 72%);
+  }
+  .grid-wash {
+    position: absolute;
+    inset: 0;
+    opacity: 0.35;
+    mask-image: radial-gradient(70% 90% at 50% 40%, black 15%, transparent 82%);
+    -webkit-mask-image: radial-gradient(70% 90% at 50% 40%, black 15%, transparent 82%);
+  }
+
+  .inner {
+    position: relative;
+    max-width: 760px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .cloud-ico {
+    color: var(--color-text-muted);
+  }
+
+  .title {
+    font-size: clamp(30px, 4.4vw, 48px);
+    margin: 0 0 16px;
+    font-weight: 700;
+    line-height: 1.06;
+    letter-spacing: -0.03em;
+    text-wrap: balance;
+  }
+  .title-muted {
+    color: var(--color-text-muted);
+  }
+
+  .lede {
+    font-size: 16px;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+    max-width: 560px;
+    margin: 0 auto 30px;
+    text-wrap: pretty;
+  }
+
+  .cta-row {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .soon-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px dashed var(--color-border-2);
+    color: var(--color-text-muted);
+    letter-spacing: 0.12em;
+  }
+  .soon-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--c-memory, var(--color-text-muted));
+    box-shadow: 0 0 10px var(--c-memory, var(--color-text-muted));
+  }
+
+  @media (max-width: 720px) {
+    .cloud-band {
+      padding: 60px 18px;
+    }
+  }
+</style>
