@@ -8,12 +8,12 @@ import { FEATURES } from '../../config/landing';
 const S = 720;
 const cx = S / 2;
 const cy = S / 2;
-const ring = S * 0.41;
-const labelOffset = S * 0.05;
+const ring = S * 0.36;
+const labelOffset = S * 0.045;
 const N = FEATURES.length;
 const pct = (v: number) => (v / S) * 100;
 
-const guideRings = [0.17, 0.25, 0.33, 0.41, 0.48];
+const guideRings = [0.16, 0.24, 0.3, 0.36, 0.45];
 
 const nodes = FEATURES.map((f, i) => {
   const a = -Math.PI / 2 + i * ((2 * Math.PI) / N);
@@ -93,7 +93,7 @@ const nodes = FEATURES.map((f, i) => {
   </svg>
 
   {/* center badge — real logo */}
-  <img class="badge" src="/AgentX-Logo-v3-badge.png" alt="AgentX" />
+  <img class="badge" src="/AgentX-Logo-v4.png" alt="AgentX" />
 
   {/* node labels (HTML, %-positioned, cqw-sized → scale with the container) */}
   {
@@ -114,9 +114,26 @@ const nodes = FEATURES.map((f, i) => {
 <style>
   .constellation {
     position: relative;
-    width: min(720px, 100%);
+    width: min(600px, 100%);
     aspect-ratio: 1;
     container-type: inline-size;
+    transition:
+      opacity 0.9s ease,
+      transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  /* Fly-in reveal (JS adds .reveal-ready, then .in on scroll into view). */
+  .constellation.reveal-ready {
+    opacity: 0;
+    transform: translateY(30px) scale(0.92);
+  }
+  .constellation.reveal-ready.in {
+    opacity: 1;
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .constellation {
+      transition: none;
+    }
   }
   .constellation svg {
     position: absolute;
@@ -141,7 +158,7 @@ const nodes = FEATURES.map((f, i) => {
   }
   .label-name {
     font-family: var(--font-display);
-    font-size: 2.08cqw;
+    font-size: 1.94cqw;
     font-weight: 600;
     letter-spacing: -0.01em;
     color: var(--color-text-strong);
@@ -149,7 +166,7 @@ const nodes = FEATURES.map((f, i) => {
   }
   .label-tag {
     margin-top: 0.4cqw;
-    font-size: 1.53cqw;
+    font-size: 1.42cqw;
     white-space: nowrap;
   }
 
@@ -163,3 +180,25 @@ const nodes = FEATURES.map((f, i) => {
     }
   }
 </style>
+
+<script>
+  // Fly-in reveal — the constellation settles in when the map scrolls into view.
+  // Progressive enhancement: without JS (or with reduced-motion) it just shows.
+  const maps = document.querySelectorAll('.constellation');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce && 'IntersectionObserver' in window) {
+    maps.forEach((el) => el.classList.add('reveal-ready'));
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            e.target.classList.add('in');
+            io.unobserve(e.target);
+          }
+        }
+      },
+      { threshold: 0.2 }
+    );
+    maps.forEach((el) => io.observe(el));
+  }
+</script>

@@ -13,7 +13,7 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
       <div class="lights">
         <span></span><span></span><span></span>
       </div>
-      <MonoTag class="run-label">agent · trace · run_aef91</MonoTag>
+      <MonoTag class="run-label">AgX · trace · aef91</MonoTag>
     </div>
     <span class="live">
       <span class="live-dot"></span>
@@ -24,10 +24,9 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
   <div class="roster">
     <div class="roster-head">
       <div class="roster-title">
-        <span class="ax-mono" style="color:var(--color-text-strong);letter-spacing:0.14em">ALLOY</span>
-        <span class="ax-mono" style="color:var(--color-text-dim)">3 agents · plan ⇢ delegate ⇢ merge</span>
+        <span class="ax-mono" style="color:var(--color-text-strong);letter-spacing:0.14em">AgX · team</span>
+        <span class="ax-mono" style="color:var(--color-text-dim)">plan ⇢ delegate ⇢ merge</span>
       </div>
-      <span class="ax-mono" style="color:var(--color-text-dim)">inspector →</span>
     </div>
     <div class="roster-rows">
       {
@@ -37,9 +36,7 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
               <span class="alloy-dot" style={`--c:${a.color}`} />
               <span style={`color:${a.color};font-weight:500`}>{a.role}</span>
             </span>
-            <span style="color:var(--color-text)">@{a.id}</span>
-            <span class="alloy-profile">{a.profile}</span>
-            <span class="alloy-model">{a.model}</span>
+            <span style="color:var(--color-text-muted)">@{a.id}</span>
           </div>
         ))
       }
@@ -76,7 +73,7 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
     }
     <div class="idle">
       <span class="idle-dot"></span>
-      <MonoTag>alloy idle · awaiting next task</MonoTag>
+      <MonoTag>team idle · awaiting next task</MonoTag>
     </div>
   </div>
 </div>
@@ -152,12 +149,12 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
   }
   .ax-alloy-row {
     display: grid;
-    grid-template-columns: 108px 1fr 1fr 90px;
+    grid-template-columns: 116px 1fr;
     gap: 12px;
     align-items: center;
     padding: 6px 0;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 12.5px;
   }
   .alloy-role {
     display: inline-flex;
@@ -197,10 +194,10 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
     grid-template-columns: 44px 108px 72px 1fr;
     gap: 12px;
     align-items: baseline;
-    padding: 4px 0;
+    padding: 7px 0;
     font-family: var(--font-mono);
     font-size: 12.5px;
-    line-height: 1.5;
+    line-height: 1.55;
   }
   .trace-t {
     color: var(--color-text-dim);
