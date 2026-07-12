@@ -23,6 +23,16 @@
       (PostgreSQL or similar) and let the UI expand to the whole thing (lazy-loaded), beyond the
       streamed/truncated preview.
 
+- [ ] **`<think>` tags leak into the DOM on reasoning-model turns** — reasoning models wrap
+      chain-of-thought in `<think>…</think>` (provider `reasoning`/`reasoning_content` deltas, normalized
+      in `providers/base.py::process_reasoning_delta`); on some turns the raw tag reaches the markdown/DOM
+      renderer instead of the ThinkingBubble, so React logs a repeated `The tag <think> is unrecognized in
+      this browser` warning and the thinking content can render as a bare/inert tag. Likely a
+      streaming/parse-boundary case (a partial `<think>` split across SSE chunks, or a native model emitting
+      nested `<think>` that `ThinkTagSanitizer` doesn't strip on the client render path). Repro: open a
+      reasoning-model conversation (e.g. `minimax-m3`) and watch the console. Client-side; streaming is
+      complex — scope the parse/sanitize path carefully before touching it.
+
 ### Backend Observability — live operation status over SSE
 
 - [x] **Per-phase status events (coarse)** — shipped. A typed `status` event

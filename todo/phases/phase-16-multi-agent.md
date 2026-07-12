@@ -69,6 +69,7 @@
 - [ ] **Memory capability registry** — a code-side `@capability(...)`/registry that
       `architecture/memory-capabilities.md` is generated from or validated against, so the
       manifest can't silently drift from code (the deferred half of the drift decision).
+- [ ] **Manager agents (agent → team delegation)** — today `delegate_to` only targets individual agents (strict A2A). A **manager agent** could delegate a task to an entire **Team** (workflow), which then runs its own Lead→Members loop and returns a synthesized result — agent → team, not just agent → agent. Hooks: a team-targeted delegation descriptor (enum over workflow ids alongside the existing agent enum in `alloy/delegation_tool.py`), `AlloyExecutor` nesting with depth/parallel accounting across the team boundary, and cost/attribution rollup for the nested team run. Tiering note: an **executive** agent would sit a step higher again (delegating across multiple managers/teams) — capture later.
 
 ### 16.6 Ambassador Agent (dual-presentation layer) — foundation shipped `[v0.21.32]`
 
