@@ -193,8 +193,28 @@ a:hover {
     transform: none;
   }
 }
-.ax-prose {
+/* The first blocks cascade in on load; deeper content renders immediately, so
+   only ~6 elements ever animate (transform/opacity only — compositor-cheap). */
+.ax-prose > *:nth-child(-n + 6) {
   animation: ax-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.ax-prose > *:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.ax-prose > *:nth-child(2) {
+  animation-delay: 0.06s;
+}
+.ax-prose > *:nth-child(3) {
+  animation-delay: 0.1s;
+}
+.ax-prose > *:nth-child(4) {
+  animation-delay: 0.14s;
+}
+.ax-prose > *:nth-child(5) {
+  animation-delay: 0.18s;
+}
+.ax-prose > *:nth-child(6) {
+  animation-delay: 0.22s;
 }
 
 /* Glassbox card — soft inner highlight, subtle border. */
@@ -717,6 +737,7 @@ a.ax-glass:hover,
   padding: 4px 0 4px 10px;
   border-left: 1px solid var(--color-border);
   color: var(--color-text-muted);
+  transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .ax-toc a:hover {
   color: var(--color-text);
@@ -724,6 +745,7 @@ a.ax-glass:hover,
 .ax-toc a.active {
   color: var(--color-text-strong);
   border-left-color: var(--color-accent);
+  box-shadow: -1px 0 10px -3px color-mix(in oklab, var(--color-accent) 60%, transparent);
 }
 .ax-toc a.depth-3 {
   padding-left: 22px;
