@@ -1,124 +1,87 @@
 # Model Providers
 
-The provider system provides a unified interface for interacting with different LLM backends. All providers implement the `ModelProvider` abstract class.
+AgentX is **model-agnostic** — bring your own. It speaks to local runtimes and cloud APIs
+through one unified interface, so you can run a small model on your own machine, call Claude or
+GPT directly, or reach hundreds of models through an aggregator, and switch between them per
+conversation or per agent.
 
-## Provider Registry
+## Bring your own model
 
-```mermaid
-graph TD
-    R[ProviderRegistry] --> |resolves model → provider| LMS[LM Studio]
-    R --> ANT[Anthropic]
-    R --> OAI[OpenAI]
-    R --> ORT[OpenRouter]
-    R --> VRC[Vercel AI Gateway]
-    R --> |loads| MY[models.yaml]
+Five backends ship out of the box. Add a key (in `.env` or **Settings**) and the models become
+selectable:
 
-    LMS --> |OpenAI-compatible API| LOCAL[Local Models]
-    ANT --> |Anthropic API| CLAUDE[Claude Models]
-    OAI --> |OpenAI API| GPT[GPT Models]
-    ORT --> |aggregator API| MANY[100+ models]
-    VRC --> |gateway API| MANY
-```
+| Provider | What it is | Key |
+|----------|------------|-----|
+| **LM Studio** | Local models over an OpenAI-compatible API — private, no per-token cost | `LMSTUDIO_BASE_URL` (default `http://localhost:1234/v1`) |
+| **Anthropic** | Claude models, direct | `ANTHROPIC_API_KEY` |
+| **OpenAI** | GPT models, direct | `OPENAI_API_KEY` |
+| **OpenRouter** | Aggregator — hundreds of models behind one key | `OPENROUTER_API_KEY` |
+| **Vercel AI Gateway** | Aggregator gateway with automatic failover | `AI_GATEWAY_API_KEY` |
 
-`ProviderRegistry` is a lazy singleton that:
-- Loads model definitions from `providers/models.yaml`
-- Resolves model names to their provider (e.g., `"claude-3-5-sonnet-latest"` → Anthropic)
-- Creates provider instances on demand with config from env vars or `data/config.json`
+Pick a model anywhere you choose one (the Relay, an agent profile) with **`provider:model`** —
+`lmstudio:llama-3.2` for a local model, `anthropic:claude-sonnet-5` for Claude direct, or an
+aggregator route like `openrouter:<vendor>/<model>` to reach the long tail. Available models are
+discovered live from each provider's API, so the picker reflects what you can actually run.
 
-```python
-registry = get_registry()
-provider, model_id = registry.get_provider_for_model("claude-3-5-sonnet-latest")
-result = await provider.complete(messages, model_id)
-```
+## Which model runs a turn
 
-## Implementations
+The active model is resolved in order — **the per-request model** (an explicit override or the
+Relay's Model tile) → **the agent profile's** default model → **your global preference** → a
+built-in fallback. There's no single hidden "default model" env var; the model always comes from
+one of those layers.
 
-| Provider | Class | API | Config |
-|----------|-------|-----|--------|
-| LM Studio | `LMStudioProvider` | OpenAI-compatible (local) | `LMSTUDIO_BASE_URL` (default: `http://localhost:1234/v1`) |
-| Anthropic | `AnthropicProvider` | Anthropic API | `ANTHROPIC_API_KEY` |
-| OpenAI | `OpenAIProvider` | OpenAI API | `OPENAI_API_KEY` |
-| OpenRouter | `OpenRouterProvider` | OpenAI-compatible aggregator (100+ models) | `OPENROUTER_API_KEY` |
-| Vercel AI Gateway | `VercelProvider` | Cloud aggregator gateway (100+ models) | `AI_GATEWAY_API_KEY` |
+## Model roles
 
-All providers support the same interface:
+Not every internal job deserves your best model. A quick auto-classification or a compaction
+summary can run on something faster and cheaper. **Model roles** let you assign a model to a
+named system role — a **Fast Utility** role (short classifications, the auto thinking-pattern
+tiebreak) and a **Summarizer** role (context compaction) are the main ones.
 
-| Method | Description |
-|--------|-------------|
-| `complete(messages, model, **kwargs)` | Full completion (async) |
-| `stream(messages, model, **kwargs)` | Streaming completion → `AsyncIterator[StreamChunk]` |
-| `get_capabilities(model)` | Returns `ModelCapabilities` for a model |
-| `list_models()` | Returns available model names |
-| `health_check()` | Tests connectivity |
+Role members default to **inherit** (left empty), so a role follows the conversation's own model
+until you deliberately set one. That default matters: pinning a concrete model as a role's
+built-in default would quietly bypass the roles overlay, so roles stay empty-by-default on
+purpose. Configure them in **Settings → Intelligence**.
 
-### Common Parameters
+## Fallback — never hard-fail a turn
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `temperature` | float | `0.7` | Sampling temperature |
-| `max_tokens` | int | `null` | Maximum output tokens |
-| `tools` | list[dict] | `null` | Function calling tools |
-| `tool_choice` | string/dict | `null` | Tool selection (`"auto"`, `"none"`, or specific) |
-| `stop` | list[string] | `null` | Stop sequences |
+If a model's provider is unreachable or errors mid-feature, AgentX **falls back** to another
+capable model rather than failing the turn. It's on by default (`models.fallback_enabled`) and
+watches real call outcomes, so a provider that just failed is briefly deprioritized. Features
+like reasoning and delegation resolve through this same chain, which is why a flaky provider
+degrades gracefully instead of breaking a conversation.
 
-## Model Configuration
+## Model Limits & the `:latest` gotcha
 
-Providers (and their default models) are defined in `providers/models.yaml`. The file
-holds **provider configs only** — per-model capabilities are fetched dynamically from each
-provider's API, not hand-listed. Select a model with `provider:model` syntax:
+Aggregator routes pinned to **`:latest`** don't report their context window, so AgentX has to
+assume a conservative ~8k tokens — which triggers premature context compaction (memory that
+feels forgetful) and can break image generation. Two guards catch this:
 
-```yaml
-providers:
-  lmstudio:
-    base_url_env: LMSTUDIO_BASE_URL
-    timeout: 300.0       # local models may be slower
-    max_retries: 1
-  anthropic:
-    api_key_env: ANTHROPIC_API_KEY
-    timeout: 60.0
-    max_retries: 3
-  openai:     { api_key_env: OPENAI_API_KEY,     timeout: 60.0, max_retries: 3 }
-  openrouter: { api_key_env: OPENROUTER_API_KEY, timeout: 60.0, max_retries: 3 }
-  vercel:     { api_key_env: AI_GATEWAY_API_KEY, timeout: 60.0, max_retries: 3 }
+- The **model picker warns** on a `:latest` route and suggests pinning a concrete version.
+- **Settings → Model Limits** lets you set a **per-model context-window override** (an escape
+  hatch for any provider) alongside local-model context and output caps. An override **wins**
+  over whatever the provider reports.
 
-# Default model per use case (provider:model format)
-defaults:
-  chat:      anthropic:claude-3-5-sonnet-latest
-  reasoning: anthropic:claude-3-5-sonnet-latest
-  code:      lmstudio:deepseek-coder-v2
-  fast:      anthropic:claude-3-5-haiku-latest
-  local:     lmstudio:llama3.2
-```
+!!! tip "Pin the version"
+    When you can, choose a concrete model version (e.g. `…-20250219`) over `:latest`. It resolves
+    the real context window, keeps memory working, and won't surprise you when the aggregator
+    re-points the alias.
 
-The registry discovers available models dynamically from each provider's API (e.g. LM
-Studio's `/v1/models`). The OpenRouter and Vercel providers additionally extract per-model
-metadata and pricing, surfaced via `providers/pricing.py` for cost estimation.
+## Under the hood
 
-## Environment Variables
+A lazy `ProviderRegistry` resolves each `provider:model` name to its backend, loads provider
+configs from `providers/models.yaml` (**provider settings only** — per-model capabilities are
+fetched from each provider's API, not hand-listed), and creates providers on demand from
+environment variables or `data/config.json`. The OpenRouter and Vercel providers additionally
+extract per-model metadata and pricing (`providers/pricing.py`) for live cost estimation. See the
+[provider-resolution diagram](../architecture/system-design.md#provider-resolution) on the System
+Design page.
 
-| Variable | Description |
-|----------|-------------|
-| `DEFAULT_MODEL` | Default model for chat (default: `"llama-3.2-1b-instruct"`) |
-| `LMSTUDIO_BASE_URL` | LM Studio API URL |
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `OPENROUTER_API_KEY` | OpenRouter API key (100+ models) |
-| `AI_GATEWAY_API_KEY` | Vercel AI Gateway API key (100+ models) |
-| `DEBUG_LOG_LLM_REQUESTS` | Log full request payloads when set to `1`/`true` |
-
-Provider settings can also be set at runtime via `POST /api/config/update`.
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/providers` | GET | List configured providers |
-| `/api/providers/models` | GET | List models with capabilities |
-| `/api/providers/health` | GET | Health check all providers |
-
-See [API Endpoints](../api/endpoints.md#providers) for full details.
+Provider settings can also be changed at runtime in **Settings**, and the programmatic surface —
+listing providers, models with capabilities, and health — is in the
+[API Reference](../api/endpoints.md#providers).
 
 ## Related
 
-- [API Models: Provider](../api/models.md#provider-models) — Message, CompletionResult, ModelCapabilities schemas
-- Config file: `api/agentx_ai/providers/models.yaml`
+- [Reasoning](reasoning.md) — model roles power auto pattern-selection
+- [Agent Profiles](agent-profiles.md) — set an agent's default model and temperature
+- [API Models: Provider](../api/models.md#provider-models) — Message, CompletionResult, ModelCapabilities

@@ -184,3 +184,26 @@ sequenceDiagram
 
     A->>A: Provider.complete(messages) → final response
 ```
+
+## Provider resolution
+
+A lazy `ProviderRegistry` maps a `provider:model` name to the right backend, loads provider
+configs from `models.yaml`, and creates providers on demand. Aggregators (OpenRouter, Vercel)
+additionally pull per-model metadata and pricing. The user-facing view is on the
+[Providers](../features/providers.md) page.
+
+```mermaid
+graph TD
+    R[ProviderRegistry] --> |resolves model → provider| LMS[LM Studio]
+    R --> ANT[Anthropic]
+    R --> OAI[OpenAI]
+    R --> ORT[OpenRouter]
+    R --> VRC[Vercel AI Gateway]
+    R --> |loads| MY[models.yaml]
+
+    LMS --> |OpenAI-compatible API| LOCAL[Local Models]
+    ANT --> |Anthropic API| CLAUDE[Claude Models]
+    OAI --> |OpenAI API| GPT[GPT Models]
+    ORT --> |aggregator API| MANY[100+ models]
+    VRC --> |gateway API| MANY
+```
