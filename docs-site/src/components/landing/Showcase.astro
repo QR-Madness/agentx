@@ -1,0 +1,182 @@
+---
+// "See it in action" — real product screenshots in a browser-frame mockup.
+// Concrete proof that pairs with the Why-AgentX pillars (team + transparency).
+import MonoTag from '../ui/MonoTag.astro';
+
+const SHOTS = [
+  {
+    eyebrow: 'multi-agent, on screen',
+    title: 'Watch your agents delegate',
+    desc: 'A lead hands research to a specialist teammate and synthesizes the result — the delegation, its completed status, and the full trace all render inline. Nothing happens off-screen.',
+    img: '/shot-delegation.png',
+    alt: 'An AgentX conversation showing a task delegated to a specialist agent, marked completed, with the synthesized research summary inline.',
+    url: 'agentx · agents',
+    color: 'var(--c-agent)',
+  },
+  {
+    eyebrow: 'every token, every dollar',
+    title: 'Cost & usage, fully in view',
+    desc: 'A live dashboard on your own server: spend by model and by agent, token counts, month projections, and latency — so you always know exactly what your agents cost.',
+    img: '/shot-dashboard.png',
+    alt: 'The AgentX dashboard showing usage and cost — turns, tokens, estimated cost, cost by model, and a per-agent breakdown.',
+    url: 'agentx · dashboard',
+    color: 'var(--c-memory)',
+  },
+];
+---
+
+<section class="showcase">
+  <div class="inner">
+    <div class="head">
+      <h2 class="ax-wordmark title">See it in action</h2>
+      <MonoTag>§ the real thing</MonoTag>
+    </div>
+
+    <div class="rows">
+      {
+        SHOTS.map((s, i) => (
+          <div class:list={['row', { reverse: i % 2 === 1 }]} style={`--accent:${s.color}`}>
+            <div class="copy">
+              <MonoTag color={s.color}>{s.eyebrow}</MonoTag>
+              <h3 class="shot-title">{s.title}</h3>
+              <p class="shot-desc">{s.desc}</p>
+            </div>
+            <figure class="frame ax-lift">
+              <div class="bar">
+                <span class="dot" />
+                <span class="dot" />
+                <span class="dot" />
+                <span class="url ax-mono">{s.url}</span>
+              </div>
+              <img
+                src={s.img}
+                alt={s.alt}
+                width="1920"
+                height="1080"
+                loading="lazy"
+                decoding="async"
+              />
+            </figure>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .showcase {
+    padding: 72px 48px 24px;
+  }
+  .inner {
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  .head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 30px;
+  }
+  .title {
+    font-size: 32px;
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .rows {
+    display: grid;
+    gap: 44px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 5fr 7fr;
+    gap: 36px;
+    align-items: center;
+  }
+  .row.reverse {
+    grid-template-columns: 7fr 5fr;
+  }
+  .row.reverse .copy {
+    order: 2;
+  }
+  .row.reverse .frame {
+    order: 1;
+  }
+
+  .copy {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .shot-title {
+    font-family: var(--font-display);
+    font-size: clamp(22px, 2.4vw, 28px);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--color-text-strong);
+    margin: 0;
+  }
+  .shot-desc {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--color-text-muted);
+    max-width: 460px;
+    text-wrap: pretty;
+  }
+
+  .frame {
+    margin: 0;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    overflow: hidden;
+    box-shadow:
+      0 28px 64px -28px rgba(0, 0, 0, 0.85),
+      0 0 0 1px color-mix(in oklab, var(--accent) 12%, transparent);
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 13px;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in oklab, var(--color-bg) 55%, var(--color-surface));
+  }
+  .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--color-border-2);
+  }
+  .url {
+    margin-left: 10px;
+    font-size: 11px;
+    color: var(--color-text-dim);
+    letter-spacing: 0.04em;
+  }
+  .frame img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  @media (max-width: 860px) {
+    .showcase {
+      padding: 52px 18px 8px;
+    }
+    .row,
+    .row.reverse {
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+    .row.reverse .copy,
+    .row.reverse .frame {
+      order: 0;
+    }
+    .title {
+      font-size: 24px;
+    }
+  }
+</style>
