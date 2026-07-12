@@ -34,31 +34,12 @@ into a prefilled server form (remote endpoints directly; npm / PyPI / OCI packag
 `uvx` / `docker run` commands). Registry entries are community-published — review the commands
 and URLs before saving.
 
-### Google Workspace — Developer Preview only
+### Google Workspace connectors
 
-Google Drive and the other Google Workspace servers (Docs, Gmail, Slides, …) sit behind a
-**Coming soon** badge because they're part of Google's
-[Workspace Developer Preview Program](https://developers.google.com/workspace/preview):
-enrollment needs a Google **Workspace** account and a registered Cloud project — personal
-accounts can't enroll, and approval takes days. Until you're enrolled, sign-in *succeeds* but
-every tool call fails with `The caller does not have permission`.
-
-If you are enrolled, add the server manually with **Add Server** — it needs a **pre-registered
-OAuth app** in your own Google Cloud project (no dynamic registration):
-
-1. Create or select a Cloud project; enable the **Google Drive API** and **Google Drive MCP API**.
-2. On the OAuth consent screen, add the scopes `…/auth/drive.readonly` and `…/auth/drive.file`.
-3. Create an OAuth client ID (Web application) and register AgentX's callback as an authorized
-   redirect URI: `http://localhost:12319/api/mcp/oauth/callback` (adjust for your host via
-   `AGENTX_OAUTH_REDIRECT_URL`).
-4. Set `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` in the API's `.env` — the catalog
-   references them as `${VAR}` so secrets never land in `mcp_servers.json` — or paste them into
-   the dialog.
-
-One OAuth client can serve every cluster: list each cluster's
-`https://<host>/api/mcp/oauth/callback` as an authorized redirect URI and reuse the same
-credentials. Gateway deployments pass that tokenless callback through by design — see
-[Clusters & Gateway](../deployment/clusters.md).
+Google Drive and the other Google Workspace servers sit behind a **Coming soon** badge: they're in
+Google's Developer Preview and need a self-registered OAuth app in your own cloud project. If
+you're self-hosting and enrolled, the
+[Hosting Handbook](../deployment/hosting-handbook.md#google-workspace) walks through the setup.
 
 ## Adding a server by hand
 
