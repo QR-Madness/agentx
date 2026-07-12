@@ -821,6 +821,17 @@
   transform: none;
 }
 
+/* Floating Delete for existing (non-default) profiles — anchored to
+   .profile-content-outer (position:relative) so it floats over the scrolling
+   form and stays put. position:absolute (not fixed / not a portal) → Tauri-safe. */
+.profile-delete-float {
+  position: absolute;
+  right: 22px;
+  bottom: 18px;
+  z-index: 5;
+  box-shadow: var(--shadow-md);
+}
+
 /* ── Footer ── */
 .profile-footer {
   display: flex;

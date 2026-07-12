@@ -204,7 +204,6 @@ export function ProfileContent({
     saving,
     deleting,
     error,
-    autosaveState,
     handleSubmit,
     handleDelete,
   } = useProfileEditorState(profile);
@@ -816,28 +815,13 @@ export function ProfileContent({
               </Tabs.Content>
             </Tabs.Root>
 
-            {/* Sticky footer */}
-            <div className="profile-footer">
-              {isEditing && !profile?.isDefault && (
-                <button
-                  type="button"
-                  className="profile-btn-danger"
-                  onClick={handleDeleteClick}
-                  disabled={deleting || saving}
-                >
-                  <Trash2 size={15} />
-                  {deleting ? 'Deleting…' : 'Delete'}
-                </button>
-              )}
-              <div className="profile-footer-right">
-                {isEditing && (
-                  <span className="profile-autosave-status" aria-live="polite">
-                    {autosaveState === 'saving' ? 'Saving…' : autosaveState === 'saved' ? 'Saved ✓' : 'Autosaves'}
-                  </span>
-                )}
-                {/* Edit mode autosaves (and the header ✕ closes), so no "Done"
-                    button — only new profiles need an explicit Cancel/Create. */}
-                {!isEditing && (
+            {/* Footer — new profiles only (Cancel/Create). An existing profile
+                autosaves silently and the header ✕ closes it, so edit mode has
+                no footer bar; Delete for a non-default profile floats over the
+                panel instead (see the floating Delete below). */}
+            {!isEditing && (
+              <div className="profile-footer">
+                <div className="profile-footer-right">
                   <button
                     type="button"
                     className="profile-btn-secondary"
@@ -846,8 +830,6 @@ export function ProfileContent({
                   >
                     Cancel
                   </button>
-                )}
-                {!isEditing && (
                   <button
                     type="button"
                     className="profile-btn-primary"
@@ -857,12 +839,28 @@ export function ProfileContent({
                     <Save size={15} />
                     {saving ? 'Saving…' : 'Create Profile'}
                   </button>
-                )}
+                </div>
               </div>
-            </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Floating Delete — non-default profiles in edit mode. Anchored absolute
+          within .profile-content-outer (position:relative), NOT fixed/portal,
+          so it's Tauri-safe and stays put while the form scrolls. */}
+      {!libraryOpen && isEditing && !profile?.isDefault && (
+        <button
+          type="button"
+          className="profile-btn-danger profile-delete-float"
+          onClick={handleDeleteClick}
+          disabled={deleting || saving}
+          title="Delete this profile"
+        >
+          <Trash2 size={15} />
+          {deleting ? 'Deleting…' : 'Delete'}
+        </button>
+      )}
     </div>
   );
 }
