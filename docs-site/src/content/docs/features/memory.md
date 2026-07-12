@@ -1,376 +1,139 @@
-# Memory System
-
-AgentX features a sophisticated cognitive memory system inspired by human memory architecture, enabling the AI to remember past conversations, learn from interactions, and build a knowledge graph over time.
-
-## Overview
-
-The memory system provides four types of memory:
-
-| Memory Type | Purpose | Storage | Retrieval |
-|------------|---------|---------|-----------|
-| **Working** | Current conversation, active goals | Redis | Direct lookup |
-| **Episodic** | Past conversations, events | Neo4j + PostgreSQL | Vector similarity + temporal |
-| **Semantic** | Facts, entities, concepts | Neo4j graph | Graph traversal + vector |
-| **Procedural** | Successful strategies, tool patterns | Neo4j graph | Task-type matching |
-
-## Design Principles
-
-- **Extensibility**: Easy to add new memory types, stores, or extraction methods
-- **Transparency**: All memory operations traceable per session/conversation
-- **Auditability**: Full query trace and operation audit trail in PostgreSQL
-- **Channel Scoping**: Memory organized into channels for project-level organization
-
-## Memory Channels
-
-Memory is organized into **channels** — traceable scopes that group related memories:
-
-| Channel | Description | Examples |
-|---------|-------------|----------|
-| `_global` | Default channel, user-wide memory | Preferences, communication style, general facts |
-| `<project>` | Project-specific memory containers | `my-rust-project`, `thesis-research`, `work-api` |
-
-**Key behaviors:**
-- Retrieval queries both the active channel AND `_global`, merging results
-- Channels are traceable scopes, not isolation boundaries
-- Cross-channel operations are logged in the audit trail
-- Prominent project facts can be promoted to `_global` based on confidence/frequency thresholds
-
-```python
-# Using channels
-memory = AgentMemory(user_id="user123", channel="my-rust-project")
-
-# Retrieval automatically merges project + global memories
-context = memory.remember("What error handling pattern should I use?")
-# Returns: project-specific Rust patterns + global user preferences
-```
-
-## Key Features
-
-### Episodic Memory
-- Stores complete conversation history with turns
-- Vector-based semantic search across conversations
-- Temporal filtering and recency boosting
-- Automatic consolidation to semantic memory
-
-### Semantic Memory
-- Entity recognition and tracking (people, organizations, concepts)
-- Fact extraction with confidence scores
-- Knowledge graph with relationships
-- Entity salience scoring and decay
-
-### Procedural Memory
-- Records tool usage patterns
-- Learns successful strategies for tasks
-- Reinforcement learning from outcomes
-- Tool performance analytics
-
-### Working Memory
-- Redis-based fast access for current session
-- Maintains recent conversation context
-- Active goal tracking
-- Chain-of-thought reasoning steps
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         AGENT RUNTIME                                │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                  │
-│  │   LLM API   │  │  Tool Exec  │  │  Planning   │                  │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘                  │
-│         │                │                │                          │
-│         └────────────────┼────────────────┘                          │
-│                          ▼                                           │
-│                 ┌─────────────────┐                                  │
-│                 │ Memory Interface│                                  │
-│                 └────────┬────────┘                                  │
-└──────────────────────────┼──────────────────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-│    Neo4j      │  │  PostgreSQL   │  │    Redis      │
-│ Graph+Vector  │  │  pgvector     │  │ Working Mem   │
-│               │  │  Time-series  │  │ Cache Layer   │
-│ - Semantic    │  │               │  │               │
-│ - Episodic    │  │ - Raw logs    │  │ - Hot queries │
-│ - Procedural  │  │ - Audit trail │  │ - Session     │
-│ - Entities    │  │ - Timeline    │  │ - Rate limits │
-└───────────────┘  └───────────────┘  └───────────────┘
-```
-
-## Technology Stack
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Graph Database | Neo4j 5.15+ | Knowledge graph, vector search, relationships |
-| Relational DB | PostgreSQL 16+ | Logs, audit, time-series, backup vectors |
-| Vector Extension | pgvector 0.7+ | ANN search in PostgreSQL |
-| Cache | Redis 7+ | Working memory, session state |
-| Embeddings | OpenAI / Local | text-embedding-3-small or bge-m3 |
-
-## Usage
-
-### Basic Usage
-
-```python
-from agentx_ai.kit.agent_memory import AgentMemory, Turn
-
-# Initialize memory for a user
-memory = AgentMemory(user_id="user123", conversation_id="conv456")
-
-# Store a conversation turn
-turn = Turn(
-    conversation_id="conv456",
-    index=0,
-    role="user",
-    content="What's the weather like today?"
-)
-memory.store_turn(turn)
-
-# Retrieve relevant memories
-context = memory.remember("What did we discuss about weather?")
-print(context.to_context_string())
-
-# Learn a new fact
-memory.learn_fact(
-    claim="User prefers concise responses",
-    source="inferred",
-    confidence=0.8
-)
-
-# Track a goal
-from agentx_ai.kit.agent_memory import Goal
-goal = Goal(
-    description="Help user plan vacation",
-    priority=4
-)
-memory.add_goal(goal)
-
-# Complete a goal
-memory.complete_goal(goal.id, status="completed", result="Vacation itinerary created")
-
-# Or mark as abandoned/blocked
-memory.complete_goal(goal.id, status="abandoned", result="User cancelled request")
-
-# Record tool usage for learning
-memory.record_tool_usage(
-    tool_name="web_search",
-    tool_input={"query": "weather"},
-    tool_output={"results": [...]},
-    success=True,
-    latency_ms=250
-)
-```
-
-### Advanced Retrieval
-
-```python
-# Retrieve with filters
-context = memory.remember(
-    query="Python programming discussion",
-    top_k=15,
-    include_episodic=True,
-    include_semantic=True,
-    include_procedural=True,
-    time_window_hours=72  # Last 3 days only
-)
-
-# Find what worked for similar tasks
-strategies = memory.what_worked_for("data analysis task")
-for strategy in strategies:
-    print(f"Strategy: {strategy.description}")
-    print(f"Tools: {strategy.tool_sequence}")
-    print(f"Success rate: {strategy.success_count / max(1, strategy.success_count + strategy.failure_count)}")
-
-# Get active goals
-goals = memory.get_active_goals()
-for goal in goals:
-    print(f"[P{goal.priority}] {goal.description} - {goal.status}")
-```
-
-## Recall Layer
-
-The `RecallLayer` augments base vector retrieval with multiple techniques:
-
-```mermaid
-graph LR
-    Q[Query] --> BASE[Base Retrieval<br/>vector similarity]
-    Q --> HYB[Hybrid Search<br/>BM25 + vector, RRF fusion]
-    Q --> ENT[Entity-Centric<br/>graph traversal from matched entities]
-    Q --> QE[Query Expansion<br/>question→statement transforms]
-    Q --> HYDE[HyDE<br/>hypothetical document embedding]
-    Q --> SQ[Self-Query<br/>LLM filter extraction]
-
-    BASE & HYB & ENT & QE & HYDE & SQ --> MERGE[Merge + Deduplicate]
-    MERGE --> RANK[Rerank<br/>salience, temporal, access boosts]
-    RANK --> MB[MemoryBundle]
-```
-
-Each technique is independently toggleable via `GET/POST /api/memory/recall-settings`.
-
-| Technique | Description |
-|-----------|-------------|
-| **Hybrid search** | Combines BM25 keyword matching with vector similarity using Reciprocal Rank Fusion |
-| **Entity-centric** | Finds entities matching the query, then traverses the graph for related facts |
-| **Query expansion** | Rewrites questions as statements to improve vector match quality |
-| **HyDE** | Generates a hypothetical answer, then searches for similar real content |
-| **Self-query** | Uses LLM to extract structured filters (time, entity type, channel) from natural language |
-
-## Consolidation Pipeline
-
-The consolidation pipeline processes recent conversations into structured knowledge:
-
-```mermaid
-graph TD
-    T[Recent Turns] --> RF[Relevance Filter<br/>skip trivial messages]
-    RF --> EX[Combined Extraction<br/>entities + facts + relationships in one LLM call]
-    EX --> EL[Entity Linking<br/>embedding-based entity resolution]
-    EL --> CD[Contradiction Detection<br/>compare new facts against existing]
-    CD --> |contradicts| RS[Resolution<br/>prefer_new / prefer_old / flag_review]
-    CD --> |no conflict| ST[Store<br/>upsert_entity + learn_fact]
-    RS --> ST
-```
-
-**Phase 11.12 features:**
-
-- **Confidence calibration** — Certainty mapping: explicit=0.95, implied=0.85, inferred=0.70, uncertain=0.50
-- **Temporal reasoning** — Facts tagged as `current`, `past`, or `future` with temporal boost in retrieval (current=1.2x, past=0.7x)
-- **Reinforcement signals** — `access_count` and `salience` on facts, incremented on retrieval, used in reranking
-- **Source attribution** — `source_turn_id` on extracted facts links back to the originating conversation turn
-- **User correction handling** — Detects "actually...", "no, I meant..." patterns; supersedes old facts via `[:SUPERSEDES]` relationship
-- **Contradiction detection** — Compares new facts against recent existing facts; resolution strategies: prefer_new, prefer_old, flag_review
-
-## Background Processing
-
-The `JobRegistry` manages background consolidation jobs:
-
-- **Consolidation** (every 15 min): Extracts entities and facts from recent conversations
-- **Pattern Detection** (hourly): Learns successful strategies from conversation outcomes
-- **Memory Decay** (daily): Applies time-based decay to salience scores
-- **Cleanup** (daily): Archives old conversations and removes low-salience entities
-
-Jobs can be monitored and controlled via the [Jobs API](../api/endpoints.md#jobs).
-
-## Memory API
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/memory/channels` | GET/POST | List or create channels |
-| `/api/memory/entities` | GET | Browse entities with pagination |
-| `/api/memory/entities/{id}/graph` | GET | Entity subgraph with connected facts |
-| `/api/memory/facts` | GET | Browse facts with confidence filtering |
-| `/api/memory/strategies` | GET | Browse learned strategies |
-| `/api/memory/stats` | GET | Total and per-channel counts |
-| `/api/memory/settings` | GET/POST | Consolidation settings |
-| `/api/memory/recall-settings` | GET/POST | Recall layer settings |
-| `/api/memory/consolidate` | POST | Manually run consolidation |
-| `/api/memory/reset` | POST | Reset consolidation state |
-| `/api/memory/export` | POST | Export the memory graph to a JSON envelope |
-| `/api/memory/import` | POST | Import a memory export (idempotent) |
-
-See [API Endpoints: Memory](../api/endpoints.md#memory) for full details.
-
-## Backup & Portability
-
-The memory graph can be exported to a single round-trippable JSON envelope and
-re-imported with stable IDs — for backups, moving memory between instances, or
-hand-editing and pushing changes back.
-
-- **Stable IDs.** Every node (turn, entity, fact, goal, strategy) carries a UUID,
-  so import `MERGE`s on it: re-importing the same file twice is a no-op.
-- **Full graph.** Conversations/turns, facts/entities, strategies, goals and
-  tool-invocations, plus the PostgreSQL audit mirror.
-- **Modes.** `merge` upserts and leaves other data untouched; `replace` wipes the
-  target channel first so it ends up matching the file exactly.
-- **Text-only, re-embedded on import.** Exports never carry embedding vectors —
-  they're regenerated from each node's text with the importing instance's model.
-  Files stay small, deterministic and git-diffable, and a snapshot is portable
-  across embedding models (and ideal for version-controlling memory).
-
-Use it from the **Memory drawer** (Export / Import buttons), over HTTP
-(`POST /api/memory/export` and `/api/memory/import`), or via the CLI
-(`task memory:export` / `task memory:import` — see
-[Task Commands](../development/tasks.md#export--import-memory)).
-
-The consolidation eval harness builds on this: `eval_consolidation --snapshot`
-backs up the whole cluster, runs, and restores it afterward instead of wiping.
-
-## Configuration
-
-Configure the memory system via environment variables:
-
-```bash
-# Neo4j
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
-
-# PostgreSQL
-POSTGRES_URI=postgresql://agent:password@localhost:5432/agent_memory
-
-# Redis
-REDIS_URI=redis://localhost:6379
-
-# Embeddings
-EMBEDDING_PROVIDER=openai  # or "local"
-EMBEDDING_MODEL=text-embedding-3-small
-OPENAI_API_KEY=sk-...
-
-# Memory settings
-EPISODIC_RETENTION_DAYS=90
-FACT_CONFIDENCE_THRESHOLD=0.7
-SALIENCE_DECAY_RATE=0.95
-MAX_WORKING_MEMORY_ITEMS=50
-```
-
-## Audit Logging
-
-All memory operations are logged to a partitioned PostgreSQL table for traceability:
-
-| Log Level | What's Logged |
-|-----------|---------------|
-| `off` | No audit logging |
-| `writes` | Store, update, delete operations (default) |
-| `reads` | All reads and writes with query details |
-| `verbose` | Full traces including payloads |
-
-**Logged information includes:**
-- Operation type, timestamp, user/session/conversation IDs
-- Source channel and target channels (for cross-channel operations)
-- Query text and result count for retrievals
-- Latency per operation
-- Promotion tracking (when facts are promoted from project to `_global`)
-- Configuration snapshot (active thresholds at time of operation)
-
-```bash
-# Configure audit logging
-AUDIT_LOG_LEVEL=writes
-AUDIT_RETENTION_DAYS=30
-```
-
-## Database Setup
-
-Initialize the memory system schemas before first use:
-
-```bash
-# Start database services
-task db:up
-
-# Initialize all schemas (Neo4j, PostgreSQL, Redis)
-task db:init:schemas
-
-# Or verify existing schemas
-task db:verify:schemas
-```
-
-This creates:
-- **Neo4j**: Vector indexes, uniqueness constraints, channel indexes
-- **PostgreSQL**: Memory tables with channel columns, partitioned audit log
-- **Redis**: Verifies connectivity and documents key patterns
-
-## Related
-
-- [Memory System Architecture](../architecture/memory.md) — Detailed technical architecture
-- [Database Stack](../architecture/databases.md) — Infrastructure details
-- [API Models: Memory](../api/models.md#memory-models) — Turn, Entity, Fact, Goal, Strategy schemas
+# Memory
+
+Memory is what makes an AgentX agent feel less like a stateless chatbot and more like a
+colleague who remembers. Across conversations it keeps what matters — what you discussed, the
+facts it learned about you and your work, the strategies that worked — and folds the relevant
+pieces back into context on every turn. It's on by default and works quietly in the
+background; you rarely have to think about it.
+
+## The four kinds of memory
+
+AgentX models memory in four layers, loosely mirroring human memory:
+
+| Type | Holds | Feels like |
+|------|-------|------------|
+| **Working** | The current conversation and active goals | Short-term attention |
+| **Episodic** | Past conversations and events | "I remember when we…" |
+| **Semantic** | Facts, entities, and how they relate | Knowledge you've built up |
+| **Procedural** | Strategies and tool patterns that worked | A learned skill |
+
+You don't pick between them — a single turn draws on all four. Working memory tracks the live
+session, episodic recall surfaces relevant past turns, semantic memory supplies facts and
+entities, and procedural memory suggests approaches that succeeded on similar tasks before.
+
+## Turning it on and off
+
+Memory is enabled by default. The **Memory** toggle in the [Relay](chat.md) controls it per
+conversation and **locks once the conversation starts**, so a chat can't switch memory models
+mid-stream. With memory off, the agent still works — it just won't store the exchange or recall
+anything beyond the current session. Recall is always **best-effort**: if the memory databases
+are unavailable, chat keeps working, quietly, without it.
+
+## Channels & Projects
+
+Memory is organized into **channels** — scopes that group related memories so a work project
+and a personal thread don't bleed into each other:
+
+- **`_global`** — user-wide memory: your preferences, your style, durable facts about you.
+- **A project channel** — everything tied to one [Project](chat.md): its own facts, entities,
+  and history, kept together.
+
+Channels are **traceable scopes, not walls.** Every recall queries the active channel *and*
+`_global` and merges the results, so a project agent still knows your global preferences.
+Standout project facts can be **promoted** to `_global` once they've proven durable — by
+confidence and by how often they recur — and cross-channel reads are recorded in the audit
+trail.
+
+## What it remembers, automatically
+
+You never file anything by hand. As you talk, AgentX:
+
+- **stores each turn** to episodic memory;
+- **extracts facts and entities** — people, organizations, concepts — each with a confidence
+  score, and links them into a knowledge graph;
+- **learns strategies** — which tool sequences worked for which kinds of task;
+- **tracks goals** you set, from active through completed, abandoned, or blocked.
+
+### How recall finds the right memories
+
+Recall is more than nearest-vector lookup. The **Recall Layer** runs several complementary
+techniques in parallel and fuses the results, so a query lands on relevant memory even when the
+wording is nothing alike:
+
+| Technique | What it adds |
+|-----------|--------------|
+| **Hybrid search** | Blends keyword (BM25) and vector similarity via Reciprocal Rank Fusion |
+| **Entity-centric** | Matches entities in the query, then walks the graph for related facts |
+| **Query expansion** | Rewrites a question as a statement for a cleaner vector match |
+| **HyDE** | Drafts a hypothetical answer, then finds real memories like it |
+| **Self-query** | Pulls structured filters (time, entity type, channel) out of plain language |
+
+Each technique is independently toggleable, and a cross-encoder rerank stage orders the final
+pool by relevance, salience, and recency. See the
+[recall flow](../architecture/system-design.md#memory-recall) on the System Design page.
+
+### Consolidation — turning talk into knowledge
+
+Every 15 minutes a background pass reads recent conversations and distills them into durable
+knowledge: it filters out trivial chatter, extracts entities and facts in one pass, resolves
+each entity against what it already knows, and checks new facts against existing ones —
+**detecting contradictions** and either superseding the old fact, keeping it, or flagging the
+clash for review. Facts carry a **confidence** (from explicit down to uncertain), a **temporal
+tag** (current / past / future, which biases retrieval), and **reinforcement signals** (how
+often they're accessed) that feed reranking. When you correct the agent — *"no, I meant…"* — it
+supersedes the stale fact instead of piling on a contradiction. See the
+[consolidation flow](../architecture/system-design.md#memory-consolidation).
+
+Other background jobs keep memory healthy: **pattern detection** (hourly) learns strategies from
+outcomes, **decay** (daily) lets unused memories fade, and **cleanup** (daily) archives stale
+conversations.
+
+## Browsing & moving your memory
+
+The **Memory drawer** is the window into everything the agent has stored — browse entities and
+their subgraphs, facts filtered by confidence, learned strategies, and per-channel counts.
+
+Memory is also **portable.** Export the whole graph to a single JSON envelope and re-import it
+elsewhere — for backups, moving between instances, or hand-editing and pushing changes back:
+
+- **Stable IDs** on every node mean import *merges* rather than duplicates — re-importing the
+  same file twice is a no-op.
+- **Text-only.** Exports never carry embedding vectors; they're regenerated on import with the
+  target instance's model, so files stay small, git-diffable, and portable across embedding
+  models.
+- **Merge or replace.** `merge` upserts and leaves the rest alone; `replace` first wipes the
+  target channel so it ends up matching the file exactly.
+
+Use the drawer's Export / Import buttons, or the CLI (`task memory:export` / `task memory:import`
+— see [Task Commands](../development/tasks.md#export--import-memory)).
+
+## Settings
+
+**Settings → Memory** governs the system without touching code:
+
+- **Consolidation** — cadence and thresholds for what gets extracted and promoted.
+- **Recall** — which retrieval techniques are active (the table above).
+- **Conversation context** — the per-turn budget for how much recalled memory folds in.
+- **Audit level** — how much of each operation is logged: `off`, `writes` (the default),
+  `reads`, or `verbose` full traces — all to a partitioned PostgreSQL table for traceability.
+
+## Under the hood
+
+Memory spans three stores — **Neo4j** (the knowledge graph + vector search), **PostgreSQL +
+pgvector** (episodic logs, the audit trail, backup vectors), and **Redis** (working memory and
+session state). The design leans on four principles: it's **extensible** (new memory types or
+extractors slot in), **transparent** and **auditable** (every operation traceable per
+conversation), and **channel-scoped**.
+
+For the deep view:
+
+- [Memory System Architecture](../architecture/memory.md) — schemas, data flow, decay math,
+  performance, and scaling.
+- [Memory Capabilities](../architecture/memory-capabilities.md) — the full capability matrix.
+- [Database Stack](../architecture/databases.md) — the storage infrastructure.
+- [Memory Setup](../development/memory-setup.md) — environment variables and first-run schema
+  initialization.
+
+The same operations — storing turns, recalling, learning facts, tracking goals — are also
+available over REST; see the [API Reference](../api/endpoints.md) and
+[Memory models](../api/models.md#memory-models).

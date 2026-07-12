@@ -84,3 +84,41 @@ sequenceDiagram
         T-->>D: Accept / reject (threshold)
     end
 ```
+
+## Memory recall
+
+Recall is more than nearest-vector lookup. The [Recall Layer](../features/memory.md#how-recall-finds-the-right-memories)
+runs several complementary techniques in parallel and fuses the results, then reranks the pool
+by relevance, salience, and recency before handing back a `MemoryBundle`.
+
+```mermaid
+graph LR
+    Q[Query] --> BASE[Base Retrieval<br/>vector similarity]
+    Q --> HYB[Hybrid Search<br/>BM25 + vector, RRF fusion]
+    Q --> ENT[Entity-Centric<br/>graph traversal from matched entities]
+    Q --> QE[Query Expansion<br/>question→statement transforms]
+    Q --> HYDE[HyDE<br/>hypothetical document embedding]
+    Q --> SQ[Self-Query<br/>LLM filter extraction]
+
+    BASE & HYB & ENT & QE & HYDE & SQ --> MERGE[Merge + Deduplicate]
+    MERGE --> RANK[Rerank<br/>salience, temporal, access boosts]
+    RANK --> MB[MemoryBundle]
+```
+
+## Memory consolidation
+
+Every 15 minutes a background pass distills recent conversations into durable knowledge —
+extracting entities and facts, resolving them against what's already known, and detecting
+contradictions before storing. The day-to-day view is on the
+[Memory](../features/memory.md#consolidation--turning-talk-into-knowledge) page.
+
+```mermaid
+graph TD
+    T[Recent Turns] --> RF[Relevance Filter<br/>skip trivial messages]
+    RF --> EX[Combined Extraction<br/>entities + facts + relationships in one LLM call]
+    EX --> EL[Entity Linking<br/>embedding-based entity resolution]
+    EL --> CD[Contradiction Detection<br/>compare new facts against existing]
+    CD --> |contradicts| RS[Resolution<br/>prefer_new / prefer_old / flag_review]
+    CD --> |no conflict| ST[Store<br/>upsert_entity + learn_fact]
+    RS --> ST
+```
