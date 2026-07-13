@@ -18,7 +18,10 @@
 *deployment* manager (`manager/`, ADR-10); new backend modules use `org_`/`chain_` prefixes, never
 a bare `manager.py`. **Lead** is the shipped user-facing name for the internal `supervisor` role
 (strings-only rename `[v0.21.170]`; internals keep `supervisor`/`specialist`). **Chain of
-command** is the user-facing name for the strict adjacency-only delegation filter.
+command** is the user-facing name for the strict adjacency-only delegation filter. A **Work
+Order** is the transcript artifact for a delegated task (the holographic card — Slice 6), and the
+**report contract** is the tier rule that manager/executive conversations carry only reports and
+directives.
 
 ---
 
@@ -38,8 +41,31 @@ command** is the user-facing name for the strict adjacency-only delegation filte
 - **Delegation runs become real conversations** — durable child threads linked both ways to the
   parent turn's delegation card, openable like any conversation. The transcript is no longer a
   place where work disappears.
+- **The report contract.** At manager/executive tiers the conversation carries only **reports and
+  directives** — the work itself lives in the trace console + delegation threads. Enforcement is
+  structural, not aspirational: manager/executive profiles are stripped of manual-work tools via
+  the existing `allowed_tools`/`blocked_tools` machinery (they keep `delegate_to` + read/report
+  tools), plus tier prompt contracts. Leads stay customizable — hands-on allowed.
+- **The trace console is the work viewer.** It keeps its name and its chat chip (the chip gets
+  accent treatment); it gains in-run delegation switching; **Work Order** cards in the transcript
+  deep-link into it. Conversations stay clean; the console holds the machinery.
 - **Visualize-first canvas.** v1 renders the org and persists node positions; structural editing
   stays in docked forms over the existing CRUD. Canvas *editing* (drawing edges) comes later.
+
+### Tier semantics
+
+> The higher the tier, the lazier the agent — deliberately. Powerful models orchestrate; they
+> don't do manual work. A highly-compartmentalized organization.
+
+- **Lead** — the working manager: may do manual work; delegation behavior is the *most
+  customizable* surface (per-profile/per-team work policy).
+- **Manager** — the staffing director: an expert on the roster and **model capabilities** (the
+  natural consumer of the phase-16 Dossier and, later, self-cost analysis); composes team results
+  into reports for you; **reports only, hard-gated** — manual-work tools stripped.
+- **Executive** — parked (see below). Sketch to hold: deliberation over *reports only* —
+  candidate mechanics: internal multi-model deliberation/panels for master decisions — with
+  bespoke, curated memory ("everything must be perfect": likely verified-only facts, a distinct
+  channel policy). Never manual work.
 
 ### Slice 1 — Org data model, Role picker, ambassador hardening
 
@@ -65,7 +91,9 @@ command** is the user-facing name for the strict adjacency-only delegation filte
 - [ ] **Profile editor Role picker** — agent-kind profiles only: Agent (member) / Lead / Manager;
       Executive omitted; ambassador profiles show no picker (`kind` stays read-only in the
       editor). Hint copy: once an agent is in an org, chain of command supersedes
-      `available_for_delegation` (which keeps governing only the flat roster).
+      `available_for_delegation` (which keeps governing only the flat roster). Choosing
+      **Manager** applies the report-only tool template (manual-work tools stripped via the
+      existing tool-gating; keeps `delegate_to` + read/report tools) — the report contract.
 - [ ] **Ambassador delete guard** — `ProfileManager.delete_profile` refuses the default ambassador
       (`kind=='ambassador' and is_default_ambassador`) with `ValueError` → 4xx from the DELETE
       handler; client hides the delete affordance. Today deletion "works" and the boot reconciler
@@ -138,10 +166,11 @@ command** is the user-facing name for the strict adjacency-only delegation filte
 - [ ] **Sidebar hygiene** — child conversations appear in `list_recent_conversations`
       automatically; the lister gains a `delegation_of` field, the client badges children and
       ships a default-on "hide delegated runs" filter (full grouping lands in Slice 5).
-- [ ] **Client links** — `DelegationBubble` gets an "Open thread" affordance when
-      `delegation.conversation_id` is present → `restoreConversation` into a new tab; old
-      persisted cards lack the field and render exactly as today (zero back-compat cost);
-      `AlloyRunTraceModal`/`alloyTrace.ts` surface the same links per run.
+- [ ] **Client links** — the **trace console is the primary viewer** of child threads: the Work
+      Order card (Slice 6) and the console's delegation detail gain an "Open thread" affordance
+      when `delegation.conversation_id` is present → `restoreConversation` into a new tab
+      (secondary path); old persisted cards lack the field and render exactly as today (zero
+      back-compat cost).
 - [ ] **Docs**: `OpenApi.yaml` (SSE events + conversations-list field) + `endpoints.md`;
       Decisions.md ADR-6 note (delegation transcripts are conversation records) + an explicit
       INV-2 non-impact statement — these writes are the *supervisor's* delegation flow, never the
@@ -187,6 +216,32 @@ command** is the user-facing name for the strict adjacency-only delegation filte
 - [ ] Sidebar grouping of child conversations under their parent
 - [ ] Edge pulse on active delegations (live `delegation_*` events animate the chain edge)
 
+### Slice 6 — Work Console & Work Orders (client-only)
+
+> Independently shippable — no backend dependencies; can ship before Slices 2–5. The data is
+> already wired end-to-end (`DelegationMessage` carries cost/tokens/duration live and on reload);
+> the inline card just never renders it.
+
+- [ ] **In-console delegation switcher** — master–detail inside a run (delegation rail → focused
+      detail pane) replacing today's flat `DelegationTraceCard` stack in `AlloyRunTraceModal`;
+      the existing run tabs stay.
+- [ ] **Work Order card** — the holographic inline transcript card, upgrading `DelegationBubble`:
+      compact tool-call-like collapsed row (`ToolExecutionBlock`-family look); holographic
+      treatment composed from `--glow-primary` + `--border-glow-subtle` + a `--gradient-accent`
+      edge + `--glass-bg` (flattens automatically on NO_GLOW themes); a **metrics strip**
+      (cost / tokens / duration — already on `DelegationMessage`, currently unrendered inline);
+      status; click opens the trace console **focused on that delegation** (modal props gain
+      `delegationId`).
+- [ ] **Chip accent** — `.run-trace-badge` gets accent border + subtle glow + an accent count
+      pip; the name stays "Trace".
+- [ ] **Cost honesty** — an explicit "pricing unavailable" state instead of silently hiding null
+      costs (per-delegation, and the rollup `~` mixed-currency case); optionally surface the
+      persisted `pricing_snapshot` in the expanded detail (emitted + persisted today, dropped
+      client-side).
+- [ ] **Slice-3 tie-in** — when child threads land, the Work Order card + console detail gain
+      "Open thread"; the console is the primary viewer, tab-open is secondary.
+- [ ] **Docs**: client-only (no API change); version + Release-Notes with the slice.
+
 ### Parked — Executive tier
 
 - [-] **Executive semantics** — an executive delegates across multiple managers/teams (phase-16
@@ -217,6 +272,11 @@ command** is the user-facing name for the strict adjacency-only delegation filte
 - **Fan-out amplification**: nested executors each own a `Semaphore(max_parallel_delegations)` —
   manager→N leads→M members multiplies concurrency (N×M). v1 mitigation is the depth cap + this
   documented warning; a global budget is an open question.
+- **Report-contract gating reuses existing machinery**: the manager/executive tool template is
+  `allowed_tools`/`blocked_tools` + tier prompt contracts — no new gating mechanism.
+- **Holographic styling obeys the theme rules**: glow tokens flatten via `NO_GLOW` transparent
+  shadows (never bare `none`); the Work Order card renders legacy persisted cards unchanged (all
+  metric fields optional).
 - **Docs travel with the work**: each slice updates `OpenApi.yaml`/`endpoints.md` (+
   `Decisions.md` where flagged) and bumps version + Release-Notes per repo convention.
 
@@ -238,4 +298,9 @@ command** is the user-facing name for the strict adjacency-only delegation filte
 8. **Follow-ups to finished threads** — plain chat in the child, or a re-delegation that stamps
    results back to the parent card?
 9. **Executive semantics when unparked** — multi-manager delegation; the apex relationship to the
-   ambassador.
+   ambassador; deliberation mechanics (internal multi-model panels over reports) and the curated
+   "perfect" memory policy (verified-only ingestion?).
+10. **A first-class report artifact** — do manager/executive reports stay prose, or become a
+    typed `Exhibit` (the declarative seam) with structure — findings, costs, links to Work Orders?
+11. **Leads' hands-on default** — is "may do manual work" a per-team or per-profile policy, and
+    what ships as the default?
