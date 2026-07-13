@@ -100,3 +100,23 @@
       session, so a running turn stays invisible there until it completes. Extend those opens to
       consult the runs index (or expose runs via context) and route through `resumeRun`.
 
+### Streaming Engine Stability & Golden Tests (sidelined — run as a supervised session)
+
+> The most annoying bugs live in conversation-streaming hiccups — the engine is loved but not yet
+> *provably* stable. This is a deep review/stabilization pass to run as a dedicated supervised
+> session: **use the real preview, with the user watching the stream in realtime** to confirm
+> every scenario. Foundation for the Process Continuity pillar of
+> [cognitive-os.md](cognitive-os.md).
+
+- [ ] **Deep review of the frontend streaming engine** — `useChatStream.ts` + `streamReducer.ts` +
+      the SSE re-attach path; especially **continuing a running stream**. Certify a stability
+      matrix across **running / past / reopened / new** conversations, plus mid-run reopen, tab
+      switch, and multi-client re-attach. Same seam as "Run-aware conversation opens" (Live
+      Steering above) — build the boundary once.
+- [ ] **Fold in the `<think>` tag leak** — the existing item above (Chat UX section); likely a
+      parse-boundary case this review will surface and fix as part of the pass.
+- [ ] **Golden transcript test set (API + frontend)** — rigid failure detection for streaming:
+      record real SSE streams as fixtures; replay them through the reducer asserting terminal
+      state + rendered message structure; API-side contract snapshots so backend event drift
+      fails loud. Harness shape TBD during the session — dig in here.
+
