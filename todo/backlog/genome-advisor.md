@@ -92,4 +92,11 @@
 - [ ] **Child→parent petition channel** — agents emit governance signals (repeated failures, low
       reasoning scores, high uncertainty, tool errors) that the parents consume as inputs for tuning a
       child. The children do the work and surface what's hurting them; the parents decide the fix.
+- [ ] **The Regulator (enforcement arm — naming candidate)** — the parents' *enforcement* duties get
+      a name: tune, quarantine (pull from rosters), or disable a misbehaving agent, riding the shared
+      control-plane-change primitive within the autonomy envelope. Needs a first-class agent
+      **quarantine/disable flag** — none exists today (`AgentProfile` has no active/disabled field;
+      gating is only `available_for_delegation` + the tool lists). Detection stays with the Agency
+      (ambassador + aides, read-only by construction) — see [cognitive-os.md](cognitive-os.md)
+      Pillar 8 for the separation of powers.
 

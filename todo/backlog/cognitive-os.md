@@ -24,7 +24,12 @@ Take the OS metaphor seriously and the gaps light up:
 | Self-model | Metacognition — track records, genome, self-cost | Partial ([genome-advisor.md](genome-advisor.md)) |
 | Permissions | Trust & memory hygiene — provenance, belief revision | Partial ([Memory-Roadmap.md](../../Memory-Roadmap.md)) |
 | Economy | Budgets & self-cost analysis | Partial (usage ledger) |
+| **Government** | **Governance — the Agency (detection) + the Regulator (enforcement)** | **Vision (Pillar 8)** |
 | Shell | Chat, command palette, the ambassador | Live |
+
+**Naming:** the governed whole is **the Commonwealth** (user-facing candidate — literally a
+governed community of organizations for the common good; internals keep `agent core`). **The
+Agency** is reserved for the ambassador's intelligence apparatus (Pillar 8), not the space.
 
 ### Pillar 1 — Scheduler & Prospective Memory
 
@@ -98,6 +103,9 @@ Take the OS metaphor seriously and the gaps light up:
 - The genome advisor grows into performance review: agents proposing amendments to their own
   prompts/skills from trajectory history, with the user approving like a CEO
   ([genome-advisor.md](genome-advisor.md)).
+- The **manager tier** is where this lands first — staffing directors whose expertise *is* the
+  roster and model capabilities (tier semantics in
+  [agentic-organizations.md](agentic-organizations.md)).
 - The org canvas eventually shows *competence*, not just structure.
 
 ### Pillar 6 — Trust & Memory Hygiene
@@ -121,6 +129,45 @@ Take the OS metaphor seriously and the gaps light up:
 - Graceful degradation: drop to local models, shrink recall — never just stop.
 - Substrate: the usage ledger; pairs with Pillar 5's self-cost analysis; Phase 19's cost model
   ([phase-19-cloud-operation.md](../phases/phase-19-cloud-operation.md)).
+
+### Pillar 8 — Governance (the Commonwealth, the Agency, the Regulator)
+
+> A governed community of organizations — **the Commonwealth** — with **you as the president**.
+> Orgs can run unchecked, but how can you police without an agency? The ambassador is the glue to
+> YOU only: your aide for dealing with the whole system once it gets busy and your agents aren't
+> always free to answer. These organizations should operate like real teams on research and
+> deliver powerful projects without you running a single prompt — governance is what makes that
+> safe.
+
+- **The Agency (detection wing)** — the ambassador as your chief of intelligence; its aides as
+  operatives. Investigations are **read-only by construction** — the aide invariant (read + call
+  a model, write nothing) and INV-2 are literally the constitution's first articles; the
+  governance layer inherits its trust model from invariants already locked.
+- **The Regulator (enforcement wing)** — the enforcement arm of the genome control plane
+  ([genome-advisor.md](genome-advisor.md) family model: propose → validate against the manifest →
+  apply within the **autonomy envelope**, else escalate); naming candidate for the @Settings
+  Advisor's enforcement duties. Powers: tune, quarantine (pull from rosters), disable a
+  misbehaving agent — which requires a first-class **agent quarantine/disable flag, greenfield
+  today** (nothing in the system can disable an agent).
+- [ ] **Missions** — investigative + enforcement operations that land **mission briefings** in
+      the ambassador thread (the `amb_thread:` model). Flagship scenario — **contamination
+      tracing**: three conversations consumed a bad document → aides trace exposure through
+      memory provenance (epidemiology's contact-tracing, run on knowledge; prerequisite:
+      Pillar 6 provenance) → the Regulator quarantines the document and flags/purges derived
+      memories → a briefing lands. You never lift a finger.
+- [-] **Inspector General** (parked) — the refined "spies" idea: roster-invisible auditors with a
+      **private side-channel reporting line** (sidecar, never the transcript) reviewing
+      delegation outcomes for divergence from plan. An oversight office, not deception mechanics.
+- **Separation of powers** — detection (the Agency) never enforces; enforcement (the Regulator)
+  acts only within the autonomy envelope; destructive actions require **presidential
+  ratification** (user veto). The envelope plus a readable governance policy is the constitution.
+- **Ecosystem health** — "is work ACTUALLY getting done": goal-completion rates, stuck
+  delegations, cost anomalies, contradiction rates — the vitals the ambassador watches (the
+  Mission Control surface, Pillar 3).
+- Cross-refs: [genome-advisor.md](genome-advisor.md) (control plane + family model),
+  [agentic-organizations.md](agentic-organizations.md) (the orgs being governed),
+  [Memory-Roadmap.md](../../Memory-Roadmap.md) / [memory-recall.md](memory-recall.md)
+  (provenance), phase-16 §16.7 (ambassador-as-top-level).
 
 ### Cross-cutting principle — lean into OSS
 
@@ -148,6 +195,7 @@ Take the OS metaphor seriously and the gaps light up:
 | Self-model & metacognition | [genome-advisor.md](genome-advisor.md); phase-16 social graph + Dossier |
 | Trust & memory hygiene | [Memory-Roadmap.md](../../Memory-Roadmap.md); [memory-recall.md](memory-recall.md); [retrieval-extraction.md](retrieval-extraction.md) |
 | Attention & compute economy | usage ledger; [phase-19-cloud-operation.md](../phases/phase-19-cloud-operation.md) |
+| Governance | [genome-advisor.md](genome-advisor.md) (control plane + autonomy envelope); [agentic-organizations.md](agentic-organizations.md); Pillar 6 (provenance) |
 | OSS | [open-platform.md](open-platform.md) |
 
 ### Open questions
@@ -162,3 +210,10 @@ Take the OS metaphor seriously and the gaps light up:
    tools, document-aware prompts, briefing documents as a managed artifact type).
 5. **How self-cost data feeds routing** without prompt bloat — ledger-derived hints in the
    delegation roster vs a learned dossier field.
+6. **Inspector General mechanics when unparked** — how the private reporting line works (sidecar
+   family, retention, who reads it) without becoming deception machinery.
+7. **Commonwealth naming rollout** — when user-facing copy adopts "the Commonwealth" (docs first,
+   UI later?).
+8. **Executive deliberation mechanics** — internal multi-model panels judging reports; how their
+   curated memory stays "perfect" (verified-only ingestion?). Pairs with the org doc's executive
+   open question.
