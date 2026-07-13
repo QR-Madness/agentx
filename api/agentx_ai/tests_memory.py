@@ -1323,7 +1323,9 @@ class ExtractionTimeoutTest(TestCase):
     def test_timeout_value_comes_from_settings(self) -> None:
         """Timeout uses settings.extraction_timeout value."""
 
-        settings = get_settings()
+        # Shipped default, not this box's live config (bare Settings() skips
+        # the data/memory_settings.json layer that get_settings() applies).
+        settings = Settings()
         # Default should be 30 seconds
         self.assertEqual(settings.extraction_timeout, 30.0)
 
@@ -1547,7 +1549,9 @@ class QueryLengthValidationTest(TestCase):
     def test_limit_comes_from_settings(self) -> None:
         """Limit is settings.max_query_length (default 10000)."""
 
-        settings = get_settings()
+        # Shipped default, not this box's live config (bare Settings() skips
+        # the data/memory_settings.json layer that get_settings() applies).
+        settings = Settings()
         self.assertTrue(hasattr(settings, 'max_query_length'))
         self.assertIsInstance(settings.max_query_length, int)
         self.assertEqual(settings.max_query_length, 10000)
@@ -3331,7 +3335,11 @@ class RecallLayerConfigTest(TestCase):
     def test_default_techniques_enabled(self) -> None:
         """Hybrid, entity-centric, and expansion should be enabled by default."""
 
-        settings = get_settings()
+        # Assert the SHIPPED defaults, not this box's live config: the memory kit
+        # reads settings live, so get_settings() layers data/memory_settings.json
+        # on top — a developer's override (e.g. recall_enable_hyde: true) would
+        # fail the test. A bare Settings() bypasses that layer.
+        settings = Settings()
 
         # These should be ON by default (cheap, high impact)
         self.assertTrue(settings.recall_enable_hybrid)
@@ -3582,7 +3590,9 @@ class CandidatePoolTest(TestCase):
         return recall
 
     def test_config_defaults(self) -> None:
-        settings = get_settings()
+        # Shipped defaults, not this box's live config (bare Settings() skips
+        # the data/memory_settings.json layer that get_settings() applies).
+        settings = Settings()
         self.assertEqual(settings.recall_candidate_pool, 50)
         self.assertEqual(settings.recall_ce_max_demotion, 2)
         # Eval-gated defaults (Memory-Roadmap §2.11): CE stage ON (+20pp MRR),
