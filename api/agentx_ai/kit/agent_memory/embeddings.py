@@ -22,9 +22,24 @@ class EmbeddingProvider:
         self._dispatcher = None
 
     def _init_openai(self):
-        """Initialize OpenAI client for embeddings."""
+        """Initialize the OpenAI(-compatible) client for embeddings.
+
+        ``embedding_base_url`` points this same code path at any OpenAI-compatible
+        endpoint (OpenRouter, TEI, vLLM, LiteLLM…). Boot-frozen like the provider
+        choice — the client is built once per process.
+        """
         from openai import OpenAI
-        self._client = OpenAI(api_key=get_settings().openai_api_key)
+
+        settings = get_settings()
+        api_key = settings.embedding_api_key or settings.openai_api_key
+        if settings.embedding_base_url:
+            # TEI/vLLM commonly run keyless; the SDK requires a non-None key.
+            self._client = OpenAI(
+                api_key=api_key or "sk-no-auth",
+                base_url=settings.embedding_base_url,
+            )
+        else:
+            self._client = OpenAI(api_key=api_key)
 
     def _init_local(self):
         """Initialize local embedding model on the resolved compute device."""
@@ -120,16 +135,44 @@ class EmbeddingProvider:
             return self._embed_local(texts)
 
     def _embed_openai(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings using OpenAI API."""
+        """Generate embeddings via the OpenAI(-compatible) API, chunking large
+        input lists to stay under per-request caps."""
         if self._client is None:
             self._init_openai()
             assert self._client is not None
 
-        response = self._client.embeddings.create(
-            model=get_settings().embedding_model,
-            input=texts
-        )
-        return [item.embedding for item in response.data]
+        settings = get_settings()
+        max_inputs = max(1, settings.embedding_remote_max_inputs)
+        out: list[list[float]] = []
+        for start in range(0, len(texts), max_inputs):
+            response = self._client.embeddings.create(
+                model=settings.embedding_model,
+                input=texts[start:start + max_inputs],
+            )
+            # Defensive: honor the response's index field rather than assuming
+            # every compatible endpoint preserves input order.
+            out.extend(
+                item.embedding
+                for item in sorted(response.data, key=lambda d: d.index)
+            )
+        self._check_remote_dimensions(out)
+        return out
+
+    def _check_remote_dimensions(self, vectors: list[list[float]]) -> None:
+        """Warn once if the remote model's vectors don't match configured dims
+        (mirrors the local ``_check_dimensions``; a mismatch silently breaks
+        vector-index queries)."""
+        if self._dimensions_validated or not vectors:
+            return
+        self._dimensions_validated = True
+        actual = len(vectors[0])
+        configured = get_settings().embedding_dimensions
+        if actual != configured:
+            logger.warning(
+                f"Embedding dimension mismatch: remote endpoint returns {actual}-dim "
+                f"vectors but config says {configured}. Vector index queries will "
+                f"fail. Update EMBEDDING_DIMENSIONS={actual} or change the model."
+            )
 
     def _embed_local(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings using local model."""

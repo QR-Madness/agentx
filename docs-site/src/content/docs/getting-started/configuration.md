@@ -59,7 +59,17 @@ EMBEDDING_MODEL=text-embedding-3-small            # OpenAI model (if provider=op
 LOCAL_EMBEDDING_MODEL=BAAI/bge-m3                    # Local model (if provider=local)
 ```
 
-Switching providers changes vector dimensions. If you switch after data exists, reset memory schemas (`task db:init:schemas`) or use `POST /api/memory/reset`.
+The `openai` provider can point at **any OpenAI-compatible endpoint** (OpenRouter, TEI, vLLM, LiteLLM…) via a base-URL override. The recommended cloud setup keeps the **same model and dimensions as local**, so existing vectors stay valid when a cluster switches between local and cloud embedding:
+
+```bash
+EMBEDDING_PROVIDER=openai
+EMBEDDING_BASE_URL=https://openrouter.ai/api/v1   # empty = api.openai.com
+EMBEDDING_API_KEY=sk-or-...                       # empty -> falls back to OPENAI_API_KEY
+EMBEDDING_MODEL=baai/bge-m3                       # same model + 1024 dims as local
+EMBEDDING_REMOTE_MAX_INPUTS=2048                  # per-request input cap (TEI defaults to 32)
+```
+
+Switching to a **different** model changes vector dimensions: update `EMBEDDING_DIMENSIONS` and reset memory schemas (`task db:init:schemas`), use `POST /api/memory/reset`, or export/import (imports re-embed with the active model). A dimension mismatch against a remote endpoint is logged as a warning on the first embed call.
 
 All embedding calls (chat recall, consolidation, indexing) funnel through a single process-wide queue, so the thread-unsafe local model and the rate-limited remote provider never collide or drop requests; identical queries are served from an in-memory LRU+TTL cache. The defaults are sensible — tune only if needed:
 

@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 1024  # 1024 for local (bge-m3), 1536 for OpenAI
     openai_api_key: str = ""
 
+    # OpenAI-compatible remote endpoint override (OpenRouter, TEI, vLLM, LiteLLM…).
+    # Empty = api.openai.com. embedding_model is the model name sent per request.
+    # Blessed cloud config: EMBEDDING_BASE_URL=https://openrouter.ai/api/v1 with
+    # EMBEDDING_MODEL=baai/bge-m3 — same model + 1024 dims as local, so vectors
+    # stay compatible across local and cloud clusters. Boot-frozen like the
+    # provider choice (the client is built once per process).
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""   # key for the override endpoint; empty → openai_api_key
+    # Per-request input cap for the OpenAI-compatible path (OpenAI caps at 2048;
+    # TEI containers default to 32 — lower this to match your endpoint).
+    embedding_remote_max_inputs: int = 2048
+
     # Local embedding model (if using local)
     local_embedding_model: str = "BAAI/bge-m3"
 

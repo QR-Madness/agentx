@@ -728,6 +728,20 @@ durable user-facing changes only — never for a temporary override (it writes
 `data/memory_settings.json`; a live dev server picks it up immediately).
 
 **Deliberately boot-frozen** (restart or pin before first use — evals already do): the
-embedding provider/dispatcher singleton (provider choice + queue settings at first build),
+embedding provider/dispatcher singleton (provider choice + queue settings + the
+`embedding_base_url`/`embedding_api_key` remote-endpoint override at first client build),
 DB connection parameters (first driver/engine/client build), and job intervals
 (worker/registry boot).
+
+**Embedding call-site contract:** pass **lists** to `embed()` — the queue only coalesces
+requests that are concurrently in flight from different threads; a sequential
+`embed_single` loop blocks on each Future and gets zero batching. Batched call sites:
+fact-claim pre-pass + entity store (consolidation), `detect_patterns` strategies, recall
+query-expansion variants, portability import (chunks of 128), workspace ingestion (slices
+of 16), tool-output chunking. Background batch calls pass a generous `timeout=` (300–600s)
+— one batched Future must outlive the 30s chat-sized default when queued behind ingestion.
+The openai path additionally splits any single request at `embedding_remote_max_inputs`
+(2048; lower it for TEI-style endpoints that cap at 32) and warns once on a configured-vs-
+actual dimension mismatch. `EMBEDDING_BASE_URL` points the openai path at any
+OpenAI-compatible endpoint — the blessed cloud config is OpenRouter + `baai/bge-m3`
+(same model + 1024 dims as local ⇒ one vector space across local/cloud clusters).

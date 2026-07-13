@@ -22,6 +22,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Wait budget for batched background embeds. A single batched request resolves
+# one Future — it must outlive the 30s chat-sized default when the embedding
+# queue is busy with document-ingestion slices (ingestion itself waits 600s).
+_BG_EMBED_TIMEOUT_S = 300.0
+
 
 def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
     """
@@ -1528,7 +1533,10 @@ def _store_conversation_entities(
                          if getattr(e, "embedding", None) is None
                          and hasattr(e, "embedding_text")]
         if pending_embed:
-            vectors = memory.embedder.embed([e.embedding_text() for e in pending_embed])
+            vectors = memory.embedder.embed(
+                [e.embedding_text() for e in pending_embed],
+                timeout=_BG_EMBED_TIMEOUT_S,
+            )
             for ent, vec in zip(pending_embed, vectors, strict=True):
                 ent.embedding = vec
     except Exception as embed_err:
@@ -1571,6 +1579,24 @@ async def _store_facts_with_verification(
     # Three-layer verification pipeline: hash gate → semantic gate → LLM adjudication
     # Collect fact IDs for batch DERIVED_FROM relationship creation
     embedder = get_embedder()
+
+    # Batch-embed every valid claim up front — one model call instead of one per
+    # fact (a sequential embed_single loop defeats the embedding queue's
+    # coalescing entirely). Gates below are untouched: they query *stored* data,
+    # so a claim's vector is identical either way. Hash-dup/refined claims get an
+    # unused vector — accepted trade for the single call. On batch failure the
+    # loop lazily falls back to per-fact embed_single (old error semantics).
+    claim_vectors: dict[str, list[float]] = {}
+    unique_claims = list(dict.fromkeys(
+        c for c in (f.get("claim") for f in extracted_facts) if c
+    ))
+    if unique_claims:
+        try:
+            vectors = embedder.embed(unique_claims, timeout=_BG_EMBED_TIMEOUT_S)
+            claim_vectors = dict(zip(unique_claims, vectors, strict=True))
+        except Exception as e:
+            logger.warning(f"Batch claim embed failed for {conv_id}; per-fact fallback: {e}")
+
     # Per-channel entity maps so a routed fact never links to an entity in another
     # channel. The active channel reuses the conversation's prebuilt map.
     entity_maps: dict[str, dict[str, str]] = {active_channel: entity_map}
@@ -1629,8 +1655,12 @@ async def _store_facts_with_verification(
                 logger.debug(f"Skipping hash duplicate: {claim[:50]}...")
                 continue
 
-            # Generate embedding early (needed for layers 1b + 2)
-            claim_embedding = embedder.embed_single(claim)
+            # Embedding needed for layers 1b + 2; usually pre-batched above.
+            # NB: learn_fact re-embeds the claim internally — that second call is
+            # a dispatcher-cache hit, so don't "optimize" the cache away.
+            claim_embedding = claim_vectors.get(claim)
+            if claim_embedding is None:
+                claim_embedding = embedder.embed_single(claim)
 
             # 1b. Semantic duplicate check (cosine > threshold)
             if _is_semantic_duplicate(
@@ -2026,6 +2056,16 @@ async def _consolidate_assistant_conversation(
 
         # Store facts with self_extraction source. Per-channel entity maps keep a
         # routed user-subject fact from linking to a self-channel entity.
+        # Self-fact embeds happen inside learn_fact per fact; pre-warm the
+        # dispatcher cache with one batched call so those become cache hits.
+        # Guarded: with the cache disabled this would be pure double compute.
+        claims = [c for c in (f.get("claim") for f in result.facts) if c]
+        if claims and get_settings().embedding_cache_enabled:
+            try:
+                memory.embedder.embed(claims, timeout=_BG_EMBED_TIMEOUT_S)
+            except Exception:
+                pass  # cache warm only — learn_fact embeds lazily either way
+
         entity_maps: dict[str, dict[str, str]] = {self_channel: entity_map}
         for fact_dict in result.facts:
             claim = fact_dict.get("claim")
@@ -2257,14 +2297,19 @@ def detect_patterns() -> dict[str, Any]:
 
         embedder = get_embedder()
 
-        for record in result:
+        # Materialize (≤20 by LIMIT) and embed every strategy description in one
+        # batched call instead of one embed per record.
+        records = list(result)
+        descs = [
+            f"Use {', '.join(r['tools'])} for {r.get('task_type', 'general')} tasks"
+            for r in records
+        ]
+        embeddings = embedder.embed(descs, timeout=_BG_EMBED_TIMEOUT_S) if records else []
+
+        for record, strategy_desc, embedding in zip(records, descs, embeddings, strict=True):
             conv_id = record["conversation_id"]
             tools = record["tools"]
             task_type = record.get("task_type", "general")
-
-            # Create or update strategy
-            strategy_desc = f"Use {', '.join(tools)} for {task_type} tasks"
-            embedding = embedder.embed_single(strategy_desc)
 
             session.run("""
                 MERGE (s:Strategy {context_pattern: $task_type, tool_sequence: $tools})
