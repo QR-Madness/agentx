@@ -900,6 +900,36 @@ class ConsolidationJobMetricsTest(TestCase):
 
             self.assertIsInstance(result, dict)
 
+    def test_detect_patterns_batches_strategy_embeddings(self) -> None:
+        """All strategy descriptions embed in ONE batched call; one MERGE per record."""
+        records = [
+            {"conversation_id": "c1", "tools": ["search"], "task_type": "research"},
+            {"conversation_id": "c2", "tools": ["calc", "notes"], "task_type": "analysis"},
+        ]
+        mock_session = create_mock_neo4j_session()
+        discovery = MagicMock()
+        discovery.__iter__ = MagicMock(return_value=iter(records))
+        mock_session.run.side_effect = [discovery, MagicMock(), MagicMock()]
+
+        embedder = MagicMock()
+        embedder.embed.side_effect = lambda texts, **kw: [[0.5]] * len(texts)
+
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session',
+                   return_value=mock_session), \
+             patch.object(consolidation_jobs_module, 'get_embedder', return_value=embedder):
+            result = detect_patterns()
+
+        embedder.embed.assert_called_once()
+        (texts,), _kwargs = embedder.embed.call_args
+        self.assertEqual(texts, [
+            "Use search for research tasks",
+            "Use calc, notes for analysis tasks",
+        ])
+        embedder.embed_single.assert_not_called()
+        self.assertEqual(result["items_processed"], 2)
+        # discovery + one MERGE per record
+        self.assertEqual(mock_session.run.call_count, 3)
+
     def test_apply_memory_decay_returns_metrics_dict(self) -> None:
         """apply_memory_decay() returns dict with decay counts."""
 
@@ -998,8 +1028,13 @@ class ConsolidationPipelineTest(TestCase):
         return r
 
     def _run_job(self, *, user_records=(), assistant_records=(),
-                 combined=None, assistant_combined=None, is_duplicate=False):
-        """Run consolidation with all sub-helpers patched; return (result, session, memory)."""
+                 combined=None, assistant_combined=None, is_duplicate=False,
+                 embed_batch_fails=False):
+        """Run consolidation with all sub-helpers patched; return (result, session, memory).
+
+        The module embedder is stashed on ``self._last_embedder`` for call-shape
+        assertions; ``embed_batch_fails=True`` makes batched ``embed()`` raise so
+        the per-fact ``embed_single`` fallback path is exercised."""
         session = self._make_session(user_records, assistant_records)
 
         memory = MagicMock()
@@ -1034,11 +1069,22 @@ class ConsolidationPipelineTest(TestCase):
                 entity_map[str(e.get("name", "")).lower()] = "ent-1"
             return (list(extracted_entities), 0, len(extracted_entities))
 
+        # embed() must return one vector per text — a bare MagicMock would make
+        # the batched pre-pass zip fail and silently shunt every test onto the
+        # per-fact fallback path.
+        embedder = MagicMock()
+        if embed_batch_fails:
+            embedder.embed.side_effect = RuntimeError("batch embed down")
+        else:
+            embedder.embed.side_effect = lambda texts, **kw: [[0.1, 0.2]] * len(texts)
+        embedder.embed_single.return_value = [0.1, 0.2]
+        self._last_embedder = embedder
+
         mod = consolidation_jobs_module
         with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session',
                    return_value=session), \
              patch.object(mod, 'get_extraction_service', return_value=ext), \
-             patch.object(mod, 'get_embedder', return_value=MagicMock()), \
+             patch.object(mod, 'get_embedder', return_value=embedder), \
              patch.object(mod, '_get_memory_for_user', return_value=memory), \
              patch('agentx_ai.kit.agent_memory.memory.interface.AgentMemory',
                    return_value=memory), \
@@ -1122,7 +1168,10 @@ class ConsolidationPipelineTest(TestCase):
         self.assertFalse(self._ran(session, "PT15M"))
 
     def test_hash_duplicate_fact_skipped(self) -> None:
-        """A hash-duplicate fact is skipped and counted, but the conversation still consolidates."""
+        """A hash-duplicate fact is skipped and counted, but the conversation still consolidates.
+
+        (Since the batched pre-pass, hash-dup claims still get embedded up front —
+        the skip only saves the store, not the vector.)"""
         combined = self._combined(
             facts=[{"claim": "Acme raised a Series A", "confidence": 0.9, "entity_names": []}],
         )
@@ -1133,6 +1182,50 @@ class ConsolidationPipelineTest(TestCase):
         memory.learn_fact.assert_not_called()
         self.assertEqual(result["metrics"]["duplicates_skipped"], 1)
         self.assertTrue(self._ran(session, "SET c.consolidated"))
+
+    def test_fact_claims_batch_embedded_once(self) -> None:
+        """All valid claims are embedded in ONE batched call (deduped, missing-claim
+        dicts dropped); the per-fact embed_single path stays idle."""
+        combined = self._combined(
+            facts=[
+                {"claim": "Acme raised a Series A", "confidence": 0.9, "entity_names": []},
+                {"claim": "Acme is based in Berlin", "confidence": 0.8, "entity_names": []},
+                {"claim": "Acme raised a Series A", "confidence": 0.9, "entity_names": []},
+                {"confidence": 0.9, "entity_names": []},  # missing claim → skipped
+            ],
+        )
+        result, _session, memory = self._run_job(
+            user_records=[self._user_record()], combined=combined,
+        )
+
+        embedder = self._last_embedder
+        embedder.embed.assert_called_once()
+        (texts,), kwargs = embedder.embed.call_args
+        self.assertEqual(texts, ["Acme raised a Series A", "Acme is based in Berlin"])
+        self.assertIn("timeout", kwargs)
+        embedder.embed_single.assert_not_called()
+        # Both unique facts stored (duplicate claim text hash-gates in-loop only
+        # against *stored* facts — learn_fact is mocked, so all 3 store here).
+        self.assertEqual(result["facts"], 3)
+
+    def test_batch_embed_failure_falls_back_per_fact(self) -> None:
+        """A batch-embed outage degrades to the old per-fact embed_single path —
+        facts still store."""
+        combined = self._combined(
+            facts=[
+                {"claim": "Acme raised a Series A", "confidence": 0.9, "entity_names": []},
+                {"claim": "Acme is based in Berlin", "confidence": 0.8, "entity_names": []},
+            ],
+        )
+        result, _session, memory = self._run_job(
+            user_records=[self._user_record()], combined=combined,
+            embed_batch_fails=True,
+        )
+
+        embedder = self._last_embedder
+        self.assertEqual(embedder.embed_single.call_count, 2)
+        self.assertEqual(result["facts"], 2)
+        self.assertEqual(result["metrics"]["storage_errors"], 0)
 
     def test_assistant_phase_stores_self_facts(self) -> None:
         """An assistant turn with an agent_id → self-fact stored and self_consolidated set."""
@@ -3315,6 +3408,32 @@ class RecallLayerQueryExpansionTest(TestCase):
         result = recall._question_to_statement("what is my favorite color?")
         self.assertIn("favorite color", result)
 
+    def test_expansion_embeds_variants_in_one_batch(self) -> None:
+        """All query variants embed in ONE batched call (live recall path) —
+        never one embed_single round-trip per variant."""
+        mock_memory = MagicMock()
+        mock_memory.channel = "_global"
+        mock_memory.embedder.embed.side_effect = lambda texts, **kw: [[0.1]] * len(texts)
+        mock_memory.semantic.vector_search_facts.return_value = [{"id": "f1", "claim": "x"}]
+
+        recall = RecallLayer(mock_memory, MagicMock())
+        recall._settings = get_settings()
+
+        bundle, stats = recall._expansion_retrieval(
+            "what is my favorite color?", user_id="u", channels=None,
+            top_k=3, time_window_hours=None,
+        )
+
+        mock_memory.embedder.embed.assert_called_once()
+        (texts,), _kwargs = mock_memory.embedder.embed.call_args
+        self.assertEqual(texts, stats["variants"])
+        self.assertGreaterEqual(len(texts), 2)
+        mock_memory.embedder.embed_single.assert_not_called()
+        # One vector search per variant, same as before batching.
+        self.assertEqual(
+            mock_memory.semantic.vector_search_facts.call_count, len(texts))
+        self.assertEqual([f["id"] for f in bundle.facts], ["f1"])
+
     def test_extract_keywords(self) -> None:
         """Keywords should exclude stopwords and question words."""
 
@@ -4540,6 +4659,150 @@ class EmbeddingQueueTest(TestCase):
         self.assertTrue(_is_transient(Exception("Rate limit reached, try again")))
         self.assertTrue(_is_transient(TimeoutError("connection timed out")))
         self.assertFalse(_is_transient(RuntimeError("device-side assert triggered")))
+
+
+class ImporterBatchEmbeddingTest(TestCase):
+    """_prepare_embeddings batches per record type in bounded chunks."""
+
+    def test_batches_and_assigns_vectors(self) -> None:
+        from types import SimpleNamespace
+
+        from agentx_ai.kit.agent_memory.portability import importer as importer_module
+        from agentx_ai.kit.agent_memory.portability import MemoryImporter
+
+        imp = MemoryImporter(user_id="u")
+        embedder = MagicMock()
+        embedder.embed.side_effect = lambda texts, **kw: [[float(len(t))] for t in texts]
+        imp._embedder = embedder
+
+        export = SimpleNamespace(
+            turns=[{"content": "aa"}, {"content": "bbb"}, {"content": None}],
+            entities=[{"name": "Acme", "description": "corp", "type": "org"}],
+            facts=[{"claim": "c1"}],
+            goals=[],
+            strategies=[{"description": "s1"}],
+        )
+        with patch.object(importer_module, "_IMPORT_EMBED_CHUNK", 2):
+            imp._prepare_embeddings(export)
+
+        # turns (3) chunk at 2 → 2 calls; entities/facts/strategies 1 each; goals skipped.
+        self.assertEqual(embedder.embed.call_count, 5)
+        sizes = [len(c.args[0]) for c in embedder.embed.call_args_list]
+        self.assertEqual(sizes, [2, 1, 1, 1, 1])
+        self.assertIn("timeout", embedder.embed.call_args.kwargs)
+        embedder.embed_single.assert_not_called()
+
+        # Vectors land on the right rows, with the exact legacy text derivations.
+        self.assertEqual(export.turns[0]["embedding"], [2.0])
+        self.assertEqual(export.turns[2]["embedding"], [0.0])  # None content → ""
+        self.assertEqual(export.entities[0]["embedding"], [float(len("Acme: corp"))])
+        self.assertEqual(export.facts[0]["embedding"], [2.0])
+        self.assertEqual(imp._recomputed, 6)
+
+
+class RemoteEmbeddingChunkingTest(TestCase):
+    """_embed_openai splits oversized input lists and honors response index order."""
+
+    @staticmethod
+    def _fake_client(calls):
+        from types import SimpleNamespace
+
+        def create(model, input):  # noqa: A002 - mirrors the SDK kwarg
+            calls.append(list(input))
+            data = [SimpleNamespace(index=i, embedding=[float(len(t))])
+                    for i, t in enumerate(input)]
+            # Reversed on purpose: order must come from the index field.
+            return SimpleNamespace(data=list(reversed(data)))
+
+        return SimpleNamespace(embeddings=SimpleNamespace(create=create))
+
+    def test_chunks_and_preserves_order(self) -> None:
+        from agentx_ai.kit.agent_memory.embeddings import EmbeddingProvider
+
+        override = get_settings().model_copy(update={
+            "embedding_provider": "openai",
+            "embedding_remote_max_inputs": 2,
+            "embedding_dimensions": 1,
+        })
+        calls: list[list[str]] = []
+        with pin_memory_settings(override):
+            provider = EmbeddingProvider()
+            provider._client = self._fake_client(calls)
+            out = provider._embed_openai(["a", "bb", "ccc", "dddd", "eeeee"])
+
+        self.assertEqual([len(c) for c in calls], [2, 2, 1])
+        self.assertEqual(out, [[1.0], [2.0], [3.0], [4.0], [5.0]])
+
+    def test_remote_dimension_mismatch_warns_once(self) -> None:
+        from agentx_ai.kit.agent_memory.embeddings import EmbeddingProvider
+
+        override = get_settings().model_copy(update={
+            "embedding_provider": "openai",
+            "embedding_remote_max_inputs": 2048,
+            "embedding_dimensions": 1024,  # fake endpoint returns 1-dim vectors
+        })
+        calls: list[list[str]] = []
+        with pin_memory_settings(override):
+            provider = EmbeddingProvider()
+            provider._client = self._fake_client(calls)
+            with self.assertLogs("agentx", level="WARNING") as logs:
+                provider._embed_openai(["a"])
+            provider._embed_openai(["b"])  # second call: no second warning
+
+        self.assertEqual(
+            len([m for m in logs.output if "dimension mismatch" in m]), 1)
+        self.assertTrue(provider._dimensions_validated)
+
+
+class RemoteEmbeddingProviderTest(TestCase):
+    """embedding_base_url points the openai path at any OpenAI-compatible endpoint."""
+
+    def _init_client(self, override):
+        from agentx_ai.kit.agent_memory.embeddings import EmbeddingProvider
+
+        base = {"embedding_provider": "openai"}
+        base.update(override)
+        pinned = get_settings().model_copy(update=base)
+        # Construct directly — get_embedder() is an lru_cache singleton.
+        with pin_memory_settings(pinned), patch("openai.OpenAI") as mock_openai:
+            provider = EmbeddingProvider()
+            provider._init_openai()
+        return mock_openai
+
+    def test_base_url_and_dedicated_key(self) -> None:
+        mock_openai = self._init_client({
+            "embedding_base_url": "https://openrouter.ai/api/v1",
+            "embedding_api_key": "sk-router",
+            "openai_api_key": "sk-openai",
+        })
+        mock_openai.assert_called_once_with(
+            api_key="sk-router", base_url="https://openrouter.ai/api/v1")
+
+    def test_base_url_falls_back_to_openai_key_then_placeholder(self) -> None:
+        mock_openai = self._init_client({
+            "embedding_base_url": "http://tei:8080/v1",
+            "embedding_api_key": "",
+            "openai_api_key": "sk-openai",
+        })
+        mock_openai.assert_called_once_with(
+            api_key="sk-openai", base_url="http://tei:8080/v1")
+
+        # Keyless endpoint (TEI/vLLM): the SDK requires a non-None key.
+        mock_openai = self._init_client({
+            "embedding_base_url": "http://tei:8080/v1",
+            "embedding_api_key": "",
+            "openai_api_key": "",
+        })
+        mock_openai.assert_called_once_with(
+            api_key="sk-no-auth", base_url="http://tei:8080/v1")
+
+    def test_no_base_url_reproduces_legacy_constructor(self) -> None:
+        mock_openai = self._init_client({
+            "embedding_base_url": "",
+            "embedding_api_key": "",
+            "openai_api_key": "sk-openai",
+        })
+        mock_openai.assert_called_once_with(api_key="sk-openai")
 
 
 class ResolveDeviceTest(TestCase):

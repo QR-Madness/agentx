@@ -72,10 +72,14 @@ client                    control plane                   tenant cluster
   │ connect (multi-server entry: https://{tenant}.… + token)
 ```
 
-Re-embedding is the only expensive ingest step — trivial via API embeddings
-(~100k items × ~100 tok ≈ 10M tok ≈ **$0.20** at text-embedding-3-small rates); hours on
-shared-CPU local BGE-M3. Cloud profile should default `EMBEDDING_PROVIDER=openai` (the
-envelope's `embedder_info` makes the switch safe by design).
+Re-embedding is the only expensive ingest step — trivial via API embeddings; hours on
+shared-CPU local BGE-M3. **Cloud embedding is locked to `baai/bge-m3` via OpenRouter**
+(`EMBEDDING_PROVIDER=openai` + `EMBEDDING_BASE_URL=https://openrouter.ai/api/v1`, shipped
+with the batching PR): same model + 1024 dims as local ⇒ one vector space everywhere — a
+cluster can switch local↔cloud without re-embedding, and mixed vectors coexist in one
+index. At $0.01/M tokens, 100k items × ~100 tok ≈ 10M tok ≈ **$0.10**. Import batches
+re-embeds in 128-text chunks (`_IMPORT_EMBED_CHUNK`). The envelope's `embedder_info`
+re-embed plumbing remains the fallback for any future model/dimension change.
 
 ### Cost projection (approximate, per always-on tenant cluster)
 
@@ -100,7 +104,8 @@ marginal tenant <$1/mo + their LLM spend. **LLM/API usage dwarfs hosting in ever
 3. **SSE through cloud proxies** — Fly proxy fine; AWS ALB default 60s idle timeout kills
    quiet streams (rounds can go minutes between events). Raise timeout + rely on detached
    runs/re-attach; a periodic SSE heartbeat comment would make it bulletproof.
-4. **Local embeddings on shared CPU** — cloud profile defaults to API embeddings.
+4. **Local embeddings on shared CPU** — solved: cloud profile uses OpenRouter bge-m3
+   via `EMBEDDING_BASE_URL` (vector-compatible with local; see Ingest flow above).
 5. **Agent Shells** — `container` backend needs dind (EC2/Fly-machines only, never
    Fargate); bubblewrap needs privileges PaaS won't grant. Cloud clusters ship
    `allow_shell` off (already the default); treat shells as an EC2-only feature.

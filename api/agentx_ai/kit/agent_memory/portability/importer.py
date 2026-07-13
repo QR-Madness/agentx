@@ -15,6 +15,7 @@ Modes:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Any, cast
 
 from sqlalchemy import bindparam, text
@@ -28,6 +29,11 @@ from .schema import SCHEMA_VERSION, MemoryExport
 logger = logging.getLogger(__name__)
 
 ImportMode = Literal["merge", "replace"]
+
+# Import re-embeds every node; batch in bounded chunks (queue interleaving +
+# remote input caps) with a generous background wait (ingestion precedent).
+_IMPORT_EMBED_CHUNK = 128
+_IMPORT_EMBED_TIMEOUT_S = 600.0
 
 
 class MemoryImporter:
@@ -97,25 +103,38 @@ class MemoryImporter:
 
     # -- embedding handling ---------------------------------------------
 
-    def _embed(self, text_value: str) -> list[float]:
+    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Batch-embed in bounded chunks. Chunking keeps each queue request small
+        enough that live chat embeds interleave between chunks, and under remote
+        per-request input caps."""
         if self._embedder is None:
             self._embedder = get_embedder()
-        self._recomputed += 1
-        return self._embedder.embed_single(text_value)
+        out: list[list[float]] = []
+        for start in range(0, len(texts), _IMPORT_EMBED_CHUNK):
+            out.extend(self._embedder.embed(
+                texts[start:start + _IMPORT_EMBED_CHUNK],
+                timeout=_IMPORT_EMBED_TIMEOUT_S,
+            ))
+        self._recomputed += len(texts)
+        return out
 
     def _prepare_embeddings(self, export: MemoryExport) -> None:
-        """Regenerate every node embedding from its canonical text."""
-        for t in export.turns:
-            t["embedding"] = self._embed(t.get("content") or "")
-        for e in export.entities:
-            text_value = f"{e.get('name', '')}: {e.get('description') or e.get('type', '')}"
-            e["embedding"] = self._embed(text_value)
-        for f in export.facts:
-            f["embedding"] = self._embed(f.get("claim") or "")
-        for g in export.goals:
-            g["embedding"] = self._embed(g.get("description") or "")
-        for s in export.strategies:
-            s["embedding"] = self._embed(s.get("description") or "")
+        """Regenerate every node embedding from its canonical text — batched per
+        record type (re-embedding is the expensive import step)."""
+        groups: list[tuple[list[dict], Callable[[dict], str]]] = [
+            (export.turns, lambda t: t.get("content") or ""),
+            (export.entities,
+             lambda e: f"{e.get('name', '')}: {e.get('description') or e.get('type', '')}"),
+            (export.facts, lambda f: f.get("claim") or ""),
+            (export.goals, lambda g: g.get("description") or ""),
+            (export.strategies, lambda s: s.get("description") or ""),
+        ]
+        for rows, text_of in groups:
+            if not rows:
+                continue
+            vectors = self._embed_batch([text_of(r) for r in rows])
+            for row, vec in zip(rows, vectors, strict=True):
+                row["embedding"] = vec
 
     # -- replace-mode wipe ----------------------------------------------
 

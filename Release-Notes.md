@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.218 -->
+<!-- release-version: 0.21.219 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -205,6 +205,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   generates a concise title from the conversation's state + first and last message; **tap the chat
   title** to rename it inline; and a **Close others** button clears every open tab except the current
   one (it glows a deeper red the more tabs you have open).
+- **Memory embeds faster and is cloud-ready** — consolidation, recall expansion, and memory import
+  now batch their embedding work into single model calls, and `EMBEDDING_BASE_URL` points the
+  embedder at any OpenAI-compatible endpoint (OpenRouter `baai/bge-m3` recommended — same vectors
+  as local, so no re-embed when a cluster moves to the cloud).
 
 ### Fixes
 

@@ -726,10 +726,12 @@ class RecallLayer:
         for v in variants:
             logger.debug(f"[RecallLayer:Expansion]   - \"{v}\"")
 
-        # Search with each variant
+        # Search with each variant. Embed all variants in one call — a sequential
+        # embed_single loop pays the queue round-trip per variant on the live
+        # chat path.
+        variant_embeddings = self.memory.embedder.embed(variants) if variants else []
         all_results = []
-        for variant in variants:
-            variant_embedding = self.memory.embedder.embed_single(variant)
+        for variant, variant_embedding in zip(variants, variant_embeddings, strict=True):
             channel = channels[0] if channels else self.memory.channel
             results = self.memory.semantic.vector_search_facts(
                 query_embedding=variant_embedding,
