@@ -152,9 +152,17 @@ def test_up_and_gateway_token_gate(deployment):
 
 
 def test_rate_limit_429_on_burst(deployment):
+    # The limit_req zone sits at server level — above the token gate — so every
+    # request this module already made (gateway-health polls, the token-gate
+    # asserts) drains the same bucket. Started immediately after the previous
+    # test, the burst begins with a part-empty bucket and the 200-count wobbles
+    # with runner speed (CI observed 19 vs the 20 floor). Quiesce until the
+    # bucket fully refills (burst=20 @ 10r/s ⇒ 2s) so capacity is deterministic:
+    # a full bucket passes 21 (1 + burst) plus a few refills during the loop.
+    time.sleep(3)
     codes = [_get("/api/health", token=TOKEN) for _ in range(45)]
     assert codes.count(429) > 0, f"no 429 in burst: {codes}"
-    assert codes.count(200) >= 20  # burst capacity passes first
+    assert codes.count(200) >= 20, f"burst capacity should pass first: {codes}"
 
 
 def test_config_edit_then_restart_goes_live(deployment):
