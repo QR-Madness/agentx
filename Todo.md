@@ -3,14 +3,14 @@
 
 **Project**: AgentX - AI Agent Platform
 **Status**: Prototype
-**Last Updated**: 2026-06-10
+**Last Updated**: 2026-07-12
 
 **NOTE**: UI must be highly responsive between PC and mobile devices.
 
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
 editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.212** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.219** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -55,6 +55,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.212** (pro
 | [workspaces.md](todo/backlog/workspaces.md) | ⭐ File Workspaces & Document RAG |
 | [memory-recall.md](todo/backlog/memory-recall.md) | ⭐ Active Memory Recall (3 tiers) · pairs with `Memory-Roadmap.md` |
 | [procedural.md](todo/backlog/procedural.md) | ⭐ Procedural Memory (encode → replay → activate) · pairs with `Memory-Roadmap.md` |
+| [agentic-organizations.md](todo/backlog/agentic-organizations.md) | ⭐ Agentic Organizations — org manager canvas, chain of command, durable delegation threads |
 | [retrieval-extraction.md](todo/backlog/retrieval-extraction.md) | Retrieval Quality · MCP Tools · Extraction Improvements · pairs with `Memory-Roadmap.md` |
 | [conversation-context.md](todo/backlog/conversation-context.md) | Conversation Context & Checkpoints · Memory Area UX |
 | [chat-ux.md](todo/backlog/chat-ux.md) | Chat UX & Tool-Call Rendering · Backend Observability · Live Steering |
