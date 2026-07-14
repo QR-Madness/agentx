@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.220 -->
+<!-- release-version: 0.21.221 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -40,3 +40,8 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Late delegation completions no longer drop silently** — cards settle by work-order id even
   after the live stream handle is gone; interrupted background orders read "Cancelled" instead
   of a stuck "streaming" state.
+- **Chat auto-scroll behaves**: the tail no longer escapes under rapid output, and scrolling up
+  now cleanly disengages it (only *your* scrolls change the follow state; the follower's own
+  scrolls are ignored). Scroll back to the bottom — or tap the jump button — to re-engage.
+- **Plans + delegation**: a decomposed plan in a conversation with ad-hoc delegation enabled no
+  longer fails every subtask ("'NoneType' object has no attribute 'specialists'").
