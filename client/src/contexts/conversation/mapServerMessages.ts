@@ -48,6 +48,19 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
     };
 
     if (m.role === 'user') {
+      // A folded background work-order report (delegate_start): model context
+      // only — render the hairline "report delivered" marker, not a user
+      // bubble (the Work Order card carries the content).
+      if (m.metadata?.work_order_report === true) {
+        out.push({
+          ...base,
+          type: 'work_order_report',
+          delegationId: (m.metadata?.delegation_id as string) || '',
+          targetAgentId: (m.metadata?.target_agent_id as string) || 'unknown',
+          status: (m.metadata?.status as string) || 'completed',
+        });
+        continue;
+      }
       // Vision input: image refs persisted on the user turn re-render on the bubble.
       const rawImages = m.metadata?.images;
       const images = Array.isArray(rawImages)
@@ -186,7 +199,7 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
         continue;
       }
 
-      if (toolName === 'delegate_to') {
+      if (toolName === 'delegate_to' || toolName === 'delegate_start') {
         const delegationMeta = (result?.metadata?.delegation ?? {}) as {
           raw_content?: string;
           target_agent_id?: string;
@@ -196,6 +209,12 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
           duration_ms?: number;
           cost_estimate?: number | null;
           cost_currency?: string | null;
+          pricing_snapshot?: Record<string, unknown> | null;
+          mode?: 'await' | 'background';
+          parent_delegation_id?: string | null;
+          status?: string;
+          error?: string;
+          delegation_id?: string;
         };
         const targetAgentId =
           delegationMeta.target_agent_id ||
@@ -203,16 +222,30 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
           'unknown';
         const task = delegationMeta.task || (args.task as string | undefined) || '';
         const success = (result?.metadata?.success as boolean) ?? true;
+        // Explicit persisted status wins (work orders carry honest terminal
+        // state). A restored "dispatched" cannot still be running — the
+        // process died mid-order — so it reads cancelled. Legacy rows fall
+        // back to the tool_result success inference.
+        const metaStatus = delegationMeta.status;
+        const status =
+          metaStatus === 'completed' || metaStatus === 'success' ? 'completed'
+          : metaStatus === 'cancelled' || metaStatus === 'dispatched' ? 'cancelled'
+          : metaStatus === 'failed' ? 'failed'
+          : success ? 'completed' : 'failed';
         out.push({
           ...base,
           type: 'delegation',
-          delegationId: toolCallId,
+          delegationId: delegationMeta.delegation_id || toolCallId,
           targetAgentId,
           task,
           depth: 1,
-          status: success ? 'completed' : 'failed',
+          status,
           content: delegationMeta.raw_content || result?.content || '',
+          error: delegationMeta.error,
           resultPreview: result?.content,
+          mode: delegationMeta.mode,
+          parentDelegationId: delegationMeta.parent_delegation_id ?? null,
+          reportDelivered: delegationMeta.mode === 'background' && status === 'completed',
           // Metrics persisted by the backend (Phase 1/2). toolEvents are not
           // persisted, so a restored delegation shows rollup metrics only.
           tokensInput: delegationMeta.tokens_input,
@@ -220,6 +253,7 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
           durationMs: delegationMeta.duration_ms,
           costEstimate: delegationMeta.cost_estimate,
           costCurrency: delegationMeta.cost_currency,
+          pricingSnapshot: delegationMeta.pricing_snapshot,
         });
         continue;
       }

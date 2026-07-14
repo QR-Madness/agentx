@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { groupRunsFromMessages, latestRun } from './alloyTrace';
+import { buildDelegationTree, groupRunsFromMessages, latestRun } from './alloyTrace';
 import type {
   ConversationMessage,
   DelegationMessage,
@@ -34,8 +34,8 @@ function assistant(id: string, p: Partial<AssistantMessage> = {}): AssistantMess
   };
 }
 
-function user(id: string): UserMessage {
-  return { id, type: 'user', timestamp: '2026-05-28T00:00:00.000Z', content: 'hi' };
+function user(id: string, p: Partial<UserMessage> = {}): UserMessage {
+  return { id, type: 'user', timestamp: '2026-05-28T00:00:00.000Z', content: 'hi', ...p };
 }
 
 describe('groupRunsFromMessages', () => {
@@ -58,17 +58,53 @@ describe('groupRunsFromMessages', () => {
     expect(runs[0].id).toBe('a1');
   });
 
-  it('splits runs when a non-delegation message interrupts the sequence', () => {
+  it('splits runs on real user turns only (a run = one user turn of work)', () => {
     const msgs: ConversationMessage[] = [
       assistant('a1'),
       delegation(),
-      assistant('a2'), // ends run 1, becomes supervisor of run 2
+      user('u2'), // ends run 1
+      assistant('a2'),
       delegation(),
     ];
     const runs = groupRunsFromMessages(msgs);
     expect(runs).toHaveLength(2);
     expect(runs[0].supervisorMessageId).toBe('a1');
     expect(runs[1].supervisorMessageId).toBe('a2');
+  });
+
+  it('does NOT split on interleaved assistant prose (background work orders)', () => {
+    // delegate_start: assistant keeps talking while the order runs — one run.
+    const msgs: ConversationMessage[] = [
+      assistant('a1'),
+      delegation(),
+      assistant('a2'), // prose streamed while the work order runs
+      delegation(),
+    ];
+    const runs = groupRunsFromMessages(msgs);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].delegations).toHaveLength(2);
+    // Supervisor snapshots at the FIRST delegation — later prose can't steal it.
+    expect(runs[0].supervisorMessageId).toBe('a1');
+  });
+
+  it('does not split on steered user turns or report markers', () => {
+    const msgs: ConversationMessage[] = [
+      assistant('a1'),
+      delegation(),
+      user('u-steer', { steered: true }),
+      {
+        id: 'm1',
+        type: 'work_order_report',
+        timestamp: '2026-05-28T00:00:01.000Z',
+        delegationId: 'dg_x',
+        targetAgentId: 'spec',
+        status: 'completed',
+      },
+      delegation(),
+    ];
+    const runs = groupRunsFromMessages(msgs);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].delegations).toHaveLength(2);
   });
 
   it('sums tokens and cost across same-currency delegations', () => {
@@ -120,6 +156,7 @@ describe('latestRun', () => {
     const run = latestRun([
       assistant('a1'),
       delegation(),
+      user('u2'),
       assistant('a2'),
       delegation(),
     ]);
@@ -128,5 +165,35 @@ describe('latestRun', () => {
 
   it('returns null with no delegations', () => {
     expect(latestRun([assistant('a1')])).toBeNull();
+  });
+});
+
+describe('buildDelegationTree', () => {
+  it('renders a flat list as all roots', () => {
+    const tree = buildDelegationTree([
+      delegation({ delegationId: 'a' }),
+      delegation({ delegationId: 'b' }),
+    ]);
+    expect(tree.map(n => n.delegation.delegationId)).toEqual(['a', 'b']);
+    expect(tree.every(n => n.children.length === 0)).toBe(true);
+  });
+
+  it('nests children under their parentDelegationId', () => {
+    const tree = buildDelegationTree([
+      delegation({ delegationId: 'root' }),
+      delegation({ delegationId: 'child', parentDelegationId: 'root' }),
+      delegation({ delegationId: 'grandchild', parentDelegationId: 'child' }),
+    ]);
+    expect(tree).toHaveLength(1);
+    expect(tree[0].children[0].delegation.delegationId).toBe('child');
+    expect(tree[0].children[0].children[0].delegation.delegationId).toBe('grandchild');
+  });
+
+  it('degrades orphaned parents to roots', () => {
+    const tree = buildDelegationTree([
+      delegation({ delegationId: 'x', parentDelegationId: 'missing' }),
+    ]);
+    expect(tree).toHaveLength(1);
+    expect(tree[0].delegation.delegationId).toBe('x');
   });
 });

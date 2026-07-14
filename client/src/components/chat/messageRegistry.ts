@@ -22,7 +22,8 @@ import { ToolCallBubble } from './bubbles/ToolCallBubble';
 import { ToolResultBubble } from './bubbles/ToolResultBubble';
 import { MemoryInjectionBubble } from './bubbles/MemoryInjectionBubble';
 import { PlanExecutionBubble } from './bubbles/PlanExecutionBubble';
-import { DelegationBubble } from './bubbles/DelegationBubble';
+import { WorkOrderCard } from './bubbles/WorkOrderCard';
+import { WorkOrderReportMarker } from './bubbles/WorkOrderReportMarker';
 import { ExhibitBubble } from './bubbles/ExhibitBubble';
 import { SystemBubble } from './bubbles/SystemBubble';
 import { ErrorBubble } from './bubbles/ErrorBubble';
@@ -40,7 +41,8 @@ export const messageRegistry: MessageRegistry = {
   tool_result: ToolResultBubble,
   memory_injection: MemoryInjectionBubble,
   plan_execution: PlanExecutionBubble,
-  delegation: DelegationBubble,
+  delegation: WorkOrderCard,
+  work_order_report: WorkOrderReportMarker,
   exhibit: ExhibitBubble,
   system: SystemBubble,
   error: ErrorBubble,

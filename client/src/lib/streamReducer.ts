@@ -37,6 +37,8 @@ export interface ActiveDelegation {
   messageId: string;
   content: string;
   toolEvents: DelegationToolEvent[];
+  /** 'background' = a delegate_start work order (may outlive the tool round). */
+  mode?: 'await' | 'background';
 }
 
 export interface StreamState {

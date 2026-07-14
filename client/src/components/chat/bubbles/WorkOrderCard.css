@@ -1,0 +1,252 @@
+/**
+ * WorkOrderCard + WorkOrderReportMarker — the holographic work-order artifacts.
+ *
+ * Same family as ToolExecutionBlock: transparent surface with a faint
+ * accent-gradient border (padding-box/border-box trick), shimmer while
+ * working, one loud failed state. Composes existing theme tokens only —
+ * gradients/glows flatten automatically on NO_GLOW themes.
+ */
+
+.work-order-card {
+  margin: 0.2rem 0;
+  border-radius: 12px;
+  position: relative;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--bg-secondary), var(--bg-secondary)) padding-box,
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--accent-primary) 34%, transparent),
+      color-mix(in srgb, var(--accent-secondary) 30%, transparent) 55%,
+      color-mix(in srgb, var(--accent-tertiary, var(--accent-primary)) 22%, transparent)) border-box;
+  overflow: hidden;
+  transition: opacity 0.25s, background 0.25s, box-shadow 0.25s;
+}
+
+/* Completed orders recede a little (less than tool chips — they're bigger news). */
+.work-order-card.status-completed { opacity: 0.85; }
+.work-order-card.status-completed:hover,
+.work-order-card.status-completed:focus-within { opacity: 1; }
+
+.work-order-card.status-cancelled { opacity: 0.65; }
+
+/* Working: the holographic shimmer sweep (ToolExecutionBlock pattern). */
+.work-order-card.status-streaming::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--accent-primary) 10%, transparent) 40%,
+    color-mix(in srgb, var(--accent-secondary) 14%, transparent) 50%,
+    color-mix(in srgb, var(--accent-primary) 10%, transparent) 60%,
+    transparent 80%);
+  background-size: 250% 100%;
+  animation: work-order-shimmer 2.2s linear infinite;
+}
+
+@keyframes work-order-shimmer {
+  from { background-position: 125% 0; }
+  to   { background-position: -125% 0; }
+}
+
+/* Report delivered: a single glow pulse when the class lands. */
+.work-order-card.report-delivered {
+  animation: work-order-delivered 1.2s ease-out 1;
+}
+@keyframes work-order-delivered {
+  0% { box-shadow: 0 0 rgba(0, 0, 0, 0); }
+  35% { box-shadow: var(--border-glow-medium); }
+  100% { box-shadow: 0 0 rgba(0, 0, 0, 0); }
+}
+
+/* Failure is the one loud state. */
+.work-order-card.status-failed {
+  background:
+    linear-gradient(
+      color-mix(in srgb, var(--feedback-error) 8%, var(--bg-secondary)),
+      color-mix(in srgb, var(--feedback-error) 8%, var(--bg-secondary))) padding-box,
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--feedback-error) 55%, transparent),
+      color-mix(in srgb, var(--feedback-error) 30%, transparent)) border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-order-card.status-streaming::after {
+    animation: none;
+    background: color-mix(in srgb, var(--accent-primary) 6%, transparent);
+  }
+  .work-order-card.report-delivered { animation: none; }
+}
+
+/* The pill row */
+.work-order-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.65rem;
+  min-height: 32px;
+  cursor: pointer;
+  transition: background 0.15s;
+  min-width: 0;
+}
+.work-order-row:hover {
+  background: color-mix(in srgb, var(--accent-primary) 5%, transparent);
+}
+
+.work-order-icon {
+  display: inline-flex;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+.work-order-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.work-order-ticket {
+  font-size: 0.6875rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+.work-order-target {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.work-order-mode-tag {
+  font-size: 0.5625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.05rem 0.3rem;
+  border-radius: 999px;
+  background: var(--accent-tint-faint);
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+.work-order-depth {
+  font-size: 0.6563rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.work-order-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.work-order-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+.work-order-metric.cost { color: var(--feedback-success); }
+.work-order-metric.unavailable { font-style: italic; }
+.work-order-report-chip {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-primary);
+}
+.work-order-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.6563rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+.work-order-status.running { background: var(--accent-tint-faint); color: var(--accent-primary); }
+.work-order-status.completed { background: var(--feedback-success-tint); color: var(--feedback-success); }
+.work-order-status.failed { background: var(--feedback-error-tint); color: var(--feedback-error); }
+.work-order-status.cancelled { background: var(--bg-hover); color: var(--text-muted); }
+
+.work-order-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.work-order-toggle:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* Expanded preview */
+.work-order-details {
+  padding: 0.5rem 0.75rem 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.work-order-task {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.work-order-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.work-order-body {
+  font-size: 0.875rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.work-order-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 8px;
+  background: var(--feedback-error-tint);
+  color: var(--feedback-error);
+  font-size: 0.75rem;
+}
+
+/* Hairline report-delivered marker */
+.work-order-report-marker {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  margin: 0.35rem 0;
+  padding: 0.1rem 0;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.work-order-report-marker:hover { color: var(--accent-primary); }
+.work-order-report-marker.failed { color: var(--feedback-error); }
+.work-order-report-marker .marker-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    color-mix(in srgb, currentColor 35%, transparent),
+    transparent);
+}
+.work-order-report-marker .marker-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.6875rem;
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}

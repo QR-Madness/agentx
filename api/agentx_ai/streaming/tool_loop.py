@@ -12,11 +12,12 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import uuid4
 from collections.abc import AsyncGenerator, Callable
 
 from ..providers.base import Message, MessageRole
 from .helpers import estimate_tokens, truncate_tool_messages
-from .status import emit_status
+from .status import current_run_id, emit_status
 from .steering import drain_steer_messages
 from .trajectory_compression import compress_trajectory
 
@@ -67,6 +68,11 @@ class ToolLoopResult:
     # Mid-turn steers folded in (for persistence). Each: {content, round,
     # after_tools, phase} where phase is "tool_boundary" or "would_end".
     steers: list[dict] = field(default_factory=list)
+    # Background work-order reports folded in (`delegate_start`, for
+    # persistence). Each: {content, delegation_id, target_agent_id,
+    # tool_call_id, status, round, phase} where phase is "tool_boundary",
+    # "would_end", or "round_exhausted".
+    work_order_reports: list[dict] = field(default_factory=list)
     # The final round's finish reason ("stop", "length", …). "length" means the
     # answer was truncated by max_tokens — surfaced in the done event.
     finish_reason: str | None = None
@@ -121,23 +127,60 @@ def _prepare_round_context(
     return compressed
 
 
-def _partition_tool_calls(round_tool_calls: list, agent) -> tuple[list, list]:
-    """Split a round's tool calls into Agent Alloy delegations vs regular calls.
+def _partition_tool_calls(round_tool_calls: list, agent) -> tuple[list, list, list]:
+    """Split a round's tool calls into blocking delegations, background work
+    orders, and regular calls.
 
     `delegate_to` calls run through the active AlloyExecutor (async, streaming)
     and emit their own event stream, so they're separated from the sync
-    `_execute_tool_calls` path. Delegations are only split out when an
-    AlloyExecutor is active; otherwise every call is treated as regular.
+    `_execute_tool_calls` path. `delegate_start` calls dispatch as background
+    work orders when the executor has non-blocking mode enabled — with the knob
+    off they gracefully degrade to blocking delegations. Delegations are only
+    split out when an AlloyExecutor is active; otherwise every call is treated
+    as regular (and fails as an unknown tool, as today).
     """
     alloy_executor = getattr(agent, "_active_alloy_executor", None)
+    non_blocking = bool(getattr(alloy_executor, "non_blocking_enabled", False))
     delegation_calls = []
+    background_calls = []
     regular_calls = []
     for tc in round_tool_calls:
-        if tc.name == "delegate_to" and alloy_executor is not None:
+        if alloy_executor is not None and tc.name == "delegate_start":
+            (background_calls if non_blocking else delegation_calls).append(tc)
+        elif alloy_executor is not None and tc.name == "delegate_to":
             delegation_calls.append(tc)
         else:
             regular_calls.append(tc)
-    return delegation_calls, regular_calls
+    return delegation_calls, background_calls, regular_calls
+
+
+# Metric/identity keys re-parsed from a `delegation_complete` SSE payload —
+# folded onto the persisted delegation card so restored conversations carry
+# honest terminal state (status/error) and work-order identity.
+_COMPLETE_METRIC_KEYS = (
+    "tokens_input", "tokens_output", "duration_ms",
+    "cost_estimate", "cost_currency", "pricing_snapshot",
+    # Exhibit wires the specialist produced — consumed (and stripped) by the
+    # persistence step so reload rebuilds the cards.
+    "exhibits",
+    "status", "error", "mode", "parent_delegation_id", "delegation_id",
+)
+
+
+def _parse_complete_metrics(event_str: str) -> dict[str, Any]:
+    """Re-parse a `delegation_complete` SSE for its metrics (keeps delegate()'s
+    (event_str, partial) yield contract unchanged for other consumers)."""
+    _, _, payload = event_str.partition("\n")
+    data_line = payload.split("data: ", 1)[1].rstrip() if "data: " in payload else "{}"
+    try:
+        done = json.loads(data_line)
+    except json.JSONDecodeError:
+        return {}
+    return {
+        k: done[k]
+        for k in _COMPLETE_METRIC_KEYS
+        if k in done and done[k] is not None
+    }
 
 
 # Internal tool whose calls are surfaced as typed `exhibit` events (rendered
@@ -342,47 +385,50 @@ async def _run_delegations(
     final_partials: dict[str, str] = {}
     final_metrics: dict[str, dict[str, Any]] = {}
 
-    def _parse_complete_metrics(event_str: str) -> dict[str, Any]:
-        """Re-parse a `delegation_complete` SSE for its metrics (keeps delegate()'s
-        (event_str, partial) yield contract unchanged for other consumers)."""
-        _, _, payload = event_str.partition("\n")
-        data_line = payload.split("data: ", 1)[1].rstrip() if "data: " in payload else "{}"
-        try:
-            done = json.loads(data_line)
-        except json.JSONDecodeError:
-            return {}
-        return {
-            k: done[k]
-            for k in (
-                "tokens_input", "tokens_output", "duration_ms",
-                "cost_estimate", "cost_currency", "pricing_snapshot",
-                # Exhibit wires the specialist produced — consumed (and stripped)
-                # by the persistence step so reload rebuilds the cards.
-                "exhibits",
-            )
-            if k in done and done[k] is not None
-        }
-
     async def _drive(tc) -> None:
         """One delegation branch: stream its events into the shared queue."""
         args = tc.arguments or {}
         target = args.get("agent_id", "")
         task = args.get("task", "")
         accumulated = ""
+        # Per-delegation wall-clock cap (`alloy.delegation_timeout_seconds`).
+        # Applied to the consumption, not the semaphore wait, so queued
+        # branches don't burn their budget waiting for a slot.
+        timeout = getattr(alloy_executor, "delegation_timeout_seconds", 300) or None
+        # Top-level fan-out is always depth 0; delegate() defaults depth=0
+        # (omitted here so simpler delegate() signatures stay compatible).
+        gen = alloy_executor.delegate(target, task, tool_call_id=tc.id)
+
+        async def _consume() -> None:
+            nonlocal accumulated
+            async for event_str, partial in gen:
+                await queue.put(event_str)
+                accumulated = partial
+                if event_str.startswith("event: delegation_complete"):
+                    final_metrics[tc.id] = _parse_complete_metrics(event_str)
+
         try:
             async with sem:
-                # Top-level fan-out is always depth 0; delegate() defaults depth=0
-                # (omitted here so simpler delegate() signatures stay compatible).
-                async for event_str, partial in alloy_executor.delegate(
-                    target, task, tool_call_id=tc.id,
-                ):
-                    await queue.put(event_str)
-                    accumulated = partial
-                    if event_str.startswith("event: delegation_complete"):
-                        final_metrics[tc.id] = _parse_complete_metrics(event_str)
+                await asyncio.wait_for(_consume(), timeout)
         except asyncio.CancelledError:
             # Client disconnect / sibling teardown — propagate, don't swallow.
             raise
+        except TimeoutError:
+            try:
+                await gen.aclose()
+            except Exception:  # noqa: BLE001 - best-effort generator cleanup
+                pass
+            err = f"delegation timed out after {timeout}s"
+            logger.warning(f"Delegation branch for {target!r}: {err}")
+            await queue.put(_sse("delegation_complete", {
+                "target_agent_id": target,
+                "tool_call_id": tc.id,
+                "status": "failed",
+                "error": err,
+                "result_preview": "",
+            }))
+            final_metrics[tc.id] = {"status": "failed", "error": err}
+            accumulated = accumulated or f"[delegation failed: {err}]"
         except Exception as e:  # noqa: BLE001 - isolate this branch from siblings
             logger.exception(f"Delegation branch for {target!r} failed")
             await queue.put(_sse("delegation_complete", {
@@ -392,6 +438,7 @@ async def _run_delegations(
                 "error": str(e),
                 "result_preview": "",
             }))
+            final_metrics[tc.id] = {"status": "failed", "error": str(e)}
             accumulated = accumulated or f"[delegation failed: {e}]"
         finally:
             final_partials[tc.id] = accumulated
@@ -460,6 +507,340 @@ async def _run_delegations(
             tool_call_id=tc.id,
             name=tc.name,
         ))
+
+
+# ---------------------------------------------------------------------------
+# Non-blocking work orders (`delegate_start`)
+#
+# A work order dispatches immediately: its TOOL message is a dispatch receipt
+# (satisfying the provider's tool_result contract), the specialist runs as a
+# detached task streaming its events straight onto the run's Redis bus, and
+# the report folds back into the transcript as a user message at the same safe
+# boundaries steering uses. Strictly within-turn: the would-end barrier waits
+# for stragglers, and `streaming_tool_loop`'s finally cancels anything left.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _WorkOrder:
+    """One in-flight background delegation (a `delegate_start` work order)."""
+    tc: Any
+    target: str
+    task_text: str
+    delegation_id: str
+    round_dispatched: int
+    task: asyncio.Task
+    final_partial: str = ""
+    metrics: dict = field(default_factory=dict)
+    folded: bool = False
+
+
+def _emit_background_event(run_id: str | None, sse_event: str) -> None:
+    """Append a background delegation event to the run's Redis event bus.
+
+    Background drivers can't yield through the tool-loop generator (they run
+    while the loop is doing other work), so they append straight to the bus —
+    the same stream `_drive_run` copies generator yields into, hence identical
+    for live and re-attached clients. No run in context (unit tests, non-run
+    callers) ⇒ drop with a debug log.
+    """
+    if not run_id:
+        logger.debug("background delegation event dropped (no run in context)")
+        return
+    try:
+        from .chat_run import store
+        store.append_event(run_id, sse_event)
+    except Exception:  # noqa: BLE001 - the bus is best-effort telemetry here
+        logger.warning("failed to append background delegation event", exc_info=True)
+
+
+def _dispatch_background_delegations(
+    background_calls: list,
+    alloy_executor,
+    agent,
+    *,
+    registry: dict[str, _WorkOrder],
+    delegation_messages: list[Message],
+    delegation_raw: dict[str, dict[str, Any]],
+    sem: asyncio.Semaphore,
+    tool_round: int,
+) -> None:
+    """Dispatch `delegate_start` calls as detached work-order tasks.
+
+    Each call immediately gets a dispatch-receipt TOOL message (provider
+    contract) and a seeded `delegation_raw` entry (so the persisted card shows
+    a dispatched state even if the turn is interrupted); the specialist events
+    stream to the run bus from the detached task. The caller owns `registry`
+    cleanup — see `_cancel_pending_work_orders`.
+    """
+    run_id = current_run_id.get()
+    timeout = getattr(alloy_executor, "delegation_timeout_seconds", 300) or None
+
+    for tc in background_calls:
+        args = tc.arguments or {}
+        target = args.get("agent_id", "")
+        task_text = args.get("task", "")
+        delegation_id = uuid4().hex[:8]
+
+        async def _drive_background(
+            tc=tc, target=target, task_text=task_text, delegation_id=delegation_id,
+        ) -> tuple[str, dict[str, Any]]:
+            accumulated = ""
+            metrics: dict[str, Any] = {}
+            gen = alloy_executor.delegate(
+                target, task_text, tool_call_id=tc.id,
+                mode="background", delegation_id=delegation_id,
+            )
+
+            async def _consume() -> None:
+                nonlocal accumulated, metrics
+                async for event_str, partial in gen:
+                    _emit_background_event(run_id, event_str)
+                    accumulated = partial
+                    if event_str.startswith("event: delegation_complete"):
+                        metrics = _parse_complete_metrics(event_str)
+
+            def _fail(err: str) -> None:
+                nonlocal metrics, accumulated
+                metrics = {
+                    "status": "failed", "error": err,
+                    "mode": "background", "delegation_id": delegation_id,
+                }
+                _emit_background_event(run_id, _sse("delegation_complete", {
+                    "delegation_id": delegation_id,
+                    "target_agent_id": target,
+                    "tool_call_id": tc.id,
+                    "status": "failed",
+                    "error": err,
+                    "result_preview": "",
+                    "mode": "background",
+                    "parent_delegation_id": None,
+                }))
+                accumulated = accumulated or f"[work order failed: {err}]"
+
+            try:
+                async with sem:
+                    await asyncio.wait_for(_consume(), timeout)
+            except asyncio.CancelledError:
+                raise
+            except TimeoutError:
+                try:
+                    await gen.aclose()
+                except Exception:  # noqa: BLE001 - best-effort generator cleanup
+                    pass
+                logger.warning(
+                    f"Work order {delegation_id} ({target!r}) timed out after {timeout}s"
+                )
+                _fail(f"work order timed out after {timeout}s")
+            except Exception as e:  # noqa: BLE001 - isolate from the main loop
+                logger.exception(f"Work order {delegation_id} ({target!r}) failed")
+                _fail(str(e))
+            return accumulated, metrics
+
+        registry[tc.id] = _WorkOrder(
+            tc=tc,
+            target=target,
+            task_text=task_text,
+            delegation_id=delegation_id,
+            round_dispatched=tool_round,
+            task=asyncio.create_task(_drive_background()),
+        )
+        delegation_messages.append(Message(
+            role=MessageRole.TOOL,
+            content=(
+                f"[dispatch receipt] Work Order {delegation_id} dispatched to "
+                f"{target}. Its report will be delivered to you automatically "
+                "later this turn — continue with other work; do not wait or "
+                "poll for it."
+            ),
+            tool_call_id=tc.id,
+            name=tc.name,
+        ))
+        delegation_raw[tc.id] = {
+            "raw_content": "",
+            "target_agent_id": target,
+            "task": task_text,
+            "mode": "background",
+            "status": "dispatched",
+            "delegation_id": delegation_id,
+            "parent_delegation_id": None,
+        }
+
+
+def _settle_work_order_entry(
+    wo: _WorkOrder, result: ToolLoopResult, *, status: str,
+) -> None:
+    """Update the persisted delegation card entry for a settled work order."""
+    for entry in result.tool_turns_data:
+        if entry.get("type") == "tool_result" and entry.get("tool_call_id") == wo.tc.id:
+            dr = entry.get("delegation")
+            if not isinstance(dr, dict):
+                dr = {}
+                entry["delegation"] = dr
+            metrics = dict(wo.metrics)
+            exhibits = metrics.pop("exhibits", None) or []
+            dr.update(metrics)
+            dr["status"] = status
+            dr["raw_content"] = wo.final_partial
+            # Synthetic present_exhibit turns for exhibits produced inside the
+            # work order — mirror of the blocking-path strip in
+            # `_execute_and_emit_tools` so reload rebuilds the cards.
+            for i, wire in enumerate(exhibits):
+                if isinstance(wire, dict):
+                    result.tool_turns_data.append({
+                        "type": "tool_call",
+                        "tool": "present_exhibit",
+                        "tool_call_id": wire.get("id") or f"exh_wo_{wo.tc.id}_{i}",
+                        "arguments": wire,
+                    })
+            return
+
+
+def _fold_completed_work_orders(
+    registry: dict[str, _WorkOrder],
+    messages: list[Message],
+    agent,
+    *,
+    result: ToolLoopResult,
+    tool_round: int,
+    phase: str,
+) -> list[str]:
+    """Fold finished background work orders into the transcript.
+
+    For each completed, not-yet-folded order: append its report as a USER
+    message (the dispatch receipt already satisfied the provider's tool_result
+    contract — the deferred result may not backfill it), record it on
+    ``result.work_order_reports`` (persisted like steers), settle the persisted
+    delegation card entry, and return `work_order_report` SSE strings for the
+    caller to yield (yielding keeps bus ordering aligned with the fold).
+    """
+    events: list[str] = []
+    for wo in registry.values():
+        if wo.folded or not wo.task.done() or wo.task.cancelled():
+            continue
+        try:
+            partial, metrics = wo.task.result()
+        except Exception:  # noqa: BLE001 - driver isolates; belt and braces
+            partial, metrics = "", {"status": "failed", "error": "work order crashed"}
+        wo.final_partial, wo.metrics = partial, metrics
+        raw_status = metrics.get("status") or "success"
+        status = "completed" if raw_status == "success" else raw_status
+        body = partial or metrics.get("error") or "[work order produced no output]"
+        report = (
+            f"[Work Order Report — {wo.target}, wo {wo.delegation_id}] "
+            f"status: {status}\n\n{body}"
+        )
+        # Same oversize handling as a blocking delegation result (sync; serial).
+        if hasattr(agent, "handle_oversized_tool_output"):
+            report = agent.handle_oversized_tool_output(
+                tool_call_id=wo.tc.id,
+                tool_name="delegate_start",
+                content=report,
+                task_context=wo.task_text,
+            )
+        messages.append(Message(role=MessageRole.USER, content=report))
+        if partial:
+            result.delegations.append(partial)
+        result.work_order_reports.append({
+            "content": report,
+            "delegation_id": wo.delegation_id,
+            "target_agent_id": wo.target,
+            "tool_call_id": wo.tc.id,
+            "status": status,
+            "round": tool_round,
+            "phase": phase,
+        })
+        _settle_work_order_entry(wo, result, status=status)
+        events.append(_sse("work_order_report", {
+            "tool_call_id": wo.tc.id,
+            "delegation_id": wo.delegation_id,
+            "target_agent_id": wo.target,
+            "status": status,
+            "round": tool_round,
+            "phase": phase,
+        }))
+        wo.folded = True
+    return events
+
+
+async def _await_work_orders(
+    registry: dict[str, _WorkOrder],
+    check_cancel: Callable[[], bool],
+    *,
+    all_of_them: bool = False,
+) -> bool:
+    """Wait until at least one (or all) pending work orders complete.
+
+    Polls in short slices so user cancellation stays responsive during an
+    otherwise-silent barrier (background events bypass the generator, so the
+    driver's per-event cancel check never fires here). Returns False when
+    cancellation was observed — the caller should stop.
+    """
+    while True:
+        pending = [wo.task for wo in registry.values() if not wo.task.done()]
+        if not pending:
+            return True
+        if not all_of_them and any(
+            wo.task.done() and not wo.folded for wo in registry.values()
+        ):
+            return True
+        if check_cancel():
+            return False
+        await asyncio.wait(
+            pending,
+            timeout=2,
+            return_when=(
+                asyncio.ALL_COMPLETED if all_of_them else asyncio.FIRST_COMPLETED
+            ),
+        )
+
+
+async def _cancel_pending_work_orders(
+    registry: dict[str, _WorkOrder],
+    result: ToolLoopResult,
+    run_id: str | None,
+) -> None:
+    """Cancel still-running work orders (the turn is ending or was cancelled)
+    and settle their persisted cards.
+
+    Finished-but-unfolded orders keep their real terminal state — the work
+    completed even if its report never folded; only genuinely interrupted
+    orders read "cancelled".
+    """
+    to_cancel = [wo for wo in registry.values() if not wo.task.done()]
+    for wo in to_cancel:
+        wo.task.cancel()
+    if to_cancel:
+        await asyncio.gather(
+            *(wo.task for wo in to_cancel), return_exceptions=True,
+        )
+    for wo in registry.values():
+        if wo.folded:
+            continue
+        if wo.task.cancelled():
+            _settle_work_order_entry(wo, result, status="cancelled")
+            _emit_background_event(run_id, _sse("delegation_complete", {
+                "delegation_id": wo.delegation_id,
+                "target_agent_id": wo.target,
+                "tool_call_id": wo.tc.id,
+                "status": "cancelled",
+                "error": "work order cancelled with the run",
+                "result_preview": "",
+                "mode": "background",
+                "parent_delegation_id": None,
+            }))
+        else:
+            try:
+                partial, metrics = wo.task.result()
+            except Exception:  # noqa: BLE001
+                partial, metrics = "", {"status": "failed", "error": "work order crashed"}
+            wo.final_partial, wo.metrics = partial, metrics
+            raw_status = metrics.get("status") or "success"
+            _settle_work_order_entry(
+                wo, result,
+                status="completed" if raw_status == "success" else raw_status,
+            )
+        wo.folded = True
 
 
 async def _execute_and_emit_tools(
@@ -670,18 +1051,29 @@ async def streaming_tool_loop(
         _search_limit = int(get_config_manager().get("search.per_turn_limit", 8) or 0)
     _conv_id = getattr(getattr(agent, "session", None), "id", None)
     _agent_id = getattr(agent, "agent_id", None)
-    with search_budget_window(_search_limit, conversation_id=_conv_id, agent_id=_agent_id):
-        async for _event in _run_tool_loop(
-            provider, model_id, messages, tools, agent,
-            temperature=temperature, max_tokens=max_tokens,
-            max_tool_rounds=max_tool_rounds, max_context_tokens=max_context_tokens,
-            context_window=context_window, context_warning_threshold=context_warning_threshold,
-            task_context=task_context, emit_trajectory_info=emit_trajectory_info,
-            truncate_on_overflow=truncate_on_overflow, capture_tool_turns=capture_tool_turns,
-            result=result, check_cancel=check_cancel, vision_capable=vision_capable,
-            finalize_nudge=finalize_nudge,
-        ):
-            yield _event
+    # Background work-order registry (`delegate_start`): owned HERE so exactly
+    # one finally cancels leftovers on every exit path — cooperative cancel
+    # returns, client disconnect (GeneratorExit via aclose — awaiting in an
+    # async-gen finally is legal during aclose), and exceptions. Within-turn
+    # contract: nothing in this registry ever outlives this generator.
+    work_orders: dict[str, _WorkOrder] = {}
+    try:
+        with search_budget_window(_search_limit, conversation_id=_conv_id, agent_id=_agent_id):
+            async for _event in _run_tool_loop(
+                provider, model_id, messages, tools, agent,
+                temperature=temperature, max_tokens=max_tokens,
+                max_tool_rounds=max_tool_rounds, max_context_tokens=max_context_tokens,
+                context_window=context_window, context_warning_threshold=context_warning_threshold,
+                task_context=task_context, emit_trajectory_info=emit_trajectory_info,
+                truncate_on_overflow=truncate_on_overflow, capture_tool_turns=capture_tool_turns,
+                result=result, check_cancel=check_cancel, work_orders=work_orders,
+                vision_capable=vision_capable,
+                finalize_nudge=finalize_nudge,
+            ):
+                yield _event
+    finally:
+        if work_orders:
+            await _cancel_pending_work_orders(work_orders, result, current_run_id.get())
 
 
 async def _run_tool_loop(
@@ -703,10 +1095,15 @@ async def _run_tool_loop(
     capture_tool_turns: bool,
     result: ToolLoopResult,
     check_cancel: Callable[[], bool],
+    work_orders: dict[str, _WorkOrder],
     vision_capable: bool = False,
     finalize_nudge: str | None = None,
 ) -> AsyncGenerator[str]:
-    """Inner loop body — runs inside the per-turn search-budget window."""
+    """Inner loop body — runs inside the per-turn search-budget window.
+
+    `work_orders` is the turn's background-delegation registry, owned (and
+    cancelled on exit) by `streaming_tool_loop`'s finally.
+    """
     from ..agent.output_parser import parse_output
     from ..config import get_config_manager as _get_cfg
 
@@ -720,6 +1117,10 @@ async def _run_tool_loop(
     # the turn is close to ending with no document written — proactively near
     # round exhaustion, or reactively at a natural stop.
     nudge_used = False
+    # Lazy semaphore bounding concurrent background work orders (its own pool —
+    # a same-round blocking batch has its own, so worst-case 2× max_parallel
+    # briefly; accepted).
+    bg_sem: asyncio.Semaphore | None = None
 
     for tool_round in range(max_tool_rounds + 1):
         round_tool_calls = []
@@ -823,6 +1224,40 @@ async def _run_tool_loop(
                 # Still truncated (or auto-continue disabled) — surface it.
                 emit_status("truncated")
 
+            # Would-end barrier: background work orders are strictly
+            # within-turn, so the turn must not end while any report is
+            # unfolded. Fold whatever is done; if none are, wait
+            # (cancel-responsive) for the first to land — then give the model
+            # another round to react to the report(s).
+            if any(not wo.folded for wo in work_orders.values()):
+                folded_text = (
+                    parse_output(round_content).content.strip() if round_content else ""
+                )
+                if folded_text:
+                    messages.append(Message(role=MessageRole.ASSISTANT, content=folded_text))
+                if not any(
+                    wo.task.done() and not wo.folded for wo in work_orders.values()
+                ):
+                    pending_n = sum(
+                        1 for wo in work_orders.values() if not wo.task.done()
+                    )
+                    emit_status(
+                        "thinking", label=f"Waiting for {pending_n} work order(s)…",
+                    )
+                    if not await _await_work_orders(work_orders, check_cancel):
+                        logger.info(
+                            "tool loop: cancellation observed during work-order barrier"
+                        )
+                        result.final_content = round_content
+                        return
+                for event_str in _fold_completed_work_orders(
+                    work_orders, messages, agent,
+                    result=result, tool_round=tool_round, phase="would_end",
+                ):
+                    yield event_str
+                emit_status("thinking")
+                continue
+
             # Delivery guard, reactive trigger: the model is stopping without
             # having written the deliverable document. Fold the partial in
             # (thinking stripped — same shape as steer folding) and nudge once.
@@ -864,9 +1299,12 @@ async def _run_tool_loop(
                 yield _sse("chunk", {"content": fallback})
             break
 
-        # Split off Agent Alloy delegate_to calls from regular tool calls.
+        # Split off Agent Alloy delegation calls (blocking `delegate_to` +
+        # background `delegate_start`) from regular tool calls.
         alloy_executor = getattr(agent, "_active_alloy_executor", None)
-        delegation_calls, regular_calls = _partition_tool_calls(round_tool_calls, agent)
+        delegation_calls, background_calls, regular_calls = _partition_tool_calls(
+            round_tool_calls, agent
+        )
 
         # Emit tool call events (only for non-delegation calls). `present_exhibit`
         # calls are surfaced as typed `exhibit` events instead of a tool card.
@@ -902,6 +1340,24 @@ async def _run_tool_loop(
         # TOOL messages + raw metadata for the tool-execution step.
         delegation_messages: list[Message] = []
         delegation_raw: dict[str, dict[str, Any]] = {}
+
+        # Dispatch background work orders FIRST (their receipts must exist for
+        # this round's tool messages while blocking branches stream below; the
+        # detached tasks stream their own events to the run bus).
+        if background_calls:
+            if bg_sem is None:
+                bg_sem = asyncio.Semaphore(
+                    getattr(alloy_executor, "max_parallel_delegations", 3) or 3
+                )
+            _dispatch_background_delegations(
+                background_calls, alloy_executor, agent,
+                registry=work_orders,
+                delegation_messages=delegation_messages,
+                delegation_raw=delegation_raw,
+                sem=bg_sem,
+                tool_round=tool_round,
+            )
+
         async for event_str in _run_delegations(
             delegation_calls, alloy_executor, agent,
             result=result,
@@ -920,8 +1376,12 @@ async def _run_tool_loop(
             result.final_content = round_content
             return
 
-        # Execute remaining tools (sync), emit result events, extend messages
-        delegation_tool_call_ids = {tc.id for tc in delegation_calls}
+        # Execute remaining tools (sync), emit result events, extend messages.
+        # Background ids ride along so their receipt TOOL messages don't echo
+        # as generic tool_result events (the delegation_* stream carries them).
+        delegation_tool_call_ids = (
+            {tc.id for tc in delegation_calls} | {tc.id for tc in background_calls}
+        )
         async for event_str in _execute_and_emit_tools(
             regular_calls, delegation_messages, round_tool_calls,
             delegation_tool_call_ids, agent, messages,
@@ -953,6 +1413,15 @@ async def _run_tool_loop(
                 "after_tools": round_tool_names, "phase": "tool_boundary",
             })
 
+        # Fold reports from background work orders that finished during this
+        # round — same safe boundary as steering.
+        if work_orders:
+            for event_str in _fold_completed_work_orders(
+                work_orders, messages, agent,
+                result=result, tool_round=tool_round, phase="tool_boundary",
+            ):
+                yield event_str
+
         # Delivery guard, proactive trigger: rounds are nearly exhausted and no
         # document has been written — nudge now, while tools are still on offer,
         # so the model can save the deliverable before the budget closes.
@@ -977,6 +1446,20 @@ async def _run_tool_loop(
             "(model=%s) — running a forced synthesis pass",
             max_tool_rounds + 1, model_id,
         )
+        # Await + fold every outstanding work order first so the forced
+        # synthesis pass sees all the reports (within-turn contract).
+        if any(not wo.folded for wo in work_orders.values()):
+            emit_status("thinking", label="Waiting for work orders…")
+            if not await _await_work_orders(work_orders, check_cancel, all_of_them=True):
+                logger.info(
+                    "tool loop: cancellation observed during exhaustion barrier"
+                )
+                return
+            for event_str in _fold_completed_work_orders(
+                work_orders, messages, agent,
+                result=result, tool_round=max_tool_rounds, phase="round_exhausted",
+            ):
+                yield event_str
         messages.append(Message(
             role=MessageRole.USER,
             content=(

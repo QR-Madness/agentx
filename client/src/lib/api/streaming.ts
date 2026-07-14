@@ -2,7 +2,7 @@ import { getBaseUrl, registerStreamController } from './core';
 import { getAuthToken, clearAuthToken, getActiveGatewayToken } from '../storage';
 import { classifyStatus, apiErrorMessage, backendErrorMessage } from './errors';
 import type { ApiError } from './errors';
-import type { ChatRequest, DelegationChunkEvent, DelegationCompleteEvent, DelegationStartEvent, DelegationToolCallEvent, DelegationToolResultEvent, PlanResumeRequest } from './types';
+import type { ChatRequest, DelegationChunkEvent, DelegationCompleteEvent, DelegationStartEvent, DelegationToolCallEvent, DelegationToolResultEvent, PlanResumeRequest, WorkOrderReportEvent } from './types';
 import type { ExhibitWire } from '../exhibits';
 
 /**
@@ -132,6 +132,8 @@ export interface StreamCallbacks {
   onDelegationComplete?: (data: DelegationCompleteEvent) => void;
   onDelegationToolCall?: (data: DelegationToolCallEvent) => void;
   onDelegationToolResult?: (data: DelegationToolResultEvent) => void;
+  /** A background work order's report folded into the turn (delegate_start). */
+  onWorkOrderReport?: (data: WorkOrderReportEvent) => void;
   /** Agent presented a typed exhibit (e.g. a Mermaid diagram) via present_exhibit. */
   onExhibit?: (data: ExhibitWire) => void;
   /**
@@ -220,6 +222,9 @@ function dispatchSseEvent(
       break;
     case 'delegation_tool_result':
       callbacks.onDelegationToolResult?.(data as unknown as DelegationToolResultEvent);
+      break;
+    case 'work_order_report':
+      callbacks.onWorkOrderReport?.(data as unknown as WorkOrderReportEvent);
       break;
     case 'exhibit':
       callbacks.onExhibit?.(data as unknown as ExhibitWire);

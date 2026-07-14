@@ -747,21 +747,38 @@ async def _run_image_generation(
     }]
 
 
-def _resolve_delegation_tool(agent, active_workflow):
-    """Build the `delegate_to` tool descriptor for this turn, or None.
+def _resolve_delegation_tool(agent, active_workflow) -> list[dict]:
+    """Build the delegation tool descriptors for this turn (possibly empty).
 
     A workflow supervisor delegates to the workflow's specialists; outside a
     workflow, an agent with an attached ad-hoc executor (Phase 16.4) delegates to
-    any other agent. Factored out of the chat-stream generator to keep its
+    any other agent. When the executor has non-blocking mode enabled, the
+    `delegate_start` (background work order) variant is offered alongside
+    `delegate_to`. Factored out of the chat-stream generator to keep its
     conditional-path count within the type-checker's analysis budget.
     """
+    executor = getattr(agent, "_active_alloy_executor", None)
+    non_blocking = bool(getattr(executor, "non_blocking_enabled", False))
     if active_workflow is not None and active_workflow.specialists():
-        from .alloy.delegation_tool import build_delegation_tool
-        return build_delegation_tool(active_workflow)
-    if getattr(agent, "_active_alloy_executor", None) is not None:
-        from .alloy.delegation_tool import build_adhoc_delegation_tool
-        return build_adhoc_delegation_tool(agent.config.agent_id or "")
-    return None
+        from .alloy.delegation_tool import (
+            build_delegation_start_tool,
+            build_delegation_tool,
+        )
+        descs = [build_delegation_tool(active_workflow)]
+        if non_blocking:
+            descs.append(build_delegation_start_tool(active_workflow))
+        return descs
+    if executor is not None:
+        from .alloy.delegation_tool import (
+            build_adhoc_delegation_start_tool,
+            build_adhoc_delegation_tool,
+        )
+        self_id = agent.config.agent_id or ""
+        descs = [build_adhoc_delegation_tool(self_id)]
+        if non_blocking:
+            descs.append(build_adhoc_delegation_start_tool(self_id))
+        return descs
+    return []
 
 
 def _adhoc_delegation_enabled(cfg, disable_delegation: bool) -> bool:
@@ -2215,6 +2232,8 @@ async def agent_chat_stream(request):
                 workflow=active_workflow,
                 max_delegation_depth=int(cfg.get("alloy.max_delegation_depth", 3)),
                 max_parallel_delegations=int(cfg.get("alloy.max_parallel_delegations", 3)),
+                delegation_timeout_seconds=int(cfg.get("alloy.delegation_timeout_seconds", 300)),
+                non_blocking_enabled=bool(cfg.get("alloy.non_blocking_delegations", True)),
             )
         # Ad-hoc agent-to-agent delegation (Phase 16.4): outside a workflow, when
         # enabled and another profile exists, give this agent a workflow-less
@@ -2236,6 +2255,8 @@ async def agent_chat_stream(request):
                         delegator_agent_id=agent.config.agent_id,
                         max_delegation_depth=int(cfg.get("alloy.max_delegation_depth", 3)),
                         max_parallel_delegations=int(cfg.get("alloy.max_parallel_delegations", 3)),
+                        delegation_timeout_seconds=int(cfg.get("alloy.delegation_timeout_seconds", 300)),
+                        non_blocking_enabled=bool(cfg.get("alloy.non_blocking_delegations", True)),
                     )
 
         # Cache large user messages in Redis to save context. The model sees
@@ -2615,12 +2636,13 @@ async def agent_chat_stream(request):
                 tools = agent._get_tools_for_provider()
                 logger.info(f"Stream chat: {len(tools) if tools else 0} MCP tools available")
 
-                # When a workflow is active, append the delegate_to tool so the
+                # When a workflow is active, append the delegation tools so the
                 # supervisor can hand work to specialists. Outside a workflow, the
-                # same tool is offered for ad-hoc delegation (Phase 16.4) whenever an
-                # ad-hoc executor was attached above.
-                desc = _resolve_delegation_tool(agent, active_workflow)
-                if desc is not None:
+                # same tools are offered for ad-hoc delegation (Phase 16.4) whenever
+                # an ad-hoc executor was attached above. `delegate_start` (the
+                # non-blocking work-order variant) rides along when enabled.
+                delegation_descs = _resolve_delegation_tool(agent, active_workflow)
+                if delegation_descs:
                     tools = (tools or []) + [{
                         "type": "function",
                         "function": {
@@ -2628,7 +2650,7 @@ async def agent_chat_stream(request):
                             "description": desc["description"],
                             "parameters": desc["input_schema"],
                         },
-                    }]
+                    } for desc in delegation_descs]
 
                 # Token budget header: a one-line system message telling the model how
                 # full its context window is, so it can self-pace (wrap up, checkpoint,
@@ -2724,6 +2746,8 @@ async def agent_chat_stream(request):
             full_content = ""
             tool_turns_data = []  # Collect tool call/result data for DB persistence
             steers_data: list[dict] = []  # Mid-turn steers folded in (for persistence)
+            # Background work-order reports folded in (`delegate_start`, for persistence)
+            work_order_reports_data: list[dict] = []
             # Holds the standard-path loop result; hoisted so the hard-stop
             # (GeneratorExit) handler can persist partial progress up to the stop.
             loop_result = None
@@ -2759,6 +2783,7 @@ async def agent_chat_stream(request):
                         from .streaming.persistence import (
                             build_user_turn, build_tool_turns,
                             build_steer_turns, build_assistant_turn,
+                            build_work_order_report_turns,
                         )
 
                         # Max existing turn_index for this conversation (avoid collisions).
@@ -2785,6 +2810,14 @@ async def agent_chat_stream(request):
                         idx += 1
                         tool_turns, idx = build_tool_turns(conv_id, tool_turns_data, idx)
                         turns += tool_turns
+                        # Folded work-order reports ride between the tool turns
+                        # (which include the dispatch receipts) and any steers.
+                        wo_report_turns = build_work_order_report_turns(
+                            conv_id, work_order_reports_data, idx,
+                            agent_id=getattr(agent_profile, "agent_id", None),
+                        )
+                        turns += wo_report_turns
+                        idx += len(wo_report_turns)
                         steer_turns = build_steer_turns(
                             conv_id, steers_data, idx,
                             agent_id=getattr(agent_profile, "agent_id", None),
@@ -3043,6 +3076,7 @@ async def agent_chat_stream(request):
                 full_content = loop_result.content
                 tool_turns_data = loop_result.tool_turns_data
                 steers_data = loop_result.steers
+                work_order_reports_data = loop_result.work_order_reports
                 total_tokens_input = loop_result.tokens_in
                 total_tokens_output = loop_result.tokens_out
 
@@ -7793,7 +7827,7 @@ def config_update(request):
     _ALLOY_KEYS = (
         "allow_adhoc_delegation", "max_parallel_delegations",
         "max_delegation_depth", "delegation_timeout_seconds",
-        "specialist_inherits_supervisor_tools",
+        "specialist_inherits_supervisor_tools", "non_blocking_delegations",
     )
     alloy_settings = data.get("alloy", {})
     for key, value in alloy_settings.items():

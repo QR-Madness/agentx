@@ -15,6 +15,7 @@ export type MessageType =
   | 'plan_execution'
   | 'agent_handoff'
   | 'delegation'
+  | 'work_order_report'
   | 'exhibit'
   | 'error';
 
@@ -159,10 +160,16 @@ export interface DelegationMessage extends BaseMessage {
   targetAgentName?: string;
   task: string;
   depth: number;
-  status: 'streaming' | 'completed' | 'failed';
+  status: 'streaming' | 'completed' | 'failed' | 'cancelled';
   content: string;
   error?: string;
   resultPreview?: string;
+  /** 'background' = a delegate_start work order (receipt now, report later). */
+  mode?: 'await' | 'background';
+  /** Parent work order in the delegation tree (null/absent at depth 0). */
+  parentDelegationId?: string | null;
+  /** Set when this work order's report folded into the turn. */
+  reportDelivered?: boolean;
   /** Specialist tool calls made during the delegation, rendered inside the card. */
   toolEvents?: DelegationToolEvent[];
   // Per-delegation metrics (populated on completion; persisted into the
@@ -174,6 +181,21 @@ export interface DelegationMessage extends BaseMessage {
   costCurrency?: string | null;
   durationMs?: number;
   completedAt?: string;
+  pricingSnapshot?: Record<string, unknown> | null;
+}
+
+/**
+ * Hairline transcript marker: a background work order's report folded into
+ * the turn here. Preserves narrative causality (the assistant reacts right
+ * after it) without duplicating the report content — the Work Order card and
+ * the trace console carry the content.
+ */
+export interface WorkOrderReportMarkerMessage extends BaseMessage {
+  type: 'work_order_report';
+  delegationId: string;
+  targetAgentId: string;
+  targetAgentName?: string;
+  status: string;
 }
 
 /**
@@ -217,6 +239,7 @@ export type ConversationMessage =
   | PlanExecutionMessage
   | AgentHandoffMessage
   | DelegationMessage
+  | WorkOrderReportMarkerMessage
   | ExhibitMessage
   | SystemMessage
   | ErrorMessage;
@@ -265,6 +288,12 @@ export function isAgentHandoffMessage(msg: ConversationMessage): msg is AgentHan
 
 export function isDelegationMessage(msg: ConversationMessage): msg is DelegationMessage {
   return msg.type === 'delegation';
+}
+
+export function isWorkOrderReportMarkerMessage(
+  msg: ConversationMessage,
+): msg is WorkOrderReportMarkerMessage {
+  return msg.type === 'work_order_report';
 }
 
 export function isExhibitMessage(msg: ConversationMessage): msg is ExhibitMessage {

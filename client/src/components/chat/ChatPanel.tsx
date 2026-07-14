@@ -1206,9 +1206,11 @@ export function ChatPanel() {
           {traceRun && (
             <button
               type="button"
-              className="run-trace-badge"
+              className={`run-trace-badge ${activeDelegationCount > 0 ? 'live' : ''}`}
               onClick={openRunTrace}
-              title="View team run trace"
+              title={activeDelegationCount > 0
+                ? `View team run trace — ${activeDelegationCount} running`
+                : 'View team run trace'}
             >
               <ArrowRightLeft size={12} />
               <span>Trace</span>

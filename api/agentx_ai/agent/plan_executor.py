@@ -491,12 +491,24 @@ class PlanExecutor:
         # awareness of the per-workflow delegation tool, so `tools_needed`
         # never lists it; without this injection, supervisors running inside
         # a subtask can only narrate delegation in text rather than actually
-        # invoking a specialist.
+        # invoking a specialist. An ad-hoc executor (non-workflow conversation
+        # with delegation enabled) has no workflow — its targets come from the
+        # opted-in roster. The plan path stays blocking-only (no delegate_start).
         alloy_executor = getattr(self.agent, "_active_alloy_executor", None)
         if alloy_executor is not None:
-            from ..alloy.delegation_tool import DELEGATION_TOOL_NAME, build_delegation_tool
+            from ..alloy.delegation_tool import (
+                DELEGATION_TOOL_NAME,
+                build_adhoc_delegation_tool,
+                build_delegation_tool,
+            )
 
-            delegation_descriptor = build_delegation_tool(alloy_executor.workflow)
+            delegation_descriptor = (
+                build_delegation_tool(alloy_executor.workflow)
+                if alloy_executor.workflow is not None
+                else build_adhoc_delegation_tool(
+                    getattr(alloy_executor, "delegator_agent_id", "") or ""
+                )
+            )
             delegation_tool = {
                 "type": "function",
                 "function": {

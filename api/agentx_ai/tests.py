@@ -5133,6 +5133,68 @@ class PlanExecutorResultTest(TestCase):
         self.assertEqual(len(pr.steers), 1)
         self.assertEqual(pr.steers[0]["content"], "do Y")
 
+    def test_subtask_delegation_injection_handles_adhoc_executor(self) -> None:
+        """Regression: an AD-HOC executor (workflow=None) used to crash every
+        subtask ('NoneType' object has no attribute 'specialists') because the
+        plan path built the workflow-scoped descriptor unconditionally. The
+        ad-hoc branch must inject delegate_to from the opted-in roster instead."""
+        from types import SimpleNamespace
+        from agentx_ai.agent.plan_executor import PlanExecutor, PlanResult
+
+        plan = self._plan(None)  # one pending subtask
+        plan.steps[0].tools_needed = []  # no planner tools — injection is the only source
+
+        adhoc_executor = SimpleNamespace(workflow=None, delegator_agent_id="lead-x")
+        agent = MagicMock()
+        agent._active_alloy_executor = adhoc_executor
+        agent._get_tools_for_provider.return_value = None
+        state = MagicMock()
+        state.is_cancel_requested.return_value = False
+
+        captured_tools: list = []
+
+        async def fake_loop(provider, model_id, messages, tools, ag, *, result=None, **kw):
+            captured_tools.append(tools)
+            if result is not None:
+                result.final_content = "subtask out"
+            return
+            yield  # make this an async generator
+
+        class _FakeProvider:
+            async def stream(self, messages, model_id, **kw):
+                yield SimpleNamespace(content="final synthesis")
+
+        roster = [
+            SimpleNamespace(agent_id="spec-1", name="Spec", delegation_hint="analysis",
+                            description="", available_for_delegation=True, kind="agent"),
+        ]
+        pm = SimpleNamespace(list_profiles=lambda: roster)
+        ex = PlanExecutor(agent, state)
+        pr = PlanResult()
+
+        async def _drive():
+            async for _ in ex.execute_streaming(
+                plan, _FakeProvider(), "m", None, result=pr,
+            ):
+                pass
+
+        with patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_loop), \
+             patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            asyncio.run(_drive())
+
+        # The subtask ran (no AttributeError force-fail) …
+        self.assertFalse((plan.steps[0].result or "").startswith("[FAILED"))
+        # … and delegate_to was injected from the ad-hoc roster.
+        subtask_tools = captured_tools[0]
+        assert subtask_tools is not None
+        names = [t["function"]["name"] for t in subtask_tools]
+        self.assertIn("delegate_to", names)
+        self.assertNotIn("delegate_start", names)  # plan path stays blocking-only
+        deleg = next(t for t in subtask_tools if t["function"]["name"] == "delegate_to")
+        self.assertEqual(
+            deleg["function"]["parameters"]["properties"]["agent_id"]["enum"], ["spec-1"]
+        )
+
     def test_execute_streaming_resume_skips_completed_subtasks(self) -> None:
         """Resuming a partially-complete plan emits plan_resumed (not plan_start),
         re-runs only the not-yet-terminal subtasks, and reuses the existing
@@ -7638,6 +7700,427 @@ class ParallelDelegationTest(TestCase):
         self.assertIn("max delegation depth", done["error"])
 
 
+class BackgroundDelegationTest(TestCase):
+    """`delegate_start` work orders: dispatch receipts, bus streaming, report
+    folding at safe boundaries, the would-end barrier, round-exhaustion
+    folding, and within-turn cancellation/timeout guarantees."""
+
+    class _FakeProvider:
+        def __init__(self, rounds):
+            self._rounds = rounds
+            self._call = 0
+
+        async def stream(self, messages, model_id, **kwargs):
+            chunks = self._rounds[self._call]
+            self._call += 1
+            for c in chunks:
+                yield c
+
+    class _FakeAgent:
+        def __init__(self, executor=None):
+            self._active_alloy_executor = executor
+
+        def _execute_tool_calls(self, calls, task_context=""):
+            from agentx_ai.providers.base import Message, MessageRole
+            return [
+                Message(role=MessageRole.TOOL, content=f"result-{tc.name}",
+                        tool_call_id=tc.id, name=tc.name)
+                for tc in calls
+            ]
+
+    class _WoExec:
+        """Fake executor serving both blocking and background delegate calls."""
+        max_parallel_delegations = 3
+        non_blocking_enabled = True
+        delegation_timeout_seconds = 5
+
+        def __init__(self, delay=0.0, ticks=0):
+            self.delay = delay
+            self.ticks = ticks  # extra sleep(0) chunk yields (lets siblings run)
+
+        async def delegate(self, target, task, *, tool_call_id, mode="await",
+                           parent_delegation_id=None, delegation_id=None, depth=0):
+            did = delegation_id or "woFAKE"
+            yield (
+                "event: delegation_start\ndata: " + json.dumps({
+                    "delegation_id": did, "target_agent_id": target,
+                    "tool_call_id": tool_call_id, "task": task, "depth": depth + 1,
+                    "mode": mode, "parent_delegation_id": parent_delegation_id,
+                }) + "\n\n", "",
+            )
+            for i in range(self.ticks):
+                await asyncio.sleep(0)
+                yield (
+                    "event: delegation_chunk\ndata: " + json.dumps({
+                        "delegation_id": did, "content": "x",
+                    }) + "\n\n", f"partial-{i}",
+                )
+            if self.delay:
+                await asyncio.sleep(self.delay)
+            yield (
+                "event: delegation_complete\ndata: " + json.dumps({
+                    "delegation_id": did, "target_agent_id": target,
+                    "tool_call_id": tool_call_id, "status": "success",
+                    "error": None, "result_preview": "wo result",
+                    "tokens_input": 10, "tokens_output": 20, "duration_ms": 5,
+                    "mode": mode, "parent_delegation_id": parent_delegation_id,
+                }) + "\n\n", "wo result",
+            )
+
+    @staticmethod
+    async def _drain(gen):
+        return [ev async for ev in gen]
+
+    @staticmethod
+    def _events_of(events, name):
+        return [e for e in events if e.startswith(f"event: {name}\n")]
+
+    @staticmethod
+    def _tc(tid, name, agent_id, task="t"):
+        from agentx_ai.providers.base import ToolCall
+        return ToolCall(id=tid, name=name, arguments={"agent_id": agent_id, "task": task})
+
+    def _run(self, provider, agent, messages, *, cancel=None, max_tool_rounds=10):
+        from agentx_ai.streaming.tool_loop import streaming_tool_loop, ToolLoopResult
+        result = ToolLoopResult()
+        bus: list = []
+        kwargs = {"cancel_check": cancel} if cancel is not None else {}
+        with patch("agentx_ai.streaming.tool_loop.compress_trajectory", return_value=False), \
+             patch("agentx_ai.streaming.tool_loop.estimate_tokens", return_value=10), \
+             patch("agentx_ai.streaming.tool_loop._emit_background_event",
+                   side_effect=lambda rid, ev: bus.append(ev)):
+            events = asyncio.run(self._drain(streaming_tool_loop(
+                provider, "fake:model", messages, None, agent,
+                result=result, capture_tool_turns=True,
+                max_tool_rounds=max_tool_rounds, **kwargs,
+            )))
+        return events, result, bus
+
+    @staticmethod
+    def _delegation_entry(result, tool_call_id):
+        for entry in result.tool_turns_data:
+            if entry.get("type") == "tool_result" and entry.get("tool_call_id") == tool_call_id:
+                return entry.get("delegation")
+        return None
+
+    def test_dispatch_receipt_and_would_end_barrier(self):
+        """Receipt lands immediately (provider contract); the would-end barrier
+        waits for the straggler, folds its report, and grants a fresh round."""
+        from agentx_ai.providers.base import StreamChunk, Message as _M  # noqa: F401
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[self._tc("ws1", "delegate_start", "beta")])],
+            [StreamChunk(content="working on other things meanwhile")],
+            [StreamChunk(content="final: incorporating the report")],
+        ])
+        agent = self._FakeAgent(self._WoExec(delay=0.05))
+        messages: list = []
+        events, result, bus = self._run(provider, agent, messages)
+
+        # Receipt TOOL message immediately follows the assistant tool_calls turn.
+        roles = [(m.role.value if hasattr(m.role, "value") else m.role, m) for m in messages]
+        asst_idx = next(i for i, (r, m) in enumerate(roles) if r == "assistant" and m.tool_calls)
+        receipt = messages[asst_idx + 1]
+        self.assertEqual(receipt.tool_call_id, "ws1")
+        self.assertEqual(receipt.name, "delegate_start")
+        self.assertIn("dispatch receipt", receipt.content)
+        self.assertIn("Work Order", receipt.content)
+
+        # Background events rode the bus (not the generator).
+        self.assertTrue(any(e.startswith("event: delegation_start") for e in bus))
+        completes = [e for e in bus if e.startswith("event: delegation_complete")]
+        self.assertTrue(completes and '"mode": "background"' in completes[-1])
+
+        # The report folded at would-end and granted a fresh round.
+        self.assertEqual(len(result.work_order_reports), 1)
+        report = result.work_order_reports[0]
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["phase"], "would_end")
+        self.assertIn("[Work Order Report", report["content"])
+        self.assertTrue(any(
+            getattr(m, "role", None) and "Work Order Report" in (m.content or "")
+            for m in messages
+        ))
+        self.assertEqual(len(self._events_of(events, "work_order_report")), 1)
+        self.assertIn("final: incorporating the report", result.content)
+        self.assertEqual(result.delegations, ["wo result"])
+
+        # Persisted card settled with honest terminal state + metrics.
+        dr = self._delegation_entry(result, "ws1")
+        self.assertIsNotNone(dr)
+        self.assertEqual(dr["mode"], "background")
+        self.assertEqual(dr["status"], "completed")
+        self.assertEqual(dr["raw_content"], "wo result")
+        self.assertEqual(dr["tokens_output"], 20)
+
+    def test_mixed_round_folds_at_tool_boundary(self):
+        """delegate_start + delegate_to in one round: the receipt exists while
+        the blocking branch streams, and the finished work order folds at the
+        same round's tool boundary."""
+        from agentx_ai.providers.base import StreamChunk
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[
+                self._tc("ws1", "delegate_start", "beta"),
+                self._tc("d2", "delegate_to", "gamma"),
+            ])],
+            [StreamChunk(content="done")],
+        ])
+        agent = self._FakeAgent(self._WoExec(ticks=5))
+        messages: list = []
+        events, result, _bus = self._run(provider, agent, messages)
+
+        tool_ids = [m.tool_call_id for m in messages
+                    if getattr(m, "tool_call_id", None) in ("ws1", "d2")]
+        self.assertEqual(set(tool_ids), {"ws1", "d2"})
+        self.assertEqual(len(result.work_order_reports), 1)
+        self.assertEqual(result.work_order_reports[0]["phase"], "tool_boundary")
+        self.assertIn("done", result.final_content)
+        dr = self._delegation_entry(result, "d2")
+        self.assertEqual(dr["raw_content"], "wo result")
+
+    def test_cancel_settles_work_order_as_cancelled(self):
+        """User Stop while a work order runs: the barrier observes the cancel,
+        the finally cancels the task, and the persisted card reads cancelled."""
+        from agentx_ai.providers.base import StreamChunk
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[self._tc("ws1", "delegate_start", "beta")])],
+            [StreamChunk(content="hmm")],
+        ])
+        agent = self._FakeAgent(self._WoExec(delay=30))
+        calls = {"n": 0}
+
+        def cancel():
+            calls["n"] += 1
+            return calls["n"] >= 4  # round tops + before-tools pass; barrier trips
+
+        events, result, bus = self._run(provider, agent, [], cancel=cancel)
+
+        self.assertEqual(result.work_order_reports, [])
+        dr = self._delegation_entry(result, "ws1")
+        self.assertEqual(dr["status"], "cancelled")
+        cancelled = [e for e in bus if e.startswith("event: delegation_complete")
+                     and '"status": "cancelled"' in e]
+        self.assertEqual(len(cancelled), 1)
+
+    def test_background_timeout_folds_failed_report(self):
+        """delegation_timeout_seconds is enforced for work orders: a stuck
+        specialist folds back as a failed report, and the turn continues."""
+        from agentx_ai.providers.base import StreamChunk
+
+        exec_obj = self._WoExec(delay=30)
+        exec_obj.delegation_timeout_seconds = 0.05
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[self._tc("ws1", "delegate_start", "beta")])],
+            [StreamChunk(content="hmm")],
+            [StreamChunk(content="noted the failure")],
+        ])
+        events, result, bus = self._run(provider, self._FakeAgent(exec_obj), [])
+
+        self.assertEqual(len(result.work_order_reports), 1)
+        report = result.work_order_reports[0]
+        self.assertEqual(report["status"], "failed")
+        self.assertIn("timed out", report["content"])
+        self.assertEqual(self._delegation_entry(result, "ws1")["status"], "failed")
+        self.assertIn("noted the failure", result.content)
+
+    def test_blocking_timeout_synthesizes_failed_complete(self):
+        """delegation_timeout_seconds is enforced for blocking delegate_to too."""
+        from agentx_ai.streaming.tool_loop import _run_delegations, ToolLoopResult
+
+        class StuckExec:
+            max_parallel_delegations = 2
+            delegation_timeout_seconds = 0.05
+
+            async def delegate(self, target, task, *, tool_call_id):
+                await asyncio.sleep(30)
+                yield ("event: delegation_chunk\ndata: {}\n\n", "never")
+
+        tc = MagicMock()
+        tc.id = "tcA"
+        tc.name = "delegate_to"
+        tc.arguments = {"agent_id": "A", "task": "t"}
+        result = ToolLoopResult()
+        msgs: list = []
+        raw: dict = {}
+        events = asyncio.run(self._drain(_run_delegations(
+            [tc], StuckExec(), object(),
+            result=result, delegation_messages=msgs, delegation_raw=raw,
+        )))
+        self.assertTrue(any(
+            e.startswith("event: delegation_complete") and "timed out" in e
+            for e in events
+        ))
+        self.assertIn("timed out", msgs[0].content)
+        self.assertEqual(raw["tcA"]["status"], "failed")
+
+    def test_round_exhaustion_folds_before_synthesis(self):
+        """Rounds exhaust with a work order pending: the loop waits for ALL,
+        folds with phase=round_exhausted, then runs the forced synthesis."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[self._tc("ws1", "delegate_start", "beta")])],
+            [StreamChunk(tool_calls=[ToolCall(id="r1", name="noop", arguments={})])],
+            [StreamChunk(content="synthesis with report")],
+        ])
+        agent = self._FakeAgent(self._WoExec(delay=0.05))
+        messages: list = []
+        events, result, _bus = self._run(provider, agent, messages, max_tool_rounds=1)
+
+        self.assertEqual(len(result.work_order_reports), 1)
+        self.assertEqual(result.work_order_reports[0]["phase"], "round_exhausted")
+        self.assertIn("synthesis with report", result.final_content)
+        contents = [m.content or "" for m in messages]
+        report_idx = next(i for i, c in enumerate(contents) if "Work Order Report" in c)
+        synth_idx = next(i for i, c in enumerate(contents) if "Tool budget is exhausted" in c)
+        self.assertLess(report_idx, synth_idx)
+
+    def test_partition_modes(self):
+        """delegate_start routes by executor presence + knob: background when
+        enabled, blocking degradation when disabled, regular with no executor."""
+        from agentx_ai.streaming.tool_loop import _partition_tool_calls
+
+        ds = self._tc("s1", "delegate_start", "beta")
+        dt = self._tc("t1", "delegate_to", "beta")
+        rg = self._tc("r1", "noop", "beta")
+
+        agent_on = self._FakeAgent(self._WoExec())
+        blocking, background, regular = _partition_tool_calls([ds, dt, rg], agent_on)
+        self.assertEqual(([t.id for t in blocking], [t.id for t in background],
+                          [t.id for t in regular]), (["t1"], ["s1"], ["r1"]))
+
+        off_exec = self._WoExec()
+        off_exec.non_blocking_enabled = False
+        blocking, background, regular = _partition_tool_calls(
+            [ds, dt], self._FakeAgent(off_exec))
+        self.assertEqual([t.id for t in blocking], ["s1", "t1"])
+        self.assertEqual(background, [])
+
+        blocking, background, regular = _partition_tool_calls([ds], self._FakeAgent(None))
+        self.assertEqual((blocking, background, [t.id for t in regular]), ([], [], ["s1"]))
+
+    def test_delegate_start_descriptor(self):
+        """delegate_start shares delegate_to's target enum; its description
+        carries the dispatch-receipt framing."""
+        from types import SimpleNamespace
+        from agentx_ai.alloy.delegation_tool import (
+            build_adhoc_delegation_start_tool, build_adhoc_delegation_tool,
+        )
+
+        profiles = [
+            SimpleNamespace(agent_id="beta", name="Beta", delegation_hint="fast",
+                            description="", available_for_delegation=True, kind="agent"),
+            SimpleNamespace(agent_id="self", name="Me", delegation_hint=None,
+                            description="", available_for_delegation=True, kind="agent"),
+        ]
+        pm = MagicMock()
+        pm.list_profiles.return_value = profiles
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            start = build_adhoc_delegation_start_tool("self")
+            blocking = build_adhoc_delegation_tool("self")
+
+        self.assertEqual(start["name"], "delegate_start")
+        self.assertEqual(
+            start["input_schema"]["properties"]["agent_id"]["enum"],
+            blocking["input_schema"]["properties"]["agent_id"]["enum"],
+        )
+        self.assertIn("dispatch receipt", start["description"])
+        self.assertIn("delegate_to", start["description"])
+
+
+class WorkOrderPersistenceTest(TestCase):
+    """`build_work_order_report_turns` — folded reports persist as user turns
+    with the work_order_report marker (mirrors SteerPersistenceTest)."""
+
+    def test_build_report_turns_shape_and_metadata(self):
+        from agentx_ai.streaming.persistence import build_work_order_report_turns
+
+        reports = [
+            {"content": "[Work Order Report — Beta, wo abc123] status: completed\n\nfindings",
+             "delegation_id": "abc123", "target_agent_id": "beta",
+             "tool_call_id": "ws1", "status": "completed", "round": 2,
+             "phase": "tool_boundary"},
+            {"content": "[Work Order Report — Gamma, wo def456] status: failed\n\nboom",
+             "delegation_id": "def456", "target_agent_id": "gamma",
+             "tool_call_id": "ws2", "status": "failed", "round": 3,
+             "phase": "would_end"},
+        ]
+        turns = build_work_order_report_turns("conv1", reports, 7, agent_id="sup")
+
+        self.assertEqual(len(turns), 2)
+        self.assertTrue(all(t.role == "user" for t in turns))
+        self.assertEqual([t.index for t in turns], [7, 8])
+        self.assertTrue(all(
+            t.id.startswith("conv1-") and t.id.endswith("-user-wo-report")
+            for t in turns
+        ))
+        m = turns[0].metadata
+        self.assertTrue(m["work_order_report"])
+        self.assertEqual(m["delegation_id"], "abc123")
+        self.assertEqual(m["target_agent_id"], "beta")
+        self.assertEqual(m["tool_call_id"], "ws1")
+        self.assertEqual(m["status"], "completed")
+        self.assertEqual(m["phase"], "tool_boundary")
+        self.assertEqual(m["delegator_agent_id"], "sup")
+        self.assertEqual(turns[1].metadata["status"], "failed")
+
+
+class DelegateModeFieldsTest(TestCase):
+    """Executor delegate() stamps mode + parent_delegation_id on its events,
+    honours a caller-minted delegation_id, and rejects with the same fields."""
+
+    def _executor(self):
+        from types import SimpleNamespace
+        from agentx_ai.alloy.executor import AlloyExecutor
+        from agentx_ai.alloy.models import Workflow, WorkflowMember, MemberRole
+
+        workflow = Workflow(
+            id="wf", name="WF", supervisor_agent_id="sup",
+            members=[
+                WorkflowMember(agent_id="sup", role=MemberRole.SUPERVISOR),
+                WorkflowMember(agent_id="spec", role=MemberRole.SPECIALIST),
+            ],
+        )
+        supervisor = SimpleNamespace(
+            config=SimpleNamespace(user_id="u", default_model="m", max_tool_rounds=3),
+            memory=None,
+        )
+        return AlloyExecutor(
+            supervisor, SimpleNamespace(id="s"), workflow=workflow,
+            max_delegation_depth=1,
+        )
+
+    def test_reject_payload_carries_mode_and_minted_id(self):
+        executor = self._executor()
+
+        async def run():
+            return [ev async for ev in executor.delegate(
+                "spec", "t", tool_call_id="x", depth=1,
+                mode="background", delegation_id="wo42",
+            )]
+
+        events = asyncio.run(run())
+        done = json.loads(events[-1][0].split("data: ", 1)[1].rstrip())
+        self.assertEqual(done["status"], "failed")
+        self.assertEqual(done["mode"], "background")
+        self.assertEqual(done["delegation_id"], "wo42")
+        self.assertIsNone(done["parent_delegation_id"])
+
+    def test_default_mode_is_await(self):
+        executor = self._executor()
+
+        async def run():
+            return [ev async for ev in executor.delegate(
+                "nobody", "t", tool_call_id="x",
+            )]
+
+        events = asyncio.run(run())
+        done = json.loads(events[-1][0].split("data: ", 1)[1].rstrip())
+        self.assertEqual(done["mode"], "await")
+
+
 class DelegatableProfileTest(TestCase):
     """Track D: per-profile `available_for_delegation` flag + the tool-gating
     persistence-bug fix in ProfileManager.save_config()."""
@@ -7772,10 +8255,11 @@ class DelegatableProfileTest(TestCase):
             "agentx_ai.agent.profiles.get_profile_manager",
             return_value=SimpleNamespace(list_profiles=lambda: profiles),
         ):
-            desc = _resolve_delegation_tool(agent, workflow)
-        assert desc is not None
+            descs = _resolve_delegation_tool(agent, workflow)
+        # No executor (Solo turn) ⇒ delegate_to only, no delegate_start.
+        self.assertEqual([d["name"] for d in descs], ["delegate_to"])
         self.assertEqual(
-            desc["input_schema"]["properties"]["agent_id"]["enum"], ["spec-aa-bb"]
+            descs[0]["input_schema"]["properties"]["agent_id"]["enum"], ["spec-aa-bb"]
         )
 
 

@@ -12,13 +12,21 @@ from .models import Workflow
 from .prompts import resolve_specialist_names
 
 DELEGATION_TOOL_NAME = "delegate_to"
+DELEGATION_START_TOOL_NAME = "delegate_start"
 
 
-def _build_descriptor(entries: list[tuple[str, str, str]]) -> dict:
-    """Build the ``delegate_to`` descriptor from ``(agent_id, name, hint)`` rows.
+def _build_descriptor(
+    entries: list[tuple[str, str, str]],
+    *,
+    tool_name: str = DELEGATION_TOOL_NAME,
+    background: bool = False,
+) -> dict:
+    """Build a delegation tool descriptor from ``(agent_id, name, hint)`` rows.
 
     Shared by the workflow (Agent Alloy) and ad-hoc (Phase 16.4) builders so the
-    schema, tool name, and framing stay identical across both.
+    schema and framing stay identical across both. ``background=True`` produces
+    the non-blocking ``delegate_start`` variant (same schema, dispatch-receipt
+    semantics).
     """
     if entries:
         enum_values = [aid for aid, _, _ in entries]
@@ -30,16 +38,28 @@ def _build_descriptor(entries: list[tuple[str, str, str]]) -> dict:
         enum_values = []
         bullet_lines = "  (no agents available)"
 
-    description = (
-        "Delegate a focused task to another agent. "
-        "That agent runs independently and returns its result to you. "
-        "It will NOT see your conversation history — include all "
-        "context it needs in the task description. "
-        "To run several agents at once on independent subtasks, emit multiple "
-        "delegate_to calls in the same turn — they execute concurrently and "
-        "their results return together. Available agents:\n"
-        f"{bullet_lines}"
-    )
+    if background:
+        description = (
+            "Dispatch a focused task to another agent as a background work "
+            "order and keep working — this returns immediately with a dispatch "
+            "receipt. The agent's report is delivered to you automatically "
+            "later in this same turn as a message; do not wait or poll for it. "
+            "The agent will NOT see your conversation history — include all "
+            "context it needs in the task description. Use delegate_to instead "
+            "when you cannot proceed without the result. Available agents:\n"
+            f"{bullet_lines}"
+        )
+    else:
+        description = (
+            "Delegate a focused task to another agent. "
+            "That agent runs independently and returns its result to you. "
+            "It will NOT see your conversation history — include all "
+            "context it needs in the task description. "
+            "To run several agents at once on independent subtasks, emit multiple "
+            "delegate_to calls in the same turn — they execute concurrently and "
+            "their results return together. Available agents:\n"
+            f"{bullet_lines}"
+        )
 
     schema: dict = {
         "type": "object",
@@ -66,16 +86,14 @@ def _build_descriptor(entries: list[tuple[str, str, str]]) -> dict:
         schema["properties"]["agent_id"]["enum"] = enum_values
 
     return {
-        "name": DELEGATION_TOOL_NAME,
+        "name": tool_name,
         "description": description,
         "input_schema": schema,
     }
 
 
-def build_delegation_tool(workflow: Workflow) -> dict:
-    """
-    Build the ``delegate_to`` descriptor scoped to the specialists of a workflow.
-    """
+def _workflow_entries(workflow: Workflow) -> list[tuple[str, str, str]]:
+    """``(agent_id, name, hint)`` rows for a workflow's specialists."""
     from ..agent.profiles import get_profile_manager
 
     names = resolve_specialist_names(workflow)
@@ -86,7 +104,7 @@ def build_delegation_tool(workflow: Workflow) -> dict:
         for p in get_profile_manager().list_profiles()
         if getattr(p, "agent_id", None)
     }
-    entries = [
+    return [
         (
             m.agent_id,
             names.get(m.agent_id, m.agent_id),
@@ -94,7 +112,22 @@ def build_delegation_tool(workflow: Workflow) -> dict:
         )
         for m in workflow.specialists()
     ]
-    return _build_descriptor(entries)
+
+
+def build_delegation_tool(workflow: Workflow) -> dict:
+    """
+    Build the ``delegate_to`` descriptor scoped to the specialists of a workflow.
+    """
+    return _build_descriptor(_workflow_entries(workflow))
+
+
+def build_delegation_start_tool(workflow: Workflow) -> dict:
+    """``delegate_start`` (non-blocking work order) scoped to a workflow."""
+    return _build_descriptor(
+        _workflow_entries(workflow),
+        tool_name=DELEGATION_START_TOOL_NAME,
+        background=True,
+    )
 
 
 def list_adhoc_delegation_targets(self_agent_id: str) -> list[tuple[str, str, str]]:
@@ -124,3 +157,12 @@ def build_adhoc_delegation_tool(self_agent_id: str) -> dict:
     (Phase 16.4): every opted-in agent profile except the delegator is a target.
     """
     return _build_descriptor(list_adhoc_delegation_targets(self_agent_id))
+
+
+def build_adhoc_delegation_start_tool(self_agent_id: str) -> dict:
+    """``delegate_start`` (non-blocking work order) for ad-hoc delegation."""
+    return _build_descriptor(
+        list_adhoc_delegation_targets(self_agent_id),
+        tool_name=DELEGATION_START_TOOL_NAME,
+        background=True,
+    )

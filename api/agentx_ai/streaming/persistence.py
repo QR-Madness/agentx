@@ -126,6 +126,49 @@ def build_steer_turns(
     return turns
 
 
+def build_work_order_report_turns(
+    conv_id: str,
+    reports: list[dict],
+    start_index: int,
+    *,
+    agent_id: str | None = None,
+) -> list:
+    """Build `user` Turns for folded background work-order reports.
+
+    A report is model context (the specialist result folded mid-turn, like a
+    steer) — the client renders it as a hairline "report delivered" marker, not
+    a bubble; the Work Order card carries the content visually. The delegating
+    agent is recorded in metadata (a user turn has no producing agent, so
+    `Turn.agent_id` stays None).
+    """
+    from ..kit.agent_memory.models import Turn
+
+    turns: list = []
+    for offset, r in enumerate(reports):
+        metadata: dict[str, Any] = {
+            "work_order_report": True,
+            "delegation_id": r.get("delegation_id"),
+            "target_agent_id": r.get("target_agent_id"),
+            "tool_call_id": r.get("tool_call_id"),
+            "status": r.get("status"),
+            "round": r.get("round"),
+            "phase": r.get("phase"),
+        }
+        if agent_id:
+            metadata["delegator_agent_id"] = agent_id
+        turns.append(
+            Turn(
+                id=_turn_id(conv_id, "user-wo-report"),
+                conversation_id=conv_id,
+                role="user",
+                content=r.get("content", ""),
+                index=start_index + offset,
+                metadata=metadata,
+            )
+        )
+    return turns
+
+
 def build_assistant_turn(
     conv_id: str,
     content: str,

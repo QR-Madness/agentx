@@ -1,11 +1,13 @@
 /**
- * AlloyRunTraceModal — inspect a completed/live Agent Alloy run.
- * User-facing name: "Agent Teams" (internal: Alloy) — precedent: Workspaces→Projects.
+ * AlloyRunTraceModal — the Work Console: inspect a completed/live Agent Alloy
+ * run. User-facing name: "Agent Teams" (internal: Alloy).
  *
- * Static run *tracing* (not replay/re-run): groups the active conversation's
- * delegation messages into runs (see lib/alloyTrace) and renders a per-run
- * breakdown — supervisor, each delegated specialist, timing, tokens, cost, and
- * (for live runs) the specialist's tool calls.
+ * Master–detail: a left rail lists the run's work orders as a tree (the
+ * "filesystem" of delegated work — flat today, nesting ships with the chain of
+ * command), the right pane shows the focused delegation in depth. Deep-links
+ * via the `delegationId` prop (Work Order cards in the transcript open the
+ * console focused on themselves). Static run *tracing* (not replay/re-run) —
+ * pure over the conversation messages, identical live and restored.
  *
  * Tool-level detail is only available for live runs: the backend persists one
  * rollup turn per delegation, so a restored run shows delegation-level metrics
@@ -21,16 +23,24 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   XCircle,
+  Ban,
+  Copy,
   Loader2,
   ChevronDown,
   ChevronRight,
   Wrench,
+  Undo2,
 } from 'lucide-react';
 import { useConversation } from '../../contexts/ConversationContext';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { AgentAvatar } from '../common/AgentAvatar';
-import { groupRunsFromMessages, type AlloyRun } from '../../lib/alloyTrace';
+import {
+  buildDelegationTree,
+  groupRunsFromMessages,
+  type AlloyRun,
+  type DelegationNode,
+} from '../../lib/alloyTrace';
 import type { AgentProfile } from '../../lib/api';
 import type { DelegationMessage, DelegationToolEvent } from '../../lib/messages';
 import './AlloyRunTraceModal.css';
@@ -38,6 +48,8 @@ import './AlloyRunTraceModal.css';
 interface AlloyRunTraceModalProps {
   onClose: () => void;
   runId?: string;
+  /** Deep-link: open focused on this work order (resolves its run itself). */
+  delegationId?: string;
 }
 
 function formatDuration(ms: number | null | undefined): string {
@@ -59,7 +71,12 @@ function formatTokens(n: number | undefined): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 }
 
-export function AlloyRunTraceModal({ onClose, runId }: AlloyRunTraceModalProps) {
+/** Short work-order ticket id, e.g. `wo·3f2a`. */
+function ticketId(delegationId: string): string {
+  return `wo·${delegationId.slice(0, 4)}`;
+}
+
+export function AlloyRunTraceModal({ onClose, runId, delegationId }: AlloyRunTraceModalProps) {
   const { activeTab } = useConversation();
   const { profiles } = useAgentProfile();
   const { getWorkflowById } = useAlloyWorkflow();
@@ -77,10 +94,29 @@ export function AlloyRunTraceModal({ onClose, runId }: AlloyRunTraceModalProps) 
 
   const workflow = activeTab?.workflowId ? getWorkflowById(activeTab.workflowId) : null;
 
-  const [selectedId, setSelectedId] = useState<string>(
-    () => runId ?? runs[runs.length - 1]?.id ?? '',
-  );
+  const [selectedId, setSelectedId] = useState<string>(() => {
+    if (delegationId) {
+      const owner = runs.find(r => r.delegations.some(d => d.delegationId === delegationId));
+      if (owner) return owner.id;
+    }
+    return runId ?? runs[runs.length - 1]?.id ?? '';
+  });
   const selected = runs.find(r => r.id === selectedId) ?? runs[runs.length - 1] ?? null;
+  const selectedIndex = selected ? runs.indexOf(selected) : -1;
+
+  // Focused work order within the selected run; falls back to the first.
+  const [focusedDelegationId, setFocusedDelegationId] = useState<string | null>(
+    delegationId ?? null,
+  );
+  const focused =
+    selected?.delegations.find(d => d.delegationId === focusedDelegationId) ??
+    selected?.delegations[0] ??
+    null;
+
+  const selectRun = (id: string) => {
+    setSelectedId(id);
+    setFocusedDelegationId(null); // fall back to the run's first work order
+  };
 
   return (
     <div className="alloy-trace-modal">
@@ -92,7 +128,7 @@ export function AlloyRunTraceModal({ onClose, runId }: AlloyRunTraceModalProps) 
           <div>
             <h2>Team Run Trace</h2>
             <div className="alloy-trace-subtitle">
-              {workflow ? `Team: ${workflow.name}` : 'Delegation breakdown for this team run'}
+              {workflow ? `Team: ${workflow.name}` : 'Work orders & delegations for this conversation'}
             </div>
           </div>
         </div>
@@ -104,8 +140,8 @@ export function AlloyRunTraceModal({ onClose, runId }: AlloyRunTraceModalProps) 
       {runs.length === 0 ? (
         <div className="alloy-trace-empty">
           <ArrowRightLeft size={40} />
-          <h3>No delegations in this conversation</h3>
-          <p>Run trace appears once an agent delegates to a teammate.</p>
+          <h3>No work orders in this conversation yet</h3>
+          <p>The trace fills in once an agent delegates work to a teammate.</p>
         </div>
       ) : (
         <div className="alloy-trace-body">
@@ -115,7 +151,7 @@ export function AlloyRunTraceModal({ onClose, runId }: AlloyRunTraceModalProps) 
                 <button
                   key={r.id}
                   className={`alloy-trace-run-tab ${r.id === selected?.id ? 'active' : ''}`}
-                  onClick={() => setSelectedId(r.id)}
+                  onClick={() => selectRun(r.id)}
                 >
                   Run {i + 1}
                   <span className="run-tab-count">{r.totals.count}</span>
@@ -126,6 +162,9 @@ export function AlloyRunTraceModal({ onClose, runId }: AlloyRunTraceModalProps) 
           {selected && (
             <RunDetail
               run={selected}
+              runNumber={selectedIndex + 1}
+              focused={focused}
+              onFocus={setFocusedDelegationId}
               profilesByAgentId={profilesByAgentId}
               supervisorName={
                 workflow
@@ -143,15 +182,22 @@ export function AlloyRunTraceModal({ onClose, runId }: AlloyRunTraceModalProps) 
 
 function RunDetail({
   run,
+  runNumber,
+  focused,
+  onFocus,
   profilesByAgentId,
   supervisorName,
 }: {
   run: AlloyRun;
+  runNumber: number;
+  focused: DelegationMessage | null;
+  onFocus: (delegationId: string) => void;
   profilesByAgentId: Map<string, AgentProfile>;
   supervisorName?: string;
 }) {
   const t = run.totals;
   const totalCost = formatCost(t.costEstimate, t.costCurrency);
+  const tree = useMemo(() => buildDelegationTree(run.delegations), [run.delegations]);
 
   return (
     <div className="alloy-trace-run">
@@ -162,18 +208,25 @@ function RunDetail({
           <span>{supervisorName ?? 'Lead'}</span>
         </div>
         <div className="summary-stats">
-          <span className="summary-stat" title="Delegations">
+          <span className="summary-stat" title="Work orders / delegations">
             <ArrowRightLeft size={13} />
-            {t.count} delegation{t.count === 1 ? '' : 's'}
+            {t.count} work order{t.count === 1 ? '' : 's'}
           </span>
           <span className="summary-stat" title="Tokens in / out">
             {formatTokens(t.tokensInput)} in · {formatTokens(t.tokensOutput)} out
           </span>
-          {totalCost && (
+          {totalCost ? (
             <span className="summary-stat cost" title="Estimated cost">
               <Coins size={13} />
               {totalCost}
-              {t.costPartial && <span className="partial-flag" title="Mixed currencies">~</span>}
+              {t.costPartial && (
+                <span className="partial-flag" title="Mixed currencies — approximate sum">~</span>
+              )}
+            </span>
+          ) : (
+            <span className="summary-stat unavailable" title="No pricing data for the models used">
+              <Coins size={13} />
+              Pricing unavailable
             </span>
           )}
           <span className="summary-stat" title="Wall-clock duration">
@@ -183,17 +236,106 @@ function RunDetail({
         </div>
       </div>
 
-      {/* Delegation cards */}
-      <div className="alloy-trace-delegations">
-        {run.delegations.map(d => (
-          <DelegationTraceCard
-            key={d.id}
-            delegation={d}
-            profile={profilesByAgentId.get(d.targetAgentId)}
-          />
-        ))}
+      {/* Master–detail: work-order rail + focused delegation */}
+      <div className="alloy-trace-master">
+        <div className="alloy-trace-rail" role="listbox" aria-label="Work orders">
+          {tree.map(node => (
+            <RailNode
+              key={node.delegation.delegationId}
+              node={node}
+              depth={0}
+              focusedId={focused?.delegationId}
+              onFocus={onFocus}
+              profilesByAgentId={profilesByAgentId}
+            />
+          ))}
+        </div>
+        <div className="alloy-trace-detail">
+          {focused && (
+            <>
+              <div className="trace-breadcrumb">
+                <span className="trace-breadcrumb-path">
+                  Run {runNumber} / <span className="trace-ticket">{ticketId(focused.delegationId)}</span>
+                  {' — '}
+                  {profilesByAgentId.get(focused.targetAgentId)?.name ??
+                    focused.targetAgentName ?? focused.targetAgentId}
+                </span>
+                <button
+                  type="button"
+                  className="trace-copy-id"
+                  title="Copy work order id"
+                  onClick={() => void navigator.clipboard?.writeText(focused.delegationId)}
+                >
+                  <Copy size={12} />
+                  {focused.delegationId}
+                </button>
+              </div>
+              <DelegationTraceCard
+                key={focused.delegationId}
+                delegation={focused}
+                profile={profilesByAgentId.get(focused.targetAgentId)}
+              />
+            </>
+          )}
+        </div>
       </div>
     </div>
+  );
+}
+
+function RailNode({
+  node,
+  depth,
+  focusedId,
+  onFocus,
+  profilesByAgentId,
+}: {
+  node: DelegationNode;
+  depth: number;
+  focusedId?: string;
+  onFocus: (delegationId: string) => void;
+  profilesByAgentId: Map<string, AgentProfile>;
+}) {
+  const d = node.delegation;
+  const profile = profilesByAgentId.get(d.targetAgentId);
+  const name = profile?.name ?? d.targetAgentName ?? d.targetAgentId;
+  const cost = formatCost(d.costEstimate, d.costCurrency);
+  return (
+    <>
+      <button
+        type="button"
+        role="option"
+        aria-selected={d.delegationId === focusedId}
+        className={`alloy-trace-rail-item status-${d.status} ${d.delegationId === focusedId ? 'active' : ''}`}
+        style={depth > 0 ? { marginLeft: `${depth * 14}px` } : undefined}
+        onClick={() => onFocus(d.delegationId)}
+      >
+        <span className="rail-avatar">
+          <AgentAvatar avatar={profile?.avatar} size={13} />
+        </span>
+        <span className="rail-main">
+          <span className="rail-name">
+            {name}
+            {d.mode === 'background' && <span className="rail-mode-tag">background</span>}
+          </span>
+          <span className="rail-ticket">{ticketId(d.delegationId)}</span>
+        </span>
+        <span className="rail-meta">
+          {cost && <span className="rail-cost">{cost}</span>}
+          <StatusBadge status={d.status} compact />
+        </span>
+      </button>
+      {node.children.map(child => (
+        <RailNode
+          key={child.delegation.delegationId}
+          node={child}
+          depth={depth + 1}
+          focusedId={focusedId}
+          onFocus={onFocus}
+          profilesByAgentId={profilesByAgentId}
+        />
+      ))}
+    </>
   );
 }
 
@@ -204,11 +346,14 @@ function DelegationTraceCard({
   delegation: DelegationMessage;
   profile?: AgentProfile;
 }) {
-  const [showResult, setShowResult] = useState(false);
-  const [showTools, setShowTools] = useState(false);
+  // The focused detail pane opens with everything visible; the collapsibles
+  // remain for taming very long output.
+  const [showResult, setShowResult] = useState(true);
+  const [showTools, setShowTools] = useState(true);
 
   const name = profile?.name ?? d.targetAgentName ?? d.targetAgentId;
   const cost = formatCost(d.costEstimate, d.costCurrency);
+  const hasTokens = (d.tokensInput ?? 0) > 0 || (d.tokensOutput ?? 0) > 0;
   const tools = d.toolEvents ?? [];
 
   return (
@@ -223,7 +368,15 @@ function DelegationTraceCard({
             <div className="trace-specialist-id">{d.targetAgentId}</div>
           </div>
         </div>
-        <StatusBadge status={d.status} />
+        <div className="trace-head-badges">
+          {d.reportDelivered && (
+            <span className="trace-report-chip" title="This work order's report was delivered to the delegating agent">
+              <Undo2 size={11} />
+              Report delivered
+            </span>
+          )}
+          <StatusBadge status={d.status} />
+        </div>
       </div>
 
       <div className="trace-task">{d.task}</div>
@@ -236,12 +389,20 @@ function DelegationTraceCard({
         <span className="trace-metric" title="Tokens in / out">
           {formatTokens(d.tokensInput)} / {formatTokens(d.tokensOutput)} tok
         </span>
-        {cost && (
-          <span className="trace-metric cost" title="Estimated cost">
+        {cost ? (
+          <span
+            className="trace-metric cost"
+            title={d.pricingSnapshot ? JSON.stringify(d.pricingSnapshot) : 'Estimated cost'}
+          >
             <Coins size={12} />
             {cost}
           </span>
-        )}
+        ) : hasTokens ? (
+          <span className="trace-metric unavailable" title="No pricing data for this model">
+            <Coins size={12} />
+            Pricing unavailable
+          </span>
+        ) : null}
         {tools.length > 0 && (
           <span className="trace-metric" title="Tool calls">
             <Wrench size={12} />
@@ -300,7 +461,7 @@ function StatusBadge({
   status,
   compact,
 }: {
-  status: 'streaming' | 'running' | 'completed' | 'failed';
+  status: DelegationMessage['status'] | DelegationToolEvent['status'];
   compact?: boolean;
 }) {
   const map = {
@@ -308,8 +469,10 @@ function StatusBadge({
     running: { icon: <Loader2 size={12} className="spin" />, label: 'Running', cls: 'running' },
     completed: { icon: <CheckCircle2 size={12} />, label: 'Done', cls: 'completed' },
     failed: { icon: <XCircle size={12} />, label: 'Failed', cls: 'failed' },
+    cancelled: { icon: <Ban size={12} />, label: 'Cancelled', cls: 'cancelled' },
   } as const;
-  const s = map[status];
+  // Unknown/future statuses degrade to the running treatment.
+  const s = map[status as keyof typeof map] ?? map.running;
   return (
     <span className={`trace-status-badge ${s.cls} ${compact ? 'compact' : ''}`}>
       {s.icon}
