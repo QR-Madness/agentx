@@ -123,30 +123,51 @@
   border-radius: 4px;
 }
 
-/* Alloy run-trace badge */
+/* Alloy run-trace badge — gateway to the Work Console. Holographic accent
+   treatment (gradient border, ToolExecutionBlock family); the count pip
+   pulses while work orders are running. */
 .run-trace-badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 3px 9px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-color);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--bg-elevated), var(--bg-elevated)) padding-box,
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--accent-primary) 45%, transparent),
+      color-mix(in srgb, var(--accent-secondary) 40%, transparent)) border-box;
   border-radius: 999px;
   font-size: 11px;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.15s, box-shadow 0.15s;
 }
 .run-trace-badge:hover {
   color: var(--text-primary);
-  border-color: var(--accent-primary);
+  box-shadow: var(--border-glow-subtle);
 }
 .run-trace-count {
-  background: var(--bg-hover);
+  background: var(--accent-tint-faint);
+  color: var(--accent-primary);
   border-radius: 999px;
   padding: 0 6px;
   font-size: 10px;
   font-weight: 600;
+}
+.run-trace-badge.live { color: var(--text-primary); }
+.run-trace-badge.live .run-trace-count {
+  animation: run-trace-live 2s ease-in-out infinite;
+}
+@keyframes run-trace-live {
+  0%, 100% { background: var(--accent-tint-faint); }
+  50% { background: var(--accent-tint-soft); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .run-trace-badge.live .run-trace-count {
+    animation: none;
+    background: var(--accent-tint-soft);
+  }
 }
 
 /* (Context usage moved to the composer context chip — see contextChip.ts.) */

@@ -691,6 +691,11 @@ export interface DelegationStartEvent {
   depth: number;
   supervisor_agent_id: string;
   shared_channel: string;
+  // 'background' = a delegate_start work order (dispatch receipt + late report).
+  mode?: 'await' | 'background';
+  // Links a nested delegation to its parent (null at depth 0) — the
+  // delegation tree's edge; reserved until nesting ships.
+  parent_delegation_id?: string | null;
 }
 
 export interface DelegationChunkEvent {
@@ -700,10 +705,10 @@ export interface DelegationChunkEvent {
 }
 
 export interface DelegationCompleteEvent {
-  delegation_id?: string;  // absent on pre-validation failures
+  delegation_id?: string;  // absent on legacy-server pre-validation failures
   target_agent_id: string;
   tool_call_id: string;
-  status: 'success' | 'failed';
+  status: 'success' | 'failed' | 'cancelled';
   error: string | null;
   result_preview: string;
   // Per-delegation metrics (optional — absent from older servers).
@@ -713,6 +718,19 @@ export interface DelegationCompleteEvent {
   cost_estimate?: number | null;
   cost_currency?: string | null;
   pricing_snapshot?: Record<string, unknown> | null;
+  mode?: 'await' | 'background';
+  parent_delegation_id?: string | null;
+}
+
+// Emitted when a background work order's report folds into the turn — the
+// transcript renders it as a hairline "report delivered" marker.
+export interface WorkOrderReportEvent {
+  tool_call_id: string;
+  delegation_id: string;
+  target_agent_id: string;
+  status: string;
+  round: number;
+  phase: 'tool_boundary' | 'would_end' | 'round_exhausted';
 }
 
 export interface DelegationToolCallEvent {

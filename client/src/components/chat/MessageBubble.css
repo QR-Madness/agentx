@@ -233,97 +233,15 @@
   opacity: 0.6;
 }
 
-/* Delegation message (Agent Alloy specialist) */
+/* Delegation message wrapper — the card itself lives in WorkOrderCard.css. */
 .message-bubble.delegation {
   padding-left: 2.5rem;
   min-width: 0;
 }
-
-.delegation-card {
+.message-bubble.delegation .work-order-card {
   flex: 1;
   min-width: 0;
   max-width: 100%;
-  border: 1px solid var(--border-color);
-  border-left: 3px solid var(--accent-primary);
-  border-radius: 10px;
-  background: linear-gradient(
-    180deg,
-    var(--accent-tint-faint),
-    var(--accent-tint-faint)
-  );
-  padding: 0.75rem 0.875rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  overflow: hidden;
-}
-
-.delegation-tool-events {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.delegation-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-}
-
-.delegation-title strong {
-  color: var(--text-primary);
-}
-
-.delegation-depth {
-  font-size: 0.6875rem;
-  padding: 0.125rem 0.4rem;
-  border-radius: 999px;
-  background: var(--accent-tint-soft);
-  color: var(--accent-primary);
-}
-
-.delegation-status {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.delegation-status.streaming { color: var(--accent-primary); }
-.delegation-status.completed { color: var(--feedback-success); }
-.delegation-status.failed { color: var(--feedback-error); }
-
-.delegation-task {
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-  font-style: italic;
-  border-left: 2px solid var(--border-color);
-  padding-left: 0.625rem;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.delegation-body {
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.delegation-error {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-  color: var(--feedback-error);
 }
 
 .spin {

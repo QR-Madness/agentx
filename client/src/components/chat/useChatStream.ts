@@ -30,6 +30,7 @@ import {
   type PlanStepRef,
   type PlanSubtask,
   type ToolCallMessage,
+  type WorkOrderReportMarkerMessage,
   createMessageId,
   stripThinkingTags,
 } from '../../lib/messages';
@@ -116,6 +117,11 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   const activeToolCallsRef = useRef<Map<string, { messageId: string; toolName: string }>>(new Map());
   const activePlanRef = useRef<{ messageId: string; planId: string; subtasks: PlanSubtask[] } | null>(null);
   const activeDelegationsRef = useRef<Map<string, ActiveDelegation>>(new Map());
+  // delegationId → messageId, surviving handle teardown for the whole turn —
+  // a late delegation_complete / work_order_report (background mode) must
+  // still find its card even after finalize/`delegation_finished` dropped the
+  // live handle. Cleared only on reset().
+  const delegationMessageIdsRef = useRef<Map<string, string>>(new Map());
   // Exhibit id -> its message id, so re-presenting the same id amends the
   // existing card in place (declarative reconcile) instead of stacking a new one.
   const exhibitMessageIdsRef = useRef<Map<string, string>>(new Map());
@@ -151,12 +157,15 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
 
   // Any delegation still in activeDelegationsRef when a stream ends/cancels never
   // got its delegation_complete (e.g. a fan-out cut short). Mark those cards as
-  // failed-interrupted so they don't sit "streaming" forever, then drop the refs.
+  // failed-interrupted — background work orders read "cancelled" instead (the
+  // backend cancels them with the run) — so they don't sit "streaming" forever,
+  // then drop the refs.
   const finalizeDanglingDelegations = useCallback(() => {
     for (const handle of activeDelegationsRef.current.values()) {
+      const background = handle.mode === 'background';
       optsRef.current.updateMessage(handle.messageId, {
-        status: 'failed',
-        error: 'Delegation interrupted',
+        status: background ? 'cancelled' : 'failed',
+        error: background ? 'Work order cancelled' : 'Delegation interrupted',
         completedAt: new Date().toISOString(),
       });
     }
@@ -168,6 +177,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     activeToolCallsRef.current = new Map();
     activePlanRef.current = null;
     activeDelegationsRef.current = new Map();
+    delegationMessageIdsRef.current = new Map();
     exhibitMessageIdsRef.current = new Map();
     currentStepRef.current = null;
     dispatch({ type: 'send_started' });
@@ -503,7 +513,9 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           messageId,
           content: '',
           toolEvents: [],
+          mode: data.mode,
         });
+        delegationMessageIdsRef.current.set(data.delegation_id, messageId);
         dispatch({ type: 'delegation_started', delegationId: data.delegation_id, messageId });
 
         const targetName = optsRef.current.resolveAgentName?.(data.target_agent_id);
@@ -519,6 +531,8 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           status: 'streaming',
           content: '',
           toolEvents: [],
+          mode: data.mode,
+          parentDelegationId: data.parent_delegation_id ?? null,
         };
         optsRef.current.appendMessage(msg);
       },
@@ -539,10 +553,17 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
       onDelegationComplete: (data) => {
         const key = data.delegation_id ?? '';
         const handle = key ? activeDelegationsRef.current.get(key) : undefined;
-        if (handle) {
-          optsRef.current.updateMessage(handle.messageId, {
-            status: data.status === 'success' ? 'completed' : 'failed',
-            content: handle.content || data.result_preview,
+        // Late completions (background work orders can settle after the live
+        // handle was dropped) still find their card via the id map.
+        const messageId = handle?.messageId ?? (key ? delegationMessageIdsRef.current.get(key) : undefined);
+        if (messageId) {
+          const status =
+            data.status === 'success' ? 'completed'
+            : data.status === 'cancelled' ? 'cancelled'
+            : 'failed';
+          optsRef.current.updateMessage(messageId, {
+            status,
+            content: handle?.content || data.result_preview,
             error: data.error ?? undefined,
             resultPreview: data.result_preview,
             tokensInput: data.tokens_input,
@@ -550,13 +571,47 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
             costEstimate: data.cost_estimate,
             costCurrency: data.cost_currency,
             durationMs: data.duration_ms,
+            pricingSnapshot: data.pricing_snapshot,
             completedAt: new Date().toISOString(),
           });
         }
-        if (key) {
+        if (key && handle) {
           activeDelegationsRef.current.delete(key);
           dispatch({ type: 'delegation_finished', delegationId: key });
         }
+      },
+
+      onWorkOrderReport: (data) => {
+        // The report folded into the turn: drop a hairline marker at this spot
+        // (narrative causality — the assistant reacts right after), flip the
+        // card to report-delivered, and defensively settle a card whose
+        // delegation_complete never landed.
+        flushLiveContent();
+        const messageId = delegationMessageIdsRef.current.get(data.delegation_id);
+        if (messageId) {
+          optsRef.current.updateMessage(messageId, { reportDelivered: true });
+        }
+        const stillActive = activeDelegationsRef.current.get(data.delegation_id);
+        if (stillActive) {
+          optsRef.current.updateMessage(stillActive.messageId, {
+            status: data.status === 'completed' ? 'completed'
+              : data.status === 'cancelled' ? 'cancelled'
+              : 'failed',
+            completedAt: new Date().toISOString(),
+          });
+          activeDelegationsRef.current.delete(data.delegation_id);
+          dispatch({ type: 'delegation_finished', delegationId: data.delegation_id });
+        }
+        const marker: WorkOrderReportMarkerMessage = {
+          id: createMessageId(),
+          type: 'work_order_report',
+          timestamp: new Date().toISOString(),
+          delegationId: data.delegation_id,
+          targetAgentId: data.target_agent_id,
+          targetAgentName: optsRef.current.resolveAgentName?.(data.target_agent_id),
+          status: data.status,
+        };
+        optsRef.current.appendMessage(marker);
       },
 
       onDelegationToolCall: (data) => {

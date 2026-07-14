@@ -2,17 +2,18 @@
  * Alloy run tracing — group the flat conversation message list into discrete
  * multi-agent "runs" for the run-trace UI.
  *
- * Because specialists do not re-delegate (only the supervisor holds the
- * `delegate_to` tool), every delegation is a depth-1 fan-out from one
- * supervisor turn. A "run" is therefore a block of *consecutive* delegation
- * messages, attributed to the assistant (supervisor) turn that precedes it.
+ * A "run" is all the delegations of one user turn: background work orders
+ * (`delegate_start`) interleave assistant prose, receipts, and report markers
+ * between dispatch and completion by design, so only a *real user message*
+ * (not a steer, not a folded report) closes a run. The supervisor is the
+ * assistant turn nearest the run's first delegation.
  *
  * Pure + read-only: works identically for live and restored conversations,
  * since both produce `DelegationMessage[]` in the same array.
  */
 
 import type { ConversationMessage, DelegationMessage } from './messages';
-import { isAssistantMessage, isDelegationMessage } from './messages';
+import { isAssistantMessage, isDelegationMessage, isUserMessage } from './messages';
 
 export interface AlloyRunTotals {
   /** Number of delegations in the run. */
@@ -113,23 +114,33 @@ export function groupRunsFromMessages(messages: ConversationMessage[]): AlloyRun
   const runs: AlloyRun[] = [];
   let current: DelegationMessage[] = [];
   let lastAssistant: { id: string; agentName?: string } | null = null;
+  // The supervisor is snapshotted when the run's FIRST delegation is pushed —
+  // assistant prose streamed after a background dispatch must not steal
+  // attribution from the turn that issued the work orders.
+  let supervisor: { id: string; agentName?: string } | null = null;
 
   const flush = () => {
     if (current.length > 0) {
-      runs.push(finalizeRun(current, lastAssistant));
+      runs.push(finalizeRun(current, supervisor));
       current = [];
+      supervisor = null;
     }
   };
 
   for (const msg of messages) {
     if (isDelegationMessage(msg)) {
+      if (current.length === 0) supervisor = lastAssistant;
       current.push(msg);
       continue;
     }
-    // A non-delegation message ends any run in progress.
-    flush();
     if (isAssistantMessage(msg)) {
       lastAssistant = { id: msg.id, agentName: msg.agentName };
+      continue;
+    }
+    // Only a real user message closes a run — a steer or a folded work-order
+    // report is mid-turn context, and tool cards/exhibits interleave freely.
+    if (isUserMessage(msg) && !msg.steered) {
+      flush();
     }
   }
   flush();
@@ -141,4 +152,33 @@ export function groupRunsFromMessages(messages: ConversationMessage[]): AlloyRun
 export function latestRun(messages: ConversationMessage[]): AlloyRun | null {
   const runs = groupRunsFromMessages(messages);
   return runs.length > 0 ? runs[runs.length - 1] : null;
+}
+
+/** One node of the work-order tree (the "filesystem" view of delegated work). */
+export interface DelegationNode {
+  delegation: DelegationMessage;
+  children: DelegationNode[];
+}
+
+/**
+ * Arrange a run's delegations into a tree by `parentDelegationId`. Everything
+ * is a root today (nesting ships with the chain of command); orphaned parents
+ * degrade to roots so a partial transcript still renders.
+ */
+export function buildDelegationTree(delegations: DelegationMessage[]): DelegationNode[] {
+  const nodes = new Map<string, DelegationNode>();
+  for (const d of delegations) {
+    nodes.set(d.delegationId, { delegation: d, children: [] });
+  }
+  const roots: DelegationNode[] = [];
+  for (const d of delegations) {
+    const node = nodes.get(d.delegationId)!;
+    const parent = d.parentDelegationId ? nodes.get(d.parentDelegationId) : undefined;
+    if (parent && parent !== node) {
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  return roots;
 }
