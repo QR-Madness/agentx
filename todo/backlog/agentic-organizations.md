@@ -216,31 +216,32 @@ directives.
 - [ ] Sidebar grouping of child conversations under their parent
 - [ ] Edge pulse on active delegations (live `delegation_*` events animate the chain edge)
 
-### Slice 6 — Work Console & Work Orders (client-only)
+### Slice 6 — Work Console & Work Orders `[v0.21.220]`
 
-> Independently shippable — no backend dependencies; can ship before Slices 2–5. The data is
-> already wired end-to-end (`DelegationMessage` carries cost/tokens/duration live and on reload);
-> the inline card just never renders it.
+> Shipped first (independently of Slices 2–5) **together with `delegate_start` — within-turn
+> non-blocking delegation** (dispatch receipt satisfies the provider contract; the report folds
+> back at the steering safe boundaries; would-end barrier waits for stragglers; run-cancel
+> cancels pending orders; `alloy.delegation_timeout_seconds` wired for both modes). Work orders
+> carry `mode` + `parent_delegation_id` on the wire — the delegation-tree edge is reserved for
+> this doc's chain-of-command nesting.
 
-- [ ] **In-console delegation switcher** — master–detail inside a run (delegation rail → focused
-      detail pane) replacing today's flat `DelegationTraceCard` stack in `AlloyRunTraceModal`;
-      the existing run tabs stay.
-- [ ] **Work Order card** — the holographic inline transcript card, upgrading `DelegationBubble`:
-      compact tool-call-like collapsed row (`ToolExecutionBlock`-family look); holographic
-      treatment composed from `--glow-primary` + `--border-glow-subtle` + a `--gradient-accent`
-      edge + `--glass-bg` (flattens automatically on NO_GLOW themes); a **metrics strip**
-      (cost / tokens / duration — already on `DelegationMessage`, currently unrendered inline);
-      status; click opens the trace console **focused on that delegation** (modal props gain
-      `delegationId`).
-- [ ] **Chip accent** — `.run-trace-badge` gets accent border + subtle glow + an accent count
-      pip; the name stays "Trace".
-- [ ] **Cost honesty** — an explicit "pricing unavailable" state instead of silently hiding null
-      costs (per-delegation, and the rollup `~` mixed-currency case); optionally surface the
-      persisted `pricing_snapshot` in the expanded detail (emitted + persisted today, dropped
-      client-side).
+- [x] **In-console delegation switcher** `[v0.21.220]` — master–detail: a work-order rail
+      (rendered from `buildDelegationTree`, flat until nesting ships) + a focused detail pane
+      with a filesystem breadcrumb (`Run N / wo·xxxx — agent`) and copy-id; run tabs stay.
+- [x] **Work Order card** `[v0.21.220]` — replaced `DelegationBubble`: compact holographic row
+      (`ToolExecutionBlock`-family gradient border + shimmer; flattens on NO_GLOW themes) with
+      the metrics strip; dispatched→working→**report delivered** lifecycle (one-time glow pulse);
+      click opens the console focused (`delegationId` prop); folded reports render as hairline
+      **report-delivered markers** (persisted `metadata.work_order_report` turns), keeping the
+      transcript a report stream.
+- [x] **Chip accent** `[v0.21.220]` — gradient-border pill + accent count pip with a live pulse
+      while work orders run; the name stays "Trace".
+- [x] **Cost honesty** `[v0.21.220]` — explicit "Pricing unavailable" states (console + card);
+      `pricing_snapshot` restored client-side (cost tooltip).
 - [ ] **Slice-3 tie-in** — when child threads land, the Work Order card + console detail gain
       "Open thread"; the console is the primary viewer, tab-open is secondary.
-- [ ] **Docs**: client-only (no API change); version + Release-Notes with the slice.
+- [x] **Docs** `[v0.21.220]` — OpenApi + Development-Notes SSE contract (new `work_order_report`
+      event, `mode`/`parent_delegation_id` fields, `cancelled` status); version + Release-Notes.
 
 ### Parked — Executive tier
 
@@ -304,3 +305,9 @@ directives.
     typed `Exhibit` (the declarative seam) with structure — findings, costs, links to Work Orders?
 11. **Leads' hands-on default** — is "may do manual work" a per-team or per-profile policy, and
     what ships as the default?
+12. **`work_type` delegation variants** — spike (time-boxed investigation: answer, don't build)
+    and plan (produce a plan for ratification, don't execute) as prompt-level charters + budget
+    defaults on the same work-order primitive; near-free once the primitive is solid.
+13. **Per-work-order recall** — cancel ONE dispatched order (not the whole run): the downstream
+    control verb completing the dispatch/report/escalate/recall/assign protocol; natural once
+    work orders have identity (they do, as of `[v0.21.220]`).

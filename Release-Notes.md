@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.219 -->
+<!-- release-version: 0.21.220 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,4 +21,22 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
+- **Non-blocking delegation — `delegate_start` work orders**: an agent can now dispatch a task to
+  a teammate and *keep working* — it gets a dispatch receipt immediately, and the teammate's
+  report is delivered back into the same turn automatically (the turn won't end until every
+  work order reports in; Stop cancels them cleanly).
+- **The trace console became a Work Console**: master–detail with a work-order rail (tree-ready),
+  a focused detail pane with a `Run N / wo·xxxx` breadcrumb, and deep-links — click any Work
+  Order card in the chat to open the console focused on it.
+- **Work Order cards**: delegations render as compact holographic cards (dispatched → working →
+  report delivered) with a real metrics strip — duration, tokens, and honest costs ("Pricing
+  unavailable" instead of silently missing); folded reports show as hairline markers in the
+  transcript. The Trace chip pulses while work orders run.
+
 ### Fixes
+
+- **`alloy.delegation_timeout_seconds` is now actually enforced** (both delegation modes) — a
+  stuck specialist fails cleanly instead of hanging the turn indefinitely.
+- **Late delegation completions no longer drop silently** — cards settle by work-order id even
+  after the live stream handle is gone; interrupted background orders read "Cancelled" instead
+  of a stuck "streaming" state.

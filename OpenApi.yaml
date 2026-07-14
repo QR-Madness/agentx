@@ -906,8 +906,17 @@ paths:
         (carrying `run_id`) so the client can re-attach via `/agent/chat/stream/attach`.
         Events: `run_started`, `start`, `memory_context`, `chunk`, `status`, `steer`,
         `tool_call`, `tool_result`, `exhibit`, `workspace_attached`, `done`, `close`, plus
-        `delegation_*` events when a workflow is active or an ad-hoc delegation runs. See
-        the Multi-Agent docs for delegation event shapes. `exhibit` and `workspace_attached`
+        `delegation_*` and `work_order_report` events when a workflow is active or an
+        ad-hoc delegation runs. See the Multi-Agent docs for delegation event shapes.
+        `delegation_start`/`delegation_complete` carry `mode` (`await` for blocking
+        `delegate_to`, `background` for `delegate_start` work orders) and
+        `parent_delegation_id` (null at depth 0 — reserved for the delegation tree);
+        `delegation_complete.status` is `success`, `failed`, or `cancelled` (a background
+        work order cancelled with the run). A background `delegate_start` returns a
+        dispatch-receipt tool result immediately and its report folds into the turn later
+        as a user-role message — announced by `work_order_report`
+        (`{ tool_call_id, delegation_id, target_agent_id, status, round, phase }`).
+        `exhibit` and `workspace_attached`
         may also arrive DURING an active delegation (a specialist's generated image passes
         through top-level, rendering under the delegation card); `delegation_complete`
         carries an optional `exhibits` array (the wires, capped at 5) so restored

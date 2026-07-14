@@ -35,7 +35,11 @@
 - [-] Declarative route execution (`on_complete`, `on_match:<predicate>`, `on_failure`) — schema accepted but ignored in v1
 - [ ] Loop nodes (specialist iterates over a list)
 - [ ] Human-in-the-loop checkpoint nodes
-- [ ] Async delegation (specialist runs in background; supervisor continues other work)
+- [~] Async delegation (specialist runs in background; supervisor continues other work) —
+      **within-turn half shipped `[v0.21.220]`** as `delegate_start` work orders (dispatch
+      receipt + auto-folded report at the steering boundaries; would-end barrier; see
+      [backlog/agentic-organizations.md](../backlog/agentic-organizations.md)). Cross-turn
+      continuation (a work order outliving its turn) still open.
 - [ ] "User as supervisor" mode (no LLM supervisor — user manually invokes specialists from the chat UI)
 - [ ] Tool-output sharing across agents (specialist's raw tool outputs visible to supervisor, not just final text)
 - [ ] Per-workflow tool isolation (specialist inherits a *subset* of supervisor tools, not all)
