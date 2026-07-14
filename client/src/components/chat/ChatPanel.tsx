@@ -458,18 +458,30 @@ export function ChatPanel() {
   // avatar chip inside the input row instead (identity stays one tap away).
   const mobileAgentBtnRef = useRef<HTMLButtonElement>(null);
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+  // Scrolls we initiate (tail-follow, jump-to-bottom). The scroll listener
+  // must ignore these — pin state may only change from USER scrolling, or the
+  // follower re-pins itself off its own wake and traps the viewport at the
+  // bottom (the "can't escape the tail" bug under rapid streaming). Cleared on
+  // the next frame so a swallowed event can never mute a later user gesture.
+  const isProgrammaticScrollRef = useRef(false);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    isProgrammaticScrollRef.current = true;
     messagesEndRef.current?.scrollIntoView({ behavior });
+    requestAnimationFrame(() => { isProgrammaticScrollRef.current = false; });
     setIsPinned(true);
   }, []);
 
-  // Track pin state from the scroll container. We treat "within 24px of the
+  // Track pin state from USER scrolls only. We treat "within 24px of the
   // bottom" as pinned — small enough to feel right, big enough to survive
-  // rounding from content height changes during streaming.
+  // rounding from content height changes during streaming. Programmatic
+  // follows are flagged above and skipped here, so scrolling up disengages
+  // the tail cleanly and scrolling back down re-engages it.
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
     const onScroll = () => {
+      if (isProgrammaticScrollRef.current) return;
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       setIsPinned(distance < 24);
     };
@@ -480,9 +492,15 @@ export function ChatPanel() {
   // Auto-scroll only while pinned. Streaming chunks update both messages
   // and liveContent, both of which we want to follow when the user is at
   // the bottom; when they've scrolled up we leave the viewport alone.
+  // Follow is INSTANT (behavior 'auto'), never smooth: a smooth follow is an
+  // animation perpetually mid-flight under rapid output, so the viewport lags
+  // the growing content past the pin threshold and the tail "escapes" — and
+  // its stream of animated scroll events is what fought user gestures.
   useEffect(() => {
     if (isPinned) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      isProgrammaticScrollRef.current = true;
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      requestAnimationFrame(() => { isProgrammaticScrollRef.current = false; });
     }
   }, [activeTab?.messages, streamingContent, isPinned]);
 
@@ -1381,7 +1399,7 @@ export function ChatPanel() {
         {!isPinned && (
           <button
             className="auto-scroll-toggle"
-            onClick={() => scrollToBottom('smooth')}
+            onClick={() => scrollToBottom()}
             title="Jump to latest"
             aria-label="Jump to latest message"
           >
