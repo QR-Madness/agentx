@@ -1,0 +1,574 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden stream: blocking-fanout > replays through the production wiring to a stable structure 1`] = `
+{
+  "leftoverAfterClose": [
+    "close",
+  ],
+  "restoredTranscript": [
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "delegationId": "ba2b22d0",
+      "mode": "await",
+      "reportDelivered": false,
+      "status": "completed",
+      "target": "bright-grand-fern",
+      "type": "delegation",
+    },
+    {
+      "delegationId": "da3e6fc3",
+      "mode": "await",
+      "reportDelivered": false,
+      "status": "completed",
+      "target": "lucky-rising-thistle",
+      "type": "delegation",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+  "transcript": [
+    {
+      "type": "memory_injection",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "delegationId": "ba2b22d0",
+      "mode": "await",
+      "reportDelivered": false,
+      "status": "completed",
+      "target": "bright-grand-fern",
+      "type": "delegation",
+    },
+    {
+      "delegationId": "da3e6fc3",
+      "mode": "await",
+      "reportDelivered": false,
+      "status": "completed",
+      "target": "lucky-rising-thistle",
+      "type": "delegation",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+}
+`;
+
+exports[`golden stream: hard-stop-work-order > replays through the production wiring to a stable structure 1`] = `
+{
+  "leftoverAfterClose": [],
+  "restoredTranscript": [
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "delegationId": "8d533316",
+      "mode": "background",
+      "reportDelivered": false,
+      "status": "cancelled",
+      "target": "bright-grand-fern",
+      "type": "delegation",
+    },
+    {
+      "status": "completed",
+      "tool": "update_conversation_state",
+      "type": "tool_call",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+  "transcript": [
+    {
+      "type": "memory_injection",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "status": "completed",
+      "tool": "update_conversation_state",
+      "type": "tool_call",
+    },
+    {
+      "delegationId": "8d533316",
+      "mode": "background",
+      "reportDelivered": false,
+      "status": "cancelled",
+      "target": "bright-grand-fern",
+      "type": "delegation",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+}
+`;
+
+exports[`golden stream: plain-turn > replays through the production wiring to a stable structure 1`] = `
+{
+  "leftoverAfterClose": [
+    "close",
+  ],
+  "restoredTranscript": [
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+  "transcript": [
+    {
+      "type": "memory_injection",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+}
+`;
+
+exports[`golden stream: plan-cancelled > replays through the production wiring to a stable structure 1`] = `
+{
+  "leftoverAfterClose": [],
+  "restoredTranscript": [
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "status": "interrupted",
+      "subtasks": [
+        "failed",
+        "failed",
+      ],
+      "type": "plan_execution",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+  "transcript": [
+    {
+      "type": "memory_injection",
+    },
+    {
+      "status": "running",
+      "subtasks": [
+        "failed",
+        "failed",
+      ],
+      "type": "plan_execution",
+    },
+  ],
+}
+`;
+
+exports[`golden stream: plan-two-subtasks > replays through the production wiring to a stable structure 1`] = `
+{
+  "leftoverAfterClose": [
+    "close",
+  ],
+  "restoredTranscript": [
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "status": "completed",
+      "subtasks": [
+        "completed",
+        "completed",
+      ],
+      "type": "plan_execution",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "delegationId": "e162ca0b",
+      "mode": "background",
+      "reportDelivered": true,
+      "status": "completed",
+      "target": "bright-grand-fern",
+      "type": "delegation",
+    },
+    {
+      "delegationId": "e162ca0b",
+      "status": "completed",
+      "type": "work_order_report",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+  "transcript": [
+    {
+      "type": "memory_injection",
+    },
+    {
+      "status": "completed",
+      "subtasks": [
+        "completed",
+        "completed",
+      ],
+      "type": "plan_execution",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+}
+`;
+
+exports[`golden stream: steered-turn > replays through the production wiring to a stable structure 1`] = `
+{
+  "leftoverAfterClose": [
+    "close",
+  ],
+  "restoredTranscript": [
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "steered": true,
+      "type": "user",
+    },
+    {
+      "steered": true,
+      "type": "user",
+    },
+  ],
+  "transcript": [
+    {
+      "type": "memory_injection",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "elements": [
+        "citation",
+      ],
+      "type": "exhibit",
+    },
+    {
+      "elements": [
+        "citation",
+      ],
+      "type": "exhibit",
+    },
+    {
+      "steered": true,
+      "type": "user",
+    },
+    {
+      "steered": true,
+      "type": "user",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "elements": [
+        "citation",
+      ],
+      "type": "exhibit",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+}
+`;
+
+exports[`golden stream: think-heavy > replays through the production wiring to a stable structure 1`] = `
+{
+  "leftoverAfterClose": [
+    "close",
+  ],
+  "restoredTranscript": [
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+  "transcript": [
+    {
+      "type": "memory_injection",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+}
+`;
+
+exports[`golden stream: web-search-turn > replays through the production wiring to a stable structure 1`] = `
+{
+  "leftoverAfterClose": [
+    "close",
+  ],
+  "restoredTranscript": [
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "elements": [
+        [
+          "citation",
+          "citation",
+        ],
+      ],
+      "type": "exhibit",
+    },
+    {
+      "elements": [
+        "citation",
+      ],
+      "type": "exhibit",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+  "transcript": [
+    {
+      "type": "memory_injection",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "status": "completed",
+      "tool": "web_search",
+      "type": "tool_call",
+    },
+    {
+      "elements": [
+        "citation",
+      ],
+      "type": "exhibit",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "elements": [
+        "citation",
+      ],
+      "type": "exhibit",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+}
+`;
+
+exports[`golden stream: work-order-background > replays through the production wiring to a stable structure 1`] = `
+{
+  "leftoverAfterClose": [
+    "close",
+  ],
+  "restoredTranscript": [
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "status": "completed",
+      "subtasks": [
+        "completed",
+        "completed",
+      ],
+      "type": "plan_execution",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "steered": false,
+      "type": "user",
+    },
+    {
+      "delegationId": "e162ca0b",
+      "mode": "background",
+      "reportDelivered": true,
+      "status": "completed",
+      "target": "bright-grand-fern",
+      "type": "delegation",
+    },
+    {
+      "delegationId": "e162ca0b",
+      "status": "completed",
+      "type": "work_order_report",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+  "transcript": [
+    {
+      "type": "memory_injection",
+    },
+    {
+      "hasContent": false,
+      "type": "assistant",
+    },
+    {
+      "delegationId": "e162ca0b",
+      "mode": "background",
+      "reportDelivered": true,
+      "status": "completed",
+      "target": "bright-grand-fern",
+      "type": "delegation",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+    {
+      "delegationId": "e162ca0b",
+      "status": "completed",
+      "type": "work_order_report",
+    },
+    {
+      "hasContent": true,
+      "type": "assistant",
+    },
+  ],
+}
+`;

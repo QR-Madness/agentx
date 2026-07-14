@@ -158,8 +158,10 @@ export interface StreamCallbacks {
   onError?: (error: string) => void;
 }
 
-/** Dispatch one parsed SSE event to its callback. Returns true to stop the pump. */
-function dispatchSseEvent(
+/** Dispatch one parsed SSE event to its callback. Returns true to stop the pump.
+ * Exported for the golden-stream replay tests — this IS the client's SSE
+ * contract seam, and the goldens replay recorded streams through it. */
+export function dispatchSseEvent(
   type: string,
   data: Record<string, unknown>,
   callbacks: StreamCallbacks,
