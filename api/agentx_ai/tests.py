@@ -5133,6 +5133,68 @@ class PlanExecutorResultTest(TestCase):
         self.assertEqual(len(pr.steers), 1)
         self.assertEqual(pr.steers[0]["content"], "do Y")
 
+    def test_subtask_delegation_injection_handles_adhoc_executor(self) -> None:
+        """Regression: an AD-HOC executor (workflow=None) used to crash every
+        subtask ('NoneType' object has no attribute 'specialists') because the
+        plan path built the workflow-scoped descriptor unconditionally. The
+        ad-hoc branch must inject delegate_to from the opted-in roster instead."""
+        from types import SimpleNamespace
+        from agentx_ai.agent.plan_executor import PlanExecutor, PlanResult
+
+        plan = self._plan(None)  # one pending subtask
+        plan.steps[0].tools_needed = []  # no planner tools — injection is the only source
+
+        adhoc_executor = SimpleNamespace(workflow=None, delegator_agent_id="lead-x")
+        agent = MagicMock()
+        agent._active_alloy_executor = adhoc_executor
+        agent._get_tools_for_provider.return_value = None
+        state = MagicMock()
+        state.is_cancel_requested.return_value = False
+
+        captured_tools: list = []
+
+        async def fake_loop(provider, model_id, messages, tools, ag, *, result=None, **kw):
+            captured_tools.append(tools)
+            if result is not None:
+                result.final_content = "subtask out"
+            return
+            yield  # make this an async generator
+
+        class _FakeProvider:
+            async def stream(self, messages, model_id, **kw):
+                yield SimpleNamespace(content="final synthesis")
+
+        roster = [
+            SimpleNamespace(agent_id="spec-1", name="Spec", delegation_hint="analysis",
+                            description="", available_for_delegation=True, kind="agent"),
+        ]
+        pm = SimpleNamespace(list_profiles=lambda: roster)
+        ex = PlanExecutor(agent, state)
+        pr = PlanResult()
+
+        async def _drive():
+            async for _ in ex.execute_streaming(
+                plan, _FakeProvider(), "m", None, result=pr,
+            ):
+                pass
+
+        with patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_loop), \
+             patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            asyncio.run(_drive())
+
+        # The subtask ran (no AttributeError force-fail) …
+        self.assertFalse((plan.steps[0].result or "").startswith("[FAILED"))
+        # … and delegate_to was injected from the ad-hoc roster.
+        subtask_tools = captured_tools[0]
+        assert subtask_tools is not None
+        names = [t["function"]["name"] for t in subtask_tools]
+        self.assertIn("delegate_to", names)
+        self.assertNotIn("delegate_start", names)  # plan path stays blocking-only
+        deleg = next(t for t in subtask_tools if t["function"]["name"] == "delegate_to")
+        self.assertEqual(
+            deleg["function"]["parameters"]["properties"]["agent_id"]["enum"], ["spec-1"]
+        )
+
     def test_execute_streaming_resume_skips_completed_subtasks(self) -> None:
         """Resuming a partially-complete plan emits plan_resumed (not plan_start),
         re-runs only the not-yet-terminal subtasks, and reuses the existing
