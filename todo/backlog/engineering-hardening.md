@@ -174,3 +174,35 @@
       types `WORKS_FOR`/`RELATED_TO`/… were never written — zero live readers). Also fixed
       `get_entity_facts_and_relationships` to surface the semantic `r.type` property via
       `coalesce(r.type, type(r))` so the graph view stops labelling every edge "RELATES_TO".
+
+### Streaming engine — code-health report (2026-07-14, post-goldens review)
+
+> State assessment from the golden-corpus session (v0.21.222). **Verdict: mid-refactor healthy.**
+> The load-bearing seams are real, small, and now contract-tested — the event bus as the single
+> transport is the architecture's best decision (the goldens exploited it directly), the driver
+> now owns termination, steering/work-order folds are isolated pure-ish helpers, and
+> `streamReducer.ts` (195 lines, pure) + `dispatchSseEvent` (one exported switch) are exemplary.
+> The debt is concentrated in two fat generators — and the corpus's strategic value is precisely
+> that it converts them from "scary monolith" into "refactorable monolith". Ranked:
+
+- [ ] **`_run_tool_loop` is ~430 lines of one async generator** (`streaming/tool_loop.py`, 1510
+      total) — round loop + steer folds + work-order barrier + auto-continue + finalize nudge +
+      exhaustion synthesis as inline branches. At the edge of readability; the NEXT feature that
+      touches it should first extract the would-end branch (steers → length → barrier → nudge)
+      into helpers. Sibling `_execute_and_emit_tools` mixes SSE emission, persistence capture, and
+      exhibit derivation — same treatment.
+- [ ] **`views.py generate_sse` is the real monolith** (views.py 8.5k lines; the chat generator is
+      its biggest block, with recurring "factored out to stay under the type-checker's complexity
+      budget" comments admitting it). Streaming concerns keep accreting in views.py (executor
+      attach, persist orchestration, plan branch). Long-term: extract a `streaming/chat_turn.py`
+      family — a big, risky move to be done BEHIND the golden corpus, which now makes it safe.
+- [ ] **`useChatStream.ts` (800) / `ChatPanel.tsx` (1750)** — the hook mirrors state into 9 refs
+      (documented, but it's a hand-rolled sync layer) and now carries two parallel delegation id
+      maps; the append/update message-store semantics are re-implemented as a test double in the
+      goldens. Extract a tiny shared message-store module (one implementation, used by
+      `useTabMessages` and the tests) before the next handler lands.
+- [ ] **Small duplications**: `_sse()` exists in both `alloy/executor.py` and
+      `streaming/tool_loop.py`; `formatCost`/`formatDuration` are modal-local in
+      `AlloyRunTraceModal` + `WorkOrderCard` vs the shared `lib/format.ts` (unify on lib/format);
+      the second SSE endpoint's own `close` (views.py ~4400) is driver-deduped like the chat one
+      but the pattern deserves one shared terminator.
