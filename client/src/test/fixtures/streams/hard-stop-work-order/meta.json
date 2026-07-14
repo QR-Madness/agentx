@@ -1,0 +1,26 @@
+{
+  "scenario": "hard-stop-work-order",
+  "run_id": "22015883408c453a",
+  "conversation_id": "4a428fc7-6b12-4513-8b7d-51e4a8103a7f",
+  "status": "cancelled",
+  "message": "Use delegate_start to dispatch this to Mobius: gather the strongest arguments for versus against relying on intuition in expert judgment. Keep sketching your own outline here without waiting.",
+  "created_at": "2026-07-14T04:21:41.033664+00:00",
+  "captured_at": "2026-07-14T04:23:54.008115+00:00",
+  "event_count": 169,
+  "event_census": {
+    "chunk": 69,
+    "delegation_chunk": 56,
+    "status": 12,
+    "delegation_tool_call": 12,
+    "delegation_tool_result": 12,
+    "start": 1,
+    "memory_context": 1,
+    "tool_call": 1,
+    "tool_result": 1,
+    "delegation_start": 1,
+    "delegation_complete": 1,
+    "done": 1,
+    "close": 1
+  },
+  "turn_count": 6
+}

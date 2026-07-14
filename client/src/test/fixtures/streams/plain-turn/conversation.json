@@ -1,0 +1,33 @@
+[
+  {
+    "role": "user",
+    "content": "Explain how spaced repetition strengthens long-term memory, in three short paragraphs.",
+    "timestamp": "2026-07-14T04:12:26.454280+00:00",
+    "turn_index": 0
+  },
+  {
+    "role": "assistant",
+    "content": "Spaced repetition strengthens memory by exploiting the **spacing effect** \u2014 the finding that information reviewed at gradually increasing intervals is retained far better than the same material crammed into one session. Each review forces *active recall* rather than passive re-reading, which acts as a form of \"desirable difficulty\": the mental effort of pulling the answer back out strengthens the underlying memory trace. As the brain successfully retrieves the item across sessions, the interval before the next review is extended, keeping the difficulty just high enough to prevent the material from slipping below the threshold of recall.\n\nThe mechanism has a clear neural basis. Every successful retrieval briefly returns the memory to a **labile state**, after which it must be re-stored \u2014 a process called *reconsolidation* \u2014 and each cycle tends to make the trace more durable and less dependent on the hippocampus. Over time, repeated spaced retrievals help shift the memory toward more distributed cortical networks, the signature of long-term, stable knowledge. This is why a single exposure decays within days, but several well-spaced retrievals can lock something in for months or years.\n\nIn practice, the cumulative effect is dramatic: short, frequent sessions separated by expanding gaps outperform long, intensive study blocks of equal total time. Spaced repetition also produces more **flexible** memories \u2014 facts that can be applied in new contexts, not just recited on cue \u2014 because each retrieval slightly varies the cueing conditions. The result is learning that compounds: every review costs less effort than the last, and the material becomes increasingly resistant to forgetting.",
+    "timestamp": "2026-07-14T04:12:26.454347+00:00",
+    "turn_index": 1,
+    "metadata": {
+      "model": "minimax/minimax-m3",
+      "provider": "openrouter",
+      "latency_ms": 25439.746856689453,
+      "cost_source": "provider",
+      "context_used": 9981,
+      "had_thinking": true,
+      "tokens_input": 9477,
+      "cost_currency": "USD",
+      "cost_estimate": 0.00342054,
+      "tokens_output": 504,
+      "context_window": 1048576,
+      "pricing_snapshot": {
+        "cost_per_1k_input": 0.0003,
+        "cost_per_1k_output": 0.0012
+      },
+      "thinking_pattern": "native",
+      "tokens_reasoning": 254
+    }
+  }
+]

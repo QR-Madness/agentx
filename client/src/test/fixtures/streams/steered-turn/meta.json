@@ -1,0 +1,23 @@
+{
+  "scenario": "steered-turn",
+  "run_id": "f92499cde42d42af",
+  "conversation_id": "e61e327c-5310-4bec-8b15-43a03e99ab08",
+  "status": "done",
+  "message": "Write a balanced synthesis of how deliberate practice differs from plain repetition, grounded in current web sources covering both its strengths and its criticisms.",
+  "created_at": "2026-07-14T04:19:39.963958+00:00",
+  "captured_at": "2026-07-14T04:21:40.553250+00:00",
+  "event_count": 146,
+  "event_census": {
+    "chunk": 113,
+    "status": 11,
+    "tool_call": 6,
+    "tool_result": 6,
+    "exhibit": 3,
+    "steer": 2,
+    "close": 2,
+    "start": 1,
+    "memory_context": 1,
+    "done": 1
+  },
+  "turn_count": 15
+}

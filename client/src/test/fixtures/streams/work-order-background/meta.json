@@ -1,0 +1,25 @@
+{
+  "scenario": "work-order-background",
+  "run_id": "b70d8d76d7b04a99",
+  "conversation_id": "b974b40d-170d-4bcb-b75b-da0dd332d8c6",
+  "status": "done",
+  "message": "use any topic this is a debugging run",
+  "created_at": "2026-07-14T03:38:14.532648+00:00",
+  "captured_at": "2026-07-14T04:03:05.878165+00:00",
+  "event_count": 2086,
+  "event_census": {
+    "chunk": 1528,
+    "delegation_chunk": 531,
+    "status": 11,
+    "delegation_tool_call": 4,
+    "delegation_tool_result": 4,
+    "close": 2,
+    "start": 1,
+    "memory_context": 1,
+    "delegation_start": 1,
+    "delegation_complete": 1,
+    "work_order_report": 1,
+    "done": 1
+  },
+  "turn_count": 7
+}

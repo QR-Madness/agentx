@@ -1,0 +1,22 @@
+{
+  "scenario": "web-search-turn",
+  "run_id": "b03cfda7c0b94589",
+  "conversation_id": "c300b7e7-6370-4d76-906d-dcc1ff138e3e",
+  "status": "done",
+  "message": "Search the web for recent findings on prospective memory in cognitive science. Cite your sources.",
+  "created_at": "2026-07-14T04:15:11.511885+00:00",
+  "captured_at": "2026-07-14T04:16:26.408285+00:00",
+  "event_count": 68,
+  "event_census": {
+    "chunk": 45,
+    "status": 12,
+    "tool_call": 2,
+    "tool_result": 2,
+    "exhibit": 2,
+    "close": 2,
+    "start": 1,
+    "memory_context": 1,
+    "done": 1
+  },
+  "turn_count": 10
+}

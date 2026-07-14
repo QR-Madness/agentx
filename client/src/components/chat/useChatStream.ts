@@ -32,6 +32,7 @@ import {
   type ToolCallMessage,
   type WorkOrderReportMarkerMessage,
   createMessageId,
+  extractThinking,
   stripThinkingTags,
 } from '../../lib/messages';
 import { exhibitFromWire } from '../../lib/exhibits';
@@ -82,22 +83,6 @@ interface UseChatStreamApi {
   detach: () => void;
 }
 
-function extractThinking(content: string): string | null {
-  const patterns = [
-    /<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi,
-    /\[think(?:ing)?\]([\s\S]*?)\[\/think(?:ing)?\]/gi,
-    /<internal_monologue>([\s\S]*?)<\/internal_monologue>/gi,
-  ];
-  const thoughts: string[] = [];
-  for (const pattern of patterns) {
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(content)) !== null) {
-      if (match[1]?.trim()) thoughts.push(match[1].trim());
-    }
-  }
-  return thoughts.length > 0 ? thoughts.join('\n\n') : null;
-}
-
 export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   const [state, dispatch] = useReducer(streamReducer, initialStreamState);
   const { notify, notifyError } = useNotify();
@@ -140,8 +125,12 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     liveContentRef.current = '';
     dispatch({ type: 'live_content_flushed' });
     if (!pending.trim()) return;
+    // isStreaming=true: the buffer is partial stream state — an UNCLOSED
+    // think block must strip (and be kept via extractThinking above), not
+    // leak a raw <think> tag into the appended message (the "unrecognized
+    // tag" DOM leak; flushes fire mid-thought on delegation starts/steers).
     const thinking = extractThinking(pending);
-    const cleanContent = stripThinkingTags(pending);
+    const cleanContent = stripThinkingTags(pending, true);
     if (!thinking && !cleanContent) return;
     const msg: AssistantMessage = {
       id: createMessageId(),
@@ -666,7 +655,9 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         finalizeDanglingDelegations();
         dispatch({ type: 'stream_ended' });
 
-        const cleanContent = stripThinkingTags(finalContent);
+        // isStreaming=true: a run truncated mid-thought (max_tokens inside an
+        // unclosed think block) must not leak the raw tag into the final bubble.
+        const cleanContent = stripThinkingTags(finalContent, true);
         if (cleanContent) {
           const msg: AssistantMessage = {
             id: createMessageId(),
