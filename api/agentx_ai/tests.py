@@ -6559,6 +6559,103 @@ class ConversationStateTest(MockRedisTestBase):
         self.assertIn("narrative", info.input_schema["properties"]["slot"]["enum"])
 
 
+class SseContractCorpusTest(TestCase):
+    """SSE contract over the golden corpus: every event a recorded run put on
+    the bus must be a known type carrying its client-load-bearing fields.
+
+    The fixtures under client/src/test/fixtures/streams are REAL recorded runs
+    (scripts/capture_stream_fixture.py). If a backend change renames an event,
+    drops a field, or introduces a new event type, re-recording a fixture (or
+    just adding one) fails here until SSE_EVENT_CONTRACT is updated — making
+    stream drift a deliberate act instead of a client-side surprise.
+    """
+
+    # event type → fields the client actually depends on (extras are fine).
+    SSE_EVENT_CONTRACT: dict[str, set[str]] = {
+        "run_started": {"run_id"},
+        "run_missing": {"run_id"},
+        "start": {"session_id", "model"},
+        "memory_context": {"facts", "entities"},
+        "chunk": {"content"},
+        "status": {"phase", "label"},
+        "info": {"type"},
+        "steer": {"id", "message"},
+        "tool_call": {"tool", "tool_call_id", "arguments"},
+        "tool_result": {"tool", "tool_call_id", "content", "success"},
+        "exhibit": {"id", "elements", "schema_version"},
+        "workspace_attached": {"workspace_id"},
+        "delegation_start": {
+            "delegation_id", "target_agent_id", "tool_call_id", "task", "depth", "mode",
+        },
+        "delegation_chunk": {"delegation_id", "content"},
+        "delegation_tool_call": {"delegation_id", "tool", "tool_call_id"},
+        "delegation_tool_result": {"delegation_id", "tool", "tool_call_id", "success"},
+        "delegation_complete": {
+            "delegation_id", "target_agent_id", "tool_call_id", "status", "mode",
+        },
+        "work_order_report": {
+            "tool_call_id", "delegation_id", "target_agent_id", "status", "round", "phase",
+        },
+        "plan_start": {"plan_id", "task", "complexity", "subtask_count"},
+        "plan_resumed": {"plan_id"},
+        "subtask_start": {"plan_id", "subtask_id", "description", "type", "progress"},
+        "subtask_complete": {"plan_id", "subtask_id", "result_preview", "progress"},
+        "subtask_failed": {"plan_id", "subtask_id", "error", "progress"},
+        "plan_complete": {"plan_id", "subtask_count", "completed_count"},
+        "plan_cancelled": {"plan_id"},
+        "done": {"session_id", "model", "finish_reason", "tokens_input", "tokens_output"},
+        "error": {"error"},
+        "close": set(),
+    }
+
+    @staticmethod
+    def _fixture_events():
+        from pathlib import Path
+
+        streams = Path(__file__).resolve().parents[2] / "client/src/test/fixtures/streams"
+        for events_file in sorted(streams.glob("*/events.jsonl")):
+            scenario = events_file.parent.name
+            for n, line in enumerate(events_file.read_text().splitlines(), 1):
+                if not line.strip():
+                    continue
+                parsed = json.loads(line)
+                if "_state" in parsed:
+                    continue
+                sse = parsed["sse"]
+                yield scenario, n, sse
+
+    def test_corpus_exists(self):
+        events = list(self._fixture_events())
+        self.assertGreater(len(events), 1000, "golden corpus missing or unexpectedly small")
+
+    def test_every_recorded_event_honors_the_contract(self):
+        violations: list[str] = []
+        for scenario, n, sse in self._fixture_events():
+            if not sse.startswith("event: "):
+                violations.append(f"{scenario}:{n}: not an SSE event frame")
+                continue
+            etype = sse.split("\n", 1)[0].removeprefix("event: ").strip()
+            required = self.SSE_EVENT_CONTRACT.get(etype)
+            if required is None:
+                violations.append(f"{scenario}:{n}: unknown event type {etype!r}")
+                continue
+            data_line = next(
+                (ln for ln in sse.split("\n") if ln.startswith("data: ")), None
+            )
+            if data_line is None:
+                violations.append(f"{scenario}:{n}: {etype} has no data line")
+                continue
+            try:
+                data = json.loads(data_line.removeprefix("data: "))
+            except json.JSONDecodeError as e:
+                violations.append(f"{scenario}:{n}: {etype} unparseable data ({e})")
+                continue
+            missing = required - set(data)
+            if missing:
+                violations.append(f"{scenario}:{n}: {etype} missing {sorted(missing)}")
+        self.assertEqual(violations, [], "\n".join(violations[:20]))
+
+
 class ChatRunCloseSemanticsTest(TestCase):
     """The detached-run driver owns stream termination: exactly ONE close event
     per run (the generator's own close, meant for direct-HTTP consumers, is
