@@ -325,7 +325,52 @@ export function stripThinkingTags(content: string, isStreaming = false): string 
       .replace(/\[thinking\][\s\S]*$/gi, '')
       .replace(/\[think\][\s\S]*$/gi, '')
       .replace(/<internal_monologue>[\s\S]*$/gi, '');
+    result = trimPartialThinkOpener(result);
   }
 
   return result.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/**
+ * Extract thinking content from every recognized think block — including an
+ * UNCLOSED trailing block (the stream was flushed or truncated mid-thought:
+ * delegation-start flushes, steers, max_tokens cuts) so the caller keeps the
+ * thought while `stripThinkingTags(…, true)` removes it from the visible
+ * content instead of leaking a raw tag into the transcript.
+ */
+export function extractThinking(content: string): string | null {
+  const patterns = [
+    /<think(?:ing)?>([\s\S]*?)<\/think(?:ing)?>/gi,
+    /\[think(?:ing)?\]([\s\S]*?)\[\/think(?:ing)?\]/gi,
+    /<internal_monologue>([\s\S]*?)<\/internal_monologue>/gi,
+  ];
+  const thoughts: string[] = [];
+  let lastClosedEnd = 0;
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(content)) !== null) {
+      if (match[1]?.trim()) thoughts.push(match[1].trim());
+      lastClosedEnd = Math.max(lastClosedEnd, match.index + match[0].length);
+    }
+  }
+  const openTail = /(?:<think(?:ing)?>|\[think(?:ing)?\]|<internal_monologue>)([\s\S]*)$/i
+    .exec(content.slice(lastClosedEnd));
+  if (openTail?.[1]?.trim()) thoughts.push(openTail[1].trim());
+  return thoughts.length > 0 ? thoughts.join('\n\n') : null;
+}
+
+/** Openers whose PARTIAL prefix at a streaming buffer's tail must not leak
+ * into the DOM (a tag split across SSE chunk boundaries — e.g. a buffer
+ * ending in "<thi" — survives the full-tag regexes above and flashes as
+ * literal text, or as an unrecognized element once the ">" arrives). */
+const THINK_OPENERS = ['<thinking>', '<think>', '[thinking]', '[think]', '<internal_monologue>'];
+
+function trimPartialThinkOpener(content: string): string {
+  const start = Math.max(content.lastIndexOf('<'), content.lastIndexOf('['));
+  if (start === -1) return content;
+  const tail = content.slice(start).toLowerCase();
+  if (tail.includes('>') || tail.includes(']')) return content; // a complete tag — not a fragment
+  return THINK_OPENERS.some(op => op.startsWith(tail))
+    ? content.slice(0, start)
+    : content;
 }
