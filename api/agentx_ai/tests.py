@@ -6559,6 +6559,68 @@ class ConversationStateTest(MockRedisTestBase):
         self.assertIn("narrative", info.input_schema["properties"]["slot"]["enum"])
 
 
+class ChatRunCloseSemanticsTest(TestCase):
+    """The detached-run driver owns stream termination: exactly ONE close event
+    per run (the generator's own close, meant for direct-HTTP consumers, is
+    not copied to the bus), and on a crash the error event must land BEFORE
+    the close — the tail stops at the first close, so the old order (close,
+    then error) made failures invisible to every client."""
+
+    class _FakeStore:
+        def __init__(self):
+            self.events: list[str] = []
+            self.marks: list[str] = []
+
+        def append_event(self, run_id, sse):
+            self.events.append(sse)
+
+        def mark(self, run_id, status):
+            self.marks.append(status)
+
+        def set_session(self, run_id, sid):
+            pass
+
+        def touch_alive(self, run_id):
+            pass
+
+        def is_cancel_requested(self, run_id):
+            return False
+
+    def _drive(self, gen_factory):
+        from agentx_ai.streaming import chat_run
+        fake = self._FakeStore()
+        with patch.object(chat_run, "store", fake):
+            chat_run._drive_run("run-test", gen_factory)
+        return fake
+
+    def test_completed_run_emits_exactly_one_close(self):
+        from agentx_ai.streaming.chat_run import CLOSE_EVENT
+
+        async def gen():
+            yield "event: chunk\ndata: {}\n\n"
+            yield 'event: done\ndata: {"x": 1}\n\n'
+            yield CLOSE_EVENT  # the generator's own close (direct-HTTP consumers)
+
+        fake = self._drive(gen)
+        closes = [e for e in fake.events if e == CLOSE_EVENT]
+        self.assertEqual(len(closes), 1)
+        self.assertEqual(fake.events[-1], CLOSE_EVENT)
+        self.assertEqual(fake.marks, ["done"])
+
+    def test_failed_run_orders_error_before_the_only_close(self):
+        from agentx_ai.streaming.chat_run import CLOSE_EVENT
+
+        async def gen():
+            yield "event: chunk\ndata: {}\n\n"
+            raise RuntimeError("boom")
+
+        fake = self._drive(gen)
+        names = [e.split("\n", 1)[0] for e in fake.events]
+        self.assertEqual(names[-2:], ["event: error", "event: close"])
+        self.assertEqual(len([e for e in fake.events if e == CLOSE_EVENT]), 1)
+        self.assertEqual(fake.marks, ["failed"])
+
+
 @override_settings(AGENTX_AUTH_ENABLED=False)
 class ChatRunLifecycleTest(TestCase):
     """Orphaned detached runs (driver process died mid-run) must settle instead

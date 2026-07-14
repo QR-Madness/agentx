@@ -341,9 +341,16 @@ def _drive_run(run_id: str, gen_factory: GenFactory) -> None:
         token = current_run_id.set(run_id)
         gen = gen_factory()
         cancelled = False
+        failed = False
         session_seen = False
         try:
             async for sse_event in gen:
+                # This driver's finally owns stream termination — a `close` the
+                # generator yields for its direct-HTTP consumers would land as a
+                # duplicate on the bus (completed runs used to carry two), so it
+                # is not copied.
+                if sse_event == CLOSE_EVENT:
+                    continue
                 store.append_event(run_id, sse_event)
                 # A new chat only learns its session_id mid-run (it rides the
                 # `done` event). Backfill it once so recovery surfaces can reopen
@@ -357,10 +364,17 @@ def _drive_run(run_id: str, gen_factory: GenFactory) -> None:
                     cancelled = True
                     await gen.aclose()
                     break
+        except BaseException:
+            # Let the outer handler terminate the stream: appending CLOSE here
+            # would bury its `error` event behind the tail's first-close stop
+            # (and briefly mis-mark the run "done" before "failed").
+            failed = True
+            raise
         finally:
-            # Always terminate the tail and settle status, even on aclose/raise.
-            store.append_event(run_id, CLOSE_EVENT)
-            store.mark(run_id, "cancelled" if cancelled else "done")
+            if not failed:
+                # Terminate the tail and settle status (normal end or cancel).
+                store.append_event(run_id, CLOSE_EVENT)
+                store.mark(run_id, "cancelled" if cancelled else "done")
             current_run_id.reset(token)
             clear_run_throttle(run_id)
 
