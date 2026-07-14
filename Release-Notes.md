@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.222 -->
+<!-- release-version: 0.21.223 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -32,6 +32,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   report delivered) with a real metrics strip — duration, tokens, and honest costs ("Pricing
   unavailable" instead of silently missing); folded reports show as hairline markers in the
   transcript. The Trace chip pulses while work orders run.
+
+- **Agent-ready docs site**: the site now advertises itself to AI agents — RFC 8288 `Link` headers,
+  an RFC 9727 API catalog at `/.well-known/api-catalog`, per-page Markdown twins (`<page>.md`) +
+  `/llms.txt`, robots.txt content signals, and a WebMCP `search_docs` tool.
 
 ### Fixes
 

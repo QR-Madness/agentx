@@ -21,6 +21,13 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "docs-site",
       "port": 4321
+    },
+    {
+      "name": "docs-preview",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "preview", "--", "--port", "4331"],
+      "cwd": "docs-site",
+      "port": 4331
     }
   ]
 }

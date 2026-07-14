@@ -24,6 +24,14 @@ const isHome = currentSlug === '';
 ---
 
 <BaseLayout title={title} description={description}>
+  {/* Markdown-for-agents: advertise the raw-Markdown twin of this page. */}
+  <link
+    slot="head"
+    rel="alternate"
+    type="text/markdown"
+    href={`${site.docsBasePath}/${currentSlug || 'index'}.md`}
+  />
+
   {/* Mobile-only top bar */}
   <div class="ax-docs-topbar">
     <a href="/" class="topbar-brand">

@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import { site } from '../config/site';
+import WebMCP from '../components/WebMCP.astro';
 
 interface Props {
   title?: string;
@@ -76,8 +77,12 @@ const jsonLd = {
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600&display=swap"
     />
+
+    {/* Per-page head extras (e.g. markdown-for-agents alternate links). */}
+    <slot name="head" />
   </head>
   <body class="min-h-screen">
     <slot />
+    <WebMCP />
   </body>
 </html>

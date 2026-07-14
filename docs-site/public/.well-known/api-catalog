@@ -1,0 +1,26 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://agentx.thejpnet.net/docs/api/endpoints",
+      "service-desc": [
+        {
+          "href": "https://agentx.thejpnet.net/openapi.yaml",
+          "type": "application/yaml",
+          "title": "AgentX REST API — OpenAPI specification"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://agentx.thejpnet.net/docs/api/endpoints",
+          "type": "text/html",
+          "title": "AgentX API — endpoint reference"
+        },
+        {
+          "href": "https://agentx.thejpnet.net/docs/api-explorer",
+          "type": "text/html",
+          "title": "AgentX API — interactive explorer"
+        }
+      ]
+    }
+  ]
+}
