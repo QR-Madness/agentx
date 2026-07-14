@@ -45,6 +45,8 @@ class AlloyExecutor:
         delegator_agent_id: str | None = None,
         max_delegation_depth: int = 3,
         max_parallel_delegations: int = 3,
+        delegation_timeout_seconds: int = 300,
+        non_blocking_enabled: bool = True,
     ):
         """Owns one delegating agent's in-flight delegations.
 
@@ -60,6 +62,10 @@ class AlloyExecutor:
         self.session = session
         self.max_delegation_depth = max_delegation_depth
         self.max_parallel_delegations = max_parallel_delegations
+        # Per-delegation wall-clock cap (enforced by the tool loop's drivers)
+        # and the gate for offering `delegate_start` (background work orders).
+        self.delegation_timeout_seconds = delegation_timeout_seconds
+        self.non_blocking_enabled = non_blocking_enabled
         # `history` is appended from concurrent delegate() branches (fan-out);
         # guard slot allocation + append with a lock so Turn indices stay unique.
         self.history: list[dict] = []  # {target_agent_id, status, result_preview}
@@ -94,6 +100,9 @@ class AlloyExecutor:
         *,
         tool_call_id: str,
         depth: int = 0,
+        mode: str = "await",
+        parent_delegation_id: str | None = None,
+        delegation_id: str | None = None,
     ) -> AsyncGenerator[tuple[str, str]]:
         """
         Run one specialist for one task.
@@ -105,28 +114,40 @@ class AlloyExecutor:
         ``depth`` is the caller's delegation depth (0 at the top level). It is a
         parameter rather than instance state so concurrent fan-out branches do
         not race a shared counter; this delegation runs at ``depth + 1``.
+
+        ``mode`` is ``"await"`` (blocking ``delegate_to``) or ``"background"``
+        (``delegate_start`` work order). ``parent_delegation_id`` links a nested
+        delegation to its parent (null at the top level — reserved for the
+        delegation tree). ``delegation_id`` may be pre-minted by the caller so a
+        dispatch receipt can cite it before this generator first yields.
         """
-        # ------- validate target -------
-        err = self._validate_target(target_agent_id)
-        if err is not None:
-            yield _sse("delegation_complete", {
+        # A caller-minted id lets the tool loop cite the work order in its
+        # dispatch receipt before this generator first yields.
+        delegation_id = delegation_id or uuid4().hex[:8]
+
+        def _reject_payload(err: str) -> dict:
+            return {
+                "delegation_id": delegation_id,
                 "target_agent_id": target_agent_id,
                 "tool_call_id": tool_call_id,
                 "status": "failed",
                 "error": err,
                 "result_preview": "",
-            }), f"[delegation rejected: {err}]"
+                "mode": mode,
+                "parent_delegation_id": parent_delegation_id,
+            }
+
+        # ------- validate target -------
+        err = self._validate_target(target_agent_id)
+        if err is not None:
+            yield _sse("delegation_complete", _reject_payload(err)), \
+                f"[delegation rejected: {err}]"
             return
 
         if depth >= self.max_delegation_depth:
             err = f"max delegation depth ({self.max_delegation_depth}) reached"
-            yield _sse("delegation_complete", {
-                "target_agent_id": target_agent_id,
-                "tool_call_id": tool_call_id,
-                "status": "failed",
-                "error": err,
-                "result_preview": "",
-            }), f"[delegation rejected: {err}]"
+            yield _sse("delegation_complete", _reject_payload(err)), \
+                f"[delegation rejected: {err}]"
             return
 
         # ------- resolve specialist profile -------
@@ -137,17 +158,11 @@ class AlloyExecutor:
         )
         if profile is None:
             err = f"no profile found for agent_id {target_agent_id!r}"
-            yield _sse("delegation_complete", {
-                "target_agent_id": target_agent_id,
-                "tool_call_id": tool_call_id,
-                "status": "failed",
-                "error": err,
-                "result_preview": "",
-            }), f"[delegation rejected: {err}]"
+            yield _sse("delegation_complete", _reject_payload(err)), \
+                f"[delegation rejected: {err}]"
             return
 
         # ------- announce -------
-        delegation_id = uuid4().hex[:8]
         yield _sse("delegation_start", {
             "delegation_id": delegation_id,
             "target_agent_id": target_agent_id,
@@ -156,6 +171,8 @@ class AlloyExecutor:
             "depth": depth + 1,
             "supervisor_agent_id": self.delegator_agent_id,
             "shared_channel": self.channel,
+            "mode": mode,
+            "parent_delegation_id": parent_delegation_id,
         }), ""
 
         # ------- create child goal (best effort) -------
@@ -465,6 +482,8 @@ class AlloyExecutor:
             "cost_estimate": cost["cost_total"] if cost else None,
             "cost_currency": cost["currency"] if cost else None,
             "pricing_snapshot": cost["pricing_snapshot"] if cost else None,
+            "mode": mode,
+            "parent_delegation_id": parent_delegation_id,
         }), accumulated
 
     # ------------------------------------------------------------------

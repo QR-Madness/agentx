@@ -275,6 +275,8 @@ DEFAULT_CONFIG = {
         # delegate_to calls in one turn (fan-out). Bounds combinatorial blow-up.
         "max_parallel_delegations": 3,
         "specialist_inherits_supervisor_tools": True,
+        # Per-delegation wall-clock cap, enforced in the streaming tool loop for
+        # both blocking (`delegate_to`) and background (`delegate_start`) runs.
         "delegation_timeout_seconds": 300,
         # Phase 16.4: when true, agents in a normal (non-workflow) conversation
         # get a `delegate_to` tool + roster prompt targeting opted-in profiles.
@@ -282,6 +284,11 @@ DEFAULT_CONFIG = {
         # per profile (`available_for_delegation` defaults off) — nothing
         # delegates until the user puts profiles on the roster.
         "allow_adhoc_delegation": True,
+        # Non-blocking work orders: offers `delegate_start` alongside
+        # `delegate_to` — dispatch returns a receipt immediately and the report
+        # folds in automatically later in the same turn. Default ON
+        # (ship-experimental-on).
+        "non_blocking_delegations": True,
     },
     "search": {
         "backend": "tavily",          # "tavily" | "brave"
