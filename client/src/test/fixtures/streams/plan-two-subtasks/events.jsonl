@@ -1,0 +1,1731 @@
+{"_state": {"user_id": "default", "created_at": "2026-07-14T03:36:54.938451+00:00", "status": "done", "session_id": "b974b40d-170d-4bcb-b75b-da0dd332d8c6", "updated_at": "2026-07-14T03:37:51.341476+00:00", "alive_at": "2026-07-14T03:37:34.945369+00:00", "message": "Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself."}}
+{"id": "1784000214993-0", "sse": "event: status\ndata: {\"phase\": \"recalling\", \"label\": \"Recalling memory\\u2026\"}\n\n"}
+{"id": "1784000224869-0", "sse": "event: status\ndata: {\"phase\": \"composing\", \"label\": \"Composing context\\u2026\"}\n\n"}
+{"id": "1784000225100-0", "sse": "event: start\ndata: {\"task_id\": \"dc79bc06\", \"session_id\": \"b974b40d-170d-4bcb-b75b-da0dd332d8c6\", \"model\": \"moonshotai/kimi-k2.6\", \"model_display_name\": \"moonshotai/kimi-k2.6\", \"profile_name\": null, \"agent_name\": \"Kim\", \"agent_id\": \"lucky-rising-thistle\", \"context_window\": 262144, \"max_output_tokens\": 262144}\n\n"}
+{"id": "1784000225110-0", "sse": "event: memory_context\ndata: {\"facts\": [{\"claim\": \"Kim delegated focused web research on documentation debt to the Researcher agent while preparing to organize findings into a project document\", \"confidence\": 0.9, \"source\": null}, {\"claim\": \"Kim produced the research content directly, not via a delegated Researcher agent\", \"confidence\": 0.9, \"source\": null}, {\"claim\": \"Kim proposed four concrete next steps: save research as living document, outline article structure, draft a section, or create a visual diagram\", \"confidence\": 0.9, \"source\": null}, {\"claim\": \"User asked AgentX to search for the tallest building in the world and the deepest ocean trench\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"User wants Kim to save research to the project\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"User wants AgentX to provide a cool fact\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"Kim generated the research summary directly in the response\", \"confidence\": 0.9, \"source\": null}, {\"claim\": \"User asked AgentX to tell them something they didn't know\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"User reacted with surprise to something AgentX said\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"User addressed AgentX as Terra\", \"confidence\": 0.95, \"source\": null}], \"entities\": [{\"name\": \"Canada\", \"type\": \"Location\"}, {\"name\": \"United States\", \"type\": \"Location\"}, {\"name\": \"Sol\", \"type\": \"Person\"}, {\"name\": \"Project document for research organization\", \"type\": \"Approach\"}, {\"name\": \"Documentation as retention tool\", \"type\": \"Insight\"}, {\"name\": \"Documentation compounding curve\", \"type\": \"Pattern\"}, {\"name\": \"Just enough documentation framework\", \"type\": \"Concept\"}, {\"name\": \"PR ritual workflow\", \"type\": \"Approach\"}], \"relevant_turns\": [{\"timestamp\": \"2026-07-14T03:30:53.971967000+00:00\", \"role\": \"user\", \"content\": \"Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself.\"}, {\"timestamp\": \"2026-07-10T14:35:37.540508000+00:00\", \"role\": \"user\", \"content\": \"What can you do?\"}, {\"timestamp\": \"2026-07-10T17:23:35.706302000+00:00\", \"role\": \"user\", \"content\": \"yeah i guess that makes sense. tell me something else\"}], \"query\": \"Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself.\"}\n\n"}
+{"id": "1784000225113-0", "sse": "event: status\ndata: {\"phase\": \"composing\", \"label\": \"Planning approach\"}\n\n"}
+{"id": "1784000231382-0", "sse": "event: plan_start\ndata: {\"plan_id\": \"9676f976\", \"task\": \"Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself.\", \"subtask_count\": 2, \"complexity\": \"complex\"}\n\n"}
+{"id": "1784000231386-0", "sse": "event: subtask_start\ndata: {\"plan_id\": \"9676f976\", \"subtask_id\": 0, \"description\": \"Start an asynchronous research task via delegate_start to Mobius\", \"type\": \"tool_use\", \"progress\": 0.0}\n\n"}
+{"id": "1784000231400-0", "sse": "event: status\ndata: {\"phase\": \"thinking\", \"label\": \"Thinking\\u2026\"}\n\n"}
+{"id": "1784000232670-0", "sse": "event: chunk\ndata: {\"content\": \"<think> The\"}\n\n"}
+{"id": "1784000232675-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000232679-0", "sse": "event: chunk\ndata: {\"content\": \" wants\"}\n\n"}
+{"id": "1784000232685-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000232690-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000232695-0", "sse": "event: chunk\ndata: {\"content\": \" start\"}\n\n"}
+{"id": "1784000232698-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000232702-0", "sse": "event: chunk\ndata: {\"content\": \" asynchronous\"}\n\n"}
+{"id": "1784000232718-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000232734-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000232753-0", "sse": "event: chunk\ndata: {\"content\": \" via\"}\n\n"}
+{"id": "1784000232768-0", "sse": "event: chunk\ndata: {\"content\": \" `\"}\n\n"}
+{"id": "1784000232786-0", "sse": "event: chunk\ndata: {\"content\": \"delegate\"}\n\n"}
+{"id": "1784000232808-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000232824-0", "sse": "event: chunk\ndata: {\"content\": \"`\"}\n\n"}
+{"id": "1784000232839-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000232854-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000232874-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000232926-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000233278-0", "sse": "event: chunk\ndata: {\"content\": \" However\"}\n\n"}
+{"id": "1784000233284-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000233289-0", "sse": "event: chunk\ndata: {\"content\": \" they\"}\n\n"}
+{"id": "1784000233295-0", "sse": "event: chunk\ndata: {\"content\": \" haven't\"}\n\n"}
+{"id": "1784000233300-0", "sse": "event: chunk\ndata: {\"content\": \" specified\"}\n\n"}
+{"id": "1784000233305-0", "sse": "event: chunk\ndata: {\"content\": \" what\"}\n\n"}
+{"id": "1784000233310-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000233315-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000233321-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000233327-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000233332-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000233338-0", "sse": "event: chunk\ndata: {\"content\": \" about\"}\n\n"}
+{"id": "1784000233344-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000233349-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000233352-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000233356-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000233360-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000233362-0", "sse": "event: chunk\ndata: {\"content\": \" them\"}\n\n"}
+{"id": "1784000233365-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000233367-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000233371-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000233376-0", "sse": "event: chunk\ndata: {\"content\": \" details\"}\n\n"}
+{"id": "1784000233379-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000233382-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000233385-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000233390-0", "sse": "event: chunk\ndata: {\"content\": \" could\"}\n\n"}
+{"id": "1784000233394-0", "sse": "event: chunk\ndata: {\"content\": \" proceed\"}\n\n"}
+{"id": "1784000233398-0", "sse": "event: chunk\ndata: {\"content\": \" with\"}\n\n"}
+{"id": "1784000233584-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000233591-0", "sse": "event: chunk\ndata: {\"content\": \" generic\"}\n\n"}
+{"id": "1784000233594-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000233596-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000233601-0", "sse": "event: chunk\ndata: {\"content\": \" if\"}\n\n"}
+{"id": "1784000233603-0", "sse": "event: chunk\ndata: {\"content\": \" there's\"}\n\n"}
+{"id": "1784000233608-0", "sse": "event: chunk\ndata: {\"content\": \" context\"}\n\n"}
+{"id": "1784000233626-0", "sse": "event: chunk\ndata: {\"content\": \" from\"}\n\n"}
+{"id": "1784000233633-0", "sse": "event: chunk\ndata: {\"content\": \" previous\"}\n\n"}
+{"id": "1784000233656-0", "sse": "event: chunk\ndata: {\"content\": \" steps\"}\n\n"}
+{"id": "1784000233674-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000233690-0", "sse": "event: chunk\ndata: {\"content\": \"Looking\"}\n\n"}
+{"id": "1784000233707-0", "sse": "event: chunk\ndata: {\"content\": \" at\"}\n\n"}
+{"id": "1784000233722-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000233745-0", "sse": "event: chunk\ndata: {\"content\": \" overall\"}\n\n"}
+{"id": "1784000233761-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000233786-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000233800-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000233815-0", "sse": "event: chunk\ndata: {\"content\": \"Use\"}\n\n"}
+{"id": "1784000233826-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000233845-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000233859-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000233890-0", "sse": "event: chunk\ndata: {\"content\": \" send\"}\n\n"}
+{"id": "1784000233909-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000233913-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000234153-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000234175-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000234194-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000234210-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000234229-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000234249-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000234267-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000234298-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000234308-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000234325-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000234349-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000234360-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000234377-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000234406-0", "sse": "event: chunk\ndata: {\"content\": \" yourself\"}\n\n"}
+{"id": "1784000234418-0", "sse": "event: chunk\ndata: {\"content\": \".\\\"\\n\\n\"}\n\n"}
+{"id": "1784000234440-0", "sse": "event: chunk\ndata: {\"content\": \"This\"}\n\n"}
+{"id": "1784000234462-0", "sse": "event: chunk\ndata: {\"content\": \" seems\"}\n\n"}
+{"id": "1784000234472-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000234489-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000234510-0", "sse": "event: chunk\ndata: {\"content\": \" part\"}\n\n"}
+{"id": "1784000234528-0", "sse": "event: chunk\ndata: {\"content\": \" of\"}\n\n"}
+{"id": "1784000234549-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000234567-0", "sse": "event: chunk\ndata: {\"content\": \" multi\"}\n\n"}
+{"id": "1784000234588-0", "sse": "event: chunk\ndata: {\"content\": \"-step\"}\n\n"}
+{"id": "1784000234603-0", "sse": "event: chunk\ndata: {\"content\": \" plan\"}\n\n"}
+{"id": "1784000234628-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000234640-0", "sse": "event: chunk\ndata: {\"content\": \" but\"}\n\n"}
+{"id": "1784000234658-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000234678-0", "sse": "event: chunk\ndata: {\"content\": \" don't\"}\n\n"}
+{"id": "1784000234697-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000234714-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000234732-0", "sse": "event: chunk\ndata: {\"content\": \" specific\"}\n\n"}
+{"id": "1784000235009-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000235011-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000235014-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000235016-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000235019-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000235022-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000235024-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000235040-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000235042-0", "sse": "event: chunk\ndata: {\"content\": \" what\"}\n\n"}
+{"id": "1784000235045-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000235053-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000235058-0", "sse": "event: chunk\ndata: {\"content\": \" they'd\"}\n\n"}
+{"id": "1784000235074-0", "sse": "event: chunk\ndata: {\"content\": \" like\"}\n\n"}
+{"id": "1784000235095-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000235112-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000235130-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000235149-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000235166-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000235184-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000235203-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000235221-0", "sse": "event: chunk\ndata: {\"content\": \"Wait\"}\n\n"}
+{"id": "1784000235239-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000235258-0", "sse": "event: chunk\ndata: {\"content\": \" let\"}\n\n"}
+{"id": "1784000235278-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000235530-0", "sse": "event: chunk\ndata: {\"content\": \" check\"}\n\n"}
+{"id": "1784000235536-0", "sse": "event: chunk\ndata: {\"content\": \" if\"}\n\n"}
+{"id": "1784000235541-0", "sse": "event: chunk\ndata: {\"content\": \" there's\"}\n\n"}
+{"id": "1784000235548-0", "sse": "event: chunk\ndata: {\"content\": \" any\"}\n\n"}
+{"id": "1784000235553-0", "sse": "event: chunk\ndata: {\"content\": \" context\"}\n\n"}
+{"id": "1784000235559-0", "sse": "event: chunk\ndata: {\"content\": \" I'm\"}\n\n"}
+{"id": "1784000235566-0", "sse": "event: chunk\ndata: {\"content\": \" missing\"}\n\n"}
+{"id": "1784000235574-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000235580-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1784000235584-0", "sse": "event: chunk\ndata: {\"content\": \" system\"}\n\n"}
+{"id": "1784000235588-0", "sse": "event: chunk\ndata: {\"content\": \" prompt\"}\n\n"}
+{"id": "1784000235593-0", "sse": "event: chunk\ndata: {\"content\": \" says\"}\n\n"}
+{"id": "1784000235595-0", "sse": "event: chunk\ndata: {\"content\": \" I'm\"}\n\n"}
+{"id": "1784000235597-0", "sse": "event: chunk\ndata: {\"content\": \" executing\"}\n\n"}
+{"id": "1784000235600-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000235603-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000235606-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1784000235609-0", "sse": "event: chunk\ndata: {\"content\": \" of\"}\n\n"}
+{"id": "1784000235623-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000235640-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000235659-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1784000235676-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000235694-0", "sse": "event: chunk\ndata: {\"content\": \" multi\"}\n\n"}
+{"id": "1784000235714-0", "sse": "event: chunk\ndata: {\"content\": \"-step\"}\n\n"}
+{"id": "1784000235732-0", "sse": "event: chunk\ndata: {\"content\": \" plan\"}\n\n"}
+{"id": "1784000235751-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000235769-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1784000235790-0", "sse": "event: chunk\ndata: {\"content\": \" overall\"}\n\n"}
+{"id": "1784000235805-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000235824-0", "sse": "event: chunk\ndata: {\"content\": \" mentions\"}\n\n"}
+{"id": "1784000235841-0", "sse": "event: chunk\ndata: {\"content\": \" using\"}\n\n"}
+{"id": "1784000235859-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000235876-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000235895-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000235912-0", "sse": "event: chunk\ndata: {\"content\": \" send\"}\n\n"}
+{"id": "1784000235930-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000235948-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000235967-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000235982-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000236002-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000236020-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000236039-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000236066-0", "sse": "event: chunk\ndata: {\"content\": \" drafting\"}\n\n"}
+{"id": "1784000236072-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000236090-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000236109-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000236128-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000236147-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000236165-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000236183-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1784000236200-0", "sse": "event: chunk\ndata: {\"content\": \" there's\"}\n\n"}
+{"id": "1784000236220-0", "sse": "event: chunk\ndata: {\"content\": \" no\"}\n\n"}
+{"id": "1784000236234-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000236255-0", "sse": "event: chunk\ndata: {\"content\": \" specified\"}\n\n"}
+{"id": "1784000236269-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000236288-0", "sse": "event: chunk\ndata: {\"content\": \"I\"}\n\n"}
+{"id": "1784000236307-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000236325-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000236344-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000236358-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000236380-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000236395-0", "sse": "event: chunk\ndata: {\"content\": \" clarification\"}\n\n"}
+{"id": "1784000236413-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1784000236432-0", "sse": "event: chunk\ndata: {\"content\": \" what\"}\n\n"}
+{"id": "1784000236449-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000236679-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000236685-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000236691-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000236697-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000236703-0", "sse": "event: chunk\ndata: {\"content\": \" However\"}\n\n"}
+{"id": "1784000236708-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000236713-0", "sse": "event: chunk\ndata: {\"content\": \" since\"}\n\n"}
+{"id": "1784000236716-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1784000236720-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000236726-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000236729-0", "sse": "event: chunk\ndata: {\"content\": \" structured\"}\n\n"}
+{"id": "1784000236732-0", "sse": "event: chunk\ndata: {\"content\": \" multi\"}\n\n"}
+{"id": "1784000236735-0", "sse": "event: chunk\ndata: {\"content\": \"-step\"}\n\n"}
+{"id": "1784000236737-0", "sse": "event: chunk\ndata: {\"content\": \" plan\"}\n\n"}
+{"id": "1784000236743-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000236746-0", "sse": "event: chunk\ndata: {\"content\": \" maybe\"}\n\n"}
+{"id": "1784000236760-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000236770-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000236788-0", "sse": "event: chunk\ndata: {\"content\": \" just\"}\n\n"}
+{"id": "1784000236809-0", "sse": "event: chunk\ndata: {\"content\": \" proceed\"}\n\n"}
+{"id": "1784000236825-0", "sse": "event: chunk\ndata: {\"content\": \" with\"}\n\n"}
+{"id": "1784000236846-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000236859-0", "sse": "event: chunk\ndata: {\"content\": \" placeholder\"}\n\n"}
+{"id": "1784000236878-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000236898-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000236915-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000236932-0", "sse": "event: chunk\ndata: {\"content\": \" Actually\"}\n\n"}
+{"id": "1784000236950-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000236969-0", "sse": "event: chunk\ndata: {\"content\": \" looking\"}\n\n"}
+{"id": "1784000236989-0", "sse": "event: chunk\ndata: {\"content\": \" at\"}\n\n"}
+{"id": "1784000237004-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000237025-0", "sse": "event: chunk\ndata: {\"content\": \" instructions\"}\n\n"}
+{"id": "1784000237047-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000237067-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000237075-0", "sse": "event: chunk\ndata: {\"content\": \" says\"}\n\n"}
+{"id": "1784000237092-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000237109-0", "sse": "event: chunk\ndata: {\"content\": \"Your\"}\n\n"}
+{"id": "1784000237128-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000237145-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000237164-0", "sse": "event: chunk\ndata: {\"content\": \" Start\"}\n\n"}
+{"id": "1784000237186-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000237206-0", "sse": "event: chunk\ndata: {\"content\": \" asynchronous\"}\n\n"}
+{"id": "1784000237218-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000237238-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000237266-0", "sse": "event: chunk\ndata: {\"content\": \" via\"}\n\n"}
+{"id": "1784000237272-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000237294-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000237308-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000237330-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000237344-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000237362-0", "sse": "event: chunk\ndata: {\"content\": \"\\\"\"}\n\n"}
+{"id": "1784000237393-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000237403-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000237415-0", "sse": "event: chunk\ndata: {\"content\": \"Focus\"}\n\n"}
+{"id": "1784000237433-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1784000237453-0", "sse": "event: chunk\ndata: {\"content\": \" completing\"}\n\n"}
+{"id": "1784000237471-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1784000237490-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000237509-0", "sse": "event: chunk\ndata: {\"content\": \" thoroughly\"}\n\n"}
+{"id": "1784000237526-0", "sse": "event: chunk\ndata: {\"content\": \".\\\"\\n\\n\"}\n\n"}
+{"id": "1784000237543-0", "sse": "event: chunk\ndata: {\"content\": \"Since\"}\n\n"}
+{"id": "1784000237559-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000237577-0", "sse": "event: chunk\ndata: {\"content\": \" don't\"}\n\n"}
+{"id": "1784000237593-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000237611-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000237629-0", "sse": "event: chunk\ndata: {\"content\": \" specific\"}\n\n"}
+{"id": "1784000237649-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000237670-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000237684-0", "sse": "event: chunk\ndata: {\"content\": \" I'll\"}\n\n"}
+{"id": "1784000237934-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000237940-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000237944-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000237951-0", "sse": "event: chunk\ndata: {\"content\": \" what\"}\n\n"}
+{"id": "1784000237956-0", "sse": "event: chunk\ndata: {\"content\": \" they'd\"}\n\n"}
+{"id": "1784000237961-0", "sse": "event: chunk\ndata: {\"content\": \" like\"}\n\n"}
+{"id": "1784000237965-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000237969-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000237974-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000237978-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000237983-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000237987-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1784000237993-0", "sse": "event: chunk\ndata: {\"content\": \" actually\"}\n\n"}
+{"id": "1784000237996-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000238000-0", "sse": "event: chunk\ndata: {\"content\": \" perhaps\"}\n\n"}
+{"id": "1784000238002-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000238005-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000238009-0", "sse": "event: chunk\ndata: {\"content\": \" expects\"}\n\n"}
+{"id": "1784000238025-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000238050-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000238062-0", "sse": "event: chunk\ndata: {\"content\": \" know\"}\n\n"}
+{"id": "1784000238080-0", "sse": "event: chunk\ndata: {\"content\": \" from\"}\n\n"}
+{"id": "1784000238096-0", "sse": "event: chunk\ndata: {\"content\": \" context\"}\n\n"}
+{"id": "1784000238112-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000238133-0", "sse": "event: chunk\ndata: {\"content\": \" Let\"}\n\n"}
+{"id": "1784000238151-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000238168-0", "sse": "event: chunk\ndata: {\"content\": \" re\"}\n\n"}
+{"id": "1784000238186-0", "sse": "event: chunk\ndata: {\"content\": \"-read\"}\n\n"}
+{"id": "1784000238204-0", "sse": "event: chunk\ndata: {\"content\": \"...\"}\n\n"}
+{"id": "1784000238221-0", "sse": "event: chunk\ndata: {\"content\": \" No\"}\n\n"}
+{"id": "1784000238240-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000238258-0", "sse": "event: chunk\ndata: {\"content\": \" there's\"}\n\n"}
+{"id": "1784000238278-0", "sse": "event: chunk\ndata: {\"content\": \" no\"}\n\n"}
+{"id": "1784000238296-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000238311-0", "sse": "event: chunk\ndata: {\"content\": \" mentioned\"}\n\n"}
+{"id": "1784000238327-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000238348-0", "sse": "event: chunk\ndata: {\"content\": \"I\"}\n\n"}
+{"id": "1784000238365-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000238382-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000238401-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000238417-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000238437-0", "sse": "event: chunk\ndata: {\"content\": \"What\"}\n\n"}
+{"id": "1784000238462-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000238476-0", "sse": "event: chunk\ndata: {\"content\": \" would\"}\n\n"}
+{"id": "1784000238493-0", "sse": "event: chunk\ndata: {\"content\": \" you\"}\n\n"}
+{"id": "1784000238703-0", "sse": "event: chunk\ndata: {\"content\": \" like\"}\n\n"}
+{"id": "1784000238709-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000238714-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000238720-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000238725-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000238729-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000238738-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000238754-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000238773-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000238791-0", "sse": "event: chunk\ndata: {\"content\": \"?\\\"\"}\n\n"}
+{"id": "1784000238808-0", "sse": "event: chunk\ndata: {\"content\": \" \\n\\n\"}\n\n"}
+{"id": "1784000238828-0", "sse": "event: chunk\ndata: {\"content\": \"But\"}\n\n"}
+{"id": "1784000238845-0", "sse": "event: chunk\ndata: {\"content\": \" wait\"}\n\n"}
+{"id": "1784000238866-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1784000238884-0", "sse": "event: chunk\ndata: {\"content\": \" maybe\"}\n\n"}
+{"id": "1784000238904-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000238918-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000238937-0", "sse": "event: chunk\ndata: {\"content\": \" just\"}\n\n"}
+{"id": "1784000238955-0", "sse": "event: chunk\ndata: {\"content\": \" proceed\"}\n\n"}
+{"id": "1784000238974-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000238994-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000239012-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000239028-0", "sse": "event: chunk\ndata: {\"content\": \" will\"}\n\n"}
+{"id": "1784000239046-0", "sse": "event: chunk\ndata: {\"content\": \" provide\"}\n\n"}
+{"id": "1784000239067-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000239086-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000239102-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1784000239132-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000239141-0", "sse": "event: chunk\ndata: {\"content\": \" next\"}\n\n"}
+{"id": "1784000239158-0", "sse": "event: chunk\ndata: {\"content\": \" message\"}\n\n"}
+{"id": "1784000239184-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000239197-0", "sse": "event: chunk\ndata: {\"content\": \" Actually\"}\n\n"}
+{"id": "1784000239213-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000239229-0", "sse": "event: chunk\ndata: {\"content\": \" no\"}\n\n"}
+{"id": "1784000239247-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000239273-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000239294-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000239306-0", "sse": "event: chunk\ndata: {\"content\": \" requires\"}\n\n"}
+{"id": "1784000239326-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000239344-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000239358-0", "sse": "event: chunk\ndata: {\"content\": \" description\"}\n\n"}
+{"id": "1784000239379-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000239396-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000239415-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000239461-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000239829-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000239836-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000239841-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000239846-0", "sse": "event: chunk\ndata: {\"content\": \" self\"}\n\n"}
+{"id": "1784000239851-0", "sse": "event: chunk\ndata: {\"content\": \"-contained\"}\n\n"}
+{"id": "1784000239855-0", "sse": "event: chunk\ndata: {\"content\": \" since\"}\n\n"}
+{"id": "1784000239858-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000239861-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000239863-0", "sse": "event: chunk\ndata: {\"content\": \" won't\"}\n\n"}
+{"id": "1784000239866-0", "sse": "event: chunk\ndata: {\"content\": \" see\"}\n\n"}
+{"id": "1784000239870-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000239876-0", "sse": "event: chunk\ndata: {\"content\": \" conversation\"}\n\n"}
+{"id": "1784000239877-0", "sse": "event: chunk\ndata: {\"content\": \" history\"}\n\n"}
+{"id": "1784000239882-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000239884-0", "sse": "event: chunk\ndata: {\"content\": \"Let\"}\n\n"}
+{"id": "1784000239889-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000239892-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000239895-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000239903-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000240043-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000240050-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000240056-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000240067-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000240095-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000240124-0", "sse": "event: chunk\ndata: {\"content\": \"</think> What\"}\n\n"}
+{"id": "1784000240140-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000240161-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000240190-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000240200-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000240226-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000240244-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000240257-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000240272-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000240290-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000240313-0", "sse": "event: chunk\ndata: {\"content\": \" Please\"}\n\n"}
+{"id": "1784000240328-0", "sse": "event: chunk\ndata: {\"content\": \" provide\"}\n\n"}
+{"id": "1784000240346-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000240364-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000240389-0", "sse": "event: chunk\ndata: {\"content\": \" question\"}\n\n"}
+{"id": "1784000240406-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000240424-0", "sse": "event: chunk\ndata: {\"content\": \" subject\"}\n\n"}
+{"id": "1784000240445-0", "sse": "event: chunk\ndata: {\"content\": \" so\"}\n\n"}
+{"id": "1784000240458-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000240478-0", "sse": "event: chunk\ndata: {\"content\": \" can\"}\n\n"}
+{"id": "1784000240516-0", "sse": "event: chunk\ndata: {\"content\": \" craft\"}\n\n"}
+{"id": "1784000240538-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000240554-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000240573-0", "sse": "event: chunk\ndata: {\"content\": \" description\"}\n\n"}
+{"id": "1784000240956-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000241122-0", "sse": "event: subtask_complete\ndata: {\"plan_id\": \"9676f976\", \"subtask_id\": 0, \"result_preview\": \"<think> The user wants me to start an asynchronous research task via `delegate_start` to Mobius. However, they haven't specified what the research task should be about. I need to ask them for the task\", \"progress\": 0.5}\n\n"}
+{"id": "1784000241129-0", "sse": "event: subtask_start\ndata: {\"plan_id\": \"9676f976\", \"subtask_id\": 1, \"description\": \"Draft an outline while the Mobius research task runs\", \"type\": \"generation\", \"progress\": 0.5}\n\n"}
+{"id": "1784000241135-0", "sse": "event: status\ndata: {\"phase\": \"thinking\", \"label\": \"Thinking\\u2026\"}\n\n"}
+{"id": "1784000241878-0", "sse": "event: chunk\ndata: {\"content\": \"<think> The\"}\n\n"}
+{"id": "1784000241886-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000241893-0", "sse": "event: chunk\ndata: {\"content\": \" wants\"}\n\n"}
+{"id": "1784000241899-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000241905-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000241911-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000241916-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000241920-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000241927-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000241952-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000241958-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000242012-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000242018-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000242023-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000242030-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000242048-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000242068-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1784000242088-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000242113-0", "sse": "event: chunk\ndata: {\"content\": \" don't\"}\n\n"}
+{"id": "1784000242126-0", "sse": "event: chunk\ndata: {\"content\": \" know\"}\n\n"}
+{"id": "1784000242139-0", "sse": "event: chunk\ndata: {\"content\": \" what\"}\n\n"}
+{"id": "1784000242157-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000242173-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000242191-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000242208-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000242226-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000242243-0", "sse": "event: chunk\ndata: {\"content\": \" about\"}\n\n"}
+{"id": "1784000242264-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000242282-0", "sse": "event: chunk\ndata: {\"content\": \" nor\"}\n\n"}
+{"id": "1784000242297-0", "sse": "event: chunk\ndata: {\"content\": \" do\"}\n\n"}
+{"id": "1784000242316-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000242333-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000242358-0", "sse": "event: chunk\ndata: {\"content\": \" confirmation\"}\n\n"}
+{"id": "1784000242368-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000242387-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000242406-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000242420-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000242439-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000242456-0", "sse": "event: chunk\ndata: {\"content\": \" was\"}\n\n"}
+{"id": "1784000242472-0", "sse": "event: chunk\ndata: {\"content\": \" actually\"}\n\n"}
+{"id": "1784000242490-0", "sse": "event: chunk\ndata: {\"content\": \" started\"}\n\n"}
+{"id": "1784000242536-0", "sse": "event: chunk\ndata: {\"content\": \" (\"}\n\n"}
+{"id": "1784000242542-0", "sse": "event: chunk\ndata: {\"content\": \"the\"}\n\n"}
+{"id": "1784000242799-0", "sse": "event: chunk\ndata: {\"content\": \" previous\"}\n\n"}
+{"id": "1784000242805-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000242811-0", "sse": "event: chunk\ndata: {\"content\": \" appears\"}\n\n"}
+{"id": "1784000242815-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000242819-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000242825-0", "sse": "event: chunk\ndata: {\"content\": \" just\"}\n\n"}
+{"id": "1784000242829-0", "sse": "event: chunk\ndata: {\"content\": \" asked\"}\n\n"}
+{"id": "1784000242832-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000242835-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000242837-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000242840-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000242842-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000242844-0", "sse": "event: chunk\ndata: {\"content\": \").\\n\\n\"}\n\n"}
+{"id": "1784000242846-0", "sse": "event: chunk\ndata: {\"content\": \"However\"}\n\n"}
+{"id": "1784000242848-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000242850-0", "sse": "event: chunk\ndata: {\"content\": \" looking\"}\n\n"}
+{"id": "1784000242853-0", "sse": "event: chunk\ndata: {\"content\": \" at\"}\n\n"}
+{"id": "1784000242855-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000242859-0", "sse": "event: chunk\ndata: {\"content\": \" system\"}\n\n"}
+{"id": "1784000242867-0", "sse": "event: chunk\ndata: {\"content\": \" message\"}\n\n"}
+{"id": "1784000242888-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000242900-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000242918-0", "sse": "event: chunk\ndata: {\"content\": \" says\"}\n\n"}
+{"id": "1784000242939-0", "sse": "event: chunk\ndata: {\"content\": \" I'm\"}\n\n"}
+{"id": "1784000242965-0", "sse": "event: chunk\ndata: {\"content\": \" executing\"}\n\n"}
+{"id": "1784000242970-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000243232-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000243237-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000243242-0", "sse": "event: chunk\ndata: {\"content\": \" of\"}\n\n"}
+{"id": "1784000243248-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000243254-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000243260-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000243266-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000243270-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000243275-0", "sse": "event: chunk\ndata: {\"content\": \" results\"}\n\n"}
+{"id": "1784000243279-0", "sse": "event: chunk\ndata: {\"content\": \" from\"}\n\n"}
+{"id": "1784000243283-0", "sse": "event: chunk\ndata: {\"content\": \" prerequisite\"}\n\n"}
+{"id": "1784000243286-0", "sse": "event: chunk\ndata: {\"content\": \" steps\"}\n\n"}
+{"id": "1784000243292-0", "sse": "event: chunk\ndata: {\"content\": \" show\"}\n\n"}
+{"id": "1784000243296-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000243300-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000243303-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000243309-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1784000243314-0", "sse": "event: chunk\ndata: {\"content\": \" asked\"}\n\n"}
+{"id": "1784000243316-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000243319-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000243333-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000243348-0", "sse": "event: chunk\ndata: {\"content\": \"What\"}\n\n"}
+{"id": "1784000243368-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000243386-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000243399-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000243425-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000243443-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000243454-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000243691-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000243698-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000243705-0", "sse": "event: chunk\ndata: {\"content\": \"?\\\"\"}\n\n"}
+{"id": "1784000243711-0", "sse": "event: chunk\ndata: {\"content\": \" \\n\\n\"}\n\n"}
+{"id": "1784000243715-0", "sse": "event: chunk\ndata: {\"content\": \"So\"}\n\n"}
+{"id": "1784000243717-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000243722-0", "sse": "event: chunk\ndata: {\"content\": \" seems\"}\n\n"}
+{"id": "1784000243725-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000243728-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000243731-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000243733-0", "sse": "event: chunk\ndata: {\"content\": \" now\"}\n\n"}
+{"id": "1784000243735-0", "sse": "event: chunk\ndata: {\"content\": \" telling\"}\n\n"}
+{"id": "1784000243737-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000243741-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000243743-0", "sse": "event: chunk\ndata: {\"content\": \" proceed\"}\n\n"}
+{"id": "1784000243745-0", "sse": "event: chunk\ndata: {\"content\": \" with\"}\n\n"}
+{"id": "1784000243748-0", "sse": "event: chunk\ndata: {\"content\": \" drafting\"}\n\n"}
+{"id": "1784000243761-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000243795-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000243798-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000243813-0", "sse": "event: chunk\ndata: {\"content\": \" but\"}\n\n"}
+{"id": "1784000243835-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000243845-0", "sse": "event: chunk\ndata: {\"content\": \" still\"}\n\n"}
+{"id": "1784000243860-0", "sse": "event: chunk\ndata: {\"content\": \" don't\"}\n\n"}
+{"id": "1784000243881-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000243898-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000243913-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000243932-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000243948-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000243969-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000243987-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000244001-0", "sse": "event: chunk\ndata: {\"content\": \" either\"}\n\n"}
+{"id": "1784000244017-0", "sse": "event: chunk\ndata: {\"content\": \":\\n\"}\n\n"}
+{"id": "1784000244038-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1784000244053-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000244071-0", "sse": "event: chunk\ndata: {\"content\": \" Ask\"}\n\n"}
+{"id": "1784000244088-0", "sse": "event: chunk\ndata: {\"content\": \" again\"}\n\n"}
+{"id": "1784000244106-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000244125-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000244138-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000244157-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1784000244174-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000244193-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000244213-0", "sse": "event: chunk\ndata: {\"content\": \" Assume\"}\n\n"}
+{"id": "1784000244228-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000244248-0", "sse": "event: chunk\ndata: {\"content\": \" general\"}\n\n"}
+{"id": "1784000244268-0", "sse": "event: chunk\ndata: {\"content\": \"/\"}\n\n"}
+{"id": "1784000244280-0", "sse": "event: chunk\ndata: {\"content\": \"placeholder\"}\n\n"}
+{"id": "1784000244296-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000244312-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1784000244331-0", "sse": "event: chunk\ndata: {\"content\": \"3\"}\n\n"}
+{"id": "1784000244348-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000244379-0", "sse": "event: chunk\ndata: {\"content\": \" Point\"}\n\n"}
+{"id": "1784000244384-0", "sse": "event: chunk\ndata: {\"content\": \" out\"}\n\n"}
+{"id": "1784000244400-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000244426-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000244434-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000244452-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000244468-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000244489-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000244505-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000244520-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000244539-0", "sse": "event: chunk\ndata: {\"content\": \" meaningful\"}\n\n"}
+{"id": "1784000244557-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000244573-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\\n\"}\n\n"}
+{"id": "1784000244591-0", "sse": "event: chunk\ndata: {\"content\": \"Wait\"}\n\n"}
+{"id": "1784000244608-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000244622-0", "sse": "event: chunk\ndata: {\"content\": \" perhaps\"}\n\n"}
+{"id": "1784000244647-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000244660-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000244680-0", "sse": "event: chunk\ndata: {\"content\": \" expects\"}\n\n"}
+{"id": "1784000244696-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000244737-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000244743-0", "sse": "event: chunk\ndata: {\"content\": \" just\"}\n\n"}
+{"id": "1784000244749-0", "sse": "event: chunk\ndata: {\"content\": \" create\"}\n\n"}
+{"id": "1784000244761-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000244782-0", "sse": "event: chunk\ndata: {\"content\": \" generic\"}\n\n"}
+{"id": "1784000244798-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000244818-0", "sse": "event: chunk\ndata: {\"content\": \" template\"}\n\n"}
+{"id": "1784000245037-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000245040-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1784000245043-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000245044-0", "sse": "event: chunk\ndata: {\"content\": \" wouldn't\"}\n\n"}
+{"id": "1784000245046-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000245049-0", "sse": "event: chunk\ndata: {\"content\": \" very\"}\n\n"}
+{"id": "1784000245051-0", "sse": "event: chunk\ndata: {\"content\": \" useful\"}\n\n"}
+{"id": "1784000245359-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000245365-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1784000245372-0", "sse": "event: chunk\ndata: {\"content\": \" most\"}\n\n"}
+{"id": "1784000245378-0", "sse": "event: chunk\ndata: {\"content\": \" helpful\"}\n\n"}
+{"id": "1784000245397-0", "sse": "event: chunk\ndata: {\"content\": \" approach\"}\n\n"}
+{"id": "1784000245400-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000245403-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000245408-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000245413-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000245416-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000245418-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000245421-0", "sse": "event: chunk\ndata: {\"content\": \" again\"}\n\n"}
+{"id": "1784000245425-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000245429-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000245431-0", "sse": "event: chunk\ndata: {\"content\": \" provide\"}\n\n"}
+{"id": "1784000245433-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000245436-0", "sse": "event: chunk\ndata: {\"content\": \" versatile\"}\n\n"}
+{"id": "1784000245439-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000245441-0", "sse": "event: chunk\ndata: {\"content\": \" structure\"}\n\n"}
+{"id": "1784000245444-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000245446-0", "sse": "event: chunk\ndata: {\"content\": \" can\"}\n\n"}
+{"id": "1784000245448-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000245451-0", "sse": "event: chunk\ndata: {\"content\": \" adapted\"}\n\n"}
+{"id": "1784000245454-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000245457-0", "sse": "event: chunk\ndata: {\"content\": \"Actually\"}\n\n"}
+{"id": "1784000245460-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000245463-0", "sse": "event: chunk\ndata: {\"content\": \" looking\"}\n\n"}
+{"id": "1784000245466-0", "sse": "event: chunk\ndata: {\"content\": \" more\"}\n\n"}
+{"id": "1784000245470-0", "sse": "event: chunk\ndata: {\"content\": \" carefully\"}\n\n"}
+{"id": "1784000245475-0", "sse": "event: chunk\ndata: {\"content\": \" at\"}\n\n"}
+{"id": "1784000245480-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000245498-0", "sse": "event: chunk\ndata: {\"content\": \" conversation\"}\n\n"}
+{"id": "1784000245502-0", "sse": "event: chunk\ndata: {\"content\": \" flow\"}\n\n"}
+{"id": "1784000245517-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000245533-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1784000245556-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000245564-0", "sse": "event: chunk\ndata: {\"content\": \" said\"}\n\n"}
+{"id": "1784000245578-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000245593-0", "sse": "event: chunk\ndata: {\"content\": \"Draft\"}\n\n"}
+{"id": "1784000245607-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000245627-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000245647-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000245661-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000245672-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000245688-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000245705-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000245719-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000245733-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000245760-0", "sse": "event: chunk\ndata: {\"content\": \"\\\"\"}\n\n"}
+{"id": "1784000245765-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1784000245780-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1784000245795-0", "sse": "event: chunk\ndata: {\"content\": \" implies\"}\n\n"}
+{"id": "1784000245812-0", "sse": "event: chunk\ndata: {\"content\": \" they\"}\n\n"}
+{"id": "1784000245833-0", "sse": "event: chunk\ndata: {\"content\": \" want\"}\n\n"}
+{"id": "1784000245844-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000245867-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000245877-0", "sse": "event: chunk\ndata: {\"content\": \" proceed\"}\n\n"}
+{"id": "1784000245892-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000245908-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1784000245922-0", "sse": "event: chunk\ndata: {\"content\": \" since\"}\n\n"}
+{"id": "1784000245934-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000245953-0", "sse": "event: chunk\ndata: {\"content\": \" genuinely\"}\n\n"}
+{"id": "1784000245969-0", "sse": "event: chunk\ndata: {\"content\": \" don't\"}\n\n"}
+{"id": "1784000245984-0", "sse": "event: chunk\ndata: {\"content\": \" know\"}\n\n"}
+{"id": "1784000245998-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000246013-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000246032-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000246045-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000246058-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000246077-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000246091-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000246113-0", "sse": "event: chunk\ndata: {\"content\": \" However\"}\n\n"}
+{"id": "1784000246128-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000246146-0", "sse": "event: chunk\ndata: {\"content\": \" maybe\"}\n\n"}
+{"id": "1784000246151-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000246167-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000246187-0", "sse": "event: chunk\ndata: {\"content\": \" provide\"}\n\n"}
+{"id": "1784000246208-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000246223-0", "sse": "event: chunk\ndata: {\"content\": \" general\"}\n\n"}
+{"id": "1784000246237-0", "sse": "event: chunk\ndata: {\"content\": \" academic\"}\n\n"}
+{"id": "1784000246254-0", "sse": "event: chunk\ndata: {\"content\": \"/re\"}\n\n"}
+{"id": "1784000246308-0", "sse": "event: chunk\ndata: {\"content\": \"search\"}\n\n"}
+{"id": "1784000246313-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000246316-0", "sse": "event: chunk\ndata: {\"content\": \" template\"}\n\n"}
+{"id": "1784000246318-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000246328-0", "sse": "event: chunk\ndata: {\"content\": \" note\"}\n\n"}
+{"id": "1784000246345-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000246359-0", "sse": "event: chunk\ndata: {\"content\": \" I'll\"}\n\n"}
+{"id": "1784000246374-0", "sse": "event: chunk\ndata: {\"content\": \" customize\"}\n\n"}
+{"id": "1784000246393-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000246408-0", "sse": "event: chunk\ndata: {\"content\": \" once\"}\n\n"}
+{"id": "1784000246422-0", "sse": "event: chunk\ndata: {\"content\": \" they\"}\n\n"}
+{"id": "1784000246438-0", "sse": "event: chunk\ndata: {\"content\": \" provide\"}\n\n"}
+{"id": "1784000246453-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000246501-0", "sse": "event: chunk\ndata: {\"content\": \" topic?\\n\\n\"}\n\n"}
+{"id": "1784000246512-0", "sse": "event: chunk\ndata: {\"content\": \"Actually\"}\n\n"}
+{"id": "1784000246517-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000246530-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000246543-0", "sse": "event: chunk\ndata: {\"content\": \" think\"}\n\n"}
+{"id": "1784000246558-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000246573-0", "sse": "event: chunk\ndata: {\"content\": \" best\"}\n\n"}
+{"id": "1784000246606-0", "sse": "event: chunk\ndata: {\"content\": \" approach\"}\n\n"}
+{"id": "1784000246609-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000246618-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000246633-0", "sse": "event: chunk\ndata: {\"content\": \" directly\"}\n\n"}
+{"id": "1784000246649-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000246665-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000246682-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000246697-0", "sse": "event: chunk\ndata: {\"content\": \"What\"}\n\n"}
+{"id": "1784000246710-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000246729-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000246742-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000246757-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000246772-0", "sse": "event: chunk\ndata: {\"content\": \" cover\"}\n\n"}
+{"id": "1784000246788-0", "sse": "event: chunk\ndata: {\"content\": \"?\\\"\"}\n\n"}
+{"id": "1784000246803-0", "sse": "event: chunk\ndata: {\"content\": \" since\"}\n\n"}
+{"id": "1784000246819-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000246838-0", "sse": "event: chunk\ndata: {\"content\": \" can't\"}\n\n"}
+{"id": "1784000246861-0", "sse": "event: chunk\ndata: {\"content\": \" meaning\"}\n\n"}
+{"id": "1784000246866-0", "sse": "event: chunk\ndata: {\"content\": \"fully\"}\n\n"}
+{"id": "1784000246883-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000246898-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000246918-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000246929-0", "sse": "event: chunk\ndata: {\"content\": \" without\"}\n\n"}
+{"id": "1784000247100-0", "sse": "event: chunk\ndata: {\"content\": \" knowing\"}\n\n"}
+{"id": "1784000247106-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000247111-0", "sse": "event: chunk\ndata: {\"content\": \" subject\"}\n\n"}
+{"id": "1784000247117-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000247123-0", "sse": "event: chunk\ndata: {\"content\": \"Wait\"}\n\n"}
+{"id": "1784000247128-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000247147-0", "sse": "event: chunk\ndata: {\"content\": \" let\"}\n\n"}
+{"id": "1784000247160-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000247178-0", "sse": "event: chunk\ndata: {\"content\": \" reconsider\"}\n\n"}
+{"id": "1784000247199-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000247210-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1784000247224-0", "sse": "event: chunk\ndata: {\"content\": \" instruction\"}\n\n"}
+{"id": "1784000247242-0", "sse": "event: chunk\ndata: {\"content\": \" says\"}\n\n"}
+{"id": "1784000247258-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000247274-0", "sse": "event: chunk\ndata: {\"content\": \"Your\"}\n\n"}
+{"id": "1784000247289-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000247302-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000247318-0", "sse": "event: chunk\ndata: {\"content\": \" Draft\"}\n\n"}
+{"id": "1784000247333-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000247350-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000247367-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000247393-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000247410-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000247414-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000247433-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000247447-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000247462-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000247629-0", "sse": "event: chunk\ndata: {\"content\": \"\\\".\"}\n\n"}
+{"id": "1784000247646-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1784000247666-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000247684-0", "sse": "event: chunk\ndata: {\"content\": \" might\"}\n\n"}
+{"id": "1784000247702-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000247716-0", "sse": "event: chunk\ndata: {\"content\": \" testing\"}\n\n"}
+{"id": "1784000247741-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000247761-0", "sse": "event: chunk\ndata: {\"content\": \" workflow\"}\n\n"}
+{"id": "1784000247772-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000247788-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1784000247807-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000247833-0", "sse": "event: chunk\ndata: {\"content\": \" literally\"}\n\n"}
+{"id": "1784000247842-0", "sse": "event: chunk\ndata: {\"content\": \" cannot\"}\n\n"}
+{"id": "1784000247860-0", "sse": "event: chunk\ndata: {\"content\": \" complete\"}\n\n"}
+{"id": "1784000247874-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1784000247904-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000247921-0", "sse": "event: chunk\ndata: {\"content\": \" thoroughly\"}\n\n"}
+{"id": "1784000247926-0", "sse": "event: chunk\ndata: {\"content\": \" without\"}\n\n"}
+{"id": "1784000247947-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000247964-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000247983-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000247997-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000248017-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000248033-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000248052-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000248068-0", "sse": "event: chunk\ndata: {\"content\": \" clarification\"}\n\n"}
+{"id": "1784000248107-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000248113-0", "sse": "event: chunk\ndata: {\"content\": \"Actually\"}\n\n"}
+{"id": "1784000248122-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000248139-0", "sse": "event: chunk\ndata: {\"content\": \" looking\"}\n\n"}
+{"id": "1784000248158-0", "sse": "event: chunk\ndata: {\"content\": \" back\"}\n\n"}
+{"id": "1784000248181-0", "sse": "event: chunk\ndata: {\"content\": \" at\"}\n\n"}
+{"id": "1784000248201-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000248213-0", "sse": "event: chunk\ndata: {\"content\": \" previous\"}\n\n"}
+{"id": "1784000248229-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000248246-0", "sse": "event: chunk\ndata: {\"content\": \" result\"}\n\n"}
+{"id": "1784000248264-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000248278-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000248297-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000248313-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1784000248333-0", "sse": "event: chunk\ndata: {\"content\": \" asked\"}\n\n"}
+{"id": "1784000248348-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000248389-0", "sse": "event: chunk\ndata: {\"content\": \"What\"}\n\n"}
+{"id": "1784000248635-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000248642-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000248646-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000248649-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000248651-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000248653-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000248657-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000248660-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000248664-0", "sse": "event: chunk\ndata: {\"content\": \"?\\\"\"}\n\n"}
+{"id": "1784000248666-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000248670-0", "sse": "event: chunk\ndata: {\"content\": \" now\"}\n\n"}
+{"id": "1784000248674-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000248676-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000248678-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000248682-0", "sse": "event: chunk\ndata: {\"content\": \" saying\"}\n\n"}
+{"id": "1784000248684-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000248686-0", "sse": "event: chunk\ndata: {\"content\": \"Draft\"}\n\n"}
+{"id": "1784000248689-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000248702-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000248717-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000248739-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000248754-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000248769-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000248788-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000248827-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000248833-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000248847-0", "sse": "event: chunk\ndata: {\"content\": \"\\\".\"}\n\n"}
+{"id": "1784000248858-0", "sse": "event: chunk\ndata: {\"content\": \" This\"}\n\n"}
+{"id": "1784000248881-0", "sse": "event: chunk\ndata: {\"content\": \" suggests\"}\n\n"}
+{"id": "1784000248911-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000248916-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000248928-0", "sse": "event: chunk\ndata: {\"content\": \" might\"}\n\n"}
+{"id": "1784000248947-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000248968-0", "sse": "event: chunk\ndata: {\"content\": \" forgotten\"}\n\n"}
+{"id": "1784000249228-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000249231-0", "sse": "event: chunk\ndata: {\"content\": \" specify\"}\n\n"}
+{"id": "1784000249232-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000249234-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000249237-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000249241-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000249244-0", "sse": "event: chunk\ndata: {\"content\": \" they\"}\n\n"}
+{"id": "1784000249246-0", "sse": "event: chunk\ndata: {\"content\": \" expect\"}\n\n"}
+{"id": "1784000249249-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000249252-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000249257-0", "sse": "event: chunk\ndata: {\"content\": \" pick\"}\n\n"}
+{"id": "1784000249261-0", "sse": "event: chunk\ndata: {\"content\": \" one\"}\n\n"}
+{"id": "1784000249263-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000249265-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000249267-0", "sse": "event: chunk\ndata: {\"content\": \" there's\"}\n\n"}
+{"id": "1784000249271-0", "sse": "event: chunk\ndata: {\"content\": \" missing\"}\n\n"}
+{"id": "1784000249275-0", "sse": "event: chunk\ndata: {\"content\": \" context\"}\n\n"}
+{"id": "1784000249278-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000249309-0", "sse": "event: chunk\ndata: {\"content\": \"Given\"}\n\n"}
+{"id": "1784000249312-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000249332-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000249348-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000249367-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000249385-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000249402-0", "sse": "event: chunk\ndata: {\"content\": \" direct\"}\n\n"}
+{"id": "1784000249417-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000249436-0", "sse": "event: chunk\ndata: {\"content\": \" helpful\"}\n\n"}
+{"id": "1784000249453-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000249478-0", "sse": "event: chunk\ndata: {\"content\": \" I'll\"}\n\n"}
+{"id": "1784000249493-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000249507-0", "sse": "event: chunk\ndata: {\"content\": \" what\"}\n\n"}
+{"id": "1784000249525-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000249544-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000249557-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000249577-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000249595-0", "sse": "event: chunk\ndata: {\"content\": \" cover\"}\n\n"}
+{"id": "1784000249612-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000249628-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000249648-0", "sse": "event: chunk\ndata: {\"content\": \" also\"}\n\n"}
+{"id": "1784000249665-0", "sse": "event: chunk\ndata: {\"content\": \" noting\"}\n\n"}
+{"id": "1784000249683-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000249726-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000249729-0", "sse": "event: chunk\ndata: {\"content\": \" can\"}\n\n"}
+{"id": "1784000249731-0", "sse": "event: chunk\ndata: {\"content\": \" start\"}\n\n"}
+{"id": "1784000249743-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000249763-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000249778-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1784000249791-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000249807-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000249825-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000249837-0", "sse": "event: chunk\ndata: {\"content\": \" once\"}\n\n"}
+{"id": "1784000249860-0", "sse": "event: chunk\ndata: {\"content\": \" they\"}\n\n"}
+{"id": "1784000249871-0", "sse": "event: chunk\ndata: {\"content\": \" provide\"}\n\n"}
+{"id": "1784000249887-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000249903-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000249921-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1784000249933-0", "sse": "event: chunk\ndata: {\"content\": \" wait\"}\n\n"}
+{"id": "1784000249951-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1784000249968-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000249986-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000249997-0", "sse": "event: chunk\ndata: {\"content\": \" said\"}\n\n"}
+{"id": "1784000250018-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000250028-0", "sse": "event: chunk\ndata: {\"content\": \"while\"}\n\n"}
+{"id": "1784000250046-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000250065-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000250078-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000250093-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000250108-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000250125-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000250143-0", "sse": "event: chunk\ndata: {\"content\": \"\\\"\"}\n\n"}
+{"id": "1784000250158-0", "sse": "event: chunk\ndata: {\"content\": \" which\"}\n\n"}
+{"id": "1784000250174-0", "sse": "event: chunk\ndata: {\"content\": \" implies\"}\n\n"}
+{"id": "1784000250190-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000250205-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000250219-0", "sse": "event: chunk\ndata: {\"content\": \" already\"}\n\n"}
+{"id": "1784000250237-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000250253-0", "sse": "event: chunk\ndata: {\"content\": \" running\"}\n\n"}
+{"id": "1784000250270-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000250284-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000250297-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000250334-0", "sse": "event: chunk\ndata: {\"content\": \" start\"}\n\n"}
+{"id": "1784000250338-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000250355-0", "sse": "event: chunk\ndata: {\"content\": \" now\"}\n\n"}
+{"id": "1784000250365-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000250377-0", "sse": "event: chunk\ndata: {\"content\": \"Hmm\"}\n\n"}
+{"id": "1784000250396-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000250409-0", "sse": "event: chunk\ndata: {\"content\": \" but\"}\n\n"}
+{"id": "1784000250426-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000250441-0", "sse": "event: chunk\ndata: {\"content\": \" don't\"}\n\n"}
+{"id": "1784000250456-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000250474-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000250497-0", "sse": "event: chunk\ndata: {\"content\": \" `\"}\n\n"}
+{"id": "1784000250506-0", "sse": "event: chunk\ndata: {\"content\": \"delegate\"}\n\n"}
+{"id": "1784000250516-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000250543-0", "sse": "event: chunk\ndata: {\"content\": \"`\"}\n\n"}
+{"id": "1784000250551-0", "sse": "event: chunk\ndata: {\"content\": \" function\"}\n\n"}
+{"id": "1784000250569-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1784000250585-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000250599-0", "sse": "event: chunk\ndata: {\"content\": \" only\"}\n\n"}
+{"id": "1784000250614-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000250641-0", "sse": "event: chunk\ndata: {\"content\": \" `\"}\n\n"}
+{"id": "1784000250659-0", "sse": "event: chunk\ndata: {\"content\": \"delegate\"}\n\n"}
+{"id": "1784000250662-0", "sse": "event: chunk\ndata: {\"content\": \"_to\"}\n\n"}
+{"id": "1784000250679-0", "sse": "event: chunk\ndata: {\"content\": \"`.\"}\n\n"}
+{"id": "1784000250695-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1784000250708-0", "sse": "event: chunk\ndata: {\"content\": \" system\"}\n\n"}
+{"id": "1784000250730-0", "sse": "event: chunk\ndata: {\"content\": \" prompt\"}\n\n"}
+{"id": "1784000250744-0", "sse": "event: chunk\ndata: {\"content\": \" mentions\"}\n\n"}
+{"id": "1784000250755-0", "sse": "event: chunk\ndata: {\"content\": \" `\"}\n\n"}
+{"id": "1784000250773-0", "sse": "event: chunk\ndata: {\"content\": \"delegate\"}\n\n"}
+{"id": "1784000250788-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000250814-0", "sse": "event: chunk\ndata: {\"content\": \"`\"}\n\n"}
+{"id": "1784000250818-0", "sse": "event: chunk\ndata: {\"content\": \" but\"}\n\n"}
+{"id": "1784000250837-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000250853-0", "sse": "event: chunk\ndata: {\"content\": \" available\"}\n\n"}
+{"id": "1784000250868-0", "sse": "event: chunk\ndata: {\"content\": \" function\"}\n\n"}
+{"id": "1784000250884-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000250898-0", "sse": "event: chunk\ndata: {\"content\": \" `\"}\n\n"}
+{"id": "1784000250918-0", "sse": "event: chunk\ndata: {\"content\": \"delegate\"}\n\n"}
+{"id": "1784000250933-0", "sse": "event: chunk\ndata: {\"content\": \"_to\"}\n\n"}
+{"id": "1784000250951-0", "sse": "event: chunk\ndata: {\"content\": \"`.\"}\n\n"}
+{"id": "1784000250964-0", "sse": "event: chunk\ndata: {\"content\": \" Maybe\"}\n\n"}
+{"id": "1784000251018-0", "sse": "event: chunk\ndata: {\"content\": \" `\"}\n\n"}
+{"id": "1784000251029-0", "sse": "event: chunk\ndata: {\"content\": \"delegate\"}\n\n"}
+{"id": "1784000251035-0", "sse": "event: chunk\ndata: {\"content\": \"_to\"}\n\n"}
+{"id": "1784000251041-0", "sse": "event: chunk\ndata: {\"content\": \"`\"}\n\n"}
+{"id": "1784000251047-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000251059-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000251074-0", "sse": "event: chunk\ndata: {\"content\": \" async\"}\n\n"}
+{"id": "1784000251090-0", "sse": "event: chunk\ndata: {\"content\": \" one\"}\n\n"}
+{"id": "1784000251107-0", "sse": "event: chunk\ndata: {\"content\": \"?\\n\\n\"}\n\n"}
+{"id": "1784000251126-0", "sse": "event: chunk\ndata: {\"content\": \"Actually\"}\n\n"}
+{"id": "1784000251141-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000251154-0", "sse": "event: chunk\ndata: {\"content\": \" looking\"}\n\n"}
+{"id": "1784000251168-0", "sse": "event: chunk\ndata: {\"content\": \" at\"}\n\n"}
+{"id": "1784000251189-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000251200-0", "sse": "event: chunk\ndata: {\"content\": \" function\"}\n\n"}
+{"id": "1784000251217-0", "sse": "event: chunk\ndata: {\"content\": \" definition\"}\n\n"}
+{"id": "1784000251234-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000251249-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000251268-0", "sse": "event: chunk\ndata: {\"content\": \"Delegate\"}\n\n"}
+{"id": "1784000251286-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000251304-0", "sse": "event: chunk\ndata: {\"content\": \" focused\"}\n\n"}
+{"id": "1784000251319-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000251329-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000251347-0", "sse": "event: chunk\ndata: {\"content\": \" another\"}\n\n"}
+{"id": "1784000251363-0", "sse": "event: chunk\ndata: {\"content\": \" agent\"}\n\n"}
+{"id": "1784000251382-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000251401-0", "sse": "event: chunk\ndata: {\"content\": \" That\"}\n\n"}
+{"id": "1784000251407-0", "sse": "event: chunk\ndata: {\"content\": \" agent\"}\n\n"}
+{"id": "1784000251425-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000251446-0", "sse": "event: chunk\ndata: {\"content\": \" independently\"}\n\n"}
+{"id": "1784000251459-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000251473-0", "sse": "event: chunk\ndata: {\"content\": \" returns\"}\n\n"}
+{"id": "1784000251498-0", "sse": "event: chunk\ndata: {\"content\": \" its\"}\n\n"}
+{"id": "1784000251503-0", "sse": "event: chunk\ndata: {\"content\": \" result\"}\n\n"}
+{"id": "1784000251518-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000251537-0", "sse": "event: chunk\ndata: {\"content\": \" you\"}\n\n"}
+{"id": "1784000251554-0", "sse": "event: chunk\ndata: {\"content\": \".\\\"\"}\n\n"}
+{"id": "1784000251565-0", "sse": "event: chunk\ndata: {\"content\": \" This\"}\n\n"}
+{"id": "1784000251583-0", "sse": "event: chunk\ndata: {\"content\": \" sounds\"}\n\n"}
+{"id": "1784000251598-0", "sse": "event: chunk\ndata: {\"content\": \" like\"}\n\n"}
+{"id": "1784000251625-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000251629-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000251650-0", "sse": "event: chunk\ndata: {\"content\": \" asynchronous\"}\n\n"}
+{"id": "1784000251673-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000251678-0", "sse": "event: chunk\ndata: {\"content\": \" So\"}\n\n"}
+{"id": "1784000251694-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000251710-0", "sse": "event: chunk\ndata: {\"content\": \" can\"}\n\n"}
+{"id": "1784000251728-0", "sse": "event: chunk\ndata: {\"content\": \" use\"}\n\n"}
+{"id": "1784000251743-0", "sse": "event: chunk\ndata: {\"content\": \" `\"}\n\n"}
+{"id": "1784000251758-0", "sse": "event: chunk\ndata: {\"content\": \"delegate\"}\n\n"}
+{"id": "1784000251774-0", "sse": "event: chunk\ndata: {\"content\": \"_to\"}\n\n"}
+{"id": "1784000251792-0", "sse": "event: chunk\ndata: {\"content\": \"`\"}\n\n"}
+{"id": "1784000251807-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000251824-0", "sse": "event: chunk\ndata: {\"content\": \" send\"}\n\n"}
+{"id": "1784000251838-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000251853-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000251871-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000252152-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000252156-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000252158-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000252160-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000252162-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000252163-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000252165-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000252166-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000252168-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000252171-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000252173-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000252175-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000252176-0", "sse": "event: chunk\ndata: {\"content\": \"But\"}\n\n"}
+{"id": "1784000252178-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000252183-0", "sse": "event: chunk\ndata: {\"content\": \" still\"}\n\n"}
+{"id": "1784000252186-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000252189-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000252193-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000252194-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000252196-0", "sse": "event: chunk\ndata: {\"content\": \" Let\"}\n\n"}
+{"id": "1784000252205-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000252225-0", "sse": "event: chunk\ndata: {\"content\": \" just\"}\n\n"}
+{"id": "1784000252239-0", "sse": "event: chunk\ndata: {\"content\": \" pick\"}\n\n"}
+{"id": "1784000252250-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000252266-0", "sse": "event: chunk\ndata: {\"content\": \" compelling\"}\n\n"}
+{"id": "1784000252279-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000252297-0", "sse": "event: chunk\ndata: {\"content\": \" generally\"}\n\n"}
+{"id": "1784000252312-0", "sse": "event: chunk\ndata: {\"content\": \" useful\"}\n\n"}
+{"id": "1784000252327-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000252342-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000252360-0", "sse": "event: chunk\ndata: {\"content\": \" proceed\"}\n\n"}
+{"id": "1784000252373-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000252388-0", "sse": "event: chunk\ndata: {\"content\": \" No\"}\n\n"}
+{"id": "1784000252407-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000252420-0", "sse": "event: chunk\ndata: {\"content\": \" that's\"}\n\n"}
+{"id": "1784000252433-0", "sse": "event: chunk\ndata: {\"content\": \" presum\"}\n\n"}
+{"id": "1784000252448-0", "sse": "event: chunk\ndata: {\"content\": \"ptuous\"}\n\n"}
+{"id": "1784000252465-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000252482-0", "sse": "event: chunk\ndata: {\"content\": \"Let\"}\n\n"}
+{"id": "1784000252494-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000252523-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000252527-0", "sse": "event: chunk\ndata: {\"content\": \" clearly\"}\n\n"}
+{"id": "1784000252548-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000252558-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000252572-0", "sse": "event: chunk\ndata: {\"content\": \"I\"}\n\n"}
+{"id": "1784000252588-0", "sse": "event: chunk\ndata: {\"content\": \" still\"}\n\n"}
+{"id": "1784000252605-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000252620-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000252637-0", "sse": "event: chunk\ndata: {\"content\": \" know\"}\n\n"}
+{"id": "1784000252651-0", "sse": "event: chunk\ndata: {\"content\": \" what\"}\n\n"}
+{"id": "1784000252667-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000252681-0", "sse": "event: chunk\ndata: {\"content\": \" you'd\"}\n\n"}
+{"id": "1784000252697-0", "sse": "event: chunk\ndata: {\"content\": \" like\"}\n\n"}
+{"id": "1784000252713-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000252728-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000252746-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000252758-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000252778-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000252792-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000252807-0", "sse": "event: chunk\ndata: {\"content\": \" Could\"}\n\n"}
+{"id": "1784000252833-0", "sse": "event: chunk\ndata: {\"content\": \" you\"}\n\n"}
+{"id": "1784000252839-0", "sse": "event: chunk\ndata: {\"content\": \" specify\"}\n\n"}
+{"id": "1784000252853-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000252874-0", "sse": "event: chunk\ndata: {\"content\": \" subject\"}\n\n"}
+{"id": "1784000252885-0", "sse": "event: chunk\ndata: {\"content\": \"?\\\"\"}\n\n"}
+{"id": "1784000252898-0", "sse": "event: chunk\ndata: {\"content\": \" \\n\\n\"}\n\n"}
+{"id": "1784000252913-0", "sse": "event: chunk\ndata: {\"content\": \"But\"}\n\n"}
+{"id": "1784000252928-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000252950-0", "sse": "event: chunk\ndata: {\"content\": \" system\"}\n\n"}
+{"id": "1784000252960-0", "sse": "event: chunk\ndata: {\"content\": \" says\"}\n\n"}
+{"id": "1784000252974-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1784000252993-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000253008-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000253024-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000253038-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000253053-0", "sse": "event: chunk\ndata: {\"content\": \" of\"}\n\n"}
+{"id": "1784000253069-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000253086-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000253103-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000253117-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000253133-0", "sse": "event: chunk\ndata: {\"content\": \" focus\"}\n\n"}
+{"id": "1784000253148-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1784000253170-0", "sse": "event: chunk\ndata: {\"content\": \" completing\"}\n\n"}
+{"id": "1784000253180-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1784000253198-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000253213-0", "sse": "event: chunk\ndata: {\"content\": \" thoroughly\"}\n\n"}
+{"id": "1784000253229-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000253241-0", "sse": "event: chunk\ndata: {\"content\": \" Maybe\"}\n\n"}
+{"id": "1784000253265-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000253276-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000253289-0", "sse": "event: chunk\ndata: {\"content\": \" just\"}\n\n"}
+{"id": "1784000253301-0", "sse": "event: chunk\ndata: {\"content\": \" create\"}\n\n"}
+{"id": "1784000253319-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000253333-0", "sse": "event: chunk\ndata: {\"content\": \" generic\"}\n\n"}
+{"id": "1784000253349-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000253365-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000253379-0", "sse": "event: chunk\ndata: {\"content\": \" template\"}\n\n"}
+{"id": "1784000253393-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000253409-0", "sse": "event: chunk\ndata: {\"content\": \" That\"}\n\n"}
+{"id": "1784000253426-0", "sse": "event: chunk\ndata: {\"content\": \" feels\"}\n\n"}
+{"id": "1784000253444-0", "sse": "event: chunk\ndata: {\"content\": \" like\"}\n\n"}
+{"id": "1784000253457-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000253470-0", "sse": "event: chunk\ndata: {\"content\": \" cop\"}\n\n"}
+{"id": "1784000253487-0", "sse": "event: chunk\ndata: {\"content\": \"-out\"}\n\n"}
+{"id": "1784000253502-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000253518-0", "sse": "event: chunk\ndata: {\"content\": \"Alternatively\"}\n\n"}
+{"id": "1784000253533-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000253548-0", "sse": "event: chunk\ndata: {\"content\": \" maybe\"}\n\n"}
+{"id": "1784000253566-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000253579-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000253593-0", "sse": "event: chunk\ndata: {\"content\": \" expects\"}\n\n"}
+{"id": "1784000253608-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000253628-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000253640-0", "sse": "event: chunk\ndata: {\"content\": \" realize\"}\n\n"}
+{"id": "1784000253657-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000253673-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000253686-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000253705-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000253729-0", "sse": "event: chunk\ndata: {\"content\": \" gotten\"}\n\n"}
+{"id": "1784000253959-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000253966-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000254235-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1784000254242-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000254248-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000254253-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1784000254259-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000254265-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000254271-0", "sse": "event: chunk\ndata: {\"content\": \" since\"}\n\n"}
+{"id": "1784000254275-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000254278-0", "sse": "event: chunk\ndata: {\"content\": \" didn't\"}\n\n"}
+{"id": "1784000254281-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000254285-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000254288-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000254291-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000254294-0", "sse": "event: chunk\ndata: {\"content\": \" again\"}\n\n"}
+{"id": "1784000254298-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000254299-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000254301-0", "sse": "event: chunk\ndata: {\"content\": \" think\"}\n\n"}
+{"id": "1784000254305-0", "sse": "event: chunk\ndata: {\"content\": \" that's\"}\n\n"}
+{"id": "1784000254308-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000254311-0", "sse": "event: chunk\ndata: {\"content\": \" most\"}\n\n"}
+{"id": "1784000254313-0", "sse": "event: chunk\ndata: {\"content\": \" honest\"}\n\n"}
+{"id": "1784000254315-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000254318-0", "sse": "event: chunk\ndata: {\"content\": \" helpful\"}\n\n"}
+{"id": "1784000254323-0", "sse": "event: chunk\ndata: {\"content\": \" approach\"}\n\n"}
+{"id": "1784000254327-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000254329-0", "sse": "event: chunk\ndata: {\"content\": \"Wait\"}\n\n"}
+{"id": "1784000254331-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000254334-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000254338-0", "sse": "event: chunk\ndata: {\"content\": \" just\"}\n\n"}
+{"id": "1784000254341-0", "sse": "event: chunk\ndata: {\"content\": \" realized\"}\n\n"}
+{"id": "1784000254343-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1784000254346-0", "sse": "event: chunk\ndata: {\"content\": \" maybe\"}\n\n"}
+{"id": "1784000254349-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000254352-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000254356-0", "sse": "event: chunk\ndata: {\"content\": \" just\"}\n\n"}
+{"id": "1784000254358-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000254473-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000254480-0", "sse": "event: chunk\ndata: {\"content\": \" general\"}\n\n"}
+{"id": "1784000254777-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000254783-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000254788-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000254792-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000254795-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000254799-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000254801-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000254807-0", "sse": "event: chunk\ndata: {\"content\": \" corresponding\"}\n\n"}
+{"id": "1784000254811-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000254814-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000254816-0", "sse": "event: chunk\ndata: {\"content\": \" Like\"}\n\n"}
+{"id": "1784000254818-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000254821-0", "sse": "event: chunk\ndata: {\"content\": \"Research\"}\n\n"}
+{"id": "1784000254824-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000254828-0", "sse": "event: chunk\ndata: {\"content\": \" impact\"}\n\n"}
+{"id": "1784000254831-0", "sse": "event: chunk\ndata: {\"content\": \" of\"}\n\n"}
+{"id": "1784000254832-0", "sse": "event: chunk\ndata: {\"content\": \" artificial\"}\n\n"}
+{"id": "1784000254834-0", "sse": "event: chunk\ndata: {\"content\": \" intelligence\"}\n\n"}
+{"id": "1784000254837-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1784000254841-0", "sse": "event: chunk\ndata: {\"content\": \" healthcare\"}\n\n"}
+{"id": "1784000254844-0", "sse": "event: chunk\ndata: {\"content\": \"\\\"\"}\n\n"}
+{"id": "1784000254847-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1784000254849-0", "sse": "event: chunk\ndata: {\"content\": \" that's\"}\n\n"}
+{"id": "1784000254851-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000254858-0", "sse": "event: chunk\ndata: {\"content\": \" common\"}\n\n"}
+{"id": "1784000254873-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000254893-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000254908-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1784000254923-0", "sse": "event: chunk\ndata: {\"content\": \" no\"}\n\n"}
+{"id": "1784000254935-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000254951-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000254970-0", "sse": "event: chunk\ndata: {\"content\": \" shouldn't\"}\n\n"}
+{"id": "1784000254983-0", "sse": "event: chunk\ndata: {\"content\": \" assume\"}\n\n"}
+{"id": "1784000254998-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000255013-0", "sse": "event: chunk\ndata: {\"content\": \"I'll\"}\n\n"}
+{"id": "1784000255031-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000255044-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000255059-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000255077-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000255091-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000255113-0", "sse": "event: chunk\ndata: {\"content\": \" It's\"}\n\n"}
+{"id": "1784000255125-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000255138-0", "sse": "event: chunk\ndata: {\"content\": \" only\"}\n\n"}
+{"id": "1784000255155-0", "sse": "event: chunk\ndata: {\"content\": \" sensible\"}\n\n"}
+{"id": "1784000255168-0", "sse": "event: chunk\ndata: {\"content\": \" thing\"}\n\n"}
+{"id": "1784000255185-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000255202-0", "sse": "event: chunk\ndata: {\"content\": \" do\"}\n\n"}
+{"id": "1784000255218-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000255251-0", "sse": "event: chunk\ndata: {\"content\": \"</think> I\"}\n\n"}
+{"id": "1784000255265-0", "sse": "event: chunk\ndata: {\"content\": \" don't\"}\n\n"}
+{"id": "1784000255281-0", "sse": "event: chunk\ndata: {\"content\": \" yet\"}\n\n"}
+{"id": "1784000255306-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000255330-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000255332-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000255346-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000255359-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000255369-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000255390-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000255400-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000255418-0", "sse": "event: chunk\ndata: {\"content\": \" To\"}\n\n"}
+{"id": "1784000255437-0", "sse": "event: chunk\ndata: {\"content\": \" complete\"}\n\n"}
+{"id": "1784000255455-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1784000255466-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000255482-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000255507-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000255521-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000255528-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000255547-0", "sse": "event: chunk\ndata: {\"content\": \" know\"}\n\n"}
+{"id": "1784000255565-0", "sse": "event: chunk\ndata: {\"content\": \":\\n\\n\"}\n\n"}
+{"id": "1784000255575-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1784000255591-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1784000255616-0", "sse": "event: chunk\ndata: {\"content\": \"What\"}\n\n"}
+{"id": "1784000255622-0", "sse": "event: chunk\ndata: {\"content\": \" subject\"}\n\n"}
+{"id": "1784000255638-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000255653-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000255668-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000255687-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000255708-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000255723-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1784000255725-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1784000255740-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1784000255757-0", "sse": "event: chunk\ndata: {\"content\": \"What\"}\n\n"}
+{"id": "1784000255774-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000255789-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000255804-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000255826-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000255835-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000257866-0", "sse": "event: chunk\ndata: {\"content\": \"**\"}\n\n"}
+{"id": "1784000259080-0", "sse": "event: chunk\ndata: {\"content\": \" (\"}\n\n"}
+{"id": "1784000259097-0", "sse": "event: chunk\ndata: {\"content\": \"e\"}\n\n"}
+{"id": "1784000259113-0", "sse": "event: chunk\ndata: {\"content\": \".g\"}\n\n"}
+{"id": "1784000259128-0", "sse": "event: chunk\ndata: {\"content\": \".,\"}\n\n"}
+{"id": "1784000259146-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000259163-0", "sse": "event: chunk\ndata: {\"content\": \" report\"}\n\n"}
+{"id": "1784000259178-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000259200-0", "sse": "event: chunk\ndata: {\"content\": \" article\"}\n\n"}
+{"id": "1784000259208-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000259226-0", "sse": "event: chunk\ndata: {\"content\": \" presentation\"}\n\n"}
+{"id": "1784000259244-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000259263-0", "sse": "event: chunk\ndata: {\"content\": \" essay\"}\n\n"}
+{"id": "1784000259275-0", "sse": "event: chunk\ndata: {\"content\": \")\\n\\n\"}\n\n"}
+{"id": "1784000259291-0", "sse": "event: chunk\ndata: {\"content\": \"Once\"}\n\n"}
+{"id": "1784000259318-0", "sse": "event: chunk\ndata: {\"content\": \" you\"}\n\n"}
+{"id": "1784000259324-0", "sse": "event: chunk\ndata: {\"content\": \" provide\"}\n\n"}
+{"id": "1784000259340-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000259358-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000259374-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000259388-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000259407-0", "sse": "event: chunk\ndata: {\"content\": \" can\"}\n\n"}
+{"id": "1784000259422-0", "sse": "event: chunk\ndata: {\"content\": \" immediately\"}\n\n"}
+{"id": "1784000259440-0", "sse": "event: chunk\ndata: {\"content\": \":\\n\"}\n\n"}
+{"id": "1784000259453-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1784000259477-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000259490-0", "sse": "event: chunk\ndata: {\"content\": \" Delegate\"}\n\n"}
+{"id": "1784000259504-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000259518-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000259540-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000259553-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000259568-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000259591-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000259607-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1784000259623-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000259642-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000259654-0", "sse": "event: chunk\ndata: {\"content\": \" Draft\"}\n\n"}
+{"id": "1784000259673-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000259707-0", "sse": "event: chunk\ndata: {\"content\": \" structured\"}\n\n"}
+{"id": "1784000259711-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000259722-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000259740-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000259757-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000259769-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1784000259784-0", "sse": "event: chunk\ndata: {\"content\": \" parallel\"}\n\n"}
+{"id": "1784000259871-0", "sse": "event: subtask_complete\ndata: {\"plan_id\": \"9676f976\", \"subtask_id\": 1, \"result_preview\": \"<think> The user wants me to draft an outline while the Mobius research task runs. But I don't know what topic the outline should be about, nor do I have confirmation that a Mobius task was actually s\", \"progress\": 1.0}\n\n"}
+{"id": "1784000261539-0", "sse": "event: chunk\ndata: {\"content\": \"<think> The\"}\n\n"}
+{"id": "1784000261543-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000261545-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000261546-0", "sse": "event: chunk\ndata: {\"content\": \" asking\"}\n\n"}
+{"id": "1784000261548-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000261571-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000261575-0", "sse": "event: chunk\ndata: {\"content\": \" synthes\"}\n\n"}
+{"id": "1784000261578-0", "sse": "event: chunk\ndata: {\"content\": \"ize\"}\n\n"}
+{"id": "1784000261588-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000261592-0", "sse": "event: chunk\ndata: {\"content\": \" results\"}\n\n"}
+{"id": "1784000261602-0", "sse": "event: chunk\ndata: {\"content\": \" of\"}\n\n"}
+{"id": "1784000261694-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000261712-0", "sse": "event: chunk\ndata: {\"content\": \" multi\"}\n\n"}
+{"id": "1784000261733-0", "sse": "event: chunk\ndata: {\"content\": \"-step\"}\n\n"}
+{"id": "1784000261745-0", "sse": "event: chunk\ndata: {\"content\": \" plan\"}\n\n"}
+{"id": "1784000261756-0", "sse": "event: chunk\ndata: {\"content\": \" into\"}\n\n"}
+{"id": "1784000261767-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000261782-0", "sse": "event: chunk\ndata: {\"content\": \" coherent\"}\n\n"}
+{"id": "1784000262128-0", "sse": "event: chunk\ndata: {\"content\": \" final\"}\n\n"}
+{"id": "1784000262143-0", "sse": "event: chunk\ndata: {\"content\": \" response\"}\n\n"}
+{"id": "1784000262159-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000262181-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1784000262202-0", "sse": "event: chunk\ndata: {\"content\": \" original\"}\n\n"}
+{"id": "1784000262212-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000262216-0", "sse": "event: chunk\ndata: {\"content\": \" was\"}\n\n"}
+{"id": "1784000262219-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000262223-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000262226-0", "sse": "event: chunk\ndata: {\"content\": \"Use\"}\n\n"}
+{"id": "1784000262230-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000262234-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000262237-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000262241-0", "sse": "event: chunk\ndata: {\"content\": \" send\"}\n\n"}
+{"id": "1784000262244-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000262247-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000262248-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000262250-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000262252-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000262255-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000262258-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000262260-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000262261-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000262263-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000262265-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000262266-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000262268-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000262271-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000262298-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000262312-0", "sse": "event: chunk\ndata: {\"content\": \" yourself\"}\n\n"}
+{"id": "1784000262354-0", "sse": "event: chunk\ndata: {\"content\": \".\\\"\\n\\n\"}\n\n"}
+{"id": "1784000262360-0", "sse": "event: chunk\ndata: {\"content\": \"Looking\"}\n\n"}
+{"id": "1784000262374-0", "sse": "event: chunk\ndata: {\"content\": \" at\"}\n\n"}
+{"id": "1784000262403-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000262418-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000262444-0", "sse": "event: chunk\ndata: {\"content\": \" results\"}\n\n"}
+{"id": "1784000262457-0", "sse": "event: chunk\ndata: {\"content\": \":\\n\"}\n\n"}
+{"id": "1784000262478-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1784000262504-0", "sse": "event: chunk\ndata: {\"content\": \" Step\"}\n\n"}
+{"id": "1784000262524-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000262538-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1784000262563-0", "sse": "event: chunk\ndata: {\"content\": \" asked\"}\n\n"}
+{"id": "1784000262587-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000262608-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000262633-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000262652-0", "sse": "event: chunk\ndata: {\"content\": \"What\"}\n\n"}
+{"id": "1784000262667-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000262688-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000262708-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000262728-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000262748-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000262774-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000262791-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000262813-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000262831-0", "sse": "event: chunk\ndata: {\"content\": \"?\\\"\"}\n\n"}
+{"id": "1784000262854-0", "sse": "event: chunk\ndata: {\"content\": \" because\"}\n\n"}
+{"id": "1784000262876-0", "sse": "event: chunk\ndata: {\"content\": \" no\"}\n\n"}
+{"id": "1784000262911-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000262999-0", "sse": "event: chunk\ndata: {\"content\": \" was\"}\n\n"}
+{"id": "1784000263009-0", "sse": "event: chunk\ndata: {\"content\": \" provided\"}\n\n"}
+{"id": "1784000263019-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\"}\n\n"}
+{"id": "1784000263025-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1784000263027-0", "sse": "event: chunk\ndata: {\"content\": \" Step\"}\n\n"}
+{"id": "1784000263036-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000263049-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000263061-0", "sse": "event: chunk\ndata: {\"content\": \" also\"}\n\n"}
+{"id": "1784000263083-0", "sse": "event: chunk\ndata: {\"content\": \" noted\"}\n\n"}
+{"id": "1784000263102-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000263126-0", "sse": "event: chunk\ndata: {\"content\": \" no\"}\n\n"}
+{"id": "1784000263145-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000263172-0", "sse": "event: chunk\ndata: {\"content\": \" was\"}\n\n"}
+{"id": "1784000263191-0", "sse": "event: chunk\ndata: {\"content\": \" provided\"}\n\n"}
+{"id": "1784000263208-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000263231-0", "sse": "event: chunk\ndata: {\"content\": \" asked\"}\n\n"}
+{"id": "1784000263254-0", "sse": "event: chunk\ndata: {\"content\": \" again\"}\n\n"}
+{"id": "1784000263268-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000263291-0", "sse": "event: chunk\ndata: {\"content\": \"So\"}\n\n"}
+{"id": "1784000263337-0", "sse": "event: chunk\ndata: {\"content\": \" essentially\"}\n\n"}
+{"id": "1784000263343-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000263356-0", "sse": "event: chunk\ndata: {\"content\": \" both\"}\n\n"}
+{"id": "1784000263374-0", "sse": "event: chunk\ndata: {\"content\": \" steps\"}\n\n"}
+{"id": "1784000263398-0", "sse": "event: chunk\ndata: {\"content\": \" failed\"}\n\n"}
+{"id": "1784000263417-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000263441-0", "sse": "event: chunk\ndata: {\"content\": \" complete\"}\n\n"}
+{"id": "1784000263462-0", "sse": "event: chunk\ndata: {\"content\": \" their\"}\n\n"}
+{"id": "1784000263480-0", "sse": "event: chunk\ndata: {\"content\": \" core\"}\n\n"}
+{"id": "1784000263498-0", "sse": "event: chunk\ndata: {\"content\": \" objectives\"}\n\n"}
+{"id": "1784000263517-0", "sse": "event: chunk\ndata: {\"content\": \" because\"}\n\n"}
+{"id": "1784000263553-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000263565-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000263585-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000263606-0", "sse": "event: chunk\ndata: {\"content\": \" was\"}\n\n"}
+{"id": "1784000263629-0", "sse": "event: chunk\ndata: {\"content\": \" missing\"}\n\n"}
+{"id": "1784000263648-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000263671-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000263799-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000263812-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000263822-0", "sse": "event: chunk\ndata: {\"content\": \" synthes\"}\n\n"}
+{"id": "1784000263839-0", "sse": "event: chunk\ndata: {\"content\": \"ize\"}\n\n"}
+{"id": "1784000263844-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1784000263858-0", "sse": "event: chunk\ndata: {\"content\": \" into\"}\n\n"}
+{"id": "1784000263867-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000263870-0", "sse": "event: chunk\ndata: {\"content\": \" concise\"}\n\n"}
+{"id": "1784000263883-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000263889-0", "sse": "event: chunk\ndata: {\"content\": \" direct\"}\n\n"}
+{"id": "1784000263899-0", "sse": "event: chunk\ndata: {\"content\": \" response\"}\n\n"}
+{"id": "1784000263913-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000263936-0", "sse": "event: chunk\ndata: {\"content\": \" continues\"}\n\n"}
+{"id": "1784000263961-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000263988-0", "sse": "event: chunk\ndata: {\"content\": \" conversation\"}\n\n"}
+{"id": "1784000264000-0", "sse": "event: chunk\ndata: {\"content\": \" without\"}\n\n"}
+{"id": "1784000264020-0", "sse": "event: chunk\ndata: {\"content\": \" mentioning\"}\n\n"}
+{"id": "1784000264304-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000264310-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000264315-0", "sse": "event: chunk\ndata: {\"content\": \" structure\"}\n\n"}
+{"id": "1784000264321-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000264326-0", "sse": "event: chunk\ndata: {\"content\": \"I\"}\n\n"}
+{"id": "1784000264330-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000264334-0", "sse": "event: chunk\ndata: {\"content\": \":\\n\"}\n\n"}
+{"id": "1784000264336-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1784000264339-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000264343-0", "sse": "event: chunk\ndata: {\"content\": \" Ack\"}\n\n"}
+{"id": "1784000264345-0", "sse": "event: chunk\ndata: {\"content\": \"nowledge\"}\n\n"}
+{"id": "1784000264347-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1784000264349-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000264351-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000264354-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000264357-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000264385-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000264396-0", "sse": "event: chunk\ndata: {\"content\": \" proceed\"}\n\n"}
+{"id": "1784000264418-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1784000264446-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000264464-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000264477-0", "sse": "event: chunk\ndata: {\"content\": \" Explain\"}\n\n"}
+{"id": "1784000264498-0", "sse": "event: chunk\ndata: {\"content\": \" briefly\"}\n\n"}
+{"id": "1784000264525-0", "sse": "event: chunk\ndata: {\"content\": \" what\"}\n\n"}
+{"id": "1784000264548-0", "sse": "event: chunk\ndata: {\"content\": \" I'll\"}\n\n"}
+{"id": "1784000264568-0", "sse": "event: chunk\ndata: {\"content\": \" do\"}\n\n"}
+{"id": "1784000264586-0", "sse": "event: chunk\ndata: {\"content\": \" once\"}\n\n"}
+{"id": "1784000264607-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000264625-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000264650-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000264667-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1784000264700-0", "sse": "event: chunk\ndata: {\"content\": \"3\"}\n\n"}
+{"id": "1784000264725-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000264735-0", "sse": "event: chunk\ndata: {\"content\": \" Not\"}\n\n"}
+{"id": "1784000264753-0", "sse": "event: chunk\ndata: {\"content\": \" mention\"}\n\n"}
+{"id": "1784000264775-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000264906-0", "sse": "event: chunk\ndata: {\"content\": \"Step\"}\n\n"}
+{"id": "1784000264914-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000264940-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1784000264950-0", "sse": "event: chunk\ndata: {\"content\": \"\\\"\"}\n\n"}
+{"id": "1784000264962-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000264975-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1784000264984-0", "sse": "event: chunk\ndata: {\"content\": \"Step\"}\n\n"}
+{"id": "1784000264988-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1784000264995-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1784000264998-0", "sse": "event: chunk\ndata: {\"content\": \"\\\"\"}\n\n"}
+{"id": "1784000265007-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1784000265026-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000265045-0", "sse": "event: chunk\ndata: {\"content\": \" plan\"}\n\n"}
+{"id": "1784000265224-0", "sse": "event: chunk\ndata: {\"content\": \" structure\"}\n\n"}
+{"id": "1784000265232-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\\n\"}\n\n"}
+{"id": "1784000265301-0", "sse": "event: chunk\ndata: {\"content\": \"The\"}\n\n"}
+{"id": "1784000265319-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1784000265349-0", "sse": "event: chunk\ndata: {\"content\": \" wants\"}\n\n"}
+{"id": "1784000265355-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000265363-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000265378-0", "sse": "event: chunk\ndata: {\"content\": \" use\"}\n\n"}
+{"id": "1784000265388-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000265403-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000265413-0", "sse": "event: chunk\ndata: {\"content\": \" (\"}\n\n"}
+{"id": "1784000265418-0", "sse": "event: chunk\ndata: {\"content\": \"likely\"}\n\n"}
+{"id": "1784000265433-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000265439-0", "sse": "event: chunk\ndata: {\"content\": \"_to\"}\n\n"}
+{"id": "1784000265453-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1784000265467-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000265472-0", "sse": "event: chunk\ndata: {\"content\": \" available\"}\n\n"}
+{"id": "1784000265483-0", "sse": "event: chunk\ndata: {\"content\": \" tools\"}\n\n"}
+{"id": "1784000265489-0", "sse": "event: chunk\ndata: {\"content\": \")\"}\n\n"}
+{"id": "1784000265495-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000265506-0", "sse": "event: chunk\ndata: {\"content\": \" send\"}\n\n"}
+{"id": "1784000265518-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000265529-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000265542-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000265565-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000265589-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000265602-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000265631-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000265655-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000265667-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000265687-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000265710-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000265740-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000265754-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000265794-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000265813-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000265909-0", "sse": "event: chunk\ndata: {\"content\": \" Since\"}\n\n"}
+{"id": "1784000265942-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000265960-0", "sse": "event: chunk\ndata: {\"content\": \" don't\"}\n\n"}
+{"id": "1784000265989-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000265997-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000266018-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000266024-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000266030-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000266043-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000266046-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000266065-0", "sse": "event: chunk\ndata: {\"content\": \" ask\"}\n\n"}
+{"id": "1784000266068-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000266076-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000266114-0", "sse": "event: chunk\ndata: {\"content\": \" clearly\"}\n\n"}
+{"id": "1784000266125-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000266137-0", "sse": "event: chunk\ndata: {\"content\": \" directly\"}\n\n"}
+{"id": "1784000266168-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000266187-0", "sse": "event: chunk\ndata: {\"content\": \"Wait\"}\n\n"}
+{"id": "1784000266197-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000266214-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000266236-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000266253-0", "sse": "event: chunk\ndata: {\"content\": \" check\"}\n\n"}
+{"id": "1784000266283-0", "sse": "event: chunk\ndata: {\"content\": \" if\"}\n\n"}
+{"id": "1784000266299-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000266325-0", "sse": "event: chunk\ndata: {\"content\": \" actually\"}\n\n"}
+{"id": "1784000266359-0", "sse": "event: chunk\ndata: {\"content\": \" have\"}\n\n"}
+{"id": "1784000266366-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000266386-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000266402-0", "sse": "event: chunk\ndata: {\"content\": \"_to\"}\n\n"}
+{"id": "1784000266425-0", "sse": "event: chunk\ndata: {\"content\": \" tool\"}\n\n"}
+{"id": "1784000266442-0", "sse": "event: chunk\ndata: {\"content\": \" available\"}\n\n"}
+{"id": "1784000266467-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000266483-0", "sse": "event: chunk\ndata: {\"content\": \" Looking\"}\n\n"}
+{"id": "1784000266503-0", "sse": "event: chunk\ndata: {\"content\": \" at\"}\n\n"}
+{"id": "1784000266543-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000266549-0", "sse": "event: chunk\ndata: {\"content\": \" system\"}\n\n"}
+{"id": "1784000266565-0", "sse": "event: chunk\ndata: {\"content\": \" prompt\"}\n\n"}
+{"id": "1784000266586-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000266608-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000266628-0", "sse": "event: chunk\ndata: {\"content\": \" don't\"}\n\n"}
+{"id": "1784000266647-0", "sse": "event: chunk\ndata: {\"content\": \" see\"}\n\n"}
+{"id": "1784000266673-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000266694-0", "sse": "event: chunk\ndata: {\"content\": \" explicitly\"}\n\n"}
+{"id": "1784000266727-0", "sse": "event: chunk\ndata: {\"content\": \" listed\"}\n\n"}
+{"id": "1784000266737-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1784000266757-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000266779-0", "sse": "event: chunk\ndata: {\"content\": \" available\"}\n\n"}
+{"id": "1784000266792-0", "sse": "event: chunk\ndata: {\"content\": \" tools\"}\n\n"}
+{"id": "1784000266817-0", "sse": "event: chunk\ndata: {\"content\": \" shown\"}\n\n"}
+{"id": "1784000266837-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000266875-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000266881-0", "sse": "event: chunk\ndata: {\"content\": \" right\"}\n\n"}
+{"id": "1784000266901-0", "sse": "event: chunk\ndata: {\"content\": \" now\"}\n\n"}
+{"id": "1784000266918-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000266942-0", "sse": "event: chunk\ndata: {\"content\": \" but\"}\n\n"}
+{"id": "1784000266963-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000266981-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000267001-0", "sse": "event: chunk\ndata: {\"content\": \" results\"}\n\n"}
+{"id": "1784000267023-0", "sse": "event: chunk\ndata: {\"content\": \" reference\"}\n\n"}
+{"id": "1784000267043-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000267069-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000267088-0", "sse": "event: chunk\ndata: {\"content\": \" Actually\"}\n\n"}
+{"id": "1784000267106-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000267128-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000267150-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000267169-0", "sse": "event: chunk\ndata: {\"content\": \" results\"}\n\n"}
+{"id": "1784000267200-0", "sse": "event: chunk\ndata: {\"content\": \" are\"}\n\n"}
+{"id": "1784000267212-0", "sse": "event: chunk\ndata: {\"content\": \" from\"}\n\n"}
+{"id": "1784000267230-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000267256-0", "sse": "event: chunk\ndata: {\"content\": \" previous\"}\n\n"}
+{"id": "1784000267273-0", "sse": "event: chunk\ndata: {\"content\": \" execution\"}\n\n"}
+{"id": "1784000267682-0", "sse": "event: chunk\ndata: {\"content\": \" attempt\"}\n\n"}
+{"id": "1784000267690-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000267697-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1784000267703-0", "sse": "event: chunk\ndata: {\"content\": \" current\"}\n\n"}
+{"id": "1784000267709-0", "sse": "event: chunk\ndata: {\"content\": \" prompt\"}\n\n"}
+{"id": "1784000267715-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000267722-0", "sse": "event: chunk\ndata: {\"content\": \" asking\"}\n\n"}
+{"id": "1784000267728-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000267732-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000267735-0", "sse": "event: chunk\ndata: {\"content\": \" compose\"}\n\n"}
+{"id": "1784000267738-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000267740-0", "sse": "event: chunk\ndata: {\"content\": \" final\"}\n\n"}
+{"id": "1784000267742-0", "sse": "event: chunk\ndata: {\"content\": \" response\"}\n\n"}
+{"id": "1784000267746-0", "sse": "event: chunk\ndata: {\"content\": \" from\"}\n\n"}
+{"id": "1784000267749-0", "sse": "event: chunk\ndata: {\"content\": \" those\"}\n\n"}
+{"id": "1784000267752-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1784000267754-0", "sse": "event: chunk\ndata: {\"content\": \" results\"}\n\n"}
+{"id": "1784000267759-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000267760-0", "sse": "event: chunk\ndata: {\"content\": \"So\"}\n\n"}
+{"id": "1784000267762-0", "sse": "event: chunk\ndata: {\"content\": \" my\"}\n\n"}
+{"id": "1784000267822-0", "sse": "event: chunk\ndata: {\"content\": \" response\"}\n\n"}
+{"id": "1784000267831-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000267842-0", "sse": "event: chunk\ndata: {\"content\": \" simply\"}\n\n"}
+{"id": "1784000267846-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1784000267855-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1784000267859-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000267867-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000267873-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000267882-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000267896-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000267919-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000267948-0", "sse": "event: chunk\ndata: {\"content\": \" proceed\"}\n\n"}
+{"id": "1784000267958-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000267978-0", "sse": "event: chunk\ndata: {\"content\": \" Once\"}\n\n"}
+{"id": "1784000268088-0", "sse": "event: chunk\ndata: {\"content\": \" provided\"}\n\n"}
+{"id": "1784000268107-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000268114-0", "sse": "event: chunk\ndata: {\"content\": \" I'll\"}\n\n"}
+{"id": "1784000268128-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1784000268135-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000268146-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000268151-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1784000268156-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000268182-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000268426-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000268430-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000268434-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000268437-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000268705-0", "sse": "event: chunk\ndata: {\"content\": \" simultaneously\"}\n\n"}
+{"id": "1784000268718-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1784000268724-0", "sse": "event: chunk\ndata: {\"content\": \"Let\"}\n\n"}
+{"id": "1784000268749-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000268762-0", "sse": "event: chunk\ndata: {\"content\": \" make\"}\n\n"}
+{"id": "1784000268776-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000268788-0", "sse": "event: chunk\ndata: {\"content\": \" direct\"}\n\n"}
+{"id": "1784000268804-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000268821-0", "sse": "event: chunk\ndata: {\"content\": \" helpful\"}\n\n"}
+{"id": "1784000268834-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000268847-0", "sse": "event: chunk\ndata: {\"content\": \"</think> I\"}\n\n"}
+{"id": "1784000268867-0", "sse": "event: chunk\ndata: {\"content\": \" need\"}\n\n"}
+{"id": "1784000268877-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1784000268885-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000268888-0", "sse": "event: chunk\ndata: {\"content\": \" before\"}\n\n"}
+{"id": "1784000268897-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000268901-0", "sse": "event: chunk\ndata: {\"content\": \" can\"}\n\n"}
+{"id": "1784000268908-0", "sse": "event: chunk\ndata: {\"content\": \" start\"}\n\n"}
+{"id": "1784000268911-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000268918-0", "sse": "event: chunk\ndata: {\"content\": \" To\"}\n\n"}
+{"id": "1784000268921-0", "sse": "event: chunk\ndata: {\"content\": \" use\"}\n\n"}
+{"id": "1784000268929-0", "sse": "event: chunk\ndata: {\"content\": \" `\"}\n\n"}
+{"id": "1784000268939-0", "sse": "event: chunk\ndata: {\"content\": \"delegate\"}\n\n"}
+{"id": "1784000268946-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1784000268958-0", "sse": "event: chunk\ndata: {\"content\": \"`\"}\n\n"}
+{"id": "1784000268961-0", "sse": "event: chunk\ndata: {\"content\": \" with\"}\n\n"}
+{"id": "1784000268973-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000268978-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000268987-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000268999-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1784000269002-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1784000269004-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000269014-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1784000269027-0", "sse": "event: chunk\ndata: {\"content\": \" parallel\"}\n\n"}
+{"id": "1784000269037-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000269049-0", "sse": "event: chunk\ndata: {\"content\": \" please\"}\n\n"}
+{"id": "1784000269059-0", "sse": "event: chunk\ndata: {\"content\": \" tell\"}\n\n"}
+{"id": "1784000269084-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1784000269103-0", "sse": "event: chunk\ndata: {\"content\": \":\\n\\n\"}\n\n"}
+{"id": "1784000269116-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1784000269138-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1784000269155-0", "sse": "event: chunk\ndata: {\"content\": \"Subject\"}\n\n"}
+{"id": "1784000269178-0", "sse": "event: chunk\ndata: {\"content\": \":**\"}\n\n"}
+{"id": "1784000269213-0", "sse": "event: chunk\ndata: {\"content\": \" What\"}\n\n"}
+{"id": "1784000269225-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1784000269250-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000269260-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000269278-0", "sse": "event: chunk\ndata: {\"content\": \" focus\"}\n\n"}
+{"id": "1784000269302-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1784000269322-0", "sse": "event: chunk\ndata: {\"content\": \"?\\n\"}\n\n"}
+{"id": "1784000269343-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1784000269363-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1784000269388-0", "sse": "event: chunk\ndata: {\"content\": \"Format\"}\n\n"}
+{"id": "1784000269408-0", "sse": "event: chunk\ndata: {\"content\": \":**\"}\n\n"}
+{"id": "1784000269425-0", "sse": "event: chunk\ndata: {\"content\": \" What\"}\n\n"}
+{"id": "1784000269445-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1784000269466-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000269492-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000269508-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1784000269534-0", "sse": "event: chunk\ndata: {\"content\": \"?\"}\n\n"}
+{"id": "1784000269561-0", "sse": "event: chunk\ndata: {\"content\": \" (\"}\n\n"}
+{"id": "1784000269571-0", "sse": "event: chunk\ndata: {\"content\": \"e\"}\n\n"}
+{"id": "1784000269591-0", "sse": "event: chunk\ndata: {\"content\": \".g\"}\n\n"}
+{"id": "1784000269623-0", "sse": "event: chunk\ndata: {\"content\": \".,\"}\n\n"}
+{"id": "1784000269635-0", "sse": "event: chunk\ndata: {\"content\": \" report\"}\n\n"}
+{"id": "1784000269668-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000269682-0", "sse": "event: chunk\ndata: {\"content\": \" essay\"}\n\n"}
+{"id": "1784000269707-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000269730-0", "sse": "event: chunk\ndata: {\"content\": \" presentation\"}\n\n"}
+{"id": "1784000269751-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000269767-0", "sse": "event: chunk\ndata: {\"content\": \" memo\"}\n\n"}
+{"id": "1784000269781-0", "sse": "event: chunk\ndata: {\"content\": \")\\n\\n\"}\n\n"}
+{"id": "1784000269803-0", "sse": "event: chunk\ndata: {\"content\": \"Once\"}\n\n"}
+{"id": "1784000269824-0", "sse": "event: chunk\ndata: {\"content\": \" you\"}\n\n"}
+{"id": "1784000269847-0", "sse": "event: chunk\ndata: {\"content\": \" provide\"}\n\n"}
+{"id": "1784000269869-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000269887-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1784000269908-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1784000269931-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1784000269952-0", "sse": "event: chunk\ndata: {\"content\": \"\\u2019ll\"}\n\n"}
+{"id": "1784000269968-0", "sse": "event: chunk\ndata: {\"content\": \" immediately\"}\n\n"}
+{"id": "1784000269988-0", "sse": "event: chunk\ndata: {\"content\": \" kick\"}\n\n"}
+{"id": "1784000270012-0", "sse": "event: chunk\ndata: {\"content\": \" off\"}\n\n"}
+{"id": "1784000270033-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000270075-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1784000270198-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1784000270208-0", "sse": "event: chunk\ndata: {\"content\": \" with\"}\n\n"}
+{"id": "1784000270224-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1784000270245-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1784000270254-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1784000270279-0", "sse": "event: chunk\ndata: {\"content\": \" begin\"}\n\n"}
+{"id": "1784000270283-0", "sse": "event: chunk\ndata: {\"content\": \" drafting\"}\n\n"}
+{"id": "1784000270287-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1784000270290-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1784000270307-0", "sse": "event: chunk\ndata: {\"content\": \" structure\"}\n\n"}
+{"id": "1784000270312-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1784000270316-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1784000270333-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1784000270347-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1784000271238-0", "sse": "event: plan_complete\ndata: {\"plan_id\": \"9676f976\", \"subtask_count\": 2, \"completed_count\": 2, \"total_time_ms\": 39851.2}\n\n"}
+{"id": "1784000271254-0", "sse": "event: done\ndata: {\"task_id\": \"dc79bc06\", \"thinking\": \"The user is asking me to synthesize the results of a multi-step plan into a coherent final response. The original task was: \\\"Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself.\\\"\\n\\nLooking at the step results:\\n- Step 1 asked the user \\\"What topic should I ask Mobius to research?\\\" because no topic was provided.\\n- Step 2 also noted that no topic was provided and asked again.\\n\\nSo essentially, both steps failed to complete their core objectives because the research topic was missing. I need to synthesize this into a concise, direct response that continues the conversation without mentioning the step structure.\\n\\nI should:\\n1. Acknowledge that I need the topic to proceed\\n2. Explain briefly what I'll do once I have it\\n3. Not mention \\\"Step 1\\\" or \\\"Step 2\\\" or the plan structure\\n\\nThe user wants me to use delegate_start (likely delegate_to in the available tools) to send a research task to Mobius, and draft an outline while it runs. Since I don't have the topic, I need to ask for it clearly and directly.\\n\\nWait, I should check if I actually have the delegate_to tool available. Looking at the system prompt, I don't see it explicitly listed in the available tools shown to me right now, but the step results reference it. Actually, the step results are from a previous execution attempt. The current prompt is asking me to compose a final response from those step results.\\n\\nSo my response should simply be: I need the research topic to proceed. Once provided, I'll delegate the research to Mobius and draft an outline simultaneously.\\n\\nLet me make it direct and helpful.\", \"has_thinking\": true, \"total_time_ms\": 56300.27723312378, \"session_id\": \"b974b40d-170d-4bcb-b75b-da0dd332d8c6\", \"profile_name\": null, \"agent_name\": \"Kim\", \"agent_id\": \"lucky-rising-thistle\", \"model\": \"moonshotai/kimi-k2.6\", \"provider\": \"openrouter\", \"tokens_input\": 10004, \"tokens_output\": 1287, \"context_window\": 262144, \"context_used\": 11291, \"context_summarized\": false, \"context_dropped_turns\": 0, \"cost_estimate\": 0.01099131, \"cost_currency\": \"USD\", \"pricing_snapshot\": {\"cost_per_1k_input\": 0.00066, \"cost_per_1k_output\": 0.00341}, \"cost_source\": \"estimate\", \"tokens_reasoning\": 0, \"finish_reason\": null, \"truncated\": false, \"thinking_pattern\": \"native\", \"research\": false}\n\n"}
+{"id": "1784000271323-0", "sse": "event: close\ndata: {}\n\n"}
+{"id": "1784000271334-0", "sse": "event: close\ndata: {}\n\n"}

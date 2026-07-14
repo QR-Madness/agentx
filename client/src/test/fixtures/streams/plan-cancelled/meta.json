@@ -1,0 +1,21 @@
+{
+  "scenario": "plan-cancelled",
+  "run_id": "817f5873cbcd4840",
+  "conversation_id": "4268d97e-1f5c-4823-be97-f87b9f824da5",
+  "status": "cancelled",
+  "message": "Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself.",
+  "created_at": "2026-07-14T03:30:12.932762+00:00",
+  "captured_at": "2026-07-14T04:03:07.579304+00:00",
+  "event_count": 860,
+  "event_census": {
+    "chunk": 849,
+    "status": 3,
+    "subtask_start": 2,
+    "subtask_failed": 2,
+    "start": 1,
+    "memory_context": 1,
+    "plan_start": 1,
+    "close": 1
+  },
+  "turn_count": 2
+}

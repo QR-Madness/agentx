@@ -1,0 +1,861 @@
+{"_state": {"user_id": "default", "created_at": "2026-07-14T03:30:12.932762+00:00", "cancel_requested": "1", "status": "cancelled", "session_id": "4268d97e-1f5c-4823-be97-f87b9f824da5", "message": "Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself.", "alive_at": "2026-07-14T03:30:52.940261+00:00", "updated_at": "2026-07-14T03:30:53.964325+00:00"}}
+{"id": "1783999812998-0", "sse": "event: status\ndata: {\"phase\": \"recalling\", \"label\": \"Recalling memory\\u2026\"}\n\n"}
+{"id": "1783999825231-0", "sse": "event: status\ndata: {\"phase\": \"composing\", \"label\": \"Composing context\\u2026\"}\n\n"}
+{"id": "1783999825455-0", "sse": "event: start\ndata: {\"task_id\": \"993aecc4\", \"session_id\": \"4268d97e-1f5c-4823-be97-f87b9f824da5\", \"model\": \"moonshotai/kimi-k2.6\", \"model_display_name\": \"moonshotai/kimi-k2.6\", \"profile_name\": null, \"agent_name\": \"Kim\", \"agent_id\": \"lucky-rising-thistle\", \"context_window\": 262144, \"max_output_tokens\": 262144}\n\n"}
+{"id": "1783999825463-0", "sse": "event: memory_context\ndata: {\"facts\": [{\"claim\": \"Kim delegated focused web research on documentation debt to the Researcher agent while preparing to organize findings into a project document\", \"confidence\": 0.9, \"source\": null}, {\"claim\": \"Kim produced the research content directly, not via a delegated Researcher agent\", \"confidence\": 0.9, \"source\": null}, {\"claim\": \"Kim proposed four concrete next steps: save research as living document, outline article structure, draft a section, or create a visual diagram\", \"confidence\": 0.9, \"source\": null}, {\"claim\": \"User asked AgentX to search for the tallest building in the world and the deepest ocean trench\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"User wants Kim to save research to the project\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"User wants AgentX to provide a cool fact\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"Kim generated the research summary directly in the response\", \"confidence\": 0.9, \"source\": null}, {\"claim\": \"User asked AgentX to tell them something they didn't know\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"User reacted with surprise to something AgentX said\", \"confidence\": 0.95, \"source\": null}, {\"claim\": \"User addressed AgentX as Terra\", \"confidence\": 0.95, \"source\": null}], \"entities\": [{\"name\": \"Canada\", \"type\": \"Location\"}, {\"name\": \"United States\", \"type\": \"Location\"}, {\"name\": \"Sol\", \"type\": \"Person\"}, {\"name\": \"Project document for research organization\", \"type\": \"Approach\"}, {\"name\": \"Documentation as retention tool\", \"type\": \"Insight\"}, {\"name\": \"Documentation compounding curve\", \"type\": \"Pattern\"}, {\"name\": \"Just enough documentation framework\", \"type\": \"Concept\"}, {\"name\": \"PR ritual workflow\", \"type\": \"Approach\"}], \"relevant_turns\": [{\"timestamp\": \"2026-07-10T14:35:37.540508000+00:00\", \"role\": \"user\", \"content\": \"What can you do?\"}, {\"timestamp\": \"2026-07-10T17:23:35.706302000+00:00\", \"role\": \"user\", \"content\": \"yeah i guess that makes sense. tell me something else\"}], \"query\": \"Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself.\"}\n\n"}
+{"id": "1783999825467-0", "sse": "event: status\ndata: {\"phase\": \"composing\", \"label\": \"Planning approach\"}\n\n"}
+{"id": "1783999833404-0", "sse": "event: plan_start\ndata: {\"plan_id\": \"dedb3c8e\", \"task\": \"Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself.\", \"subtask_count\": 2, \"complexity\": \"complex\"}\n\n"}
+{"id": "1783999833421-0", "sse": "event: subtask_start\ndata: {\"plan_id\": \"dedb3c8e\", \"subtask_id\": 0, \"description\": \"Start a research task via delegate_start to Mobius on emerging trends in AI-assisted software development\", \"type\": \"tool_use\", \"progress\": 0.0}\n\n"}
+{"id": "1783999833642-0", "sse": "event: subtask_failed\ndata: {\"plan_id\": \"dedb3c8e\", \"subtask_id\": 0, \"error\": \"'NoneType' object has no attribute 'specialists'\", \"progress\": 0.5}\n\n"}
+{"id": "1783999833647-0", "sse": "event: subtask_start\ndata: {\"plan_id\": \"dedb3c8e\", \"subtask_id\": 1, \"description\": \"Draft a preliminary outline on AI-assisted software development while the research task runs\", \"type\": \"generation\", \"progress\": 0.5}\n\n"}
+{"id": "1783999833698-0", "sse": "event: subtask_failed\ndata: {\"plan_id\": \"dedb3c8e\", \"subtask_id\": 1, \"error\": \"'NoneType' object has no attribute 'specialists'\", \"progress\": 1.0}\n\n"}
+{"id": "1783999834748-0", "sse": "event: chunk\ndata: {\"content\": \"<think>The\"}\n\n"}
+{"id": "1783999834753-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1783999834758-0", "sse": "event: chunk\ndata: {\"content\": \" asked\"}\n\n"}
+{"id": "1783999834764-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1783999834768-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999834970-0", "sse": "event: chunk\ndata: {\"content\": \" use\"}\n\n"}
+{"id": "1783999834974-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1783999834989-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1783999834991-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999834992-0", "sse": "event: chunk\ndata: {\"content\": \" send\"}\n\n"}
+{"id": "1783999834994-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1783999834996-0", "sse": "event: chunk\ndata: {\"content\": \" research\"}\n\n"}
+{"id": "1783999834999-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1783999835000-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999835003-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1783999835005-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1783999835009-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999835011-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999835025-0", "sse": "event: chunk\ndata: {\"content\": \" while\"}\n\n"}
+{"id": "1783999835028-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1783999835062-0", "sse": "event: chunk\ndata: {\"content\": \" runs\"}\n\n"}
+{"id": "1783999835065-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999835106-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1783999835110-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1783999835140-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1783999835145-0", "sse": "event: chunk\ndata: {\"content\": \" myself\"}\n\n"}
+{"id": "1783999835179-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999835184-0", "sse": "event: chunk\ndata: {\"content\": \" Both\"}\n\n"}
+{"id": "1783999835212-0", "sse": "event: chunk\ndata: {\"content\": \" steps\"}\n\n"}
+{"id": "1783999835248-0", "sse": "event: chunk\ndata: {\"content\": \" failed\"}\n\n"}
+{"id": "1783999835254-0", "sse": "event: chunk\ndata: {\"content\": \" with\"}\n\n"}
+{"id": "1783999835288-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"'\"}\n\n"}
+{"id": "1783999835324-0", "sse": "event: chunk\ndata: {\"content\": \"None\"}\n\n"}
+{"id": "1783999835364-0", "sse": "event: chunk\ndata: {\"content\": \"Type\"}\n\n"}
+{"id": "1783999835369-0", "sse": "event: chunk\ndata: {\"content\": \"'\"}\n\n"}
+{"id": "1783999835397-0", "sse": "event: chunk\ndata: {\"content\": \" object\"}\n\n"}
+{"id": "1783999835403-0", "sse": "event: chunk\ndata: {\"content\": \" has\"}\n\n"}
+{"id": "1783999835437-0", "sse": "event: chunk\ndata: {\"content\": \" no\"}\n\n"}
+{"id": "1783999835453-0", "sse": "event: chunk\ndata: {\"content\": \" attribute\"}\n\n"}
+{"id": "1783999835475-0", "sse": "event: chunk\ndata: {\"content\": \" '\"}\n\n"}
+{"id": "1783999835479-0", "sse": "event: chunk\ndata: {\"content\": \"special\"}\n\n"}
+{"id": "1783999835514-0", "sse": "event: chunk\ndata: {\"content\": \"ists\"}\n\n"}
+{"id": "1783999835518-0", "sse": "event: chunk\ndata: {\"content\": \"'\\\"\"}\n\n"}
+{"id": "1783999835553-0", "sse": "event: chunk\ndata: {\"content\": \" which\"}\n\n"}
+{"id": "1783999835597-0", "sse": "event: chunk\ndata: {\"content\": \" suggests\"}\n\n"}
+{"id": "1783999835602-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999835624-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1783999835629-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1783999835667-0", "sse": "event: chunk\ndata: {\"content\": \" tool\"}\n\n"}
+{"id": "1783999835673-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1783999835706-0", "sse": "event: chunk\ndata: {\"content\": \" related\"}\n\n"}
+{"id": "1783999835742-0", "sse": "event: chunk\ndata: {\"content\": \" infrastructure\"}\n\n"}
+{"id": "1783999835778-0", "sse": "event: chunk\ndata: {\"content\": \" is\"}\n\n"}
+{"id": "1783999835789-0", "sse": "event: chunk\ndata: {\"content\": \" not\"}\n\n"}
+{"id": "1783999835826-0", "sse": "event: chunk\ndata: {\"content\": \" available\"}\n\n"}
+{"id": "1783999835829-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1783999835853-0", "sse": "event: chunk\ndata: {\"content\": \" mis\"}\n\n"}
+{"id": "1783999835894-0", "sse": "event: chunk\ndata: {\"content\": \"configured\"}\n\n"}
+{"id": "1783999835897-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1783999835922-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1783999835928-0", "sse": "event: chunk\ndata: {\"content\": \" environment\"}\n\n"}
+{"id": "1783999835956-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1783999835960-0", "sse": "event: chunk\ndata: {\"content\": \"I\"}\n\n"}
+{"id": "1783999835993-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1783999836028-0", "sse": "event: chunk\ndata: {\"content\": \":\\n\"}\n\n"}
+{"id": "1783999836066-0", "sse": "event: chunk\ndata: {\"content\": \"1\"}\n\n"}
+{"id": "1783999836078-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999836104-0", "sse": "event: chunk\ndata: {\"content\": \" Ack\"}\n\n"}
+{"id": "1783999836110-0", "sse": "event: chunk\ndata: {\"content\": \"nowledge\"}\n\n"}
+{"id": "1783999836138-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999836144-0", "sse": "event: chunk\ndata: {\"content\": \" failure\"}\n\n"}
+{"id": "1783999836174-0", "sse": "event: chunk\ndata: {\"content\": \" of\"}\n\n"}
+{"id": "1783999836179-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999836210-0", "sse": "event: chunk\ndata: {\"content\": \" delegation\"}\n\n"}
+{"id": "1783999836249-0", "sse": "event: chunk\ndata: {\"content\": \" tool\"}\n\n"}
+{"id": "1783999836286-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999836326-0", "sse": "event: chunk\ndata: {\"content\": \"2\"}\n\n"}
+{"id": "1783999836329-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999836354-0", "sse": "event: chunk\ndata: {\"content\": \" Proceed\"}\n\n"}
+{"id": "1783999836359-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999836389-0", "sse": "event: chunk\ndata: {\"content\": \" fulfill\"}\n\n"}
+{"id": "1783999836423-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999836428-0", "sse": "event: chunk\ndata: {\"content\": \" user's\"}\n\n"}
+{"id": "1783999836458-0", "sse": "event: chunk\ndata: {\"content\": \" intent\"}\n\n"}
+{"id": "1783999836463-0", "sse": "event: chunk\ndata: {\"content\": \" as\"}\n\n"}
+{"id": "1783999836493-0", "sse": "event: chunk\ndata: {\"content\": \" best\"}\n\n"}
+{"id": "1783999836532-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1783999836569-0", "sse": "event: chunk\ndata: {\"content\": \" can\"}\n\n"}
+{"id": "1783999836575-0", "sse": "event: chunk\ndata: {\"content\": \" directly\"}\n\n"}
+{"id": "1783999836606-0", "sse": "event: chunk\ndata: {\"content\": \" \\u2014\"}\n\n"}
+{"id": "1783999836643-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1783999836679-0", "sse": "event: chunk\ndata: {\"content\": \" an\"}\n\n"}
+{"id": "1783999836713-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1783999836721-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1783999836889-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999836967-0", "sse": "event: chunk\ndata: {\"content\": \"-assisted\"}\n\n"}
+{"id": "1783999836972-0", "sse": "event: chunk\ndata: {\"content\": \" software\"}\n\n"}
+{"id": "1783999836980-0", "sse": "event: chunk\ndata: {\"content\": \" development\"}\n\n"}
+{"id": "1783999836984-0", "sse": "event: chunk\ndata: {\"content\": \" myself\"}\n\n"}
+{"id": "1783999836987-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999837009-0", "sse": "event: chunk\ndata: {\"content\": \"3\"}\n\n"}
+{"id": "1783999837011-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999837013-0", "sse": "event: chunk\ndata: {\"content\": \" Be\"}\n\n"}
+{"id": "1783999837038-0", "sse": "event: chunk\ndata: {\"content\": \" direct\"}\n\n"}
+{"id": "1783999837043-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999837047-0", "sse": "event: chunk\ndata: {\"content\": \" use\"}\n\n"}
+{"id": "1783999837322-0", "sse": "event: chunk\ndata: {\"content\": \" bullet\"}\n\n"}
+{"id": "1783999837329-0", "sse": "event: chunk\ndata: {\"content\": \" points\"}\n\n"}
+{"id": "1783999837336-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999837341-0", "sse": "event: chunk\ndata: {\"content\": \" avoid\"}\n\n"}
+{"id": "1783999837347-0", "sse": "event: chunk\ndata: {\"content\": \" filler\"}\n\n"}
+{"id": "1783999837349-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\\n\"}\n\n"}
+{"id": "1783999837352-0", "sse": "event: chunk\ndata: {\"content\": \"Since\"}\n\n"}
+{"id": "1783999837360-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1783999837365-0", "sse": "event: chunk\ndata: {\"content\": \" cannot\"}\n\n"}
+{"id": "1783999837368-0", "sse": "event: chunk\ndata: {\"content\": \" actually\"}\n\n"}
+{"id": "1783999837373-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1783999837378-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999837381-0", "sse": "event: chunk\ndata: {\"content\": \" Mob\"}\n\n"}
+{"id": "1783999837384-0", "sse": "event: chunk\ndata: {\"content\": \"ius\"}\n\n"}
+{"id": "1783999837388-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999837393-0", "sse": "event: chunk\ndata: {\"content\": \" I'll\"}\n\n"}
+{"id": "1783999837398-0", "sse": "event: chunk\ndata: {\"content\": \" just\"}\n\n"}
+{"id": "1783999837423-0", "sse": "event: chunk\ndata: {\"content\": \" provide\"}\n\n"}
+{"id": "1783999837429-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999837459-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1783999837464-0", "sse": "event: chunk\ndata: {\"content\": \" directly\"}\n\n"}
+{"id": "1783999837496-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999837530-0", "sse": "event: chunk\ndata: {\"content\": \" The\"}\n\n"}
+{"id": "1783999837535-0", "sse": "event: chunk\ndata: {\"content\": \" topic\"}\n\n"}
+{"id": "1783999837564-0", "sse": "event: chunk\ndata: {\"content\": \" was\"}\n\n"}
+{"id": "1783999837607-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1783999837633-0", "sse": "event: chunk\ndata: {\"content\": \"em\"}\n\n"}
+{"id": "1783999837681-0", "sse": "event: chunk\ndata: {\"content\": \"erging\"}\n\n"}
+{"id": "1783999837685-0", "sse": "event: chunk\ndata: {\"content\": \" trends\"}\n\n"}
+{"id": "1783999837746-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1783999837752-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999837756-0", "sse": "event: chunk\ndata: {\"content\": \"-assisted\"}\n\n"}
+{"id": "1783999837778-0", "sse": "event: chunk\ndata: {\"content\": \" software\"}\n\n"}
+{"id": "1783999837813-0", "sse": "event: chunk\ndata: {\"content\": \" development\"}\n\n"}
+{"id": "1783999837820-0", "sse": "event: chunk\ndata: {\"content\": \"\\\"\"}\n\n"}
+{"id": "1783999837850-0", "sse": "event: chunk\ndata: {\"content\": \" based\"}\n\n"}
+{"id": "1783999837860-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1783999837880-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999837883-0", "sse": "event: chunk\ndata: {\"content\": \" step\"}\n\n"}
+{"id": "1783999837924-0", "sse": "event: chunk\ndata: {\"content\": \" description\"}\n\n"}
+{"id": "1783999837931-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1783999837952-0", "sse": "event: chunk\ndata: {\"content\": \"I\"}\n\n"}
+{"id": "1783999837958-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1783999837990-0", "sse": "event: chunk\ndata: {\"content\": \" not\"}\n\n"}
+{"id": "1783999837996-0", "sse": "event: chunk\ndata: {\"content\": \" mention\"}\n\n"}
+{"id": "1783999838025-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999838028-0", "sse": "event: chunk\ndata: {\"content\": \" steps\"}\n\n"}
+{"id": "1783999838059-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1783999838077-0", "sse": "event: chunk\ndata: {\"content\": \" plan\"}\n\n"}
+{"id": "1783999838098-0", "sse": "event: chunk\ndata: {\"content\": \" structure\"}\n\n"}
+{"id": "1783999838102-0", "sse": "event: chunk\ndata: {\"content\": \" unless\"}\n\n"}
+{"id": "1783999838129-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1783999838146-0", "sse": "event: chunk\ndata: {\"content\": \" adds\"}\n\n"}
+{"id": "1783999838165-0", "sse": "event: chunk\ndata: {\"content\": \" clarity\"}\n\n"}
+{"id": "1783999838178-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999838201-0", "sse": "event: chunk\ndata: {\"content\": \" per\"}\n\n"}
+{"id": "1783999838235-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999838268-0", "sse": "event: chunk\ndata: {\"content\": \" synthesis\"}\n\n"}
+{"id": "1783999838732-0", "sse": "event: chunk\ndata: {\"content\": \" instructions\"}\n\n"}
+{"id": "1783999838737-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999838742-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1783999838748-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1783999838753-0", "sse": "event: chunk\ndata: {\"content\": \" should\"}\n\n"}
+{"id": "1783999838758-0", "sse": "event: chunk\ndata: {\"content\": \" briefly\"}\n\n"}
+{"id": "1783999838764-0", "sse": "event: chunk\ndata: {\"content\": \" note\"}\n\n"}
+{"id": "1783999838769-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1783999838775-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999838780-0", "sse": "event: chunk\ndata: {\"content\": \" delegation\"}\n\n"}
+{"id": "1783999838783-0", "sse": "event: chunk\ndata: {\"content\": \" tool\"}\n\n"}
+{"id": "1783999838788-0", "sse": "event: chunk\ndata: {\"content\": \" was\"}\n\n"}
+{"id": "1783999838792-0", "sse": "event: chunk\ndata: {\"content\": \" unavailable\"}\n\n"}
+{"id": "1783999838796-0", "sse": "event: chunk\ndata: {\"content\": \" so\"}\n\n"}
+{"id": "1783999838799-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1783999838801-0", "sse": "event: chunk\ndata: {\"content\": \" proceeded\"}\n\n"}
+{"id": "1783999838804-0", "sse": "event: chunk\ndata: {\"content\": \" directly\"}\n\n"}
+{"id": "1783999838808-0", "sse": "event: chunk\ndata: {\"content\": \" with\"}\n\n"}
+{"id": "1783999838816-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999838818-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1783999838821-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1783999838841-0", "sse": "event: chunk\ndata: {\"content\": \"Wait\"}\n\n"}
+{"id": "1783999838845-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999838850-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999838854-0", "sse": "event: chunk\ndata: {\"content\": \" instructions\"}\n\n"}
+{"id": "1783999838858-0", "sse": "event: chunk\ndata: {\"content\": \" say\"}\n\n"}
+{"id": "1783999838862-0", "sse": "event: chunk\ndata: {\"content\": \" \\\"\"}\n\n"}
+{"id": "1783999838866-0", "sse": "event: chunk\ndata: {\"content\": \"Do\"}\n\n"}
+{"id": "1783999838870-0", "sse": "event: chunk\ndata: {\"content\": \" not\"}\n\n"}
+{"id": "1783999838876-0", "sse": "event: chunk\ndata: {\"content\": \" mention\"}\n\n"}
+{"id": "1783999838889-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999838894-0", "sse": "event: chunk\ndata: {\"content\": \" steps\"}\n\n"}
+{"id": "1783999838935-0", "sse": "event: chunk\ndata: {\"content\": \" or\"}\n\n"}
+{"id": "1783999838940-0", "sse": "event: chunk\ndata: {\"content\": \" plan\"}\n\n"}
+{"id": "1783999838956-0", "sse": "event: chunk\ndata: {\"content\": \" structure\"}\n\n"}
+{"id": "1783999838994-0", "sse": "event: chunk\ndata: {\"content\": \" unless\"}\n\n"}
+{"id": "1783999839003-0", "sse": "event: chunk\ndata: {\"content\": \" it\"}\n\n"}
+{"id": "1783999839035-0", "sse": "event: chunk\ndata: {\"content\": \" adds\"}\n\n"}
+{"id": "1783999839040-0", "sse": "event: chunk\ndata: {\"content\": \" clarity\"}\n\n"}
+{"id": "1783999839062-0", "sse": "event: chunk\ndata: {\"content\": \".\\\"\"}\n\n"}
+{"id": "1783999839067-0", "sse": "event: chunk\ndata: {\"content\": \" But\"}\n\n"}
+{"id": "1783999839097-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999839138-0", "sse": "event: chunk\ndata: {\"content\": \" user\"}\n\n"}
+{"id": "1783999839144-0", "sse": "event: chunk\ndata: {\"content\": \" specifically\"}\n\n"}
+{"id": "1783999839169-0", "sse": "event: chunk\ndata: {\"content\": \" asked\"}\n\n"}
+{"id": "1783999839182-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999839203-0", "sse": "event: chunk\ndata: {\"content\": \" use\"}\n\n"}
+{"id": "1783999839240-0", "sse": "event: chunk\ndata: {\"content\": \" delegate\"}\n\n"}
+{"id": "1783999839279-0", "sse": "event: chunk\ndata: {\"content\": \"_start\"}\n\n"}
+{"id": "1783999839414-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999839423-0", "sse": "event: chunk\ndata: {\"content\": \" It\"}\n\n"}
+{"id": "1783999839508-0", "sse": "event: chunk\ndata: {\"content\": \" might\"}\n\n"}
+{"id": "1783999839514-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1783999839516-0", "sse": "event: chunk\ndata: {\"content\": \" helpful\"}\n\n"}
+{"id": "1783999839518-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999839520-0", "sse": "event: chunk\ndata: {\"content\": \" briefly\"}\n\n"}
+{"id": "1783999839529-0", "sse": "event: chunk\ndata: {\"content\": \" note\"}\n\n"}
+{"id": "1783999839533-0", "sse": "event: chunk\ndata: {\"content\": \" that\"}\n\n"}
+{"id": "1783999839539-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999839545-0", "sse": "event: chunk\ndata: {\"content\": \" delegation\"}\n\n"}
+{"id": "1783999839552-0", "sse": "event: chunk\ndata: {\"content\": \" function\"}\n\n"}
+{"id": "1783999839589-0", "sse": "event: chunk\ndata: {\"content\": \" wasn't\"}\n\n"}
+{"id": "1783999839628-0", "sse": "event: chunk\ndata: {\"content\": \" available\"}\n\n"}
+{"id": "1783999839633-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999839661-0", "sse": "event: chunk\ndata: {\"content\": \" so\"}\n\n"}
+{"id": "1783999839672-0", "sse": "event: chunk\ndata: {\"content\": \" I'm\"}\n\n"}
+{"id": "1783999839703-0", "sse": "event: chunk\ndata: {\"content\": \" providing\"}\n\n"}
+{"id": "1783999839732-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999839738-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1783999839766-0", "sse": "event: chunk\ndata: {\"content\": \" directly\"}\n\n"}
+{"id": "1783999839771-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999839797-0", "sse": "event: chunk\ndata: {\"content\": \" That's\"}\n\n"}
+{"id": "1783999839832-0", "sse": "event: chunk\ndata: {\"content\": \" relevant\"}\n\n"}
+{"id": "1783999839874-0", "sse": "event: chunk\ndata: {\"content\": \" context\"}\n\n"}
+{"id": "1783999839905-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1783999839915-0", "sse": "event: chunk\ndata: {\"content\": \"Let\"}\n\n"}
+{"id": "1783999839939-0", "sse": "event: chunk\ndata: {\"content\": \" me\"}\n\n"}
+{"id": "1783999839948-0", "sse": "event: chunk\ndata: {\"content\": \" draft\"}\n\n"}
+{"id": "1783999839975-0", "sse": "event: chunk\ndata: {\"content\": \" a\"}\n\n"}
+{"id": "1783999839978-0", "sse": "event: chunk\ndata: {\"content\": \" solid\"}\n\n"}
+{"id": "1783999840014-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1783999840048-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1783999840052-0", "sse": "event: chunk\ndata: {\"content\": \" emerging\"}\n\n"}
+{"id": "1783999840085-0", "sse": "event: chunk\ndata: {\"content\": \" trends\"}\n\n"}
+{"id": "1783999840090-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1783999840123-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999840128-0", "sse": "event: chunk\ndata: {\"content\": \"-assisted\"}\n\n"}
+{"id": "1783999840153-0", "sse": "event: chunk\ndata: {\"content\": \" software\"}\n\n"}
+{"id": "1783999840159-0", "sse": "event: chunk\ndata: {\"content\": \" development\"}\n\n"}
+{"id": "1783999840189-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1783999840195-0", "sse": "event: chunk\ndata: {\"content\": \"Outline\"}\n\n"}
+{"id": "1783999840223-0", "sse": "event: chunk\ndata: {\"content\": \" structure\"}\n\n"}
+{"id": "1783999840254-0", "sse": "event: chunk\ndata: {\"content\": \":\\n\"}\n\n"}
+{"id": "1783999840264-0", "sse": "event: chunk\ndata: {\"content\": \"I\"}\n\n"}
+{"id": "1783999840289-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999840294-0", "sse": "event: chunk\ndata: {\"content\": \" Introduction\"}\n\n"}
+{"id": "1783999840328-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999840367-0", "sse": "event: chunk\ndata: {\"content\": \"II\"}\n\n"}
+{"id": "1783999840397-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999840409-0", "sse": "event: chunk\ndata: {\"content\": \" Current\"}\n\n"}
+{"id": "1783999840435-0", "sse": "event: chunk\ndata: {\"content\": \" State\"}\n\n"}
+{"id": "1783999840473-0", "sse": "event: chunk\ndata: {\"content\": \" /\"}\n\n"}
+{"id": "1783999840508-0", "sse": "event: chunk\ndata: {\"content\": \" Key\"}\n\n"}
+{"id": "1783999840542-0", "sse": "event: chunk\ndata: {\"content\": \" Trends\"}\n\n"}
+{"id": "1783999840578-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999840585-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999840618-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999840623-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999840647-0", "sse": "event: chunk\ndata: {\"content\": \" pair\"}\n\n"}
+{"id": "1783999840683-0", "sse": "event: chunk\ndata: {\"content\": \" programming\"}\n\n"}
+{"id": "1783999840688-0", "sse": "event: chunk\ndata: {\"content\": \" (\"}\n\n"}
+{"id": "1783999840717-0", "sse": "event: chunk\ndata: {\"content\": \"Git\"}\n\n"}
+{"id": "1783999840755-0", "sse": "event: chunk\ndata: {\"content\": \"Hub\"}\n\n"}
+{"id": "1783999840762-0", "sse": "event: chunk\ndata: {\"content\": \" Cop\"}\n\n"}
+{"id": "1783999840790-0", "sse": "event: chunk\ndata: {\"content\": \"ilot\"}\n\n"}
+{"id": "1783999840795-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999840823-0", "sse": "event: chunk\ndata: {\"content\": \" etc\"}\n\n"}
+{"id": "1783999840828-0", "sse": "event: chunk\ndata: {\"content\": \".)\\n\"}\n\n"}
+{"id": "1783999840858-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999840862-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999840894-0", "sse": "event: chunk\ndata: {\"content\": \" Aut\"}\n\n"}
+{"id": "1783999840928-0", "sse": "event: chunk\ndata: {\"content\": \"onomous\"}\n\n"}
+{"id": "1783999840933-0", "sse": "event: chunk\ndata: {\"content\": \" agents\"}\n\n"}
+{"id": "1783999840958-0", "sse": "event: chunk\ndata: {\"content\": \" (\"}\n\n"}
+{"id": "1783999840962-0", "sse": "event: chunk\ndata: {\"content\": \"Dev\"}\n\n"}
+{"id": "1783999840995-0", "sse": "event: chunk\ndata: {\"content\": \"in\"}\n\n"}
+{"id": "1783999841007-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999841032-0", "sse": "event: chunk\ndata: {\"content\": \" etc\"}\n\n"}
+{"id": "1783999841069-0", "sse": "event: chunk\ndata: {\"content\": \".)\\n\"}\n\n"}
+{"id": "1783999841078-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999841098-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999841101-0", "sse": "event: chunk\ndata: {\"content\": \" Natural\"}\n\n"}
+{"id": "1783999841133-0", "sse": "event: chunk\ndata: {\"content\": \" language\"}\n\n"}
+{"id": "1783999841171-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999841209-0", "sse": "event: chunk\ndata: {\"content\": \" code\"}\n\n"}
+{"id": "1783999841215-0", "sse": "event: chunk\ndata: {\"content\": \"/code\"}\n\n"}
+{"id": "1783999841244-0", "sse": "event: chunk\ndata: {\"content\": \" generation\"}\n\n"}
+{"id": "1783999841250-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999841288-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999841294-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999841321-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999841348-0", "sse": "event: chunk\ndata: {\"content\": \"-assisted\"}\n\n"}
+{"id": "1783999841352-0", "sse": "event: chunk\ndata: {\"content\": \" debugging\"}\n\n"}
+{"id": "1783999841383-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999841395-0", "sse": "event: chunk\ndata: {\"content\": \" testing\"}\n\n"}
+{"id": "1783999841417-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999841423-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999841453-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999841459-0", "sse": "event: chunk\ndata: {\"content\": \" Documentation\"}\n\n"}
+{"id": "1783999841489-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999841498-0", "sse": "event: chunk\ndata: {\"content\": \" maintenance\"}\n\n"}
+{"id": "1783999841527-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999841533-0", "sse": "event: chunk\ndata: {\"content\": \"III\"}\n\n"}
+{"id": "1783999841560-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999841564-0", "sse": "event: chunk\ndata: {\"content\": \" Emerging\"}\n\n"}
+{"id": "1783999841594-0", "sse": "event: chunk\ndata: {\"content\": \" Cap\"}\n\n"}
+{"id": "1783999841642-0", "sse": "event: chunk\ndata: {\"content\": \"abilities\"}\n\n"}
+{"id": "1783999841648-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999841666-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999841673-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999841703-0", "sse": "event: chunk\ndata: {\"content\": \" Multi\"}\n\n"}
+{"id": "1783999841707-0", "sse": "event: chunk\ndata: {\"content\": \"-agent\"}\n\n"}
+{"id": "1783999841733-0", "sse": "event: chunk\ndata: {\"content\": \" systems\"}\n\n"}
+{"id": "1783999841738-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999841767-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999841772-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999841802-0", "sse": "event: chunk\ndata: {\"content\": \" Context\"}\n\n"}
+{"id": "1783999841840-0", "sse": "event: chunk\ndata: {\"content\": \"-aware\"}\n\n"}
+{"id": "1783999841888-0", "sse": "event: chunk\ndata: {\"content\": \" /\"}\n\n"}
+{"id": "1783999841925-0", "sse": "event: chunk\ndata: {\"content\": \" repo\"}\n\n"}
+{"id": "1783999841958-0", "sse": "event: chunk\ndata: {\"content\": \"-level\"}\n\n"}
+{"id": "1783999841990-0", "sse": "event: chunk\ndata: {\"content\": \" understanding\"}\n\n"}
+{"id": "1783999841997-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999842032-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999842037-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999842059-0", "sse": "event: chunk\ndata: {\"content\": \" Automated\"}\n\n"}
+{"id": "1783999842117-0", "sse": "event: chunk\ndata: {\"content\": \" refactoring\"}\n\n"}
+{"id": "1783999842129-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999842136-0", "sse": "event: chunk\ndata: {\"content\": \" modernization\"}\n\n"}
+{"id": "1783999842165-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999842169-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999842241-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999842250-0", "sse": "event: chunk\ndata: {\"content\": \" Security\"}\n\n"}
+{"id": "1783999842261-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999842274-0", "sse": "event: chunk\ndata: {\"content\": \" vulnerability\"}\n\n"}
+{"id": "1783999842284-0", "sse": "event: chunk\ndata: {\"content\": \" detection\"}\n\n"}
+{"id": "1783999842311-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999842317-0", "sse": "event: chunk\ndata: {\"content\": \"IV\"}\n\n"}
+{"id": "1783999842361-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999842363-0", "sse": "event: chunk\ndata: {\"content\": \" Impact\"}\n\n"}
+{"id": "1783999842376-0", "sse": "event: chunk\ndata: {\"content\": \" on\"}\n\n"}
+{"id": "1783999842413-0", "sse": "event: chunk\ndata: {\"content\": \" Development\"}\n\n"}
+{"id": "1783999842451-0", "sse": "event: chunk\ndata: {\"content\": \" Work\"}\n\n"}
+{"id": "1783999842481-0", "sse": "event: chunk\ndata: {\"content\": \"flows\"}\n\n"}
+{"id": "1783999842492-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999842731-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999842737-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999842743-0", "sse": "event: chunk\ndata: {\"content\": \" Shift\"}\n\n"}
+{"id": "1783999842749-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1783999842755-0", "sse": "event: chunk\ndata: {\"content\": \" developer\"}\n\n"}
+{"id": "1783999842760-0", "sse": "event: chunk\ndata: {\"content\": \" roles\"}\n\n"}
+{"id": "1783999842765-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999842769-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999842774-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999842779-0", "sse": "event: chunk\ndata: {\"content\": \" SD\"}\n\n"}
+{"id": "1783999842783-0", "sse": "event: chunk\ndata: {\"content\": \"LC\"}\n\n"}
+{"id": "1783999842787-0", "sse": "event: chunk\ndata: {\"content\": \" integration\"}\n\n"}
+{"id": "1783999842802-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999842813-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999842848-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999842858-0", "sse": "event: chunk\ndata: {\"content\": \" Quality\"}\n\n"}
+{"id": "1783999842868-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999842909-0", "sse": "event: chunk\ndata: {\"content\": \" velocity\"}\n\n"}
+{"id": "1783999842945-0", "sse": "event: chunk\ndata: {\"content\": \" trade\"}\n\n"}
+{"id": "1783999842978-0", "sse": "event: chunk\ndata: {\"content\": \"-offs\"}\n\n"}
+{"id": "1783999842988-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999843013-0", "sse": "event: chunk\ndata: {\"content\": \"V\"}\n\n"}
+{"id": "1783999843024-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999843053-0", "sse": "event: chunk\ndata: {\"content\": \" Challenges\"}\n\n"}
+{"id": "1783999843057-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999843083-0", "sse": "event: chunk\ndata: {\"content\": \" Ris\"}\n\n"}
+{"id": "1783999843087-0", "sse": "event: chunk\ndata: {\"content\": \"ks\"}\n\n"}
+{"id": "1783999843125-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999843130-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999843166-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999843171-0", "sse": "event: chunk\ndata: {\"content\": \" Hall\"}\n\n"}
+{"id": "1783999843188-0", "sse": "event: chunk\ndata: {\"content\": \"uc\"}\n\n"}
+{"id": "1783999843198-0", "sse": "event: chunk\ndata: {\"content\": \"inations\"}\n\n"}
+{"id": "1783999843227-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999843229-0", "sse": "event: chunk\ndata: {\"content\": \" reliability\"}\n\n"}
+{"id": "1783999843255-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999843259-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999843292-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999843297-0", "sse": "event: chunk\ndata: {\"content\": \" IP\"}\n\n"}
+{"id": "1783999843328-0", "sse": "event: chunk\ndata: {\"content\": \"/c\"}\n\n"}
+{"id": "1783999843364-0", "sse": "event: chunk\ndata: {\"content\": \"opyright\"}\n\n"}
+{"id": "1783999843369-0", "sse": "event: chunk\ndata: {\"content\": \" concerns\"}\n\n"}
+{"id": "1783999843398-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999843407-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999843434-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999843440-0", "sse": "event: chunk\ndata: {\"content\": \" Security\"}\n\n"}
+{"id": "1783999843468-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999843472-0", "sse": "event: chunk\ndata: {\"content\": \" supply\"}\n\n"}
+{"id": "1783999843509-0", "sse": "event: chunk\ndata: {\"content\": \" chain\"}\n\n"}
+{"id": "1783999843517-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999843541-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999843550-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999843577-0", "sse": "event: chunk\ndata: {\"content\": \" Skill\"}\n\n"}
+{"id": "1783999843581-0", "sse": "event: chunk\ndata: {\"content\": \" at\"}\n\n"}
+{"id": "1783999843613-0", "sse": "event: chunk\ndata: {\"content\": \"rophy\"}\n\n"}
+{"id": "1783999843617-0", "sse": "event: chunk\ndata: {\"content\": \" /\"}\n\n"}
+{"id": "1783999843648-0", "sse": "event: chunk\ndata: {\"content\": \" over\"}\n\n"}
+{"id": "1783999843689-0", "sse": "event: chunk\ndata: {\"content\": \"-re\"}\n\n"}
+{"id": "1783999843724-0", "sse": "event: chunk\ndata: {\"content\": \"li\"}\n\n"}
+{"id": "1783999843729-0", "sse": "event: chunk\ndata: {\"content\": \"ance\"}\n\n"}
+{"id": "1783999843766-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999843769-0", "sse": "event: chunk\ndata: {\"content\": \"VI\"}\n\n"}
+{"id": "1783999843793-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999843797-0", "sse": "event: chunk\ndata: {\"content\": \" Future\"}\n\n"}
+{"id": "1783999843830-0", "sse": "event: chunk\ndata: {\"content\": \" Outlook\"}\n\n"}
+{"id": "1783999843841-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999843863-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999843911-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999843915-0", "sse": "event: chunk\ndata: {\"content\": \" Fully\"}\n\n"}
+{"id": "1783999843937-0", "sse": "event: chunk\ndata: {\"content\": \" autonomous\"}\n\n"}
+{"id": "1783999843940-0", "sse": "event: chunk\ndata: {\"content\": \" development\"}\n\n"}
+{"id": "1783999843968-0", "sse": "event: chunk\ndata: {\"content\": \" teams\"}\n\n"}
+{"id": "1783999843974-0", "sse": "event: chunk\ndata: {\"content\": \"?\\n\"}\n\n"}
+{"id": "1783999844007-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999844012-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999844045-0", "sse": "event: chunk\ndata: {\"content\": \" Human\"}\n\n"}
+{"id": "1783999844055-0", "sse": "event: chunk\ndata: {\"content\": \"-A\"}\n\n"}
+{"id": "1783999844104-0", "sse": "event: chunk\ndata: {\"content\": \"I\"}\n\n"}
+{"id": "1783999844569-0", "sse": "event: chunk\ndata: {\"content\": \" collaboration\"}\n\n"}
+{"id": "1783999844575-0", "sse": "event: chunk\ndata: {\"content\": \" models\"}\n\n"}
+{"id": "1783999844582-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999844589-0", "sse": "event: chunk\ndata: {\"content\": \"  \"}\n\n"}
+{"id": "1783999844596-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999844602-0", "sse": "event: chunk\ndata: {\"content\": \" Tool\"}\n\n"}
+{"id": "1783999844608-0", "sse": "event: chunk\ndata: {\"content\": \"ing\"}\n\n"}
+{"id": "1783999844614-0", "sse": "event: chunk\ndata: {\"content\": \" ecosystem\"}\n\n"}
+{"id": "1783999844618-0", "sse": "event: chunk\ndata: {\"content\": \" evolution\"}\n\n"}
+{"id": "1783999844622-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999844629-0", "sse": "event: chunk\ndata: {\"content\": \"V\"}\n\n"}
+{"id": "1783999844632-0", "sse": "event: chunk\ndata: {\"content\": \"II\"}\n\n"}
+{"id": "1783999844634-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999844636-0", "sse": "event: chunk\ndata: {\"content\": \" Con\"}\n\n"}
+{"id": "1783999844638-0", "sse": "event: chunk\ndata: {\"content\": \"clusion\"}\n\n"}
+{"id": "1783999844643-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\\n\"}\n\n"}
+{"id": "1783999844652-0", "sse": "event: chunk\ndata: {\"content\": \"I'll\"}\n\n"}
+{"id": "1783999844694-0", "sse": "event: chunk\ndata: {\"content\": \" present\"}\n\n"}
+{"id": "1783999844713-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1783999844715-0", "sse": "event: chunk\ndata: {\"content\": \" cleanly\"}\n\n"}
+{"id": "1783999844747-0", "sse": "event: chunk\ndata: {\"content\": \" with\"}\n\n"}
+{"id": "1783999844758-0", "sse": "event: chunk\ndata: {\"content\": \" bullet\"}\n\n"}
+{"id": "1783999844780-0", "sse": "event: chunk\ndata: {\"content\": \" points\"}\n\n"}
+{"id": "1783999844785-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999844823-0", "sse": "event: chunk\ndata: {\"content\": \" formatting\"}\n\n"}
+{"id": "1783999844830-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999844857-0", "sse": "event: chunk\ndata: {\"content\": \"</think>The\"}\n\n"}
+{"id": "1783999844895-0", "sse": "event: chunk\ndata: {\"content\": \" delegation\"}\n\n"}
+{"id": "1783999844929-0", "sse": "event: chunk\ndata: {\"content\": \" tool\"}\n\n"}
+{"id": "1783999844931-0", "sse": "event: chunk\ndata: {\"content\": \" appears\"}\n\n"}
+{"id": "1783999844963-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999845183-0", "sse": "event: chunk\ndata: {\"content\": \" be\"}\n\n"}
+{"id": "1783999845190-0", "sse": "event: chunk\ndata: {\"content\": \" unavailable\"}\n\n"}
+{"id": "1783999845197-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1783999845203-0", "sse": "event: chunk\ndata: {\"content\": \" this\"}\n\n"}
+{"id": "1783999845210-0", "sse": "event: chunk\ndata: {\"content\": \" environment\"}\n\n"}
+{"id": "1783999845215-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999845219-0", "sse": "event: chunk\ndata: {\"content\": \" so\"}\n\n"}
+{"id": "1783999845224-0", "sse": "event: chunk\ndata: {\"content\": \" I\"}\n\n"}
+{"id": "1783999845228-0", "sse": "event: chunk\ndata: {\"content\": \"\\u2019ve\"}\n\n"}
+{"id": "1783999845232-0", "sse": "event: chunk\ndata: {\"content\": \" drafted\"}\n\n"}
+{"id": "1783999845235-0", "sse": "event: chunk\ndata: {\"content\": \" the\"}\n\n"}
+{"id": "1783999845241-0", "sse": "event: chunk\ndata: {\"content\": \" outline\"}\n\n"}
+{"id": "1783999845248-0", "sse": "event: chunk\ndata: {\"content\": \" directly\"}\n\n"}
+{"id": "1783999845256-0", "sse": "event: chunk\ndata: {\"content\": \".\\n\\n\"}\n\n"}
+{"id": "1783999845288-0", "sse": "event: chunk\ndata: {\"content\": \"**\"}\n\n"}
+{"id": "1783999845293-0", "sse": "event: chunk\ndata: {\"content\": \"Outline\"}\n\n"}
+{"id": "1783999845318-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1783999845328-0", "sse": "event: chunk\ndata: {\"content\": \" Emerging\"}\n\n"}
+{"id": "1783999845353-0", "sse": "event: chunk\ndata: {\"content\": \" Trends\"}\n\n"}
+{"id": "1783999845358-0", "sse": "event: chunk\ndata: {\"content\": \" in\"}\n\n"}
+{"id": "1783999845393-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999845403-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1783999845428-0", "sse": "event: chunk\ndata: {\"content\": \"Ass\"}\n\n"}
+{"id": "1783999845432-0", "sse": "event: chunk\ndata: {\"content\": \"isted\"}\n\n"}
+{"id": "1783999845462-0", "sse": "event: chunk\ndata: {\"content\": \" Software\"}\n\n"}
+{"id": "1783999845467-0", "sse": "event: chunk\ndata: {\"content\": \" Development\"}\n\n"}
+{"id": "1783999845617-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\\n\"}\n\n"}
+{"id": "1783999845620-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1783999845623-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999845626-0", "sse": "event: chunk\ndata: {\"content\": \"I\"}\n\n"}
+{"id": "1783999845628-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999845630-0", "sse": "event: chunk\ndata: {\"content\": \" Introduction\"}\n\n"}
+{"id": "1783999845632-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999845633-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999845635-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999845879-0", "sse": "event: chunk\ndata: {\"content\": \" Definition\"}\n\n"}
+{"id": "1783999845882-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999845885-0", "sse": "event: chunk\ndata: {\"content\": \" scope\"}\n\n"}
+{"id": "1783999845887-0", "sse": "event: chunk\ndata: {\"content\": \" of\"}\n\n"}
+{"id": "1783999845890-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999845893-0", "sse": "event: chunk\ndata: {\"content\": \"-assisted\"}\n\n"}
+{"id": "1783999845895-0", "sse": "event: chunk\ndata: {\"content\": \" software\"}\n\n"}
+{"id": "1783999845897-0", "sse": "event: chunk\ndata: {\"content\": \" development\"}\n\n"}
+{"id": "1783999845898-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999845900-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999845902-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999845918-0", "sse": "event: chunk\ndata: {\"content\": \" Brief\"}\n\n"}
+{"id": "1783999845920-0", "sse": "event: chunk\ndata: {\"content\": \" history\"}\n\n"}
+{"id": "1783999845929-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1783999846028-0", "sse": "event: chunk\ndata: {\"content\": \" from\"}\n\n"}
+{"id": "1783999846033-0", "sse": "event: chunk\ndata: {\"content\": \" static\"}\n\n"}
+{"id": "1783999846038-0", "sse": "event: chunk\ndata: {\"content\": \" analysis\"}\n\n"}
+{"id": "1783999846040-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999846043-0", "sse": "event: chunk\ndata: {\"content\": \" LL\"}\n\n"}
+{"id": "1783999846067-0", "sse": "event: chunk\ndata: {\"content\": \"M\"}\n\n"}
+{"id": "1783999846108-0", "sse": "event: chunk\ndata: {\"content\": \"-powered\"}\n\n"}
+{"id": "1783999846112-0", "sse": "event: chunk\ndata: {\"content\": \" tools\"}\n\n"}
+{"id": "1783999846139-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\\n\"}\n\n"}
+{"id": "1783999846143-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1783999846186-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999846189-0", "sse": "event: chunk\ndata: {\"content\": \"II\"}\n\n"}
+{"id": "1783999846239-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999846246-0", "sse": "event: chunk\ndata: {\"content\": \" Core\"}\n\n"}
+{"id": "1783999846251-0", "sse": "event: chunk\ndata: {\"content\": \" Technology\"}\n\n"}
+{"id": "1783999846279-0", "sse": "event: chunk\ndata: {\"content\": \" Trends\"}\n\n"}
+{"id": "1783999846284-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999846313-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999846320-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999846354-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999846359-0", "sse": "event: chunk\ndata: {\"content\": \"AI\"}\n\n"}
+{"id": "1783999846386-0", "sse": "event: chunk\ndata: {\"content\": \" Pair\"}\n\n"}
+{"id": "1783999846422-0", "sse": "event: chunk\ndata: {\"content\": \" Programming\"}\n\n"}
+{"id": "1783999846427-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999846453-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999846494-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999846498-0", "sse": "event: chunk\ndata: {\"content\": \" Inline\"}\n\n"}
+{"id": "1783999846534-0", "sse": "event: chunk\ndata: {\"content\": \" code\"}\n\n"}
+{"id": "1783999846539-0", "sse": "event: chunk\ndata: {\"content\": \" completion\"}\n\n"}
+{"id": "1783999846581-0", "sse": "event: chunk\ndata: {\"content\": \" (\"}\n\n"}
+{"id": "1783999846585-0", "sse": "event: chunk\ndata: {\"content\": \"e\"}\n\n"}
+{"id": "1783999846601-0", "sse": "event: chunk\ndata: {\"content\": \".g\"}\n\n"}
+{"id": "1783999846611-0", "sse": "event: chunk\ndata: {\"content\": \".,\"}\n\n"}
+{"id": "1783999846645-0", "sse": "event: chunk\ndata: {\"content\": \" Git\"}\n\n"}
+{"id": "1783999846648-0", "sse": "event: chunk\ndata: {\"content\": \"Hub\"}\n\n"}
+{"id": "1783999846674-0", "sse": "event: chunk\ndata: {\"content\": \" Cop\"}\n\n"}
+{"id": "1783999846686-0", "sse": "event: chunk\ndata: {\"content\": \"ilot\"}\n\n"}
+{"id": "1783999846708-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999846717-0", "sse": "event: chunk\ndata: {\"content\": \" Code\"}\n\n"}
+{"id": "1783999846746-0", "sse": "event: chunk\ndata: {\"content\": \"ium\"}\n\n"}
+{"id": "1783999846749-0", "sse": "event: chunk\ndata: {\"content\": \")\\n\"}\n\n"}
+{"id": "1783999846777-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999846819-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999846825-0", "sse": "event: chunk\ndata: {\"content\": \" Chat\"}\n\n"}
+{"id": "1783999846848-0", "sse": "event: chunk\ndata: {\"content\": \"-based\"}\n\n"}
+{"id": "1783999846854-0", "sse": "event: chunk\ndata: {\"content\": \" assistance\"}\n\n"}
+{"id": "1783999846888-0", "sse": "event: chunk\ndata: {\"content\": \" within\"}\n\n"}
+{"id": "1783999846923-0", "sse": "event: chunk\ndata: {\"content\": \" ID\"}\n\n"}
+{"id": "1783999846969-0", "sse": "event: chunk\ndata: {\"content\": \"Es\"}\n\n"}
+{"id": "1783999846975-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999847009-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999847011-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999847048-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999847051-0", "sse": "event: chunk\ndata: {\"content\": \"Aut\"}\n\n"}
+{"id": "1783999847082-0", "sse": "event: chunk\ndata: {\"content\": \"onomous\"}\n\n"}
+{"id": "1783999847088-0", "sse": "event: chunk\ndata: {\"content\": \" Coding\"}\n\n"}
+{"id": "1783999847125-0", "sse": "event: chunk\ndata: {\"content\": \" Agents\"}\n\n"}
+{"id": "1783999847129-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999847154-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999847158-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999847190-0", "sse": "event: chunk\ndata: {\"content\": \" End\"}\n\n"}
+{"id": "1783999847201-0", "sse": "event: chunk\ndata: {\"content\": \"-to\"}\n\n"}
+{"id": "1783999847226-0", "sse": "event: chunk\ndata: {\"content\": \"-end\"}\n\n"}
+{"id": "1783999847230-0", "sse": "event: chunk\ndata: {\"content\": \" task\"}\n\n"}
+{"id": "1783999847258-0", "sse": "event: chunk\ndata: {\"content\": \" execution\"}\n\n"}
+{"id": "1783999847297-0", "sse": "event: chunk\ndata: {\"content\": \" (\"}\n\n"}
+{"id": "1783999847307-0", "sse": "event: chunk\ndata: {\"content\": \"plan\"}\n\n"}
+{"id": "1783999847338-0", "sse": "event: chunk\ndata: {\"content\": \"ning\"}\n\n"}
+{"id": "1783999847344-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999847378-0", "sse": "event: chunk\ndata: {\"content\": \" coding\"}\n\n"}
+{"id": "1783999847383-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999847420-0", "sse": "event: chunk\ndata: {\"content\": \" debugging\"}\n\n"}
+{"id": "1783999847446-0", "sse": "event: chunk\ndata: {\"content\": \")\\n\"}\n\n"}
+{"id": "1783999847453-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999847501-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999847506-0", "sse": "event: chunk\ndata: {\"content\": \" Agent\"}\n\n"}
+{"id": "1783999847521-0", "sse": "event: chunk\ndata: {\"content\": \"ic\"}\n\n"}
+{"id": "1783999847552-0", "sse": "event: chunk\ndata: {\"content\": \" workflows\"}\n\n"}
+{"id": "1783999847587-0", "sse": "event: chunk\ndata: {\"content\": \" with\"}\n\n"}
+{"id": "1783999847632-0", "sse": "event: chunk\ndata: {\"content\": \" tool\"}\n\n"}
+{"id": "1783999847637-0", "sse": "event: chunk\ndata: {\"content\": \" use\"}\n\n"}
+{"id": "1783999847658-0", "sse": "event: chunk\ndata: {\"content\": \" (\"}\n\n"}
+{"id": "1783999847667-0", "sse": "event: chunk\ndata: {\"content\": \"b\"}\n\n"}
+{"id": "1783999847692-0", "sse": "event: chunk\ndata: {\"content\": \"rowsers\"}\n\n"}
+{"id": "1783999847698-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999847734-0", "sse": "event: chunk\ndata: {\"content\": \" terminals\"}\n\n"}
+{"id": "1783999847788-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999847795-0", "sse": "event: chunk\ndata: {\"content\": \" APIs\"}\n\n"}
+{"id": "1783999847812-0", "sse": "event: chunk\ndata: {\"content\": \")\\n\"}\n\n"}
+{"id": "1783999847818-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999847848-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999847851-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999847880-0", "sse": "event: chunk\ndata: {\"content\": \"Natural\"}\n\n"}
+{"id": "1783999847886-0", "sse": "event: chunk\ndata: {\"content\": \" Language\"}\n\n"}
+{"id": "1783999847912-0", "sse": "event: chunk\ndata: {\"content\": \" Interfaces\"}\n\n"}
+{"id": "1783999847959-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999847988-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999848005-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999848027-0", "sse": "event: chunk\ndata: {\"content\": \" Prompt\"}\n\n"}
+{"id": "1783999848057-0", "sse": "event: chunk\ndata: {\"content\": \"-to\"}\n\n"}
+{"id": "1783999848062-0", "sse": "event: chunk\ndata: {\"content\": \"-code\"}\n\n"}
+{"id": "1783999848101-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999848128-0", "sse": "event: chunk\ndata: {\"content\": \" prompt\"}\n\n"}
+{"id": "1783999848162-0", "sse": "event: chunk\ndata: {\"content\": \"-to\"}\n\n"}
+{"id": "1783999848201-0", "sse": "event: chunk\ndata: {\"content\": \"-arch\"}\n\n"}
+{"id": "1783999848236-0", "sse": "event: chunk\ndata: {\"content\": \"itecture\"}\n\n"}
+{"id": "1783999848241-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999848274-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999848277-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999848306-0", "sse": "event: chunk\ndata: {\"content\": \" Low\"}\n\n"}
+{"id": "1783999848315-0", "sse": "event: chunk\ndata: {\"content\": \"-code\"}\n\n"}
+{"id": "1783999848338-0", "sse": "event: chunk\ndata: {\"content\": \"/no\"}\n\n"}
+{"id": "1783999848377-0", "sse": "event: chunk\ndata: {\"content\": \"-code\"}\n\n"}
+{"id": "1783999848387-0", "sse": "event: chunk\ndata: {\"content\": \" augmentation\"}\n\n"}
+{"id": "1783999848414-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999848448-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999848455-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999848488-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999848493-0", "sse": "event: chunk\ndata: {\"content\": \"Repo\"}\n\n"}
+{"id": "1783999848516-0", "sse": "event: chunk\ndata: {\"content\": \"-Level\"}\n\n"}
+{"id": "1783999848553-0", "sse": "event: chunk\ndata: {\"content\": \" Com\"}\n\n"}
+{"id": "1783999848594-0", "sse": "event: chunk\ndata: {\"content\": \"pre\"}\n\n"}
+{"id": "1783999848599-0", "sse": "event: chunk\ndata: {\"content\": \"hension\"}\n\n"}
+{"id": "1783999848642-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999848645-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999848665-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999848667-0", "sse": "event: chunk\ndata: {\"content\": \" Long\"}\n\n"}
+{"id": "1783999848694-0", "sse": "event: chunk\ndata: {\"content\": \"-context\"}\n\n"}
+{"id": "1783999848698-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999848728-0", "sse": "event: chunk\ndata: {\"content\": \" R\"}\n\n"}
+{"id": "1783999848766-0", "sse": "event: chunk\ndata: {\"content\": \"AG\"}\n\n"}
+{"id": "1783999848771-0", "sse": "event: chunk\ndata: {\"content\": \"-based\"}\n\n"}
+{"id": "1783999848802-0", "sse": "event: chunk\ndata: {\"content\": \" codebase\"}\n\n"}
+{"id": "1783999848832-0", "sse": "event: chunk\ndata: {\"content\": \" understanding\"}\n\n"}
+{"id": "1783999848881-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999848886-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999848908-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999848911-0", "sse": "event: chunk\ndata: {\"content\": \" Cross\"}\n\n"}
+{"id": "1783999848937-0", "sse": "event: chunk\ndata: {\"content\": \"-file\"}\n\n"}
+{"id": "1783999848984-0", "sse": "event: chunk\ndata: {\"content\": \" refactoring\"}\n\n"}
+{"id": "1783999848990-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999849014-0", "sse": "event: chunk\ndata: {\"content\": \" dependency\"}\n\n"}
+{"id": "1783999849048-0", "sse": "event: chunk\ndata: {\"content\": \" analysis\"}\n\n"}
+{"id": "1783999849277-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\\n\"}\n\n"}
+{"id": "1783999849280-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1783999849282-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999849286-0", "sse": "event: chunk\ndata: {\"content\": \"III\"}\n\n"}
+{"id": "1783999849288-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999849291-0", "sse": "event: chunk\ndata: {\"content\": \" Lifecycle\"}\n\n"}
+{"id": "1783999849293-0", "sse": "event: chunk\ndata: {\"content\": \" Integration\"}\n\n"}
+{"id": "1783999849295-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999849298-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999849308-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999849318-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999849348-0", "sse": "event: chunk\ndata: {\"content\": \"Development\"}\n\n"}
+{"id": "1783999849378-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999849417-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999849455-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999849463-0", "sse": "event: chunk\ndata: {\"content\": \" Test\"}\n\n"}
+{"id": "1783999849488-0", "sse": "event: chunk\ndata: {\"content\": \" generation\"}\n\n"}
+{"id": "1783999849503-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999849529-0", "sse": "event: chunk\ndata: {\"content\": \" synthetic\"}\n\n"}
+{"id": "1783999849566-0", "sse": "event: chunk\ndata: {\"content\": \" data\"}\n\n"}
+{"id": "1783999849593-0", "sse": "event: chunk\ndata: {\"content\": \" creation\"}\n\n"}
+{"id": "1783999849632-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999849634-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999849664-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999849668-0", "sse": "event: chunk\ndata: {\"content\": \" Automated\"}\n\n"}
+{"id": "1783999849706-0", "sse": "event: chunk\ndata: {\"content\": \" documentation\"}\n\n"}
+{"id": "1783999849748-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999849757-0", "sse": "event: chunk\ndata: {\"content\": \" commit\"}\n\n"}
+{"id": "1783999849801-0", "sse": "event: chunk\ndata: {\"content\": \" message\"}\n\n"}
+{"id": "1783999849852-0", "sse": "event: chunk\ndata: {\"content\": \" generation\"}\n\n"}
+{"id": "1783999849857-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999849889-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999849894-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999849924-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999849929-0", "sse": "event: chunk\ndata: {\"content\": \"Quality\"}\n\n"}
+{"id": "1783999849959-0", "sse": "event: chunk\ndata: {\"content\": \" Assurance\"}\n\n"}
+{"id": "1783999849964-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999849998-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999850006-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999850032-0", "sse": "event: chunk\ndata: {\"content\": \" Intelligent\"}\n\n"}
+{"id": "1783999850303-0", "sse": "event: chunk\ndata: {\"content\": \" debugging\"}\n\n"}
+{"id": "1783999850311-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999850333-0", "sse": "event: chunk\ndata: {\"content\": \" root\"}\n\n"}
+{"id": "1783999850338-0", "sse": "event: chunk\ndata: {\"content\": \"-c\"}\n\n"}
+{"id": "1783999850368-0", "sse": "event: chunk\ndata: {\"content\": \"ause\"}\n\n"}
+{"id": "1783999850373-0", "sse": "event: chunk\ndata: {\"content\": \" analysis\"}\n\n"}
+{"id": "1783999850405-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999850409-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999850440-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999850449-0", "sse": "event: chunk\ndata: {\"content\": \" F\"}\n\n"}
+{"id": "1783999850478-0", "sse": "event: chunk\ndata: {\"content\": \"uzz\"}\n\n"}
+{"id": "1783999850508-0", "sse": "event: chunk\ndata: {\"content\": \"ing\"}\n\n"}
+{"id": "1783999850548-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999850553-0", "sse": "event: chunk\ndata: {\"content\": \" vulnerability\"}\n\n"}
+{"id": "1783999850586-0", "sse": "event: chunk\ndata: {\"content\": \" detection\"}\n\n"}
+{"id": "1783999850620-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999850625-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999850659-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999850665-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999850693-0", "sse": "event: chunk\ndata: {\"content\": \"Deployment\"}\n\n"}
+{"id": "1783999850728-0", "sse": "event: chunk\ndata: {\"content\": \" &\"}\n\n"}
+{"id": "1783999850732-0", "sse": "event: chunk\ndata: {\"content\": \" Operations\"}\n\n"}
+{"id": "1783999850768-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999850771-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999850801-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999850807-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999850848-0", "sse": "event: chunk\ndata: {\"content\": \"-generated\"}\n\n"}
+{"id": "1783999850871-0", "sse": "event: chunk\ndata: {\"content\": \" CI\"}\n\n"}
+{"id": "1783999850916-0", "sse": "event: chunk\ndata: {\"content\": \"/CD\"}\n\n"}
+{"id": "1783999850918-0", "sse": "event: chunk\ndata: {\"content\": \" pipelines\"}\n\n"}
+{"id": "1783999850953-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999850958-0", "sse": "event: chunk\ndata: {\"content\": \"   \"}\n\n"}
+{"id": "1783999850983-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999850988-0", "sse": "event: chunk\ndata: {\"content\": \" Incident\"}\n\n"}
+{"id": "1783999851023-0", "sse": "event: chunk\ndata: {\"content\": \" response\"}\n\n"}
+{"id": "1783999851058-0", "sse": "event: chunk\ndata: {\"content\": \" and\"}\n\n"}
+{"id": "1783999851094-0", "sse": "event: chunk\ndata: {\"content\": \" log\"}\n\n"}
+{"id": "1783999851133-0", "sse": "event: chunk\ndata: {\"content\": \" analysis\"}\n\n"}
+{"id": "1783999851146-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\\n\"}\n\n"}
+{"id": "1783999851181-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1783999851212-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999851220-0", "sse": "event: chunk\ndata: {\"content\": \"IV\"}\n\n"}
+{"id": "1783999851255-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999851259-0", "sse": "event: chunk\ndata: {\"content\": \" Workflow\"}\n\n"}
+{"id": "1783999851296-0", "sse": "event: chunk\ndata: {\"content\": \" &\"}\n\n"}
+{"id": "1783999851300-0", "sse": "event: chunk\ndata: {\"content\": \" Organizational\"}\n\n"}
+{"id": "1783999851322-0", "sse": "event: chunk\ndata: {\"content\": \" Impact\"}\n\n"}
+{"id": "1783999851327-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999851530-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999851533-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999851535-0", "sse": "event: chunk\ndata: {\"content\": \" Shift\"}\n\n"}
+{"id": "1783999851537-0", "sse": "event: chunk\ndata: {\"content\": \" from\"}\n\n"}
+{"id": "1783999851540-0", "sse": "event: chunk\ndata: {\"content\": \" writing\"}\n\n"}
+{"id": "1783999851542-0", "sse": "event: chunk\ndata: {\"content\": \" code\"}\n\n"}
+{"id": "1783999851925-0", "sse": "event: chunk\ndata: {\"content\": \" to\"}\n\n"}
+{"id": "1783999851927-0", "sse": "event: chunk\ndata: {\"content\": \" reviewing\"}\n\n"}
+{"id": "1783999851929-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999851931-0", "sse": "event: chunk\ndata: {\"content\": \"-generated\"}\n\n"}
+{"id": "1783999851934-0", "sse": "event: chunk\ndata: {\"content\": \" code\"}\n\n"}
+{"id": "1783999851936-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999851951-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999851955-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999851959-0", "sse": "event: chunk\ndata: {\"content\": \" New\"}\n\n"}
+{"id": "1783999851962-0", "sse": "event: chunk\ndata: {\"content\": \" roles\"}\n\n"}
+{"id": "1783999851976-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1783999851978-0", "sse": "event: chunk\ndata: {\"content\": \" AI\"}\n\n"}
+{"id": "1783999851980-0", "sse": "event: chunk\ndata: {\"content\": \" interaction\"}\n\n"}
+{"id": "1783999851982-0", "sse": "event: chunk\ndata: {\"content\": \" design\"}\n\n"}
+{"id": "1783999851983-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999851993-0", "sse": "event: chunk\ndata: {\"content\": \" prompt\"}\n\n"}
+{"id": "1783999851995-0", "sse": "event: chunk\ndata: {\"content\": \" engineering\"}\n\n"}
+{"id": "1783999851997-0", "sse": "event: chunk\ndata: {\"content\": \" for\"}\n\n"}
+{"id": "1783999851999-0", "sse": "event: chunk\ndata: {\"content\": \" dev\"}\n\n"}
+{"id": "1783999852013-0", "sse": "event: chunk\ndata: {\"content\": \" tools\"}\n\n"}
+{"id": "1783999852016-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999852018-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999852022-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999852025-0", "sse": "event: chunk\ndata: {\"content\": \" Metrics\"}\n\n"}
+{"id": "1783999852057-0", "sse": "event: chunk\ndata: {\"content\": \":\"}\n\n"}
+{"id": "1783999852093-0", "sse": "event: chunk\ndata: {\"content\": \" velocity\"}\n\n"}
+{"id": "1783999852131-0", "sse": "event: chunk\ndata: {\"content\": \" vs\"}\n\n"}
+{"id": "1783999852166-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999852169-0", "sse": "event: chunk\ndata: {\"content\": \" technical\"}\n\n"}
+{"id": "1783999852207-0", "sse": "event: chunk\ndata: {\"content\": \" debt\"}\n\n"}
+{"id": "1783999852210-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999852238-0", "sse": "event: chunk\ndata: {\"content\": \" review\"}\n\n"}
+{"id": "1783999852281-0", "sse": "event: chunk\ndata: {\"content\": \" bott\"}\n\n"}
+{"id": "1783999852308-0", "sse": "event: chunk\ndata: {\"content\": \"lene\"}\n\n"}
+{"id": "1783999852321-0", "sse": "event: chunk\ndata: {\"content\": \"cks\"}\n\n"}
+{"id": "1783999852349-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\\n\"}\n\n"}
+{"id": "1783999852354-0", "sse": "event: chunk\ndata: {\"content\": \"-\"}\n\n"}
+{"id": "1783999852389-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999852393-0", "sse": "event: chunk\ndata: {\"content\": \"V\"}\n\n"}
+{"id": "1783999852423-0", "sse": "event: chunk\ndata: {\"content\": \".\"}\n\n"}
+{"id": "1783999852428-0", "sse": "event: chunk\ndata: {\"content\": \" Challenges\"}\n\n"}
+{"id": "1783999852457-0", "sse": "event: chunk\ndata: {\"content\": \" &\"}\n\n"}
+{"id": "1783999852462-0", "sse": "event: chunk\ndata: {\"content\": \" Ris\"}\n\n"}
+{"id": "1783999852493-0", "sse": "event: chunk\ndata: {\"content\": \"ks\"}\n\n"}
+{"id": "1783999852500-0", "sse": "event: chunk\ndata: {\"content\": \"**\\n\"}\n\n"}
+{"id": "1783999852541-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999852567-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999852573-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999852601-0", "sse": "event: chunk\ndata: {\"content\": \"Technical\"}\n\n"}
+{"id": "1783999852638-0", "sse": "event: chunk\ndata: {\"content\": \":**\"}\n\n"}
+{"id": "1783999852691-0", "sse": "event: chunk\ndata: {\"content\": \" Hall\"}\n\n"}
+{"id": "1783999852711-0", "sse": "event: chunk\ndata: {\"content\": \"uc\"}\n\n"}
+{"id": "1783999852720-0", "sse": "event: chunk\ndata: {\"content\": \"inations\"}\n\n"}
+{"id": "1783999852746-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999852748-0", "sse": "event: chunk\ndata: {\"content\": \" context\"}\n\n"}
+{"id": "1783999852781-0", "sse": "event: chunk\ndata: {\"content\": \" windows\"}\n\n"}
+{"id": "1783999852787-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999852818-0", "sse": "event: chunk\ndata: {\"content\": \" non\"}\n\n"}
+{"id": "1783999852853-0", "sse": "event: chunk\ndata: {\"content\": \"-determ\"}\n\n"}
+{"id": "1783999852898-0", "sse": "event: chunk\ndata: {\"content\": \"in\"}\n\n"}
+{"id": "1783999852905-0", "sse": "event: chunk\ndata: {\"content\": \"ism\"}\n\n"}
+{"id": "1783999852927-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999852934-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999852958-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999852965-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999852997-0", "sse": "event: chunk\ndata: {\"content\": \"Legal\"}\n\n"}
+{"id": "1783999853006-0", "sse": "event: chunk\ndata: {\"content\": \"/IP\"}\n\n"}
+{"id": "1783999853044-0", "sse": "event: chunk\ndata: {\"content\": \":**\"}\n\n"}
+{"id": "1783999853048-0", "sse": "event: chunk\ndata: {\"content\": \" Training\"}\n\n"}
+{"id": "1783999853064-0", "sse": "event: chunk\ndata: {\"content\": \" data\"}\n\n"}
+{"id": "1783999853068-0", "sse": "event: chunk\ndata: {\"content\": \" licensing\"}\n\n"}
+{"id": "1783999853102-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999853108-0", "sse": "event: chunk\ndata: {\"content\": \" copyright\"}\n\n"}
+{"id": "1783999853138-0", "sse": "event: chunk\ndata: {\"content\": \" ambiguity\"}\n\n"}
+{"id": "1783999853174-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999853189-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999853208-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999853218-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999853248-0", "sse": "event: chunk\ndata: {\"content\": \"Security\"}\n\n"}
+{"id": "1783999853253-0", "sse": "event: chunk\ndata: {\"content\": \":**\"}\n\n"}
+{"id": "1783999853284-0", "sse": "event: chunk\ndata: {\"content\": \" Poison\"}\n\n"}
+{"id": "1783999853318-0", "sse": "event: chunk\ndata: {\"content\": \"ed\"}\n\n"}
+{"id": "1783999853361-0", "sse": "event: chunk\ndata: {\"content\": \" suggestions\"}\n\n"}
+{"id": "1783999853389-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999853399-0", "sse": "event: chunk\ndata: {\"content\": \" secret\"}\n\n"}
+{"id": "1783999853428-0", "sse": "event: chunk\ndata: {\"content\": \" leakage\"}\n\n"}
+{"id": "1783999853459-0", "sse": "event: chunk\ndata: {\"content\": \",\"}\n\n"}
+{"id": "1783999853465-0", "sse": "event: chunk\ndata: {\"content\": \" supply\"}\n\n"}
+{"id": "1783999853501-0", "sse": "event: chunk\ndata: {\"content\": \" chain\"}\n\n"}
+{"id": "1783999853504-0", "sse": "event: chunk\ndata: {\"content\": \" trust\"}\n\n"}
+{"id": "1783999853531-0", "sse": "event: chunk\ndata: {\"content\": \"\\n\"}\n\n"}
+{"id": "1783999853535-0", "sse": "event: chunk\ndata: {\"content\": \" \"}\n\n"}
+{"id": "1783999853567-0", "sse": "event: chunk\ndata: {\"content\": \" -\"}\n\n"}
+{"id": "1783999853575-0", "sse": "event: chunk\ndata: {\"content\": \" **\"}\n\n"}
+{"id": "1783999853949-0", "sse": "event: chunk\ndata: {\"content\": \"Human\"}\n\n"}
+{"id": "1783999853956-0", "sse": "event: close\ndata: {}\n\n"}

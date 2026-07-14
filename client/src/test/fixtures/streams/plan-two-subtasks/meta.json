@@ -1,0 +1,23 @@
+{
+  "scenario": "plan-two-subtasks",
+  "run_id": "b6d18bda970549f9",
+  "conversation_id": "b974b40d-170d-4bcb-b75b-da0dd332d8c6",
+  "status": "done",
+  "message": "Use delegate_start to send a research task to Mobius, and while it runs, draft an outline yourself.",
+  "created_at": "2026-07-14T03:36:54.938451+00:00",
+  "captured_at": "2026-07-14T04:03:06.710343+00:00",
+  "event_count": 1730,
+  "event_census": {
+    "chunk": 1714,
+    "status": 5,
+    "subtask_start": 2,
+    "subtask_complete": 2,
+    "close": 2,
+    "start": 1,
+    "memory_context": 1,
+    "plan_start": 1,
+    "plan_complete": 1,
+    "done": 1
+  },
+  "turn_count": 7
+}
