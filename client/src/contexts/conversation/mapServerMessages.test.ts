@@ -327,6 +327,95 @@ describe('mapServerMessages', () => {
     expect(out[0].type).toBe('user');
   });
 
+  it('reconstructs a delegate_start work order with mode, id, and honest status', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"agent_id":"beta","task":"research"}',
+        metadata: { tool: 'delegate_start', tool_call_id: 'ws1' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: '[dispatch receipt] Work Order abc12345 dispatched…',
+        metadata: {
+          tool: 'delegate_start', tool_call_id: 'ws1', success: true,
+          delegation: {
+            raw_content: 'findings', target_agent_id: 'beta', task: 'research',
+            mode: 'background', status: 'completed', delegation_id: 'abc12345',
+            parent_delegation_id: null, tokens_input: 10, tokens_output: 20,
+          },
+        },
+      }),
+    ]);
+    const d = out[0] as DelegationMessage;
+    expect(d.type).toBe('delegation');
+    expect(d.delegationId).toBe('abc12345'); // prefers the persisted work-order id
+    expect(d.mode).toBe('background');
+    expect(d.status).toBe('completed');
+    expect(d.reportDelivered).toBe(true);
+    expect(d.content).toBe('findings');
+  });
+
+  it('restores a dispatched work order as cancelled (process died mid-order)', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"agent_id":"beta","task":"t"}',
+        metadata: { tool: 'delegate_start', tool_call_id: 'ws1' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: '[dispatch receipt] …',
+        metadata: {
+          tool: 'delegate_start', tool_call_id: 'ws1', success: true,
+          delegation: { target_agent_id: 'beta', mode: 'background', status: 'dispatched' },
+        },
+      }),
+    ]);
+    expect((out[0] as DelegationMessage).status).toBe('cancelled');
+  });
+
+  it('legacy delegate_to rows without a status still infer from success', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"agent_id":"beta","task":"t"}',
+        metadata: { tool: 'delegate_to', tool_call_id: 'd1' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: 'result text',
+        metadata: {
+          tool: 'delegate_to', tool_call_id: 'd1', success: false,
+          delegation: { target_agent_id: 'beta' },
+        },
+      }),
+    ]);
+    const d = out[0] as DelegationMessage;
+    expect(d.status).toBe('failed');
+    expect(d.delegationId).toBe('d1'); // falls back to the tool_call_id
+  });
+
+  it('renders a folded work-order report turn as a hairline marker, not a user bubble', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'user',
+        content: '[Work Order Report — Beta, wo abc12345] status: completed\n\nfindings',
+        metadata: {
+          work_order_report: true, delegation_id: 'abc12345',
+          target_agent_id: 'beta', status: 'completed',
+        },
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      type: 'work_order_report',
+      delegationId: 'abc12345',
+      targetAgentId: 'beta',
+      status: 'completed',
+    });
+  });
+
   it('restores a citation exhibit beneath a successful web_search turn', () => {
     const out = mapServerMessages([
       msg({
