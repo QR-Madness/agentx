@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.221 -->
+<!-- release-version: 0.21.222 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -45,3 +45,6 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   scrolls are ignored). Scroll back to the bottom — or tap the jump button — to re-engage.
 - **Plans + delegation**: a decomposed plan in a conversation with ad-hoc delegation enabled no
   longer fails every subtask ("'NoneType' object has no attribute 'specialists'").
+- **Streaming got a contract**: chat streams are golden-tested against real recorded runs —
+  immediately fixing three bugs: duplicate `close` events, crash errors arriving after the close
+  (invisible to clients), and `<think>` tags leaking into the transcript mid-thought.

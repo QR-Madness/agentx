@@ -23,15 +23,16 @@
       (PostgreSQL or similar) and let the UI expand to the whole thing (lazy-loaded), beyond the
       streamed/truncated preview.
 
-- [ ] **`<think>` tags leak into the DOM on reasoning-model turns** — reasoning models wrap
-      chain-of-thought in `<think>…</think>` (provider `reasoning`/`reasoning_content` deltas, normalized
-      in `providers/base.py::process_reasoning_delta`); on some turns the raw tag reaches the markdown/DOM
-      renderer instead of the ThinkingBubble, so React logs a repeated `The tag <think> is unrecognized in
-      this browser` warning and the thinking content can render as a bare/inert tag. Likely a
-      streaming/parse-boundary case (a partial `<think>` split across SSE chunks, or a native model emitting
-      nested `<think>` that `ThinkTagSanitizer` doesn't strip on the client render path). Repro: open a
-      reasoning-model conversation (e.g. `minimax-m3`) and watch the console. Client-side; streaming is
-      complex — scope the parse/sanitize path carefully before touching it.
+- [x] **`<think>` tags leak into the DOM on reasoning-model turns** `[v0.21.222]` — root-caused
+      via the golden corpus: two unguarded cuts of the live buffer. (1) `flushLiveContent`/`onDone`
+      stripped with `isStreaming=false`, so an **unclosed** think block (flushes fire mid-thought
+      on delegation starts/steers/exhibits; `max_tokens` truncates inside one) survived into an
+      appended message; both now strip in streaming mode and `extractThinking` captures the
+      unclosed tail into the ThinkingBubble. (2) A tag **split across SSE chunk boundaries**
+      (buffer ending `<thi`) flashed literal text; `stripThinkingTags(…, true)` now trims a
+      trailing fragment prefixing any known opener. Pinned by `thinkTags.test.ts` incl. a
+      cut-position sweep across the recorded deepseek-r1 fixture. (Nested `<think>` inside a
+      block remains a theoretical gap — no model in the corpus emits it.)
 
 ### Backend Observability — live operation status over SSE
 
@@ -100,23 +101,30 @@
       session, so a running turn stays invisible there until it completes. Extend those opens to
       consult the runs index (or expose runs via context) and route through `resumeRun`.
 
-### Streaming Engine Stability & Golden Tests (sidelined — run as a supervised session)
+### Streaming Engine Stability & Golden Tests
 
 > The most annoying bugs live in conversation-streaming hiccups — the engine is loved but not yet
-> *provably* stable. This is a deep review/stabilization pass to run as a dedicated supervised
-> session: **use the real preview, with the user watching the stream in realtime** to confirm
-> every scenario. Foundation for the Process Continuity pillar of
-> [cognitive-os.md](cognitive-os.md).
+> *provably* stable. Foundation for the Process Continuity pillar of
+> [cognitive-os.md](cognitive-os.md). The golden corpus + harness shipped `[v0.21.222]` and
+> immediately caught three real bugs (double close, buried crash errors, the think-tag leak).
 
-- [ ] **Deep review of the frontend streaming engine** — `useChatStream.ts` + `streamReducer.ts` +
-      the SSE re-attach path; especially **continuing a running stream**. Certify a stability
-      matrix across **running / past / reopened / new** conversations, plus mid-run reopen, tab
-      switch, and multi-client re-attach. Same seam as "Run-aware conversation opens" (Live
-      Steering above) — build the boundary once.
-- [ ] **Fold in the `<think>` tag leak** — the existing item above (Chat UX section); likely a
-      parse-boundary case this review will surface and fix as part of the pass.
-- [ ] **Golden transcript test set (API + frontend)** — rigid failure detection for streaming:
-      record real SSE streams as fixtures; replay them through the reducer asserting terminal
-      state + rendered message structure; API-side contract snapshots so backend event drift
-      fails loud. Harness shape TBD during the session — dig in here.
+- [~] **Deep review of the frontend streaming engine** — shipped so far `[v0.21.222]`: the
+      detached-run driver now owns stream termination (ONE close per run; a crash's `error` event
+      precedes the close instead of landing after it where no tail ever read it —
+      `ChatRunCloseSemanticsTest`), the think-tag leak below, and (v0.21.221) the auto-scroll
+      pin. **Still open:** the full re-attach stability matrix (mid-run reopen, tab switch,
+      multi-client) beyond what live-vs-restored parity covers — same seam as "Run-aware
+      conversation opens" (Live Steering above); replay-from-offset tests over the corpus are the
+      ready-made harness for it.
+- [x] **Fold in the `<think>` tag leak** `[v0.21.222]` — see the resolved item above.
+- [x] **Golden transcript test set (API + frontend)** `[v0.21.222]` — 9 REAL recorded runs frozen
+      as fixtures (`scripts/capture_stream_fixture.py`: verbatim bus stream + persisted
+      conversation payload; scenarios: plain, think-heavy R1, web-search, blocking fan-out,
+      steered ×2, hard-stop work order, background work order, plan, cancelled plan — driven
+      headlessly over the API, steers/cancel timed off the bus). Client: `streamGoldens.test.tsx`
+      replays each through the production wiring (`attach` → exported `dispatchSseEvent` →
+      handlers → reducer), pinning transcript structure + restored structure + the
+      **delegation-family live⊆restored parity invariant**. Backend: `SseContractCorpusTest`
+      validates every recorded event against a per-event required-field registry — stream drift
+      fails loud on both sides.
 
