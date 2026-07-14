@@ -1,0 +1,22 @@
+{
+  "scenario": "blocking-fanout",
+  "run_id": "47453a20d841446b",
+  "conversation_id": "470ec0c6-a896-4c7f-92cb-1311a5507502",
+  "status": "done",
+  "message": "You must use the delegate_to tool: make exactly two delegate_to calls in this turn \u2014 one to Mobius, one to Kim \u2014 asking each for an independent take on analogy versus first-principles reasoning for no",
+  "created_at": "2026-07-14T04:18:14.034912+00:00",
+  "captured_at": "2026-07-14T04:19:39.601865+00:00",
+  "event_count": 532,
+  "event_census": {
+    "delegation_chunk": 484,
+    "chunk": 32,
+    "status": 7,
+    "delegation_start": 2,
+    "delegation_complete": 2,
+    "close": 2,
+    "start": 1,
+    "memory_context": 1,
+    "done": 1
+  },
+  "turn_count": 8
+}

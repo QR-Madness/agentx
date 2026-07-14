@@ -1,0 +1,19 @@
+{
+  "scenario": "think-heavy",
+  "run_id": "50af9e8cbc88421a",
+  "conversation_id": "c98ac153-3edc-426d-973d-e98bf462c967",
+  "status": "done",
+  "message": "Four advisors each made one statement. Ash: 'Exactly one of us is lying.' Bram: 'Exactly two of us are lying.' Cole: 'Exactly three of us are lying.' Dara: 'All four of us are lying.' Who is telling t",
+  "created_at": "2026-07-14T04:14:13.546528+00:00",
+  "captured_at": "2026-07-14T04:15:11.157905+00:00",
+  "event_count": 39,
+  "event_census": {
+    "chunk": 29,
+    "status": 5,
+    "close": 2,
+    "start": 1,
+    "memory_context": 1,
+    "done": 1
+  },
+  "turn_count": 2
+}

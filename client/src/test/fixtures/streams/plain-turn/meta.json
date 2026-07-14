@@ -1,0 +1,19 @@
+{
+  "scenario": "plain-turn",
+  "run_id": "19f06b49d7354048",
+  "conversation_id": "1a5b5116-5c7d-4566-bf25-ec5d7b0a629f",
+  "status": "done",
+  "message": "Explain how spaced repetition strengthens long-term memory, in three short paragraphs.",
+  "created_at": "2026-07-14T04:12:00.922036+00:00",
+  "captured_at": "2026-07-14T04:12:41.273628+00:00",
+  "event_count": 30,
+  "event_census": {
+    "chunk": 22,
+    "status": 3,
+    "close": 2,
+    "start": 1,
+    "memory_context": 1,
+    "done": 1
+  },
+  "turn_count": 2
+}
