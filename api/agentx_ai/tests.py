@@ -8193,10 +8193,11 @@ class DelegatableProfileTest(TestCase):
             "agentx_ai.agent.profiles.get_profile_manager",
             return_value=SimpleNamespace(list_profiles=lambda: profiles),
         ):
-            desc = _resolve_delegation_tool(agent, workflow)
-        assert desc is not None
+            descs = _resolve_delegation_tool(agent, workflow)
+        # No executor (Solo turn) ⇒ delegate_to only, no delegate_start.
+        self.assertEqual([d["name"] for d in descs], ["delegate_to"])
         self.assertEqual(
-            desc["input_schema"]["properties"]["agent_id"]["enum"], ["spec-aa-bb"]
+            descs[0]["input_schema"]["properties"]["agent_id"]["enum"], ["spec-aa-bb"]
         )
 
 
