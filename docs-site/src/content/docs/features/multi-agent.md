@@ -128,7 +128,6 @@ and extracted facts are visible across the workflow. Each delegation also create
 | Key | Default | Description |
 |-----|---------|-------------|
 | `alloy.max_delegation_depth` | `3` | Maximum delegation nesting depth |
-| `alloy.specialist_inherits_supervisor_tools` | `true` | Whether specialists get the supervisor's tool set |
 | `alloy.allow_adhoc_delegation` | `true` | Allow `delegate_to` + the roster prompt in ordinary (workflow-less) chats. Safe default: the roster itself is opt-in per profile (`available_for_delegation` defaults `false`) |
 | `alloy.delegation_timeout_seconds` | — | Per-delegation timeout |
 

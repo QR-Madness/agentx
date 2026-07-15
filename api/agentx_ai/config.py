@@ -274,7 +274,6 @@ DEFAULT_CONFIG = {
         # Max specialists a supervisor may run concurrently when it emits several
         # delegate_to calls in one turn (fan-out). Bounds combinatorial blow-up.
         "max_parallel_delegations": 3,
-        "specialist_inherits_supervisor_tools": True,
         # Per-delegation wall-clock cap, enforced in the streaming tool loop for
         # both blocking (`delegate_to`) and background (`delegate_start`) runs.
         "delegation_timeout_seconds": 300,
