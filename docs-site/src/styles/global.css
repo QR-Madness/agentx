@@ -47,14 +47,26 @@
   --c-memory: #22d3ee;      /* cyan-400    — memory       */
   --c-translation: #34d399; /* emerald-400 — translation  */
 
+  /* Gold energy ramp — reserved for *flow*: streaming tokens, delegation edges,
+     the rising motes, and the one hero moment. Everything else stays cool cosmic
+     (warm-on-cool tension). Plain vars (not a Tailwind namespace), used via var(). */
+  --c-energy: #f5a623;        /* core amber-gold */
+  --c-energy-bright: #ffd27a; /* highlight       */
+  --c-energy-core: #fff3d6;   /* hot white-gold  */
+  --c-energy-deep: #b8791f;   /* deep amber      */
+
   /* Status colors */
   --color-ok: #10b981;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
 
-  /* Typography */
+  /* Typography — three deliberate roles:
+     brand/display = Space Grotesk (rhymes with Geist Mono's Space-Mono lineage),
+     body = Geist, data/trace = Geist Mono. `--font-brand` drives the wordmark +
+     landing titles; docs prose headings keep Geist via `--font-display`. */
   --font-sans: "Geist", system-ui, -apple-system, sans-serif;
   --font-display: "Geist", system-ui, -apple-system, sans-serif;
+  --font-brand: "Space Grotesk", "Geist", system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
 
   /* Shape */
@@ -69,6 +81,9 @@
   --layout-docs-max: 90rem;       /* the docs 3-column shell (~1440px) */
   --layout-article-max: 56rem;    /* the reading column (~896px)        */
   --layout-content-max: 72rem;    /* generic centered content          */
+
+  /* Vertical rhythm for landing sections — one knob for consistent breathing. */
+  --section-pad: clamp(48px, 7vw, 96px);
 }
 
 /* ============================================================================
@@ -127,11 +142,11 @@ a:hover {
   color: var(--color-text-muted);
 }
 
-/* Display wordmark. */
+/* Display wordmark + landing titles — the brand face (Space Grotesk). */
 .ax-wordmark {
-  font-family: var(--font-display);
+  font-family: var(--font-brand);
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.03em;
   color: var(--color-text-strong);
   line-height: 0.95;
 }

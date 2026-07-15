@@ -1,0 +1,147 @@
+---
+// The hero's copy-paste quickstart — the real 3-command self-host from the docs
+// (getting-started/quickstart.md). Turns "read later" into "run now". The copy
+// button is keyboard-accessible and confirms with a gold "copied" state.
+const CMDS = [
+  'tar xzf agentx-deploy.tar.gz && cd agentx-deploy',
+  'cp .env.example .env',
+  'docker compose up -d',
+];
+const copyText = CMDS.join('\n');
+---
+
+<div class="qs">
+  <div class="qs-head">
+    <span class="ax-mono qs-label"><span class="qs-dot"></span>self-host · 3 commands</span>
+    <button type="button" class="qs-copy" data-qs-copy data-text={copyText} aria-label="Copy the quickstart commands">
+      <svg class="qs-ico" width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.4"></rect>
+        <path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" stroke="currentColor" stroke-width="1.4"></path>
+      </svg>
+      <span class="qs-copy-label">copy</span>
+    </button>
+  </div>
+  <div class="qs-body">
+    {
+      CMDS.map((c) => (
+        <div class="qs-line">
+          <span class="qs-prompt" aria-hidden="true">$</span>
+          <code>{c}</code>
+        </div>
+      ))
+    }
+  </div>
+</div>
+
+<style>
+  .qs {
+    max-width: 540px;
+    margin-bottom: 28px;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: color-mix(in oklab, var(--color-code-bg) 82%, transparent);
+    overflow: hidden;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+  .qs-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px 8px 12px;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in oklab, var(--color-surface-2) 55%, transparent);
+  }
+  .qs-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-text-muted);
+    letter-spacing: 0.1em;
+  }
+  .qs-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--c-energy);
+    box-shadow: 0 0 8px var(--c-energy);
+  }
+  .qs-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 7px;
+    border: 1px solid var(--color-border-2);
+    background: transparent;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  }
+  .qs-copy:hover {
+    color: var(--c-energy-bright);
+    border-color: color-mix(in oklab, var(--c-energy) 45%, var(--color-border-2));
+  }
+  .qs-copy:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--c-energy) 60%, transparent);
+    outline-offset: 2px;
+  }
+  .qs-copy[data-copied='1'] {
+    color: var(--c-energy-core);
+    border-color: color-mix(in oklab, var(--c-energy) 60%, transparent);
+    background: color-mix(in oklab, var(--c-energy) 12%, transparent);
+  }
+
+  .qs-body {
+    padding: 10px 12px;
+    display: grid;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+    overflow-x: auto;
+  }
+  .qs-line {
+    display: flex;
+    gap: 10px;
+    white-space: nowrap;
+  }
+  .qs-prompt {
+    color: var(--c-energy);
+    user-select: none;
+    flex: 0 0 auto;
+  }
+  .qs-line code {
+    color: var(--color-text);
+    font-family: inherit;
+  }
+
+  @media (max-width: 720px) {
+    .qs-body {
+      font-size: 11.5px;
+    }
+  }
+</style>
+
+<script>
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('[data-qs-copy]')) {
+    btn.addEventListener('click', async () => {
+      const text = btn.dataset.text ?? '';
+      const label = btn.querySelector<HTMLElement>('.qs-copy-label');
+      try {
+        await navigator.clipboard.writeText(text);
+        const prev = label?.textContent ?? 'copy';
+        btn.dataset.copied = '1';
+        if (label) label.textContent = 'copied';
+        setTimeout(() => {
+          btn.dataset.copied = '';
+          if (label) label.textContent = prev;
+        }, 1600);
+      } catch {
+        /* clipboard blocked — no-op */
+      }
+    });
+  }
+</script>

@@ -1,0 +1,84 @@
+{
+  "source": "work-order-background",
+  "task": "AI × climate research",
+  "lead": {
+    "name": "Kim",
+    "id": "lucky-rising-thistle",
+    "role": "lead",
+    "model": "kimi-k2.6"
+  },
+  "team": [
+    {
+      "role": "researcher",
+      "id": "bright-grand-fern"
+    }
+  ],
+  "beats": [
+    {
+      "t": 3.5,
+      "actor": "lead",
+      "kind": "recall",
+      "label": "recall",
+      "detail": "10 memories · self + global"
+    },
+    {
+      "t": 3.5,
+      "actor": "lead",
+      "kind": "compose",
+      "label": "compose",
+      "detail": "context · 27.8k / 262k"
+    },
+    {
+      "t": 3.5,
+      "actor": "lead",
+      "kind": "think",
+      "label": "reflection",
+      "detail": "plan the approach"
+    },
+    {
+      "t": 10.9,
+      "actor": "lead",
+      "kind": "delegate",
+      "label": "delegate",
+      "detail": "→ bright-grand-fern",
+      "edge": "researcher"
+    },
+    {
+      "t": 20.5,
+      "actor": "researcher",
+      "kind": "tool",
+      "label": "web_search",
+      "detail": "×4 queries"
+    },
+    {
+      "t": 53.1,
+      "actor": "researcher",
+      "kind": "result",
+      "label": "results",
+      "detail": "4 searches · reading"
+    },
+    {
+      "t": 83.8,
+      "actor": "researcher",
+      "kind": "report",
+      "label": "work order",
+      "detail": "report → Kim",
+      "edge": "lead"
+    },
+    {
+      "t": 122,
+      "actor": "lead",
+      "kind": "merge",
+      "label": "AgentResult",
+      "detail": "2 agents · 4 tools · 122s"
+    }
+  ],
+  "stats": {
+    "model": "kimi-k2.6",
+    "pattern": "reflection",
+    "tokensIn": 26129,
+    "tokensOut": 1672,
+    "cost": "$0.0229",
+    "provider": "openrouter"
+  }
+}

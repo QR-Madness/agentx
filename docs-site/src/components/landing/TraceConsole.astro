@@ -1,79 +1,109 @@
 ---
-// The hero's glassbox "Alloy" trace console: a window chrome, the alloy roster
-// (3 delegating agents), and a static run trace. Data from config/landing.ts.
-import { ALLOY, TRACE } from '../../config/landing';
+// The hero's living "glassbox" console: it replays a REAL recorded agent run
+// (distilled into config/hero-run.json by scripts/distill-hero-run.mjs) — the lead
+// recalls memory, delegates a work order to a teammate, who runs a tool and reports
+// back, then the lead merges. Beats stream in on a snappy cadence with gold energy
+// (the delegation packet rides the rail between agents); the displayed timestamps are
+// the run's REAL relative times. prefers-reduced-motion → the whole run rendered static.
+import run from '../../config/hero-run.json';
 import MonoTag from '../ui/MonoTag.astro';
 
-const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
+const roleColor: Record<string, string> = {
+  lead: 'var(--c-agent)',
+  researcher: 'var(--c-memory)',
+  writer: 'var(--c-drafting)',
+};
+const colorFor = (role: string) => roleColor[role] ?? 'var(--c-agent)';
+
+const roster = [
+  { role: run.lead.role, id: run.lead.id, color: colorFor(run.lead.role) },
+  ...run.team.map((t) => ({ role: t.role, id: t.id, color: colorFor(t.role) })),
+];
+
+const k = (n: number | null) =>
+  n == null ? '' : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : String(n);
+const s = run.stats;
 ---
 
-<div class="console ax-glass">
+<div class="console ax-glass" data-console>
   <div class="header-bar">
     <div class="header-left">
-      <div class="lights">
-        <span></span><span></span><span></span>
-      </div>
-      <MonoTag class="run-label">AgX · trace · aef91</MonoTag>
+      <div class="lights"><span></span><span></span><span></span></div>
+      <MonoTag class="run-label">AgX · run · {run.task}</MonoTag>
     </div>
-    <span class="live">
+    <span class="live" data-live>
       <span class="live-dot"></span>
       <MonoTag color="var(--color-ok)">live</MonoTag>
     </span>
   </div>
 
+  <div class="run-progress"><span class="run-fill" data-progress></span></div>
+
   <div class="roster">
     <div class="roster-head">
-      <div class="roster-title">
-        <span class="ax-mono" style="color:var(--color-text-strong);letter-spacing:0.14em">AgX · team</span>
-        <span class="ax-mono" style="color:var(--color-text-dim)">plan ⇢ delegate ⇢ merge</span>
-      </div>
+      <span class="ax-mono roster-title-strong">AgX · team</span>
+      <span class="ax-mono roster-title-dim">plan ⇢ delegate ⇢ merge</span>
     </div>
-    <div class="roster-rows">
-      {
-        ALLOY.map((a) => (
-          <div class="ax-alloy-row">
-            <span class="alloy-role">
-              <span class="alloy-dot" style={`--c:${a.color}`} />
-              <span style={`color:${a.color};font-weight:500`}>{a.role}</span>
-            </span>
-            <span style="color:var(--color-text-muted)">@{a.id}</span>
-          </div>
-        ))
-      }
+    <div class="roster-body">
+      <div class="deleg-rail" aria-hidden="true">
+        <span class="deleg-line"></span>
+        <span class="deleg-packet" data-packet></span>
+      </div>
+      <div class="roster-rows">
+        {
+          roster.map((a) => (
+            <div class="ax-alloy-row">
+              <span class="alloy-role">
+                <span class="alloy-dot" data-dot={a.role} style={`--c:${a.color}`} />
+                <span style={`color:${a.color};font-weight:500`}>{a.role}</span>
+              </span>
+              <span class="alloy-id">@{a.id}</span>
+            </div>
+          ))
+        }
+      </div>
     </div>
   </div>
 
   <div class="body">
     <div class="ax-trace-header">
-      <span class="ax-mono" style="color:var(--color-text-dim)">t</span>
-      <span class="ax-mono" style="color:var(--color-text-dim)">agent</span>
-      <span class="ax-mono" style="color:var(--color-text-dim)">kind</span>
-      <span class="ax-mono" style="color:var(--color-text-dim)">event</span>
+      <span class="ax-mono th">t</span>
+      <span class="ax-mono th">agent</span>
+      <span class="ax-mono th">kind</span>
+      <span class="ax-mono th">event</span>
     </div>
     {
-      TRACE.map((line) => {
-        const c = colorByRole[line.r] ?? 'var(--color-text)';
-        return (
-          <div class="ax-trace-row">
-            <span class="trace-t">{line.t}s</span>
-            <span class="trace-agent">
-              <span class="trace-dot" style={`--c:${c}`} />
-              <span class="trace-role" style={`color:${c}`}>
-                {line.r}
-              </span>
+      run.beats.map((b) => (
+        <div
+          class="ax-trace-row"
+          data-beat
+          data-actor={b.actor}
+          data-kind={b.kind}
+          data-edge={b.edge ?? ''}
+        >
+          <span class="trace-t">+{b.t}s</span>
+          <span class="trace-agent">
+            <span class="trace-dot" style={`--c:${colorFor(b.actor)}`} />
+            <span class="trace-role" style={`color:${colorFor(b.actor)}`}>
+              {b.actor}
             </span>
-            <span class="trace-kind">{line.k}</span>
-            <span class="trace-event">
-              <span style="color:var(--color-text-strong)">{line.l}</span>
-              <span class="trace-msg">{line.m}</span>
-            </span>
-          </div>
-        );
-      })
+          </span>
+          <span class="trace-kind">{b.kind}</span>
+          <span class="trace-event">
+            <span class="beat-label">{b.label}</span>
+            <span class="trace-msg">{b.detail}</span>
+            <span class="beat-caret" aria-hidden="true">▍</span>
+          </span>
+        </div>
+      ))
     }
-    <div class="idle">
-      <span class="idle-dot"></span>
-      <MonoTag>team idle · awaiting next task</MonoTag>
+
+    <div class="runline">
+      <span class="run-dot"></span>
+      <span class="ax-mono runline-stat">
+        {s.model}{s.pattern ? ` · ${s.pattern}` : ''} · {k(s.tokensIn)}→{k(s.tokensOut)} tok
+        {s.cost ? ` · ${s.cost}` : ''}
+      </span>
     </div>
   </div>
 </div>
@@ -99,10 +129,12 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
     display: flex;
     align-items: center;
     gap: 10px;
+    min-width: 0;
   }
   .lights {
     display: flex;
     gap: 6px;
+    flex: 0 0 auto;
   }
   .lights span {
     width: 10px;
@@ -112,11 +144,15 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
   }
   .run-label {
     margin-left: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .live {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    flex: 0 0 auto;
   }
   .live-dot {
     width: 6px;
@@ -124,6 +160,23 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
     border-radius: 999px;
     background: var(--color-ok);
     box-shadow: 0 0 8px var(--color-ok);
+    animation: ax-pulse 1.6s ease-in-out infinite;
+  }
+
+  /* Run progress — a thin gold fill driven by the playback script. */
+  .run-progress {
+    height: 2px;
+    background: color-mix(in oklab, var(--c-energy) 14%, transparent);
+    overflow: hidden;
+  }
+  .run-fill {
+    display: block;
+    height: 100%;
+    transform-origin: left;
+    transform: scaleX(0);
+    background: linear-gradient(90deg, var(--c-energy-deep), var(--c-energy), var(--c-energy-bright));
+    box-shadow: 0 0 10px color-mix(in oklab, var(--c-energy) 55%, transparent);
+    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   /* Roster */
@@ -134,25 +187,80 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
   }
   .roster-head {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-  }
-  .roster-title {
-    display: flex;
     align-items: baseline;
     gap: 12px;
+    margin-bottom: 12px;
+  }
+  .roster-title-strong {
+    color: var(--color-text-strong);
+    letter-spacing: 0.14em;
+  }
+  .roster-title-dim {
+    color: var(--color-text-dim);
+  }
+  .roster-body {
+    display: flex;
+    gap: 10px;
+  }
+  /* Delegation rail — the gold packet rides between the two agent rows. */
+  .deleg-rail {
+    position: relative;
+    flex: 0 0 12px;
+    width: 12px;
+  }
+  .deleg-line {
+    position: absolute;
+    left: 50%;
+    top: 16px;
+    height: 38px;
+    width: 1px;
+    margin-left: -0.5px;
+    background: linear-gradient(var(--c-energy), color-mix(in oklab, var(--c-energy) 20%, transparent));
+    opacity: 0.28;
+  }
+  .deleg-packet {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 7px;
+    height: 7px;
+    margin-left: -3.5px;
+    border-radius: 999px;
+    background: radial-gradient(circle, var(--c-energy-core), var(--c-energy) 45%, transparent 72%);
+    box-shadow: 0 0 9px 2px color-mix(in oklab, var(--c-energy) 60%, transparent);
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  .deleg-packet.run[data-dir='down'] {
+    animation: packet-down 0.72s ease-in-out;
+  }
+  .deleg-packet.run[data-dir='up'] {
+    animation: packet-up 0.72s ease-in-out;
+  }
+  @keyframes packet-down {
+    0% { transform: translateY(16px); opacity: 0; }
+    12% { opacity: 1; }
+    88% { opacity: 1; }
+    100% { transform: translateY(54px); opacity: 0; }
+  }
+  @keyframes packet-up {
+    0% { transform: translateY(54px); opacity: 0; }
+    12% { opacity: 1; }
+    88% { opacity: 1; }
+    100% { transform: translateY(16px); opacity: 0; }
   }
   .roster-rows {
+    flex: 1 1 auto;
     display: grid;
     gap: 6px;
+    min-width: 0;
   }
   .ax-alloy-row {
     display: grid;
     grid-template-columns: 116px 1fr;
     gap: 12px;
     align-items: center;
-    padding: 6px 0;
+    min-height: 32px;
     font-family: var(--font-mono);
     font-size: 12.5px;
   }
@@ -167,37 +275,58 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
     border-radius: 999px;
     background: var(--c);
     box-shadow: 0 0 6px var(--c);
+    transition: box-shadow 0.25s ease;
   }
-  .alloy-profile {
+  .alloy-dot[data-pulse='1'] {
+    box-shadow:
+      0 0 0 3px color-mix(in oklab, var(--c-energy) 38%, transparent),
+      0 0 12px var(--c-energy);
+  }
+  .alloy-id {
     color: var(--color-text-muted);
-  }
-  .alloy-model {
-    color: var(--color-text-dim);
-    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Trace body */
   .body {
-    padding: 14px 16px 4px;
+    padding: 14px 16px 12px;
     background: var(--color-code-bg);
   }
-  .ax-trace-header {
+  .ax-trace-header,
+  .ax-trace-row {
     display: grid;
-    grid-template-columns: 44px 108px 72px 1fr;
+    grid-template-columns: 46px 116px 76px 1fr;
     gap: 12px;
+  }
+  .ax-trace-header {
     padding-bottom: 8px;
     margin-bottom: 6px;
     border-bottom: 1px dashed var(--color-border);
   }
+  .th {
+    color: var(--color-text-dim);
+  }
   .ax-trace-row {
-    display: grid;
-    grid-template-columns: 44px 108px 72px 1fr;
-    gap: 12px;
     align-items: baseline;
     padding: 7px 0;
     font-family: var(--font-mono);
     font-size: 12.5px;
     line-height: 1.55;
+    /* Streamed-in state (script drives data-state); static fallback below. */
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  .ax-trace-row[data-state='shown'],
+  .ax-trace-row[data-state='active'] {
+    opacity: 1;
+    transform: none;
+  }
+  .ax-trace-row[data-state='active'] .beat-label {
+    color: var(--c-energy-bright);
+    text-shadow: 0 0 10px color-mix(in oklab, var(--c-energy) 45%, transparent);
   }
   .trace-t {
     color: var(--color-text-dim);
@@ -230,27 +359,52 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
     display: inline-block;
     width: fit-content;
     letter-spacing: 0.02em;
+    height: fit-content;
+  }
+  .beat-label {
+    color: var(--color-text-strong);
+    transition: color 0.2s ease, text-shadow 0.2s ease;
   }
   .trace-msg {
     color: var(--color-text-muted);
     margin-left: 10px;
   }
-  .idle {
-    padding: 10px 0 14px;
+  .beat-caret {
+    display: none;
+    color: var(--c-energy-bright);
+    margin-left: 2px;
+  }
+  .ax-trace-row[data-state='active'] .beat-caret {
+    display: inline;
+    animation: caret-blink 0.8s step-end infinite;
+  }
+  @keyframes caret-blink {
+    50% { opacity: 0; }
+  }
+
+  /* Footer stat line — the real run's numbers. */
+  .runline {
+    padding: 12px 0 2px;
+    margin-top: 6px;
     display: flex;
     align-items: center;
     gap: 10px;
+    border-top: 1px dashed var(--color-border);
   }
-  .idle-dot {
+  .run-dot {
     width: 6px;
     height: 6px;
     border-radius: 999px;
-    background: var(--c-agent);
-    box-shadow: 0 0 10px var(--c-agent);
-    animation: ax-pulse 1.4s ease-in-out infinite;
+    background: var(--c-energy);
+    box-shadow: 0 0 10px var(--c-energy);
+    flex: 0 0 auto;
+  }
+  .runline-stat {
+    color: var(--color-text-muted);
+    letter-spacing: 0.04em;
   }
 
-  /* ≤720px — simplify to a single-column stack */
+  /* ≤720px — single-column stack */
   @media (max-width: 720px) {
     .ax-trace-header {
       display: none;
@@ -277,12 +431,79 @@ const colorByRole = Object.fromEntries(ALLOY.map((a) => [a.role, a.color]));
     }
     .ax-alloy-row {
       grid-template-columns: auto 1fr;
-      row-gap: 2px;
-    }
-    .alloy-profile,
-    .alloy-model {
-      grid-column: 1 / -1;
-      text-align: left;
     }
   }
 </style>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-console]');
+  if (root) {
+    const rows = [...root.querySelectorAll<HTMLElement>('[data-beat]')];
+    const dots = new Map(
+      [...root.querySelectorAll<HTMLElement>('[data-dot]')].map((d) => [d.dataset.dot, d]),
+    );
+    const packet = root.querySelector<HTMLElement>('[data-packet]');
+    const progress = root.querySelector<HTMLElement>('[data-progress]');
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let token = 0; // bumped to cancel an in-flight run (scroll-out / restart)
+
+    const setProgress = (v: number) => progress && (progress.style.transform = `scaleX(${v})`);
+
+    function showStatic() {
+      rows.forEach((r) => (r.dataset.state = 'shown'));
+      setProgress(1);
+    }
+
+    function pulseDot(role?: string) {
+      const d = role ? dots.get(role) : undefined;
+      if (!d) return;
+      d.dataset.pulse = '1';
+      setTimeout(() => (d.dataset.pulse = ''), 700);
+    }
+
+    function flowEdge(to?: string) {
+      if (!packet || !to) return;
+      packet.dataset.dir = to === 'lead' ? 'up' : 'down';
+      packet.classList.remove('run');
+      void packet.offsetWidth; // reflow → restart the animation
+      packet.classList.add('run');
+    }
+
+    async function play(mine: number) {
+      rows.forEach((r) => (r.dataset.state = ''));
+      setProgress(0);
+      await wait(480);
+      for (let i = 0; i < rows.length; i++) {
+        if (mine !== token) return;
+        const r = rows[i];
+        r.dataset.state = 'active';
+        setProgress((i + 1) / rows.length);
+        pulseDot(r.dataset.actor);
+        if (r.dataset.edge) flowEdge(r.dataset.edge);
+        const emphatic = ['delegate', 'tool', 'report', 'merge'].includes(r.dataset.kind ?? '');
+        await wait(emphatic ? 800 : 540);
+        if (mine !== token) return;
+        r.dataset.state = 'shown';
+      }
+      await wait(2800);
+      if (mine === token) play(mine); // loop
+    }
+
+    if (reduce) {
+      showStatic();
+    } else {
+      // Play only while visible — restart on re-entry, cancel when scrolled away.
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            token++;
+            if (e.isIntersecting) play(token);
+          }
+        },
+        { threshold: 0.25 },
+      );
+      io.observe(root);
+    }
+  }
+</script>

@@ -12,7 +12,7 @@ const repoSlug = site.repoUrl.replace('https://github.com/', '');
 <header class="topnav">
   <div class="brand">
     <Wordmark size={32} />
-    <MonoTag class="topnav-version">v{version} · alpha</MonoTag>
+    <span class="topnav-ver"><MonoTag>v{version} · alpha</MonoTag></span>
   </div>
   <nav class="actions">
     <a href={site.repoUrl} target="_blank" rel="noopener" class="gh">
@@ -21,6 +21,9 @@ const repoSlug = site.repoUrl.replace('https://github.com/', '');
     </a>
     <a href={site.docsBasePath} class="docs-cta">
       Open the docs <ArrowRight size={14} />
+    </a>
+    <a href="/docs/getting-started/quickstart" class="nav-cta" data-nav-cta>
+      Get started <ArrowRight size={14} />
     </a>
   </nav>
 </header>
@@ -44,7 +47,8 @@ const repoSlug = site.repoUrl.replace('https://github.com/', '');
     gap: 14px;
     min-width: 0;
   }
-  .topnav-version {
+  .topnav-ver {
+    display: inline-flex;
     padding: 3px 8px;
     border: 1px solid var(--color-border);
     border-radius: 999px;
@@ -74,6 +78,7 @@ const repoSlug = site.repoUrl.replace('https://github.com/', '');
     display: inline-flex;
     align-items: center;
     gap: 10px;
+    white-space: nowrap;
     padding: 8px 14px 8px 16px;
     border-radius: 8px;
     background: var(--color-accent);
@@ -91,11 +96,51 @@ const repoSlug = site.repoUrl.replace('https://github.com/', '');
     background: var(--color-accent-hover);
   }
 
+  /* Scroll-aware "Get started" — the one gold accent in the chrome (action = energy).
+     Hidden at the top; revealed once the hero scrolls away (see script). */
+  .nav-cta {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    padding: 8px 14px 8px 16px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, var(--c-energy-bright), var(--c-energy));
+    color: #241803;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    border: 1px solid color-mix(in oklab, var(--c-energy) 70%, #000);
+    box-shadow: 0 4px 18px -6px color-mix(in oklab, var(--c-energy) 70%, transparent);
+    transition: filter 0.15s ease;
+  }
+  .nav-cta[data-show='1'] {
+    display: inline-flex;
+    animation: nav-cta-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .nav-cta:hover {
+    filter: brightness(1.06);
+  }
+  @keyframes nav-cta-in {
+    from {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
   @media (max-width: 720px) {
     .topnav {
       padding: 14px 18px;
     }
-    .topnav-version,
+    /* On mobile the docs CTA yields to the scroll CTA to avoid crowding. */
+    .docs-cta:has(~ .nav-cta[data-show='1']) {
+      display: none;
+    }
+    .topnav-ver,
     .gh-label {
       display: none;
     }
@@ -111,3 +156,18 @@ const repoSlug = site.repoUrl.replace('https://github.com/', '');
     }
   }
 </style>
+
+<script>
+  // Reveal the "Get started" CTA once the hero has largely scrolled away.
+  const cta = document.querySelector<HTMLElement>('[data-nav-cta]');
+  const hero = document.querySelector<HTMLElement>('.hero');
+  if (cta && hero) {
+    const io = new IntersectionObserver(
+      ([e]) => {
+        cta.dataset.show = e.isIntersecting ? '' : '1';
+      },
+      { threshold: 0, rootMargin: '-45% 0px 0px 0px' },
+    );
+    io.observe(hero);
+  }
+</script>

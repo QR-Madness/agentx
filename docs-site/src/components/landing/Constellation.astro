@@ -78,18 +78,28 @@ const nodes = FEATURES.map((f, i) => {
     {/* node glows */}
     {nodes.map((n) => <circle cx={n.x} cy={n.y} r={S * 0.058} fill={`url(#g-${n.key})`} />)}
 
-    {/* node cores */}
+    {/* node cores (inner dot pulses gently, staggered) */}
     {
-      nodes.map((n) => (
+      nodes.map((n, i) => (
         <g>
           <circle cx={n.x} cy={n.y} r="8" style={`fill:var(--color-bg-2);stroke:${n.color}`} stroke-width="1.5" />
-          <circle cx={n.x} cy={n.y} r="3" style={`fill:${n.color}`} />
+          <circle class="node-core" cx={n.x} cy={n.y} r="3" style={`fill:${n.color};--d:${(i * 0.32).toFixed(2)}s`} />
         </g>
       ))
     }
 
-    {/* travel dots along spokes */}
-    {nodes.map((n) => <circle cx={n.tx} cy={n.ty} r="2" style={`fill:${n.color}`} opacity="0.7" />)}
+    {/* gold energy packets flow from the core out to each subsystem — the loop, alive */}
+    {
+      nodes.map((n, i) => (
+        <circle
+          class="flow"
+          cx={cx}
+          cy={cy}
+          r="2.5"
+          style={`--dx:${(n.x - cx).toFixed(1)};--dy:${(n.y - cy).toFixed(1)};--d:${(i * 0.42).toFixed(2)}s`}
+        />
+      ))
+    }
   </svg>
 
   {/* center badge — real logo */}
@@ -141,6 +151,48 @@ const nodes = FEATURES.map((f, i) => {
     width: 100%;
     height: 100%;
     overflow: visible;
+  }
+
+  /* Living map — node cores breathe; gold packets stream out along the spokes. */
+  .node-core {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: cst-pulse 2.8s ease-in-out infinite;
+    animation-delay: var(--d, 0s);
+  }
+  @keyframes cst-pulse {
+    0%,
+    100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  .flow {
+    fill: var(--c-energy);
+    filter: drop-shadow(0 0 3px var(--c-energy));
+    transform-box: view-box;
+    transform-origin: 0 0;
+    opacity: 0;
+    animation: cst-flow 3.6s ease-in-out infinite;
+    animation-delay: var(--d, 0s);
+  }
+  @keyframes cst-flow {
+    0% {
+      transform: translate(0, 0);
+      opacity: 0;
+    }
+    14% {
+      opacity: 0.85;
+    }
+    66% {
+      opacity: 0.85;
+    }
+    100% {
+      transform: translate(calc(var(--dx) * 1px), calc(var(--dy) * 1px));
+      opacity: 0;
+    }
   }
   .badge {
     position: absolute;

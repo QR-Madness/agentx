@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.223 -->
+<!-- release-version: 0.21.224 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -20,6 +20,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 **Mobile-Ready Alpha**: bring your own server and model providers.
 
 ### Highlights
+
+- **The homepage, reimagined**: an immersive cosmic hero where a *real* recorded agent run streams
+  live in a glassbox console (recall → delegate → tools → merge, with real tokens and cost), gold
+  energy rising from a true-black starfield, a copy-paste quickstart, and a living system-map.
 
 - **Non-blocking delegation — `delegate_start` work orders**: an agent can now dispatch a task to
   a teammate and *keep working* — it gets a dispatch receipt immediately, and the teammate's

@@ -6,11 +6,12 @@ import Cta from '../ui/Cta.astro';
 import ArrowRight from '../icons/ArrowRight.astro';
 import GitHubGlyph from '../icons/GitHubGlyph.astro';
 import TraceConsole from './TraceConsole.astro';
+import CosmicField from './CosmicField.astro';
+import QuickstartChip from './QuickstartChip.astro';
 ---
 
 <section class="hero">
-  <div class="wash" aria-hidden="true"></div>
-  <div class="ax-grid-bg-fine grid-wash" aria-hidden="true"></div>
+  <CosmicField intensity="hero" />
 
   <div class="hero-grid">
     {/* LEFT — type column */}
@@ -49,13 +50,7 @@ import TraceConsole from './TraceConsole.astro';
         </Cta>
       </div>
 
-      <div class="deploy-pill">
-        <span class="deploy-dot"></span>
-        <span class="ax-mono deploy-label">self-hosted today</span>
-        <span class="deploy-note">
-          you run the server · managed cloud coming soon
-        </span>
-      </div>
+      <QuickstartChip />
 
       <div class="stats">
         {
@@ -80,23 +75,10 @@ import TraceConsole from './TraceConsole.astro';
     padding: 72px 48px 64px;
     overflow: hidden;
   }
-  .wash {
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(40% 60% at 10% 20%, rgba(99, 102, 241, 0.22), transparent 60%),
-      radial-gradient(35% 50% at 90% 30%, rgba(34, 211, 238, 0.1), transparent 65%);
-  }
-  .grid-wash {
-    position: absolute;
-    inset: 0;
-    opacity: 0.4;
-    mask-image: linear-gradient(180deg, black, transparent 80%);
-    -webkit-mask-image: linear-gradient(180deg, black, transparent 80%);
-  }
 
   .hero-grid {
     position: relative;
+    z-index: 1;
     max-width: 1280px;
     margin: 0 auto;
     display: grid;
@@ -162,36 +144,6 @@ import TraceConsole from './TraceConsole.astro';
     margin-bottom: 16px;
   }
 
-  .deploy-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    margin-bottom: 28px;
-    border-radius: 8px;
-    border: 1px dashed var(--color-border-2);
-    background: color-mix(in oklab, var(--color-surface) 60%, transparent);
-    max-width: 540px;
-  }
-  .deploy-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 999px;
-    background: var(--color-ok);
-    box-shadow: 0 0 8px var(--color-ok);
-    flex: 0 0 auto;
-  }
-  .deploy-label {
-    color: var(--color-ok);
-    letter-spacing: 0.14em;
-  }
-  .deploy-note {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--color-text-muted);
-    letter-spacing: 0.01em;
-  }
-
   .stats {
     display: flex;
     gap: 28px;
@@ -211,7 +163,9 @@ import TraceConsole from './TraceConsole.astro';
       padding: 56px 32px;
     }
     .hero-grid {
-      grid-template-columns: 1fr;
+      /* minmax(0,1fr) — not bare 1fr — so the track can shrink below the
+         quickstart chip's nowrap command line instead of overflowing the hero. */
+      grid-template-columns: minmax(0, 1fr);
       gap: 36px;
     }
   }

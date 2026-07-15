@@ -1,0 +1,165 @@
+---
+// CosmicField — the hero's immersive backdrop, modelled on a real GALEX nebula
+// (CW Leo): diffuse teal/cyan gas on a true-black sky, dense with stars in a warm
+// gold + cool cyan mix. Only the gold energy motes rising from the surface animate
+// ("power bubbling up"); the nebula and stars are static. Hero-only, fully decorative
+// (aria-hidden, pointer-events:none). The global reduced-motion guard freezes the motes.
+interface Props {
+  intensity?: 'hero' | 'band';
+}
+const { intensity = 'hero' } = Astro.props;
+
+// Deterministic PRNG so SSR output is stable across builds.
+let seed = 20260714;
+const rnd = () => {
+  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+  return seed / 0x7fffffff;
+};
+
+// Dense star field — a warm/cool mix like the real image (gold stars pop on teal).
+const COOL = ['#eaf2ff', '#c3dbff', '#9fe0ff', '#ffffff'];
+const WARM = ['#ffd27a', '#ffb347', '#ff9d5c', '#f5c451'];
+const STAR_COUNT = intensity === 'hero' ? 190 : 70;
+const stars = Array.from({ length: STAR_COUNT }, () => {
+  const warm = rnd() < 0.34;
+  const bright = rnd() < 0.14;
+  const color = (warm ? WARM : COOL)[Math.floor(rnd() * 4)];
+  return {
+    x: +(rnd() * 100).toFixed(2),
+    y: +(rnd() * 100).toFixed(2),
+    size: +((bright ? 1.5 : 0.6) + rnd() * (bright ? 1.1 : 1.0)).toFixed(2),
+    op: +((bright ? 0.7 : 0.22) + rnd() * (bright ? 0.3 : 0.5)).toFixed(2),
+    color,
+    glow: bright,
+  };
+});
+
+// Gold energy motes rising from the lower surface (the only moving layer).
+const MOTE_COUNT = intensity === 'hero' ? 20 : 9;
+const motes = Array.from({ length: MOTE_COUNT }, (_, i) => {
+  const n = i / MOTE_COUNT;
+  return {
+    left: Math.round(((i * 61.803) % 100) * 10) / 10,
+    size: 2 + ((i * 7) % 3),
+    rise: 220 + ((i * 53) % 220),
+    dur: 9 + ((i * 3.1) % 8),
+    delay: Math.round(n * 11 * 10) / 10,
+    peak: intensity === 'hero' ? 0.5 + ((i * 13) % 40) / 100 : 0.3,
+  };
+});
+---
+
+<div class:list={['cosmic', `cosmic--${intensity}`]} aria-hidden="true">
+  <div class="void"></div>
+  <div class="nebula"></div>
+  <div class="stars">
+    {
+      stars.map((s) => (
+        <span
+          class="star"
+          style={`left:${s.x}%;top:${s.y}%;width:${s.size}px;height:${s.size}px;background:${s.color};opacity:${s.op}${s.glow ? `;box-shadow:0 0 ${s.size * 2.5}px ${s.color}` : ''}`}
+        />
+      ))
+    }
+  </div>
+  <div class="motes">
+    {
+      motes.map((m) => (
+        <span
+          class="mote"
+          style={`--left:${m.left}%;--size:${m.size}px;--rise:${m.rise}px;--dur:${m.dur}s;--delay:${m.delay}s;--peak:${m.peak}`}
+        />
+      ))
+    }
+  </div>
+</div>
+
+<style>
+  .cosmic {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+    /* Fade out low so the hero's true black eases into the page background. */
+    mask-image: linear-gradient(180deg, #000 84%, transparent);
+    -webkit-mask-image: linear-gradient(180deg, #000 84%, transparent);
+  }
+
+  /* True-black sky (faintest teal tint, matching the reference). */
+  .void {
+    position: absolute;
+    inset: 0;
+    background: #010306;
+  }
+
+  /* Diffuse teal/cyan nebula with a faint indigo brand core — muted, static. */
+  .nebula {
+    position: absolute;
+    inset: -10%;
+    background:
+      radial-gradient(46% 60% at 78% 82%, color-mix(in oklab, #2a9bb6 22%, transparent), transparent 66%),
+      radial-gradient(40% 52% at 60% 52%, color-mix(in oklab, #1a6f95 18%, transparent), transparent 64%),
+      radial-gradient(34% 44% at 22% 24%, color-mix(in oklab, #084c66 26%, transparent), transparent 62%),
+      radial-gradient(30% 40% at 38% 40%, color-mix(in oklab, var(--color-accent) 12%, transparent), transparent 66%);
+    filter: blur(14px);
+    opacity: 0.9;
+  }
+  .cosmic--band .nebula {
+    opacity: 0.5;
+  }
+
+  /* Stars — dense, warm+cool, static. */
+  .stars {
+    position: absolute;
+    inset: 0;
+  }
+  .star {
+    position: absolute;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+  }
+
+  /* Gold energy motes rising from the surface — the only animated layer. */
+  .motes {
+    position: absolute;
+    inset: 0;
+  }
+  .mote {
+    position: absolute;
+    bottom: -8px;
+    left: var(--left);
+    width: var(--size);
+    height: var(--size);
+    border-radius: 999px;
+    background: radial-gradient(circle, var(--c-energy-core), var(--c-energy) 42%, transparent 72%);
+    box-shadow: 0 0 8px 1px color-mix(in oklab, var(--c-energy) 60%, transparent);
+    opacity: 0;
+    will-change: transform, opacity;
+    animation: cf-rise var(--dur) linear var(--delay) infinite;
+  }
+
+  @keyframes cf-rise {
+    0% {
+      transform: translateY(0) scale(0.55);
+      opacity: 0;
+    }
+    12% {
+      opacity: var(--peak, 0.6);
+    }
+    82% {
+      opacity: var(--peak, 0.6);
+    }
+    100% {
+      transform: translateY(calc(-1 * var(--rise))) scale(1);
+      opacity: 0;
+    }
+  }
+
+  /* Reduced motion: the global guard freezes the motes; leave them faintly at rest. */
+  @media (prefers-reduced-motion: reduce) {
+    .mote {
+      opacity: 0.28;
+    }
+  }
+</style>
