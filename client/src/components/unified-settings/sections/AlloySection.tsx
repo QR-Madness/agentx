@@ -20,7 +20,6 @@ interface AlloySettings extends Record<string, unknown> {
   max_parallel_delegations: number;
   max_delegation_depth: number;
   delegation_timeout_seconds: number;
-  specialist_inherits_supervisor_tools: boolean;
 }
 
 export default function AlloySection() {
@@ -35,8 +34,6 @@ export default function AlloySection() {
         max_parallel_delegations: a.max_parallel_delegations ?? 3,
         max_delegation_depth: a.max_delegation_depth ?? 3,
         delegation_timeout_seconds: a.delegation_timeout_seconds ?? 300,
-        specialist_inherits_supervisor_tools:
-          a.specialist_inherits_supervisor_tools ?? true,
       };
     },
     save: async changed => {
@@ -101,15 +98,6 @@ export default function AlloySection() {
             fallback={300}
             onChange={delegation_timeout_seconds => update({ delegation_timeout_seconds })}
             title="How long a delegated subtask may run before it's cancelled."
-          />
-
-          <ToggleField
-            checked={settings.specialist_inherits_supervisor_tools}
-            onChange={specialist_inherits_supervisor_tools =>
-              update({ specialist_inherits_supervisor_tools })
-            }
-            label="Members inherit the lead's tools"
-            hint="When on, a delegated team member gets the delegating agent's tool set in addition to its own profile's tools."
           />
         </div>
       )}

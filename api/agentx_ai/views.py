@@ -7827,7 +7827,7 @@ def config_update(request):
     _ALLOY_KEYS = (
         "allow_adhoc_delegation", "max_parallel_delegations",
         "max_delegation_depth", "delegation_timeout_seconds",
-        "specialist_inherits_supervisor_tools", "non_blocking_delegations",
+        "non_blocking_delegations",
     )
     alloy_settings = data.get("alloy", {})
     for key, value in alloy_settings.items():

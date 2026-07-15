@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.224 -->
+<!-- release-version: 0.21.226 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -43,6 +43,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Removed a no-op Agent Teams toggle**: "Members inherit the lead's tools" never did anything —
+  a delegated teammate's tools always come from its own profile. Dropped the dead setting rather
+  than leave a switch that lies.
 - **`alloy.delegation_timeout_seconds` is now actually enforced** (both delegation modes) — a
   stuck specialist fails cleanly instead of hanging the turn indefinitely.
 - **Late delegation completions no longer drop silently** — cards settle by work-order id even
