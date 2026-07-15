@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.226 -->
+<!-- release-version: 0.21.227 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -43,6 +43,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Research reports are dated correctly**: a report is now stamped with today's date instead of a
+  date guessed from its sources. (Bundled with internal housekeeping — declared ambassador voice
+  config keys, typed the plan-executor's subtask status, and Anthropic cache-token metering.)
 - **Removed a no-op Agent Teams toggle**: "Members inherit the lead's tools" never did anything —
   a delegated teammate's tools always come from its own profile. Dropped the dead setting rather
   than leave a switch that lies.

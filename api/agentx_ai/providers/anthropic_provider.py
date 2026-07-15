@@ -25,6 +25,30 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
+
+def _anthropic_usage(usage: Any) -> dict[str, Any]:
+    """Build the StreamChunk/CompletionResult usage dict from Anthropic's usage.
+
+    `input_tokens`/`output_tokens` are authoritative (extended-thinking folds into
+    output). Also surfaces prompt-cache activity **when present** — `cache_read`
+    (billed ~0.1x) and `cache_creation` (~1.25x) — for metering visibility; both are
+    absent today (AgentX sets no `cache_control`) and on older SDK versions, so they
+    are guarded. Token totals stay unchanged; cache-aware cost is a later follow-up.
+    """
+    out: dict[str, Any] = {
+        "prompt_tokens": usage.input_tokens,
+        "completion_tokens": usage.output_tokens,
+        "total_tokens": usage.input_tokens + usage.output_tokens,
+    }
+    cache_read = getattr(usage, "cache_read_input_tokens", None)
+    if cache_read:
+        out["cache_read_tokens"] = int(cache_read)
+    cache_creation = getattr(usage, "cache_creation_input_tokens", None)
+    if cache_creation:
+        out["cache_creation_tokens"] = int(cache_creation)
+    return out
+
+
 # Default capabilities for Claude models (fallback for unknown models)
 DEFAULT_CAPABILITIES = ModelCapabilities(
     supports_tools=True,
@@ -303,11 +327,7 @@ class AnthropicProvider(ModelProvider):
         content = self._extract_text(response.content)
         tool_calls = self._parse_tool_calls(response.content)
 
-        usage = {
-            "prompt_tokens": response.usage.input_tokens,
-            "completion_tokens": response.usage.output_tokens,
-            "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-        }
+        usage = _anthropic_usage(response.usage)
 
         return CompletionResult(
             content=content,
@@ -364,11 +384,7 @@ class AnthropicProvider(ModelProvider):
             # Final chunk with finish reason, tool calls, and usage
             response = await stream.get_final_message()
             tool_calls = self._parse_tool_calls(response.content)
-            usage = {
-                "prompt_tokens": response.usage.input_tokens,
-                "completion_tokens": response.usage.output_tokens,
-                "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-            }
+            usage = _anthropic_usage(response.usage)
             yield StreamChunk(
                 content="",
                 finish_reason=response.stop_reason,

@@ -373,6 +373,14 @@ DEFAULT_CONFIG = {
         # How many recent user/assistant turns to read (read-only) for grounding.
         "max_context_turns": 8,
         "max_tokens": 600,
+        # Voice knobs — None ⇒ the resolution chain (explicit arg → profile
+        # `ambassador.{speech_model,voice,transcription_model}` → these →
+        # shipped code default) picks the effective value. Declared here (as
+        # None, behavior-preserving) so the config surface is complete for the
+        # Settings Manifest / config UI.
+        "speech_model": None,
+        "voice": None,
+        "transcription_model": None,
         # Aide swarm (Phase 16.7) — instead of reading full transcripts into the
         # ambassador's own context, fan out cheap "aide" model calls that each
         # condense ONE conversation read-only and return a short digest (map-reduce:

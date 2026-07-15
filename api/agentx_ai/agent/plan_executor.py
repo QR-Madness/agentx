@@ -14,7 +14,14 @@ from collections.abc import AsyncGenerator
 from uuid import uuid4
 
 from ..providers.base import Message, MessageRole
-from .planner import TaskPlan, Subtask
+from .planner import (
+    SubtaskStatus,
+    TaskPlan,
+    Subtask,
+    build_plan_card,
+    classify_result,
+    subtask_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,73 +91,26 @@ class PlanExecutor:
         """
         n = 0
         for s in plan.steps:
-            if not s.result or s.result.startswith("[FAILED"):
+            st = classify_result(s.result)
+            if not s.result or st == SubtaskStatus.FAILED:
                 continue
-            if exclude_abandoned and s.result.startswith("[ABANDONED"):
+            if exclude_abandoned and st == SubtaskStatus.ABANDONED:
                 continue
             n += 1
         return n
 
     @staticmethod
     def _subtask_status(step: Subtask) -> str:
-        """Derive a UI status from a subtask's terminal result sentinel.
-
-        Mirrors the snapshot statuses the chat-stream persistence uses so a
-        resumed plan renders identically to a fresh one.
-        """
-        if not step.completed:
-            return "pending"
-        result = step.result or ""
-        if result.startswith("[FAILED"):
-            return "failed"
-        if result.startswith("[SKIPPED"):
-            return "skipped"
-        if result.startswith("[ABANDONED"):
-            return "abandoned"
-        return "complete"
+        """UI status from a subtask's terminal result sentinel (thin wrapper over
+        the shared :func:`subtask_status` so snapshots match the persistence path)."""
+        return subtask_status(step)
 
     @staticmethod
     def _resume_plan_summary(plan: TaskPlan, plan_id: str, status: str = "interrupted") -> dict:
-        """Build the durable plan-card metadata for an interrupted/resumed plan.
-
-        Mirrors the shape the chat path persists under ``asst_metadata["plan"]``
-        (per-subtask ``id``/``status`` with values completed|failed|skipped, plus
-        ``error``) so the card renders identically on reload, and carries a
-        top-level ``status`` (e.g. ``interrupted``) the client maps faithfully.
-        """
-        def _status(result: str | None) -> str:
-            if not result:
-                return "completed"
-            if result.startswith("[FAILED"):
-                return "failed"
-            if result.startswith(("[SKIPPED", "[ABANDONED")):
-                return "skipped"
-            return "completed"
-
-        return {
-            "plan_id": plan_id,
-            "status": status,
-            "task": plan.task,
-            "complexity": plan.complexity.value,
-            "subtask_count": len(plan.steps),
-            "completed_count": sum(
-                1 for s in plan.steps
-                if s.result and not s.result.startswith(("[FAILED", "[SKIPPED", "[ABANDONED"))
-            ),
-            "subtasks": [
-                {
-                    "id": s.id,
-                    "description": s.description,
-                    "type": s.type.value,
-                    "status": _status(s.result),
-                    "result_preview": (s.result or "")[:200]
-                    if not (s.result or "").startswith(("[FAILED", "[SKIPPED", "[ABANDONED"))
-                    else "",
-                    "error": s.result if (s.result or "").startswith("[FAILED") else None,
-                }
-                for s in plan.steps
-            ],
-        }
+        """Durable plan-card metadata for an interrupted/resumed plan — the shared
+        :func:`build_plan_card` shape, carrying a top-level ``status`` (e.g.
+        ``interrupted``) the client maps faithfully."""
+        return build_plan_card(plan, plan_id, status)
 
     @classmethod
     def _subtask_snapshot(cls, plan: TaskPlan) -> list[dict]:
@@ -609,7 +569,7 @@ class PlanExecutor:
         for dep_id in subtask.dependencies:
             if 0 <= dep_id < len(plan.steps):
                 dep = plan.steps[dep_id]
-                if dep.completed and dep.result and not dep.result.startswith("[FAILED"):
+                if dep.completed and dep.result and classify_result(dep.result) != SubtaskStatus.FAILED:
                     dep_results.append(
                         f"Step {dep_id + 1} ({dep.description}):\n{dep.result}"
                     )
@@ -648,7 +608,7 @@ class PlanExecutor:
             # Check if ALL dependencies of this step have failed
             all_deps_failed = all(
                 plan.steps[d].completed
-                and (plan.steps[d].result or "").startswith("[FAILED")
+                and classify_result(plan.steps[d].result) == SubtaskStatus.FAILED
                 for d in step.dependencies
                 if 0 <= d < len(plan.steps)
             )
@@ -712,7 +672,7 @@ class PlanExecutor:
         """
         step_summaries = []
         for step in plan.steps:
-            if step.result and not step.result.startswith("[FAILED") and not step.result.startswith("[SKIPPED"):
+            if step.result and classify_result(step.result) not in (SubtaskStatus.FAILED, SubtaskStatus.SKIPPED):
                 step_summaries.append(
                     f"Step {step.id + 1} ({step.description}):\n{step.result}"
                 )
