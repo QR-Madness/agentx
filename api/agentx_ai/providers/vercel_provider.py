@@ -23,6 +23,7 @@ from .base import (
     convert_messages_to_openai_format,
     finalize_tool_calls,
     log_llm_request,
+    normalize_openai_usage,
     parse_openai_tool_calls,
     process_reasoning_delta,
 )
@@ -187,6 +188,9 @@ class VercelProvider(ModelProvider):
             "messages": convert_messages_to_openai_format(messages),
             "temperature": temperature,
             "stream": True,
+            # Opt into authoritative usage on a trailing chunk; the gateway may
+            # also report the actually-billed `cost` (→ cost_source: provider).
+            "stream_options": {"include_usage": True},
         }
 
         if max_tokens:
@@ -208,8 +212,13 @@ class VercelProvider(ModelProvider):
             stream = await client.chat.completions.create(**request_params)
             pending_tool_calls: dict[int, dict[str, Any]] = {}
             in_reasoning = False
+            usage_payload: dict[str, Any] | None = None
 
             async for chunk in stream:
+                # Usage rides a trailing chunk with EMPTY `choices` — read it
+                # before the choices guard skips that chunk entirely.
+                if getattr(chunk, "usage", None) is not None:
+                    usage_payload = normalize_openai_usage(chunk.usage)
                 if not chunk.choices:
                     continue
 
@@ -258,6 +267,9 @@ class VercelProvider(ModelProvider):
                         pending_tool_calls.clear()
                     elif finish_reason != "tool_calls":
                         yield StreamChunk(content="", finish_reason=finish_reason)
+
+            if usage_payload is not None:
+                yield StreamChunk(content="", usage=usage_payload)
         finally:
             await client.close()
 

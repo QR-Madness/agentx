@@ -279,6 +279,46 @@ class StreamChunk(BaseModel):
     usage: dict[str, Any] | None = None
 
 
+def normalize_openai_usage(usage: Any) -> dict[str, Any]:
+    """Normalize an OpenAI-compatible usage payload into the ``StreamChunk.usage`` dict.
+
+    Accepts **either** an SDK usage object (OpenAI/OpenRouter/Vercel clients) **or**
+    a plain dict (LM Studio parses raw SSE JSON via httpx) — providers differ, the
+    shape doesn't. Beyond the token counts it surfaces two provider extensions when
+    present: ``cost`` (the actually-billed USD — OpenRouter/Vercel-gateway report it,
+    OpenAI/LM Studio don't, so it stays absent → downstream falls back to a list-price
+    estimate) and ``reasoning_tokens`` (hidden thinking billed at the output rate but
+    invisible to any text-side estimate; a reasoning turn metered ~10x low without it).
+    """
+    is_dict = isinstance(usage, dict)
+
+    def _get(obj: Any, key: str, default: Any = None) -> Any:
+        if obj is None:
+            return default
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    out: dict[str, Any] = {
+        "prompt_tokens": _get(usage, "prompt_tokens", 0) or 0,
+        "completion_tokens": _get(usage, "completion_tokens", 0) or 0,
+        "total_tokens": _get(usage, "total_tokens", 0) or 0,
+    }
+
+    # `cost` is a non-standard extension: on the SDK object it rides `model_extra`
+    # (Pydantic's catch-all for unknown fields); on a raw dict it's a top-level key.
+    extra = usage if is_dict else (getattr(usage, "model_extra", None) or {})
+    cost = extra.get("cost") if isinstance(extra, dict) else None
+    if isinstance(cost, (int, float)):
+        out["cost"] = float(cost)
+
+    details = _get(usage, "completion_tokens_details")
+    reasoning = _get(details, "reasoning_tokens")
+    if reasoning:
+        out["reasoning_tokens"] = int(reasoning)
+    return out
+
+
 class CompletionResult(BaseModel):
     """Result of a completion request."""
     content: str
