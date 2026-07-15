@@ -63,9 +63,17 @@
    **Metering truth follow-up (v0.21.215):** OpenRouter streams now request usage accounting —
    authoritative tokens (hidden reasoning INCLUDED; a gpt-5.6-sol-pro turn metered 10x low from
    visible-text estimates) + the actually-billed `cost`, preferred over the list-price estimate
-   (`cost_source: provider|estimate` on the done event/turn metadata). **Remaining gap:** the other
-   providers' `stream()`s (OpenAI `stream_options.include_usage`, Anthropic `message_delta` usage,
-   LM Studio, Vercel) still never emit usage — streamed turns there stay estimate-only.
+   (`cost_source: provider|estimate` on the done event/turn metadata). **Extended to every provider
+   `[v0.21.225]`:** OpenAI/Vercel/LM Studio `stream()`s now opt into `stream_options.include_usage`
+   and surface the same trailing-usage chunk via one shared `normalize_openai_usage()`
+   (`providers/base.py`, dict-or-SDK-object); Anthropic was **already** authoritative via
+   `get_final_message()` (the earlier "still never emit usage" note was stale for it). Streamed
+   `tokens_in/out` are now authoritative everywhere; `cost_source` stays `provider` only where the
+   provider returns a billed `cost` (OpenRouter always, Vercel-gateway when present), else an
+   *accurate* estimate from authoritative tokens. Guards:
+   `OpenRouter/OpenAI/Vercel/LMStudio/AnthropicStreamUsageTest`. **Foundation #5 fully complete.**
+   *(Optional follow-up: Anthropic prompt-cache token split via `cache_read_input_tokens` for finer
+   cost — not built.)*
 6. ~~**Tech-debt sweep**~~ — **shipped (v0.21.102).** All token estimators now flow through one
    `tiktoken`-backed module (`api/agentx_ai/tokens.py`: `estimate_tokens`/`estimate_messages`, chars/4
    fallback + a >20K-char fast path); the ledger's `shrink_tail` verifies against it instead of assuming a

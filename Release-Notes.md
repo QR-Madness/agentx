@@ -46,6 +46,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Removed a no-op Agent Teams toggle**: "Members inherit the lead's tools" never did anything —
   a delegated teammate's tools always come from its own profile. Dropped the dead setting rather
   than leave a switch that lies.
+- **Truthful token metering on every provider**: streamed turns on OpenAI, Vercel, and LM Studio now
+  report authoritative token counts (hidden reasoning included) instead of a visible-text estimate —
+  previously only OpenRouter did, so reasoning models could meter far low.
 - **`alloy.delegation_timeout_seconds` is now actually enforced** (both delegation modes) — a
   stuck specialist fails cleanly instead of hanging the turn indefinitely.
 - **Late delegation completions no longer drop silently** — cards settle by work-order id even
