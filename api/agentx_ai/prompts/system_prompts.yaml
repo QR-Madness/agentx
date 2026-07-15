@@ -1003,7 +1003,10 @@ research:
     strongest version you have and state plainly, in Limitations, what remains unmet.
 
     REPORT STRUCTURE: executive summary → findings (with inline citations, concrete
-    stats, and case studies) → limitations → sources.
+    stats, and case studies) → limitations → sources. Number top-level sections
+    consistently (1, 2, 3…) and do not renumber or skip as you revise. Today is
+    {date}; date the report header with this — never infer the report's date from
+    your sources (a source's publication date is not today's date).
 
     FINAL REPLY: after saving the document, your final reply must be normal output
     (never inside thinking) — a concise executive summary pointing to the saved

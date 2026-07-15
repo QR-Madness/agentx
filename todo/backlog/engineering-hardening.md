@@ -50,11 +50,10 @@
       75-leaf key list = the **Settings Manifest seed**. *Dead-knob axis is opt-in (`--dead-knobs`):
       noisy because many keys are read by f-string (`f"providers.{p}.{k}"`) — would need f-string-prefix
       detection to be gate-worthy.* Standalone/advisory, not wired into a gate.
-- [ ] **Declare the undeclared ambassador config keys** — `lint:config-keys` finds
-      `ambassador.{speech_model,voice,transcription_model}` read via `config.get()` but absent from
-      `DEFAULT_CONFIG` (resolved today via the override→profile→`config.ambassador.*`→default chain).
-      Not bugs, but declaring them (as `None`) completes the config surface for the Settings Manifest /
-      config UI. Verify against the ambassador resolution before adding ([[don't change defaults]] care).
+- [x] **Declare the undeclared ambassador config keys** — **shipped `[v0.21.227]`.** Added
+      `ambassador.{speech_model,voice,transcription_model}: None` to `DEFAULT_CONFIG`
+      (behavior-preserving — the resolution chain still falls to the shipped code default);
+      `lint:config-keys` no longer flags them as read-but-undefined.
 - [~] **(WS-7) client static-analysis parity** — **`bun audit` shipped** (`task lint:client:audit`
       + advisory in `release:check`, mirroring `pip-audit`), and removed one dead barrel
       (`components/memory/index.ts`). **knip deferred:** its high-signal output here is mostly false
@@ -78,13 +77,16 @@
       codebase has **2** inline `TODO`s (`mcp/client.py` config-search, `views.py:4095` auth placeholder);
       a gate + ratchet for 2 markers is over-tooling. Revisit only if `grep -rE "TODO|FIXME"` climbs into
       the dozens.
-- [ ] **Type the plan executor's subtask status (kill stringly-typed sentinels)** — subtask state is
-      encoded as magic prefixes on the *result* string (`[FAILED: …]` / `[SKIPPED: …]` / `[ABANDONED: …]`)
-      and re-parsed by `str.startswith` in **three** places (`plan_executor.py` `_build_synthesis_messages`,
-      `_handle_failure`, `_completed_count`, and `views.py::_subtask_status`). Replace with a real
-      `status` enum/field on `Subtask` (keep the result string for the human-readable reason). Cross-file;
-      own pass. *(Filed from the PlanExecutor cleanup that did #1 typed `PlanResult` + #2 sync safety-net
-      parity.)*
+- [~] **Type the plan executor's subtask status (kill stringly-typed sentinels)** — **derivation
+      centralized `[v0.21.227]`.** Added a typed `SubtaskStatus(StrEnum)` + shared `classify_result()`/
+      `subtask_status()`/`build_plan_card()` in `planner.py`; the scattered `result.startswith("[FAILED")`
+      reads (`plan_executor.py` `_completed_count`/`_subtask_status`/`_resume_plan_summary`/synthesis/
+      dependency-skip + the byte-identical `views.py` plan-card duplicate) now route through them, and the
+      two duplicated plan-card builders collapsed into one `build_plan_card`. **Deferred (own pass):** the
+      *authoritative `status` field on `Subtask`* — the result string still carries the sentinel (it's the
+      in-memory encoding bridged to Redis by `plan_state._overlay_result`); making the field authoritative
+      means threading it through every mutation + the resume overlay + `to_dict`/`from_dict`, a riskier
+      change kept out of the housekeeping bundle.
 - [ ] **Unify the plan executor's sync/async engines (optional)** — `execute()` and `execute_streaming()`
       duplicate the subtask loop (select → run → mark/handle-failure → safety-net → synthesize). Parity is
       now restored (safety net mirrored), but the two skeletons can still drift. Sharing the loop body is

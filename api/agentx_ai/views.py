@@ -366,17 +366,22 @@ def _research_blocks(research_active: bool) -> list:
     """
     if not research_active:
         return []
+    from datetime import datetime
+
     from .agent.context_ledger import LedgerBlock
     from .config import get_config_manager
     from .prompts import get_prompt
 
     depth = get_config_manager().get("research.default_depth", "auto") or "auto"
+    # Ground the report's date so the model dates it as today, not from a source's
+    # publication date (mirrors the `{date}` placeholder format, YYYY-MM-DD).
+    today = datetime.now().strftime("%Y-%m-%d")
     return [
         LedgerBlock(
             key="research",
             priority=96,
             mandatory=True,
-            content=get_prompt("research.system", default_depth=depth),
+            content=get_prompt("research.system", default_depth=depth, date=today),
         )
     ]
 
@@ -2994,44 +2999,12 @@ async def agent_chat_stream(request):
 
                 # Snapshot the plan so the in-chat plan card can be reconstructed
                 # on conversation restore (subtask-level turns aren't persisted;
-                # this summary is the durable record of the run).
-                def _subtask_status(result: str | None) -> str:
-                    if not result:
-                        return "completed"
-                    if result.startswith("[FAILED"):
-                        return "failed"
-                    if result.startswith("[SKIPPED"):
-                        return "skipped"
-                    if result.startswith("[ABANDONED"):
-                        return "skipped"
-                    return "completed"
+                # this summary is the durable record of the run). Shared with the
+                # resumed-plan card builder so both render identically.
+                from .agent.planner import build_plan_card
 
-                plan_summary = {
-                    "plan_id": plan_result.plan_id,
-                    "status": "completed",  # reached here ⇒ the plan ran to completion
-                    "task": plan.task,
-                    "complexity": plan.complexity.value,
-                    "subtask_count": len(plan.steps),
-                    "completed_count": sum(
-                        1 for s in plan.steps
-                        if s.result and not s.result.startswith("[FAILED")
-                        and not s.result.startswith("[SKIPPED")
-                        and not s.result.startswith("[ABANDONED")
-                    ),
-                    "subtasks": [
-                        {
-                            "id": s.id,
-                            "description": s.description,
-                            "type": s.type.value,
-                            "status": _subtask_status(s.result),
-                            "result_preview": (s.result or "")[:200]
-                            if not (s.result or "").startswith(("[FAILED", "[SKIPPED", "[ABANDONED"))
-                            else "",
-                            "error": s.result if (s.result or "").startswith("[FAILED") else None,
-                        }
-                        for s in plan.steps
-                    ],
-                }
+                # reached here ⇒ the plan ran to completion
+                plan_summary = build_plan_card(plan, plan_result.plan_id, "completed")
 
             elif image_mode:
                 # Direct image-generation turn (no tool loop): a picture, not text.

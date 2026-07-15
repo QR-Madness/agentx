@@ -11,7 +11,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -124,6 +124,90 @@ class SubtaskType(str, Enum):
     TOOL_USE = "tool_use"
     DECISION = "decision"
     VERIFICATION = "verification"
+
+
+class SubtaskStatus(StrEnum):
+    """Lifecycle status of a subtask. Values match the strings persisted to Redis
+    (`plan_state._TERMINAL_STATUSES`) and emitted in plan SSE events, so the enum
+    is a drop-in for the previously bare status strings."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    ABANDONED = "abandoned"
+
+
+# The sentinel PREFIX each terminal status writes into a subtask's in-memory
+# `result` string (which also carries the human-readable reason). One source of
+# truth for the prefixes previously matched by scattered `result.startswith(
+# "[FAILED")` calls across plan_executor + views.
+_RESULT_SENTINELS: dict[SubtaskStatus, str] = {
+    SubtaskStatus.FAILED: "[FAILED",
+    SubtaskStatus.SKIPPED: "[SKIPPED",
+    SubtaskStatus.ABANDONED: "[ABANDONED",
+}
+
+
+def classify_result(result: str | None) -> SubtaskStatus | None:
+    """The terminal status a result *sentinel* encodes, or ``None`` for a real
+    result (or empty). Doesn't distinguish pending vs complete — that needs the
+    subtask's ``completed`` flag (see :func:`subtask_status`)."""
+    if not result:
+        return None
+    for status, prefix in _RESULT_SENTINELS.items():
+        if result.startswith(prefix):
+            return status
+    return None
+
+
+def subtask_status(step: Subtask) -> SubtaskStatus:
+    """A subtask's UI status: PENDING until completed, then the sentinel status
+    (FAILED/SKIPPED/ABANDONED) or COMPLETE."""
+    if not step.completed:
+        return SubtaskStatus.PENDING
+    return classify_result(step.result) or SubtaskStatus.COMPLETE
+
+
+def build_plan_card(plan: TaskPlan, plan_id: str, status: str = "completed") -> dict:
+    """Durable plan-card metadata (persisted under ``asst_metadata["plan"]`` and
+    reused for resumed-plan cards) so a card renders identically live and on reload.
+
+    Per-subtask ``status`` uses the client-facing vocabulary ``completed|failed|
+    skipped`` (ABANDONED collapses into ``skipped``) — a deliberate serialization
+    boundary distinct from the internal :class:`SubtaskStatus`.
+    """
+    def _card_status(result: str | None) -> str:
+        st = classify_result(result)
+        if st == SubtaskStatus.FAILED:
+            return "failed"
+        if st in (SubtaskStatus.SKIPPED, SubtaskStatus.ABANDONED):
+            return "skipped"
+        return "completed"
+
+    return {
+        "plan_id": plan_id,
+        "status": status,
+        "task": plan.task,
+        "complexity": plan.complexity.value,
+        "subtask_count": len(plan.steps),
+        "completed_count": sum(
+            1 for s in plan.steps if s.result and classify_result(s.result) is None
+        ),
+        "subtasks": [
+            {
+                "id": s.id,
+                "description": s.description,
+                "type": s.type.value,
+                "status": _card_status(s.result),
+                "result_preview": (s.result or "")[:200]
+                if classify_result(s.result) is None
+                else "",
+                "error": s.result if classify_result(s.result) == SubtaskStatus.FAILED else None,
+            }
+            for s in plan.steps
+        ],
+    }
 
 
 @dataclass

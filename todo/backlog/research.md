@@ -53,5 +53,7 @@ Open:
       the user only finds out server-side. Surface an in-chat notice + one-click "set Model Limits"
       (the v3 acceptance run needed a manual `context_limits.models.{id}` override to un-starve a
       1M-context model).
-- [ ] **Report editorial pass** — small polish: ground the report's header date via the persona
-      `{date}` (v3 wrote "July 2025" against later-dated sources), section-numbering hygiene.
+- [x] **Report editorial pass** — **shipped `[v0.21.227]`.** The `research.system` prompt now grounds
+      the report header with `{date}` (threaded through `_research_blocks` the same way `{default_depth}`
+      is, reusing the `substitute_placeholders` date format) so it no longer guesses the date from a
+      source, plus a consistent-section-numbering instruction.

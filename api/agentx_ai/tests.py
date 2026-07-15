@@ -3840,10 +3840,13 @@ class ResearchPromptTest(TestCase):
     def test_research_prompt_renders(self):
         from agentx_ai.prompts import get_prompt
 
-        prompt = get_prompt("research.system", default_depth="auto")
+        prompt = get_prompt("research.system", default_depth="auto", date="2026-07-15")
         self.assertIn("RESEARCH MODE", prompt)
         self.assertNotIn("{default_depth}", prompt)  # var substituted
         self.assertIn("auto", prompt)
+        # The report date is grounded to the passed-in date, not inferred from sources.
+        self.assertNotIn("{date}", prompt)
+        self.assertIn("2026-07-15", prompt)
         # The evidence bar + self-review loop are load-bearing.
         self.assertIn("REAL references only", prompt)
         self.assertIn("DEFINITION OF DONE", prompt)
@@ -5261,6 +5264,76 @@ class PlanExecutorResultTest(TestCase):
 
         # Only the two remaining subtasks executed (in dependency order).
         self.assertEqual(ran, ["step 1", "step 2"])
+
+
+class SubtaskStatusHelpersTest(TestCase):
+    """The typed `SubtaskStatus` + shared classifier/card builder that replaced
+    the scattered `result.startswith("[FAILED")` derivations."""
+
+    @staticmethod
+    def _plan(*results):
+        from agentx_ai.agent.planner import Subtask, SubtaskType, TaskComplexity, TaskPlan
+        steps = []
+        for i, r in enumerate(results):
+            s = Subtask(id=i, description=f"step {i}", type=SubtaskType.GENERATION)
+            s.result = r
+            s.completed = r is not None
+            steps.append(s)
+        return TaskPlan(task="t", complexity=TaskComplexity.COMPLEX, steps=steps)
+
+    def test_enum_values_match_legacy_and_persistence_strings(self):
+        from agentx_ai.agent.planner import SubtaskStatus
+        from agentx_ai.agent.plan_state import _TERMINAL_STATUSES
+
+        # StrEnum members compare equal to the bare strings they replaced.
+        self.assertEqual(SubtaskStatus.COMPLETE, "complete")
+        self.assertEqual(SubtaskStatus.FAILED, "failed")
+        # The terminal set persisted to Redis is exactly the terminal enum values.
+        self.assertEqual(
+            {SubtaskStatus.COMPLETE, SubtaskStatus.FAILED,
+             SubtaskStatus.SKIPPED, SubtaskStatus.ABANDONED},
+            {SubtaskStatus(s) for s in _TERMINAL_STATUSES},
+        )
+
+    def test_classify_result_maps_sentinels(self):
+        from agentx_ai.agent.planner import SubtaskStatus, classify_result
+
+        self.assertIsNone(classify_result(None))
+        self.assertIsNone(classify_result(""))
+        self.assertIsNone(classify_result("a real answer"))
+        self.assertEqual(classify_result("[FAILED: boom]"), SubtaskStatus.FAILED)
+        self.assertEqual(classify_result("[SKIPPED: deps]"), SubtaskStatus.SKIPPED)
+        self.assertEqual(classify_result("[ABANDONED: cancelled]"), SubtaskStatus.ABANDONED)
+
+    def test_subtask_status_uses_completed_flag(self):
+        from agentx_ai.agent.planner import Subtask, SubtaskStatus, SubtaskType, subtask_status
+
+        pending = Subtask(id=0, description="d", type=SubtaskType.GENERATION)
+        self.assertEqual(subtask_status(pending), SubtaskStatus.PENDING)
+        done = Subtask(id=1, description="d", type=SubtaskType.GENERATION)
+        done.completed, done.result = True, "answer"
+        self.assertEqual(subtask_status(done), SubtaskStatus.COMPLETE)
+        failed = Subtask(id=2, description="d", type=SubtaskType.GENERATION)
+        failed.completed, failed.result = True, "[FAILED: x]"
+        self.assertEqual(subtask_status(failed), SubtaskStatus.FAILED)
+
+    def test_build_plan_card_shape_and_client_mapping(self):
+        from agentx_ai.agent.planner import build_plan_card
+
+        plan = self._plan("ok", "[FAILED: boom]", "[ABANDONED: cancelled]", None)
+        card = build_plan_card(plan, "plan-1", "interrupted")
+        self.assertEqual(card["plan_id"], "plan-1")
+        self.assertEqual(card["status"], "interrupted")
+        # Client vocabulary: real→completed, FAILED→failed, ABANDONED collapses to skipped.
+        self.assertEqual([s["status"] for s in card["subtasks"]],
+                         ["completed", "failed", "skipped", "completed"])
+        # Only the real result counts; its preview shows, sentinels don't.
+        self.assertEqual(card["completed_count"], 1)
+        self.assertEqual(card["subtasks"][0]["result_preview"], "ok")
+        self.assertEqual(card["subtasks"][1]["result_preview"], "")
+        # error carries only the FAILED sentinel's text.
+        self.assertEqual(card["subtasks"][1]["error"], "[FAILED: boom]")
+        self.assertIsNone(card["subtasks"][2]["error"])
 
 
 class SubtaskGoalTrackingTest(TestCase):
@@ -13960,6 +14033,22 @@ class AnthropicStreamUsageTest(TestCase):
         self.assertEqual(last.usage["prompt_tokens"], 150)
         self.assertEqual(last.usage["completion_tokens"], 320)
         self.assertEqual(last.usage["total_tokens"], 470)
+        # No prompt caching in play ⇒ no cache fields (guarded by getattr).
+        self.assertNotIn("cache_read_tokens", last.usage)
+        self.assertNotIn("cache_creation_tokens", last.usage)
+
+    def test_usage_surfaces_cache_tokens_when_present(self):
+        from types import SimpleNamespace
+        from agentx_ai.providers.anthropic_provider import _anthropic_usage
+
+        usage = _anthropic_usage(SimpleNamespace(
+            input_tokens=40, output_tokens=200,
+            cache_read_input_tokens=1000, cache_creation_input_tokens=250,
+        ))
+        # Token totals unchanged (no cost-path change); cache activity surfaced.
+        self.assertEqual(usage["prompt_tokens"], 40)
+        self.assertEqual(usage["cache_read_tokens"], 1000)
+        self.assertEqual(usage["cache_creation_tokens"], 250)
 
 
 class OpenRouterSpeechTest(TestCase):
