@@ -13690,6 +13690,278 @@ class OpenRouterStreamUsageTest(TestCase):
         self.assertTrue(all(c.usage is None for c in chunks))
 
 
+class OpenAIStreamUsageTest(TestCase):
+    """OpenAI streams must opt into `stream_options.include_usage` and surface
+    the trailing usage chunk (empty `choices`). OpenAI doesn't report billed
+    cost, but the token counts become authoritative — critically INCLUDING
+    `completion_tokens_details.reasoning_tokens` for o-series/gpt-5, which a
+    visible-text estimate misses entirely."""
+
+    def _run(self, sdk_chunks):
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import Message, ProviderConfig
+        from agentx_ai.providers.openai_provider import OpenAIProvider
+
+        provider = OpenAIProvider(ProviderConfig(api_key="k"))
+        captured: dict = {}
+
+        async def fake_create(**kwargs):
+            captured.update(kwargs)
+
+            async def gen():
+                for c in sdk_chunks:
+                    yield c
+
+            return gen()
+
+        provider._client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create)),
+        )
+
+        async def run():
+            out = []
+            async for c in provider.stream([Message(role="user", content="hi")], "gpt-5"):
+                out.append(c)
+            return out
+
+        return captured, asyncio.run(run())
+
+    @staticmethod
+    def _chunk(content=None, finish=None):
+        from types import SimpleNamespace
+        delta = SimpleNamespace(content=content, tool_calls=None, reasoning_content=None)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(delta=delta, finish_reason=finish)], usage=None,
+        )
+
+    def test_stream_yields_trailing_usage_with_reasoning(self):
+        from types import SimpleNamespace
+        usage = SimpleNamespace(
+            prompt_tokens=800, completion_tokens=1600, total_tokens=2400,
+            completion_tokens_details=SimpleNamespace(reasoning_tokens=1500),
+        )
+        captured, chunks = self._run([
+            self._chunk(content="Answer."),
+            self._chunk(finish="stop"),
+            SimpleNamespace(choices=[], usage=usage),
+        ])
+        self.assertEqual(captured.get("stream_options"), {"include_usage": True})
+        self.assertEqual(chunks[0].content, "Answer.")
+        last = chunks[-1]
+        assert last.usage is not None
+        self.assertEqual(last.usage["prompt_tokens"], 800)
+        self.assertEqual(last.usage["completion_tokens"], 1600)  # reasoning INCLUDED
+        self.assertEqual(last.usage["reasoning_tokens"], 1500)
+        self.assertNotIn("cost", last.usage)  # OpenAI reports no billed cost
+
+    def test_stream_without_usage_stays_quiet(self):
+        _, chunks = self._run([self._chunk(content="ok"), self._chunk(finish="stop")])
+        self.assertTrue(all(c.usage is None for c in chunks))
+
+
+class VercelStreamUsageTest(TestCase):
+    """Vercel AI Gateway streams opt into usage accounting; the gateway may also
+    report the actually-billed `cost` → cost_source becomes `provider`."""
+
+    def _run(self, sdk_chunks):
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import Message, ProviderConfig
+        from agentx_ai.providers.vercel_provider import VercelProvider
+
+        provider = VercelProvider(ProviderConfig(api_key="k"))
+        captured: dict = {}
+
+        async def fake_create(**kwargs):
+            captured.update(kwargs)
+
+            async def gen():
+                for c in sdk_chunks:
+                    yield c
+
+            return gen()
+
+        client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create)),
+            close=AsyncMock(),
+        )
+
+        async def run():
+            out = []
+            with patch.object(provider, "_get_client", return_value=client):
+                async for c in provider.stream([Message(role="user", content="hi")], "m"):
+                    out.append(c)
+            return out
+
+        return captured, asyncio.run(run())
+
+    @staticmethod
+    def _chunk(content=None, finish=None):
+        from types import SimpleNamespace
+        delta = SimpleNamespace(
+            content=content, tool_calls=None, reasoning=None, reasoning_content=None,
+        )
+        return SimpleNamespace(
+            choices=[SimpleNamespace(delta=delta, finish_reason=finish)], usage=None,
+        )
+
+    def test_stream_yields_trailing_usage_with_cost(self):
+        from types import SimpleNamespace
+        usage = SimpleNamespace(
+            prompt_tokens=300, completion_tokens=120, total_tokens=420,
+            model_extra={"cost": 0.0021},
+            completion_tokens_details=None,
+        )
+        captured, chunks = self._run([
+            self._chunk(content="Hi."),
+            self._chunk(finish="stop"),
+            SimpleNamespace(choices=[], usage=usage),
+        ])
+        self.assertEqual(captured.get("stream_options"), {"include_usage": True})
+        last = chunks[-1]
+        assert last.usage is not None
+        self.assertEqual(last.usage["prompt_tokens"], 300)
+        self.assertAlmostEqual(last.usage["cost"], 0.0021)
+
+    def test_stream_without_usage_stays_quiet(self):
+        _, chunks = self._run([self._chunk(content="ok"), self._chunk(finish="stop")])
+        self.assertTrue(all(c.usage is None for c in chunks))
+
+
+class LMStudioStreamUsageTest(TestCase):
+    """LM Studio parses raw SSE via httpx — the trailing usage chunk arrives as
+    a `data:` frame with empty `choices` and a top-level `usage` dict. It must be
+    read before the choices guard skips it and surfaced as a trailing chunk;
+    local servers that omit usage entirely must stay quiet."""
+
+    def _run(self, sse_events):
+        import json as _json
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import Message, ProviderConfig
+        from agentx_ai.providers.lmstudio_provider import LMStudioProvider
+
+        provider = LMStudioProvider(ProviderConfig(api_key="k"))
+        captured: dict = {}
+
+        byte_events = [
+            f"data: {_json.dumps(ev)}\n\n".encode() for ev in sse_events
+        ]
+
+        class _StreamCtx:
+            async def __aenter__(self):
+                resp = SimpleNamespace(status_code=200)
+
+                async def aiter_bytes():
+                    for b in byte_events:
+                        yield b
+
+                async def aread():
+                    return b""
+
+                resp.aiter_bytes = aiter_bytes
+                resp.aread = aread
+                return resp
+
+            async def __aexit__(self, *a):
+                return False
+
+        class _HttpClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            def stream(self, method, url, json=None, headers=None):
+                captured["body"] = json
+                return _StreamCtx()
+
+        async def run():
+            out = []
+            with patch("httpx.AsyncClient", _HttpClient):
+                async for c in provider.stream([Message(role="user", content="hi")], "local"):
+                    out.append(c)
+            return out
+
+        return captured, asyncio.run(run())
+
+    @staticmethod
+    def _delta(content=None, finish=None):
+        return {"choices": [{"delta": {"content": content} if content else {},
+                             "finish_reason": finish}]}
+
+    def test_stream_yields_trailing_usage(self):
+        captured, chunks = self._run([
+            self._delta(content="Answer."),
+            self._delta(finish="stop"),
+            {"choices": [], "usage": {"prompt_tokens": 40, "completion_tokens": 90,
+                                      "total_tokens": 130}},
+        ])
+        self.assertEqual(captured["body"].get("stream_options"), {"include_usage": True})
+        last = chunks[-1]
+        assert last.usage is not None
+        self.assertEqual(last.usage["prompt_tokens"], 40)
+        self.assertEqual(last.usage["completion_tokens"], 90)
+
+    def test_stream_without_usage_stays_quiet(self):
+        _, chunks = self._run([self._delta(content="ok"), self._delta(finish="stop")])
+        self.assertTrue(all(c.usage is None for c in chunks))
+
+
+class AnthropicStreamUsageTest(TestCase):
+    """Regression guard: Anthropic's stream already surfaces authoritative token
+    usage via `get_final_message()` (extended-thinking tokens fold into
+    `output_tokens`). Locks that the trailing chunk carries the usage dict."""
+
+    def test_stream_surfaces_final_message_usage(self):
+        from types import SimpleNamespace
+        from agentx_ai.providers.base import Message, ProviderConfig
+        from agentx_ai.providers.anthropic_provider import AnthropicProvider
+
+        provider = AnthropicProvider(ProviderConfig(api_key="k"))
+
+        final = SimpleNamespace(
+            content=[],
+            usage=SimpleNamespace(input_tokens=150, output_tokens=320),
+            stop_reason="end_turn",
+        )
+
+        class _AnthropicStream:
+            def __init__(self):
+                async def _texts():
+                    yield "Hello"
+
+                self.text_stream = _texts()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get_final_message(self):
+                return final
+
+        provider._client = SimpleNamespace(
+            messages=SimpleNamespace(stream=lambda **kw: _AnthropicStream()),
+        )
+
+        async def run():
+            out = []
+            async for c in provider.stream([Message(role="user", content="hi")], "claude"):
+                out.append(c)
+            return out
+
+        chunks = asyncio.run(run())
+        last = chunks[-1]
+        assert last.usage is not None
+        self.assertEqual(last.usage["prompt_tokens"], 150)
+        self.assertEqual(last.usage["completion_tokens"], 320)
+        self.assertEqual(last.usage["total_tokens"], 470)
+
+
 class OpenRouterSpeechTest(TestCase):
     """OpenRouter's /audio/speech synthesis + the supports_speech capability."""
 

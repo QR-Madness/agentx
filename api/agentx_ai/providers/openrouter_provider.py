@@ -27,34 +27,12 @@ from .base import (
     convert_messages_to_openai_format,
     finalize_tool_calls,
     log_llm_request,
+    normalize_openai_usage,
     parse_openai_tool_calls,
     process_reasoning_delta,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _usage_to_dict(usage: Any) -> dict[str, Any]:
-    """Normalize the SDK's usage object into the StreamChunk.usage dict.
-
-    OpenRouter's usage-accounting extensions (`cost` — the actually-billed
-    USD — and `completion_tokens_details.reasoning_tokens`) aren't fields on
-    the OpenAI SDK model, so they arrive via `model_extra`/nested objects.
-    """
-    out: dict[str, Any] = {
-        "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
-        "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
-        "total_tokens": getattr(usage, "total_tokens", 0) or 0,
-    }
-    extra = getattr(usage, "model_extra", None) or {}
-    cost = extra.get("cost") if isinstance(extra, dict) else None
-    if isinstance(cost, (int, float)):
-        out["cost"] = float(cost)
-    details = getattr(usage, "completion_tokens_details", None)
-    reasoning = getattr(details, "reasoning_tokens", None) if details is not None else None
-    if reasoning:
-        out["reasoning_tokens"] = int(reasoning)
-    return out
 
 
 # OpenRouter API base URL
@@ -261,7 +239,7 @@ class OpenRouterProvider(ModelProvider):
                 # Usage rides a trailing chunk with EMPTY `choices` — read it
                 # before the choices guard skips that chunk entirely.
                 if getattr(chunk, "usage", None) is not None:
-                    usage_payload = _usage_to_dict(chunk.usage)
+                    usage_payload = normalize_openai_usage(chunk.usage)
                 if not chunk.choices:
                     continue
 

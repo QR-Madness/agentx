@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.224 -->
+<!-- release-version: 0.21.225 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -43,6 +43,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Truthful token metering on every provider**: streamed turns on OpenAI, Vercel, and LM Studio now
+  report authoritative token counts (hidden reasoning included) instead of a visible-text estimate —
+  previously only OpenRouter did, so reasoning models could meter far low.
 - **`alloy.delegation_timeout_seconds` is now actually enforced** (both delegation modes) — a
   stuck specialist fails cleanly instead of hanging the turn indefinitely.
 - **Late delegation completions no longer drop silently** — cards settle by work-order id even

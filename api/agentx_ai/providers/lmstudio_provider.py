@@ -24,6 +24,7 @@ from .base import (
     convert_messages_to_openai_format,
     finalize_tool_calls,
     log_llm_request,
+    normalize_openai_usage,
     process_reasoning_delta,
 )
 
@@ -241,6 +242,10 @@ class LMStudioProvider(ModelProvider):
             "messages": self._convert_messages(messages),
             "temperature": temperature,
             "stream": True,
+            # Ask for authoritative usage on a trailing chunk. Local servers
+            # (LM Studio / llama.cpp) honor this inconsistently — a missing
+            # usage chunk just falls back to the text-side estimate.
+            "stream_options": {"include_usage": True},
         }
 
         if max_tokens:
@@ -282,6 +287,7 @@ class LMStudioProvider(ModelProvider):
                 chunk_count = 0
                 buffer = ""
                 in_reasoning = False
+                usage_payload: dict[str, Any] | None = None
 
                 # Use aiter_bytes for unbuffered streaming
                 async for raw_bytes in response.aiter_bytes():
@@ -299,6 +305,11 @@ class LMStudioProvider(ModelProvider):
                             continue
 
                         chunk_count += 1
+                        # Usage rides a trailing chunk with EMPTY `choices` —
+                        # read it before the choices guard skips that chunk.
+                        usage = chunk_data.get("usage")
+                        if usage:
+                            usage_payload = normalize_openai_usage(usage)
                         choices = chunk_data.get("choices", [])
                         if not choices:
                             continue
@@ -340,6 +351,9 @@ class LMStudioProvider(ModelProvider):
                                 pending_tool_calls.clear()
                             elif finish_reason != "tool_calls":
                                 yield StreamChunk(content="", finish_reason=finish_reason)
+
+                if usage_payload is not None:
+                    yield StreamChunk(content="", usage=usage_payload)
 
                 logger.debug(f"Stream complete: {chunk_count} chunks")
     
