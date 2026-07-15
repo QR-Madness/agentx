@@ -10,11 +10,13 @@
   gap: 16px;
 }
 
-/* ── Two-pane layout: stack | live preview ── */
+/* ── Two-pane layout: editing desk | live preview rail ──
+   Editing is the primary act, so the stack takes all the flexible growth and the
+   composed preview is a slim, capped reference rail (never wider than the desk). */
 .prompt-stack__panes {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) clamp(240px, 32%, 340px);
+  gap: 24px;
   align-items: start;
 }
 
@@ -65,6 +67,18 @@
 .layer-card[data-disabled='true'] {
   opacity: 0.6;
 }
+/* Custom layers carry a quiet accent spine — an at-a-glance signal that replaces
+   the repeated "Custom" text badge (built-in layers, the majority, stay unmarked). */
+.layer-card[data-kind='custom'] {
+  box-shadow: inset 3px 0 0 var(--accent-primary);
+}
+/* The expanded layer is the focus surface: firmer border + a divider under its head. */
+.layer-card[data-expanded='true'] {
+  border-color: var(--border-strong, var(--accent-primary));
+}
+.layer-card[data-expanded='true'] .layer-card__head {
+  border-bottom: 1px solid var(--border-default);
+}
 
 .layer-card__head {
   display: flex;
@@ -97,7 +111,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
   background: none;
   border: none;
@@ -108,6 +122,8 @@
   color: var(--text-primary);
 }
 .layer-card__title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 600;
   font-size: 0.95rem;
   white-space: nowrap;
@@ -155,23 +171,37 @@
   overflow: hidden;
 }
 .layer-card__body-inner {
-  padding: 0 12px 12px 50px;
+  padding: 12px 14px 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+/* In-editor context header — the answer to "which layer am I writing?" stays on
+   screen even when the collapsed title row scrolls out of view above a tall editor. */
+.layer-card__editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.layer-card__editor-kind {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
 }
 .layer-card__editor {
   width: 100%;
-  min-height: 140px;
+  min-height: clamp(220px, 42vh, 460px);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.85rem;
-  line-height: 1.5;
+  font-size: 0.875rem;
+  line-height: 1.6;
   resize: vertical;
 }
 .layer-card__editor-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   flex-wrap: wrap;
 }

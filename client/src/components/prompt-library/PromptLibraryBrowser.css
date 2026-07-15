@@ -347,8 +347,8 @@
 .plm-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
+  gap: 8px;
+  padding: 16px;
   background: var(--plm-card-bg);
   border: 1px solid var(--plm-border);
   border-radius: 10px;
@@ -368,20 +368,32 @@
   box-shadow: 0 0 0 1px var(--accent-tint-medium);
 }
 
+/* Inert while authoring (New/Edit) — the list stays for context but can't be
+   clicked, so the selection can't desync from the form you're editing. */
+.plm-card:disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
 .plm-card-header {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 8px;
   color: var(--text-primary);
+}
+.plm-card-header > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
 .plm-card-name {
   flex: 1;
+  min-width: 0;
   font-weight: 500;
   font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .plm-card-badges {
@@ -401,18 +413,25 @@
   overflow: hidden;
 }
 
+/* Single clipped row — never wraps, so a card's height can't change with its tag
+   count (the old `flex-wrap: wrap` made the list jitter/"flap"). Extra tags clip
+   off the right edge; the full set is shown in the preview pane. */
 .plm-card-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 4px;
+  overflow: hidden;
 }
 
 .plm-mini-tag {
-  padding: 1px 6px;
-  background: var(--plm-bg);
+  flex-shrink: 0;
+  padding: 1px 8px;
+  background: transparent;
+  border: 1px solid var(--plm-border-2);
   border-radius: 9999px;
   font-size: 10px;
   color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 /* ── Badges ── */
@@ -669,6 +688,63 @@
 
 .plm-field textarea:focus {
   border-color: var(--accent-tint-strong);
+}
+
+/* ── Placeholder-highlighting content editor ── */
+.plm-hl-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 180px;
+}
+/* Backdrop + textarea MUST share these metrics exactly, so the highlighted
+   tokens sit right under the transparent textarea text. */
+.plm-hl-wrap .plm-hl-backdrop,
+.plm-hl-wrap .plm-hl-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.plm-hl-wrap .plm-hl-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--plm-bg-3);
+  pointer-events: none;
+  user-select: none;
+}
+.plm-hl-wrap .plm-hl-textarea {
+  position: relative;
+  flex: 1;
+  min-height: 180px;
+  resize: vertical;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--text-primary);
+  border-color: var(--plm-border);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.plm-hl-wrap .plm-hl-textarea:focus {
+  border-color: var(--accent-tint-strong);
+}
+.plm-hl-wrap .plm-hl-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+/* In the editor, the highlight must not change text advance (padding would push
+   following characters out of sync with the textarea) — background/colour only. */
+.plm-hl-backdrop .placeholder-highlight {
+  padding: 0;
 }
 
 .plm-hint {
