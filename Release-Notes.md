@@ -50,6 +50,8 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   own avatar, and the load-bearing invariants (SELECT-only tool belt, sidecar-only writes,
   never-raise degrades) are regression-guarded.
 
+- **Memory got a face**: a custom glowing-brain mark — pulsing glow, twinkling synapses — replaces
+  the database stack in the command palette, the Memory explorer, and Settings.
 - **The Start page became a launchpad**: type right on the hero and Enter *is* your first message —
   plus a living agent mark (orbiting star + glow), a starfield backdrop, and a time-aware greeting
   with a live status line (agents ready, conversations today, consolidation state).
