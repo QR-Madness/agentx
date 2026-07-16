@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.230 -->
+<!-- release-version: 0.21.231 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -52,6 +52,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 - **Memory got a face**: a custom glowing-brain mark — pulsing glow, twinkling synapses — replaces
   the database stack in the command palette, the Memory explorer, and Settings.
+- **The Start page became a launchpad**: type right on the hero and Enter *is* your first message —
+  plus a living agent mark (orbiting star + glow), a starfield backdrop, a time-aware greeting with
+  a live status line, glass recent-conversation cards with previews ("Pick up where you left off"),
+  and a "While you were away" card that opens the Ambassador's Command Deck.
 
 ### Fixes
 

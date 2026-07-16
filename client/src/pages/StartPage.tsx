@@ -1,9 +1,16 @@
 /**
- * StartPage — Welcome screen with agent greeting, quick actions, and a
- * collapsible list of recent conversations (open tabs + server history).
+ * StartPage — immersive launchpad: a cosmic backdrop, the agent as a living
+ * mark (avatar core + orbiting star + glow halo), a time-aware greeting with
+ * an ambient status line, and a hero composer — typing here *is* the first
+ * message of a new conversation.
+ *
+ * The composer delivers through the same seam the Ambassador uses
+ * (`relayToConversation` → ChatPanel's registered relay handler). The handler
+ * registers when ChatPanel mounts with the new tab active, so delivery
+ * retries briefly rather than racing the navigation.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   MessageSquarePlus,
   LayoutDashboard,
@@ -11,11 +18,15 @@ import {
   Download,
   ChevronDown,
   ChevronRight,
+  Send,
 } from 'lucide-react';
 import { useAgentProfile } from '../contexts/AgentProfileContext';
 import { useConversation } from '../contexts/ConversationContext';
+import { useConsolidation } from '../contexts/ConsolidationContext';
+import { useModal } from '../contexts/ModalContext';
 import { AgentAvatar } from '../components/common/AgentAvatar';
 import { getDisplayTitle } from '../lib/conversationTitles';
+import { SURFACES } from '../lib/surfaces';
 import type { PageId } from '../layouts/TopBar';
 import './StartPage.css';
 import { Button } from '../components/ui';
@@ -25,7 +36,12 @@ interface StartPageProps {
 }
 
 const COLLAPSE_KEY = 'agentx:startRecentsCollapsed';
+const LAST_VISIT_KEY = 'agentx:startLastVisit';
 const MAX_RECENTS = 8;
+// The relay handler registers when ChatPanel mounts the new tab; retry the
+// delivery briefly (100ms × 40 ≈ 4s ceiling) instead of racing it.
+const DELIVER_RETRY_MS = 100;
+const DELIVER_MAX_TRIES = 40;
 
 interface RecentRow {
   key: string;
@@ -33,6 +49,7 @@ interface RecentRow {
   id: string;
   title: string;
   subtitle: string;
+  preview: string;
   lastAt: string;
 }
 
@@ -46,16 +63,51 @@ function formatDate(dateStr: string | null): string {
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
+function daypart(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return 'evening';
+  if (hour < 12) return 'morning';
+  if (hour < 18) return 'afternoon';
+  return 'evening';
+}
+
+function isToday(dateStr: string | null): boolean {
+  if (!dateStr) return false;
+  return new Date(dateStr).toDateString() === new Date().toDateString();
+}
+
+/** Last user/assistant text in a tab (the union's other variants carry no content). */
+function lastText(messages: { type: string; content?: string }[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if ((m.type === 'user' || m.type === 'assistant') && m.content) return m.content;
+  }
+  return '';
+}
+
 export function StartPage({ onNavigate }: StartPageProps) {
-  const { activeProfile, getAgentName } = useAgentProfile();
+  const { profiles, activeProfile, getAgentName } = useAgentProfile();
   const {
-    tabs, switchTab, serverConversations, refreshHistory, restoreConversation,
+    tabs, addTab, switchTab, relayToConversation,
+    serverConversations, refreshHistory, restoreConversation,
   } = useConversation();
+  const consolidation = useConsolidation();
   const agentName = getAgentName();
 
   const [collapsed, setCollapsed] = useState<boolean>(
     () => localStorage.getItem(COLLAPSE_KEY) === 'true',
   );
+  const [draft, setDraft] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { openModal } = useModal();
+
+  // The previous Start visit, captured once per mount (then stamped fresh) —
+  // the away-card compares server activity against it.
+  const [lastVisit] = useState<string | null>(() => {
+    const prev = localStorage.getItem(LAST_VISIT_KEY);
+    localStorage.setItem(LAST_VISIT_KEY, new Date().toISOString());
+    return prev;
+  });
 
   // Pull fresh history when the Start page mounts so the list isn't stale.
   useEffect(() => {
@@ -80,6 +132,7 @@ export function StartPage({ onNavigate }: StartPageProps) {
       id: t.id,
       title: t.title,
       subtitle: `${t.messages.length} messages · ${formatDate(t.lastMessageAt)}`,
+      preview: lastText(t.messages).slice(0, 160),
       lastAt: t.lastMessageAt,
     }));
     const serverRows: RecentRow[] = serverConversations
@@ -90,6 +143,7 @@ export function StartPage({ onNavigate }: StartPageProps) {
         id: c.conversation_id,
         title: getDisplayTitle(c.conversation_id, c.title),
         subtitle: `${c.message_count} messages · ${formatDate(c.last_message_at)}`,
+        preview: (c.preview || '').slice(0, 160),
         lastAt: c.last_message_at || '',
       }));
     return [...tabRows, ...serverRows]
@@ -97,7 +151,73 @@ export function StartPage({ onNavigate }: StartPageProps) {
       .slice(0, MAX_RECENTS);
   }, [tabs, serverConversations]);
 
-  const handleNewConversation = () => onNavigate('agentx');
+  // Ambient status line — only from data the page already has.
+  const ambient = useMemo(() => {
+    const parts: string[] = [];
+    const agents = profiles.filter(p => p.kind === 'agent').length;
+    if (agents > 0) parts.push(`${agents} agent${agents === 1 ? '' : 's'} ready`);
+    const today =
+      tabs.filter(t => isToday(t.lastMessageAt) && t.messages.length > 0).length +
+      serverConversations.filter(
+        c => isToday(c.last_message_at) && !tabs.some(t => t.sessionId === c.conversation_id),
+      ).length;
+    if (today > 0) parts.push(`${today} conversation${today === 1 ? '' : 's'} today`);
+    parts.push(consolidation.isActive ? 'memory consolidating' : 'memory idle');
+    return parts.join(' · ');
+  }, [profiles, tabs, serverConversations, consolidation.isActive]);
+
+  // Conversations that moved since the last Start visit and are NOT open as
+  // tabs — background/other work worth a briefing. Explicit affordance only:
+  // the card opens the Command Deck, it never auto-briefs (Ambassador
+  // wait-for-ask doctrine).
+  const awayCount = useMemo(() => {
+    if (!lastVisit) return 0;
+    const since = new Date(lastVisit).getTime();
+    const openSessionIds = new Set(tabs.map(t => t.sessionId).filter(Boolean));
+    return serverConversations.filter(
+      c =>
+        !openSessionIds.has(c.conversation_id) &&
+        c.last_message_at &&
+        new Date(c.last_message_at).getTime() > since,
+    ).length;
+  }, [lastVisit, tabs, serverConversations]);
+
+  const handleOpenDeck = () => openModal(SURFACES.ambassadorDeck);
+
+  // Deliver the hero draft into the freshly-created tab once ChatPanel has
+  // registered its relay handler (returns false until then).
+  const deliver = (tabId: string, text: string, attempt = 0) => {
+    if (relayToConversation(tabId, text)) return;
+    if (attempt < DELIVER_MAX_TRIES) {
+      setTimeout(() => deliver(tabId, text, attempt + 1), DELIVER_RETRY_MS);
+    }
+  };
+
+  const launchConversation = () => {
+    const text = draft.trim();
+    const tab = addTab();
+    onNavigate('agentx');
+    if (text) {
+      setDraft('');
+      deliver(tab.id, text);
+    }
+  };
+
+  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (draft.trim()) launchConversation();
+    }
+  };
+
+  // Auto-grow the composer up to its CSS max-height.
+  const handleComposerInput = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
   const handleOpenDashboard = () => onNavigate('dashboard');
 
   const handleOpenRecent = async (row: RecentRow) => {
@@ -115,24 +235,78 @@ export function StartPage({ onNavigate }: StartPageProps) {
 
   return (
     <div className="start-page">
+      {/* Cosmic backdrop — stars via layered radial-gradients, drifting motes */}
+      <div className="start-backdrop" aria-hidden="true">
+        <span className="start-mote start-mote-1" />
+        <span className="start-mote start-mote-2" />
+        <span className="start-mote start-mote-3" />
+      </div>
+
       <div className="start-content">
         <div className="start-hero">
-          <div className="start-logo">
-            <AgentAvatar avatar={activeProfile?.avatar} size={48} />
+          {/* The agent as a living mark: glow halo + orbit + avatar core */}
+          <div className="start-mark" aria-hidden="true">
+            <span className="start-mark-halo" />
+            <span className="start-mark-orbit">
+              <span className="start-mark-star" />
+            </span>
+            <div className="start-mark-core">
+              <AgentAvatar avatar={activeProfile?.avatar} size={28} fill />
+            </div>
           </div>
-          <h1 className="start-title">Hello, I'm {agentName}</h1>
-          <p className="start-subtitle">How can I assist you today?</p>
+
+          <h1 className="start-title">Good {daypart()} — I'm {agentName}</h1>
+          <p className="start-status">{ambient}</p>
+
+          <div className="ax-fieldwrap start-composer">
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onInput={handleComposerInput}
+              onKeyDown={handleComposerKeyDown}
+              rows={1}
+              placeholder={`Message ${agentName} — starts a new conversation…`}
+              className="start-composer-input max-h-32 flex-1 resize-none bg-transparent p-0 text-sm text-fg outline-none placeholder:text-fg-muted max-[600px]:text-base"
+            />
+            <button
+              type="button"
+              onClick={launchConversation}
+              disabled={!draft.trim()}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent text-fg-inverse transition hover:brightness-110 active:brightness-95 disabled:opacity-40"
+              title="Start the conversation"
+              aria-label="Start the conversation"
+            >
+              <Send size={13} />
+            </button>
+          </div>
+
           <div className="start-actions">
-            <Button variant="primary" className="start-cta" onClick={handleNewConversation}>
-              <MessageSquarePlus size={18} />
+            <Button variant="secondary" className="start-cta-secondary" onClick={launchConversation}>
+              <MessageSquarePlus size={16} />
               <span>New Conversation</span>
             </Button>
             <Button variant="secondary" className="start-cta-secondary" onClick={handleOpenDashboard}>
-              <LayoutDashboard size={18} />
+              <LayoutDashboard size={16} />
               <span>Open Dashboard</span>
             </Button>
           </div>
         </div>
+
+        {awayCount > 0 && (
+          <div className="start-away-card">
+            <div className="start-away-info">
+              <span className="start-away-eyebrow">While you were away</span>
+              <span className="start-away-text">
+                {awayCount} conversation{awayCount === 1 ? '' : 's'} moved — ask the
+                Ambassador what happened.
+              </span>
+            </div>
+            <Button variant="secondary" onClick={handleOpenDeck}>
+              Open Command Deck
+            </Button>
+          </div>
+        )}
 
         {recents.length > 0 && (
           <div className="start-recents">
@@ -148,10 +322,10 @@ export function StartPage({ onNavigate }: StartPageProps) {
 
             {!collapsed && (
               <div className="start-recents-list">
-                {recents.map(row => (
+                {recents.map((row, i) => (
                   <button
                     key={row.key}
-                    className="start-recent-item"
+                    className={`start-recent-item${i === 0 ? ' start-recent-item--fresh' : ''}`}
                     onClick={() => handleOpenRecent(row)}
                     title={row.title}
                   >
@@ -159,7 +333,9 @@ export function StartPage({ onNavigate }: StartPageProps) {
                       {row.kind === 'tab' ? <MessageSquare size={15} /> : <Download size={15} />}
                     </span>
                     <span className="start-recent-info">
+                      {i === 0 && <span className="start-recent-eyebrow">Pick up where you left off</span>}
                       <span className="start-recent-title">{row.title}</span>
+                      {row.preview && <span className="start-recent-preview">{row.preview}</span>}
                       <span className="start-recent-meta">{row.subtitle}</span>
                     </span>
                   </button>
