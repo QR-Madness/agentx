@@ -1,0 +1,66 @@
+# Click-to-fix for version-bump merge conflicts on a PR.
+#
+# Two parallel PRs always collide on versions.yaml + the Release-Notes marker
+# (version-travels-with-the-work). Dispatch this with the PR number and it
+# merges the default branch into the PR branch, resolves the version files via
+# scripts/resolve_version_conflicts.py (higher version wins, both sides' note
+# bullets kept, manifests re-synced), and pushes the merge commit back.
+# Non-version conflicts fail the run and are left for a human.
+#
+# The resolver script is taken from the DEFAULT branch (copied before the PR
+# checkout), so it works on PR branches that predate the script.
+
+name: Resolve version conflicts
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number with the version conflict"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+      - uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stash the resolver from the default branch
+        run: cp scripts/resolve_version_conflicts.py "$RUNNER_TEMP/"
+
+      - name: Check out the PR branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr checkout "${{ inputs.pr }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge the default branch and resolve
+        run: |
+          DEFAULT="${{ github.event.repository.default_branch }}"
+          git fetch origin "$DEFAULT"
+          if git merge --no-edit "origin/$DEFAULT"; then
+            echo "Merge is clean — this PR has no conflicts. Nothing pushed."
+            exit 0
+          fi
+          python3 "$RUNNER_TEMP/resolve_version_conflicts.py"
+          REMAINING=$(git diff --name-only --diff-filter=U)
+          if [ -n "$REMAINING" ]; then
+            echo "::error::Non-version conflicts remain — resolve locally:"
+            echo "$REMAINING"
+            exit 1
+          fi
+          git commit --no-edit
+          git push

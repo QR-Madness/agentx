@@ -42,6 +42,9 @@ DERIVED = [
 ]
 
 SEMVER = re.compile(r'(\d+)\.(\d+)\.(\d+)')
+# The moving version lives on the bare `version:` keys (api + client) — NOT
+# the first semver in the file (the header's milestone comment is one).
+VERSION_KEY = re.compile(r'(?m)^\s*version:\s*"(\d+)\.(\d+)\.(\d+)"')
 MARKER = re.compile(r'release-version:')
 
 
@@ -55,12 +58,12 @@ def conflicted_files() -> set[str]:
 
 
 def stage_version(path: str, stage: int) -> tuple[int, int, int] | None:
-    """First semver found in the file at merge stage 2 (ours) or 3 (theirs)."""
+    """The `version:` key's semver at merge stage 2 (ours) or 3 (theirs)."""
     try:
         content = run("git", "show", f":{stage}:{path}")
     except subprocess.CalledProcessError:
         return None
-    m = SEMVER.search(content)
+    m = VERSION_KEY.search(content)
     return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
 
 
