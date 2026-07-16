@@ -30,6 +30,7 @@ import {
   GitMerge,
   Telescope,
 } from 'lucide-react';
+import { MemoryIcon } from '../../common/MemoryIcon';
 
 export interface Section {
   id: string;
@@ -166,7 +167,7 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
   },
   memory: {
     label: 'Memory',
-    icon: <Database size={16} />,
+    icon: <MemoryIcon size={16} />,
     sections: [
       {
         id: 'memory-overview',

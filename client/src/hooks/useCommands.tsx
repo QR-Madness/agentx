@@ -12,11 +12,12 @@
  */
 
 import {
-  Home, LayoutDashboard, Bot, Plus, X, Settings, Wrench, Database, ListChecks,
+  Home, LayoutDashboard, Bot, Plus, X, Settings, Wrench, ListChecks,
   BookMarked, Languages, BrainCircuit, Eye, EyeOff, Zap, KeyRound, LogOut, Radio,
   ScrollText, Monitor, MessagesSquare, FileStack, FolderOpen, Users,
   Orbit, Telescope,
 } from 'lucide-react';
+import { MemoryIcon } from '../components/common/MemoryIcon';
 import { useMemo } from 'react';
 import { useModal } from '../contexts/ModalContext';
 import { useConversation } from '../contexts/ConversationContext';
@@ -79,7 +80,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       // Workspace
       { id: 'open-settings', group: 'Workspace', label: 'Open Settings', hint: '⌘,', icon: <Settings size={16} />, keywords: ['config', 'preferences', 'providers'], run: open('settings') },
       { id: 'open-tools', group: 'Workspace', label: 'Open Connectors & Tools', icon: <Wrench size={16} />, keywords: ['toolkit', 'mcp', 'servers', 'connectors', 'integrations', 'skills', 'registry', 'catalog'], run: open('tools') },
-      { id: 'open-memory', group: 'Workspace', label: 'Open Memory', icon: <Database size={16} />, keywords: ['facts', 'entities', 'recall', 'memories'], run: open('memory') },
+      { id: 'open-memory', group: 'Workspace', label: 'Open Memory', icon: <MemoryIcon size={16} />, keywords: ['facts', 'entities', 'recall', 'memories'], run: open('memory') },
       { id: 'open-sources', group: 'Workspace', label: 'Open Sources', icon: <BookMarked size={16} />, keywords: ['citations', 'bibliography', 'references', 'links'], run: open('sources') },
       { id: 'open-consolidation', group: 'Workspace', label: 'Memory Consolidation', icon: <Zap size={16} />, keywords: ['consolidate', 'memory', 'extract', 'facts', 'entities', 'lightning'], run: open('consolidation') },
       { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel', 'ambassadors'], run: () => { onNavigate('agentx'); openAmbassador(); onClose(); } },
