@@ -23,8 +23,10 @@ import {
 import { useAgentProfile } from '../contexts/AgentProfileContext';
 import { useConversation } from '../contexts/ConversationContext';
 import { useConsolidation } from '../contexts/ConsolidationContext';
+import { useModal } from '../contexts/ModalContext';
 import { AgentAvatar } from '../components/common/AgentAvatar';
 import { getDisplayTitle } from '../lib/conversationTitles';
+import { SURFACES } from '../lib/surfaces';
 import type { PageId } from '../layouts/TopBar';
 import './StartPage.css';
 import { Button } from '../components/ui';
@@ -34,6 +36,7 @@ interface StartPageProps {
 }
 
 const COLLAPSE_KEY = 'agentx:startRecentsCollapsed';
+const LAST_VISIT_KEY = 'agentx:startLastVisit';
 const MAX_RECENTS = 8;
 // The relay handler registers when ChatPanel mounts the new tab; retry the
 // delivery briefly (100ms × 40 ≈ 4s ceiling) instead of racing it.
@@ -46,6 +49,7 @@ interface RecentRow {
   id: string;
   title: string;
   subtitle: string;
+  preview: string;
   lastAt: string;
 }
 
@@ -72,6 +76,15 @@ function isToday(dateStr: string | null): boolean {
   return new Date(dateStr).toDateString() === new Date().toDateString();
 }
 
+/** Last user/assistant text in a tab (the union's other variants carry no content). */
+function lastText(messages: { type: string; content?: string }[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if ((m.type === 'user' || m.type === 'assistant') && m.content) return m.content;
+  }
+  return '';
+}
+
 export function StartPage({ onNavigate }: StartPageProps) {
   const { profiles, activeProfile, getAgentName } = useAgentProfile();
   const {
@@ -86,6 +99,15 @@ export function StartPage({ onNavigate }: StartPageProps) {
   );
   const [draft, setDraft] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { openModal } = useModal();
+
+  // The previous Start visit, captured once per mount (then stamped fresh) —
+  // the away-card compares server activity against it.
+  const [lastVisit] = useState<string | null>(() => {
+    const prev = localStorage.getItem(LAST_VISIT_KEY);
+    localStorage.setItem(LAST_VISIT_KEY, new Date().toISOString());
+    return prev;
+  });
 
   // Pull fresh history when the Start page mounts so the list isn't stale.
   useEffect(() => {
@@ -110,6 +132,7 @@ export function StartPage({ onNavigate }: StartPageProps) {
       id: t.id,
       title: t.title,
       subtitle: `${t.messages.length} messages · ${formatDate(t.lastMessageAt)}`,
+      preview: lastText(t.messages).slice(0, 160),
       lastAt: t.lastMessageAt,
     }));
     const serverRows: RecentRow[] = serverConversations
@@ -120,6 +143,7 @@ export function StartPage({ onNavigate }: StartPageProps) {
         id: c.conversation_id,
         title: getDisplayTitle(c.conversation_id, c.title),
         subtitle: `${c.message_count} messages · ${formatDate(c.last_message_at)}`,
+        preview: (c.preview || '').slice(0, 160),
         lastAt: c.last_message_at || '',
       }));
     return [...tabRows, ...serverRows]
@@ -141,6 +165,24 @@ export function StartPage({ onNavigate }: StartPageProps) {
     parts.push(consolidation.isActive ? 'memory consolidating' : 'memory idle');
     return parts.join(' · ');
   }, [profiles, tabs, serverConversations, consolidation.isActive]);
+
+  // Conversations that moved since the last Start visit and are NOT open as
+  // tabs — background/other work worth a briefing. Explicit affordance only:
+  // the card opens the Command Deck, it never auto-briefs (Ambassador
+  // wait-for-ask doctrine).
+  const awayCount = useMemo(() => {
+    if (!lastVisit) return 0;
+    const since = new Date(lastVisit).getTime();
+    const openSessionIds = new Set(tabs.map(t => t.sessionId).filter(Boolean));
+    return serverConversations.filter(
+      c =>
+        !openSessionIds.has(c.conversation_id) &&
+        c.last_message_at &&
+        new Date(c.last_message_at).getTime() > since,
+    ).length;
+  }, [lastVisit, tabs, serverConversations]);
+
+  const handleOpenDeck = () => openModal(SURFACES.ambassadorDeck);
 
   // Deliver the hero draft into the freshly-created tab once ChatPanel has
   // registered its relay handler (returns false until then).
@@ -231,11 +273,11 @@ export function StartPage({ onNavigate }: StartPageProps) {
               type="button"
               onClick={launchConversation}
               disabled={!draft.trim()}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-fg-inverse shadow-sm transition hover:brightness-110 active:brightness-95 disabled:opacity-40"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent text-fg-inverse transition hover:brightness-110 active:brightness-95 disabled:opacity-40"
               title="Start the conversation"
               aria-label="Start the conversation"
             >
-              <Send size={14} />
+              <Send size={13} />
             </button>
           </div>
 
@@ -251,6 +293,21 @@ export function StartPage({ onNavigate }: StartPageProps) {
           </div>
         </div>
 
+        {awayCount > 0 && (
+          <div className="start-away-card">
+            <div className="start-away-info">
+              <span className="start-away-eyebrow">While you were away</span>
+              <span className="start-away-text">
+                {awayCount} conversation{awayCount === 1 ? '' : 's'} moved — ask the
+                Ambassador what happened.
+              </span>
+            </div>
+            <Button variant="secondary" onClick={handleOpenDeck}>
+              Open Command Deck
+            </Button>
+          </div>
+        )}
+
         {recents.length > 0 && (
           <div className="start-recents">
             <button
@@ -265,10 +322,10 @@ export function StartPage({ onNavigate }: StartPageProps) {
 
             {!collapsed && (
               <div className="start-recents-list">
-                {recents.map(row => (
+                {recents.map((row, i) => (
                   <button
                     key={row.key}
-                    className="start-recent-item"
+                    className={`start-recent-item${i === 0 ? ' start-recent-item--fresh' : ''}`}
                     onClick={() => handleOpenRecent(row)}
                     title={row.title}
                   >
@@ -276,7 +333,9 @@ export function StartPage({ onNavigate }: StartPageProps) {
                       {row.kind === 'tab' ? <MessageSquare size={15} /> : <Download size={15} />}
                     </span>
                     <span className="start-recent-info">
+                      {i === 0 && <span className="start-recent-eyebrow">Pick up where you left off</span>}
                       <span className="start-recent-title">{row.title}</span>
+                      {row.preview && <span className="start-recent-preview">{row.preview}</span>}
                       <span className="start-recent-meta">{row.subtitle}</span>
                     </span>
                   </button>

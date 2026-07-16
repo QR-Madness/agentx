@@ -180,14 +180,16 @@
   line-height: 1.5;
 }
 
-/* Hero composer — an ax-fieldwrap hosting a transparent textarea (field kit). */
+/* Hero composer — an ax-fieldwrap hosting a bare transparent textarea (the
+   wrapper carries ALL the chrome; Field.css strips base.css's inner-control
+   look). Comfortable breathing room around the text, slim send button. */
 .start-composer {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   border-radius: 12px;
-  padding: 10px 10px 10px 14px;
+  padding: 12px 12px 12px 16px;
   margin-bottom: 16px;
   text-align: left;
 }
@@ -195,6 +197,7 @@
 .start-composer-input {
   min-height: 22px;
   line-height: 1.45;
+  margin-bottom: 3px;
 }
 
 .start-actions {
@@ -205,6 +208,40 @@
 .start-cta-secondary {
   padding: 10px 18px;
   font-size: 13.5px;
+}
+
+/* "While you were away" — an explicit affordance into the Command Deck
+   (never auto-briefs; the Ambassador's wait-for-ask doctrine). */
+.start-away-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-top: 28px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--bg-card, var(--bg-elevated)) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 35%, var(--border-color));
+  border-radius: 12px;
+  text-align: left;
+}
+.start-away-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+.start-away-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+}
+.start-away-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.45;
 }
 
 /* Recent conversations */
@@ -249,23 +286,45 @@
   margin-top: 8px;
 }
 
+/* Glass cards — translucent over the starfield (no backdrop-filter: shaky in
+   webkit2gtk), accent glow on hover; the freshest gets the accent border. */
 .start-recent-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   width: 100%;
   padding: 10px 12px;
-  background: var(--bg-card, var(--bg-elevated));
+  background: color-mix(in srgb, var(--bg-card, var(--bg-elevated)) 78%, transparent);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: 12px;
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 .start-recent-item:hover {
   border-color: var(--accent-primary, var(--cosmic-cyan));
   background: var(--bg-hover);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent-primary) 14%, transparent);
+}
+.start-recent-item--fresh {
+  border-color: color-mix(in srgb, var(--accent-primary) 45%, var(--border-color));
+}
+.start-recent-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  margin-bottom: 1px;
+}
+.start-recent-preview {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 1px 0;
 }
 .start-recent-icon {
   display: flex;
@@ -345,5 +404,11 @@
     width: 100%;
     text-align: center;
     justify-content: center;
+  }
+
+  .start-away-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
   }
 }
