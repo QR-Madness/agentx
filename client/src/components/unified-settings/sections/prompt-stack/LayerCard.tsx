@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { GripVertical, ChevronDown, RotateCcw, GitCompare, Trash2, Sparkles, Undo2 } from 'lucide-react';
 import type { PromptLayer } from '../../../../lib/api/types';
 import { effectiveContent, estimateTokens, isModified } from '../../../../lib/promptStack';
-import { Badge, Button, Switch } from '../../../ui';
+import { Button, Switch } from '../../../ui';
 import { Textarea } from '../../../ui/Field';
 
 interface LayerCardProps {
@@ -81,6 +81,8 @@ export function LayerCard({
       className="layer-card"
       data-dragging={isDragging || undefined}
       data-disabled={!layer.enabled || undefined}
+      data-expanded={expanded || undefined}
+      data-kind={layer.kind}
     >
       <div className="layer-card__head">
         <button
@@ -101,22 +103,20 @@ export function LayerCard({
         >
           <ChevronDown size={16} className="layer-card__chevron" data-open={expanded || undefined} />
           <span className="layer-card__title">{layer.title}</span>
-          <Badge variant={isBuiltin ? 'neutral' : 'accent'} size="sm">
-            {isBuiltin ? 'Built-in' : 'Custom'}
-          </Badge>
-          <span className="layer-card__dots">
-            {modified && (
-              <span className="layer-card__dot layer-card__dot--modified" title="Edited — differs from the default">
-                ● edited
-              </span>
-            )}
-            {layer.update_available && (
-              <span className="layer-card__dot layer-card__dot--update" title="A new default is available">
-                ▲ update
-              </span>
-            )}
-          </span>
         </button>
+
+        <span className="layer-card__dots">
+          {modified && (
+            <span className="layer-card__dot layer-card__dot--modified" title="Edited — differs from the default">
+              ● edited
+            </span>
+          )}
+          {layer.update_available && (
+            <span className="layer-card__dot layer-card__dot--update" title="A new default is available">
+              ▲ update
+            </span>
+          )}
+        </span>
 
         <div className="layer-card__controls">
           <Switch
@@ -137,6 +137,14 @@ export function LayerCard({
             transition={{ duration: 0.18, ease: 'easeInOut' }}
           >
             <div className="layer-card__body-inner">
+              <div className="layer-card__editor-head">
+                <span className="layer-card__editor-kind">
+                  {isBuiltin ? 'Built-in layer' : 'Custom layer'}
+                </span>
+                <span className="layer-card__count" title="Approximate">
+                  ~{estimateTokens(content)} tokens · {content.length} chars
+                </span>
+              </div>
               <Textarea
                 className="layer-card__editor"
                 value={content}
@@ -148,9 +156,6 @@ export function LayerCard({
                 placeholder="Layer content…"
               />
               <div className="layer-card__editor-meta">
-                <span className="layer-card__count" title="Approximate">
-                  ~{estimateTokens(content)} tokens · {content.length} chars
-                </span>
                 <div className="layer-card__actions">
                   {preEnhance !== null ? (
                     <Button variant="ghost" size="sm" onClick={handleUndoEnhance}>

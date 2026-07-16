@@ -25,12 +25,14 @@
   margin-left: auto;
 }
 
-.prompt-editor textarea {
+/* `textarea.ax-field` (not just `textarea`) so this out-ranks a host's generic
+   `.profile-form-group textarea` min-height — the composer owns its own size. */
+.prompt-editor textarea.ax-field {
   width: 100%;
-  min-height: 120px;
+  min-height: clamp(200px, 38vh, 440px);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.85rem;
-  line-height: 1.5;
+  font-size: 0.875rem;
+  line-height: 1.6;
   resize: vertical;
 }
 

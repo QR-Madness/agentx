@@ -2,7 +2,7 @@
 
 AgentX is a self-hosted, **glassbox** AI agent platform: persistent multi-type memory, **Agent Teams** that delegate, six thinking patterns, MCP tools, and your choice of model — all behind a Django REST API you run yourself, with every step of the agent loop observable.
 
-> **Current release:** v0.21.227 (the v0.20 milestone — "Mobile-Ready Alpha").
+> **Current release:** v0.21.228 (the v0.20 milestone — "Mobile-Ready Alpha").
 
 ## Architecture at a Glance
 

@@ -51,6 +51,11 @@
   height: 100%;
 }
 
+/* Prompt Library takes over: nav is hidden, so the content fills the full width. */
+.unified-profile-layout.is-library {
+  grid-template-columns: 1fr;
+}
+
 /* ─────────────────────────────────────────────
    Profile Nav (left sidebar)
 ───────────────────────────────────────────── */

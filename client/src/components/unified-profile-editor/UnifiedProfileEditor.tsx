@@ -106,7 +106,10 @@ export function UnifiedProfileEditor({
     setIsCreatingNew(false);
     setSelectedProfileId(null);
   };
-  const showList = !isMobile || (!isCreatingNew && !selectedProfileId);
+  // The Prompt Library takes over the content area; collapse the nav so it gets
+  // the full width (and so the profile list isn't competing with the browser).
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const showList = (!isMobile || (!isCreatingNew && !selectedProfileId)) && !libraryOpen;
   const showEditor = !isMobile || isCreatingNew || !!selectedProfileId;
 
   return (
@@ -139,7 +142,7 @@ export function UnifiedProfileEditor({
               </button>
             </div>
 
-            <div className={`unified-profile-layout${isMobile ? ' is-mobile' : ''}`}>
+            <div className={`unified-profile-layout${isMobile ? ' is-mobile' : ''}${libraryOpen ? ' is-library' : ''}`}>
               {showList && (
                 <ProfileNav
                   selectedProfileId={selectedProfileId}
@@ -156,6 +159,7 @@ export function UnifiedProfileEditor({
                   onDeleted={handleDeleted}
                   onCancel={onClose}
                   onBack={isMobile ? handleBack : undefined}
+                  onLibraryOpenChange={setLibraryOpen}
                 />
               )}
             </div>

@@ -160,6 +160,9 @@ interface ProfileContentProps {
   /** Mobile master-detail: when set, render a "‹ Profiles" back button that
    *  returns to the list. Undefined on desktop (list is always visible). */
   onBack?: () => void;
+  /** Notifies the shell when the Prompt Library takes over the content area, so
+   *  it can collapse the profile nav and give the library full width. */
+  onLibraryOpenChange?: (open: boolean) => void;
 }
 
 export function ProfileContent({
@@ -168,6 +171,7 @@ export function ProfileContent({
   onDeleted,
   onCancel,
   onBack,
+  onLibraryOpenChange,
 }: ProfileContentProps) {
   const isEditing = profile !== null;
 
@@ -285,6 +289,11 @@ export function ProfileContent({
     setLibraryOpen(false);
   };
 
+  // Let the shell collapse the profile nav while the library owns the content.
+  useEffect(() => {
+    onLibraryOpenChange?.(libraryOpen);
+  }, [libraryOpen, onLibraryOpenChange]);
+
   const handleSave = () => {
     handleSubmit(isEditing, profile?.id, (saved) => {
       onSaved(saved.id);
@@ -400,6 +409,66 @@ export function ProfileContent({
                   animate="show"
                   variants={{ show: { transition: { staggerChildren: 0.05 } } }}
                 >
+                  <ControlCard full icon={<MessageSquare size={14} />} title={isAmbassador ? 'Communications' : 'Instructions'}>
+                    {!isAmbassador && (
+                    <div className="profile-form-group">
+                      <label>Base Template</label>
+                      <div className="profile-base-template-row">
+                        {baseTemplate ? (
+                          <>
+                            <span className="profile-template-name">{baseTemplate.name}</span>
+                            {baseTemplate.hasModifications && (
+                              <span className="profile-modified-badge">Modified</span>
+                            )}
+                            <button
+                              type="button"
+                              className="profile-btn-secondary profile-btn-sm"
+                              onClick={() => openLibrary('select')}
+                            >
+                              Change
+                            </button>
+                            <button
+                              type="button"
+                              className="profile-btn-ghost profile-btn-sm"
+                              onClick={() => setBaseTemplateId('')}
+                              title="Remove base template"
+                            >
+                              <X size={13} />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="profile-btn-secondary"
+                            onClick={() => openLibrary('select')}
+                          >
+                            <Library size={14} />
+                            Select Base Template
+                          </button>
+                        )}
+                      </div>
+                      <span className="profile-form-hint">Optionally start from a saved template</span>
+                    </div>
+                    )}
+
+                    <div className="profile-form-group">
+                      <PromptEditor
+                        ref={systemPromptRef}
+                        label={isAmbassador ? 'Communications (personality)' : undefined}
+                        hint={isAmbassador
+                          ? 'Modifies the flavour of the ambassador — how it speaks to you across all its briefings.'
+                          : 'Layered on top of the global System Prompt — leave empty to use it as-is.'}
+                        placeholder={isAmbassador
+                          ? 'Give your ambassador a personality… (leave empty for a neutral voice)'
+                          : 'Custom instructions for this agent… (leave empty to use defaults)'}
+                        value={systemPrompt}
+                        onChange={setSystemPrompt}
+                        onInsertFromLibrary={() => openLibrary('insert')}
+                      />
+                      {!isAmbassador && <EffectivePromptPreview name={name} agentPrompt={systemPrompt} />}
+                    </div>
+                  </ControlCard>
+
                   <ControlCard icon={<Cpu size={14} />} title="Model" summary={`${selectedLabel}${ctxLabel ? ` · ${ctxLabel}` : ''}`}>
                     <div className="profile-model-selector-wrap">
                       <ModelPickerField
@@ -441,66 +510,6 @@ export function ProfileContent({
                           ...LEGACY_SEGMENTS.filter(s => s.value === reasoningStrategy),
                         ]}
                       />
-                    </div>
-                  </ControlCard>
-
-                  <ControlCard full icon={<MessageSquare size={14} />} title={isAmbassador ? 'Communications' : 'System Prompt'}>
-                    {!isAmbassador && (
-                    <div className="profile-form-group">
-                      <label>Base Template</label>
-                      <div className="profile-base-template-row">
-                        {baseTemplate ? (
-                          <>
-                            <span className="profile-template-name">{baseTemplate.name}</span>
-                            {baseTemplate.hasModifications && (
-                              <span className="profile-modified-badge">Modified</span>
-                            )}
-                            <button
-                              type="button"
-                              className="profile-btn-secondary profile-btn-sm"
-                              onClick={() => openLibrary('select')}
-                            >
-                              Change
-                            </button>
-                            <button
-                              type="button"
-                              className="profile-btn-ghost profile-btn-sm"
-                              onClick={() => setBaseTemplateId('')}
-                              title="Remove base template"
-                            >
-                              <X size={13} />
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            className="profile-btn-secondary"
-                            onClick={() => openLibrary('select')}
-                          >
-                            <Library size={14} />
-                            Select Base Template
-                          </button>
-                        )}
-                      </div>
-                      <span className="profile-form-hint">Optional template for base agent instructions</span>
-                    </div>
-                    )}
-
-                    <div className="profile-form-group">
-                      <PromptEditor
-                        ref={systemPromptRef}
-                        label={isAmbassador ? 'Communications (personality)' : 'Agent Instructions'}
-                        hint={isAmbassador
-                          ? 'Modifies the flavour of the ambassador — how it speaks to you across all its briefings.'
-                          : 'Agent-specific instructions, woven into the prompt after the global layers'}
-                        placeholder={isAmbassador
-                          ? 'Give your ambassador a personality… (leave empty for a neutral voice)'
-                          : 'Custom instructions for this agent… (leave empty to use defaults)'}
-                        value={systemPrompt}
-                        onChange={setSystemPrompt}
-                        onInsertFromLibrary={() => openLibrary('insert')}
-                      />
-                      {!isAmbassador && <EffectivePromptPreview name={name} agentPrompt={systemPrompt} />}
                     </div>
                   </ControlCard>
 

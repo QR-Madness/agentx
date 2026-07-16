@@ -136,6 +136,47 @@ function HighlightedContent({ content }: { content: string }) {
   );
 }
 
+/**
+ * HighlightedTextarea — a plain textarea whose `{placeholder}` tokens light up
+ * live while you type. A highlighted backdrop renders under a transparent-text
+ * textarea (both share exact metrics); the caret and editing behaviour are the
+ * native textarea's, so nothing about typing changes.
+ */
+function HighlightedTextarea({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const backdropRef = useRef<HTMLDivElement>(null);
+  return (
+    <div className="plm-hl-wrap">
+      <div ref={backdropRef} className="plm-hl-backdrop" aria-hidden="true">
+        {/* trailing newline keeps the backdrop's height in step with the
+            textarea when the content ends on a blank line */}
+        <HighlightedContent content={value} />{'\n'}
+      </div>
+      <textarea
+        className="plm-hl-textarea"
+        value={value}
+        placeholder={placeholder}
+        spellCheck={false}
+        onChange={e => onChange(e.target.value)}
+        onScroll={e => {
+          const el = backdropRef.current;
+          if (el) {
+            el.scrollTop = e.currentTarget.scrollTop;
+            el.scrollLeft = e.currentTarget.scrollLeft;
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PromptLibraryBrowser({
@@ -146,7 +187,7 @@ export function PromptLibraryBrowser({
   initialTag,
   variant = 'modal',
 }: PromptLibraryBrowserProps) {
-  const { allTemplates, allTags, loading, error: dataError, refresh } = usePromptLibraryData();
+  const { allTemplates, loading, error: dataError, refresh } = usePromptLibraryData();
   const confirm = useConfirm();
 
   // Layout
@@ -166,9 +207,10 @@ export function PromptLibraryBrowser({
 
   // Filter state
   const [activeType, setActiveType] = useState<TemplateType | null>(null);
-  const [activeTag, setActiveTag] = useState<string | null>(initialTag ?? null);
   const [query, setQuery] = useState('');
-  const [tagsExpanded, setTagsExpanded] = useState(false);
+  // Tag filtering stays available via a deep-link prop, but the always-on tag
+  // chip row was dropped — search + type covers browsing without the clutter.
+  const activeTag = initialTag ?? null;
 
   // View state
   const [viewState, setViewState] = useState<ViewState>('browse');
@@ -206,6 +248,14 @@ export function PromptLibraryBrowser({
       });
   }, [allTemplates, activeType, activeTag, query]);
 
+  // Auto-select the first result in the wide layout so the preview pane shows
+  // something immediately instead of an empty "select a template" state.
+  useEffect(() => {
+    if (isWide && viewState === 'browse' && !selectedTemplate && filteredTemplates.length > 0) {
+      setSelectedTemplate(filteredTemplates[0]);
+    }
+  }, [isWide, viewState, selectedTemplate, filteredTemplates]);
+
   // ── Navigation helpers ──────────────────────────────────────────────────────
 
   const goTo = (next: ViewState, dir: number) => {
@@ -214,6 +264,9 @@ export function PromptLibraryBrowser({
   };
 
   const selectCard = (template: PromptTemplate) => {
+    // While authoring, changing the selection would desync the form from
+    // `selectedTemplate` (and Save writes to selectedTemplate.id) — ignore it.
+    if (viewState === 'edit' || viewState === 'create') return;
     setSelectedTemplate(template);
     if (!isWide) goTo('preview', 1);
   };
@@ -350,17 +403,11 @@ export function PromptLibraryBrowser({
     }
   };
 
-  // ── Tag chip overflow ────────────────────────────────────────────────────────
-
-  const TAG_SHOW_LIMIT = 6;
-  const visibleTags = tagsExpanded ? allTags : allTags.slice(0, TAG_SHOW_LIMIT);
-  const hiddenCount = allTags.length - TAG_SHOW_LIMIT;
-
   // ── Render helpers ───────────────────────────────────────────────────────────
 
   const ModeChip = () => {
     if (!mode) return null;
-    const label = mode === 'insert' ? 'Inserting into system prompt' : 'Selecting base template';
+    const label = mode === 'insert' ? 'Insert into prompt' : 'Choose base template';
     return <span className="plm-mode-chip">✦ {label}</span>;
   };
 
@@ -396,36 +443,6 @@ export function PromptLibraryBrowser({
           );
         })}
       </div>
-      {allTags.length > 0 && (
-        <div className="plm-tag-chips">
-          <button
-            className={`plm-tag-chip ${activeTag === null ? 'active' : ''}`}
-            onClick={() => setActiveTag(null)}
-          >
-            All Tags
-          </button>
-          {visibleTags.map(tag => (
-            <button
-              key={tag.name}
-              className={`plm-tag-chip ${activeTag === tag.name ? 'active' : ''}`}
-              onClick={() => setActiveTag(tag.name)}
-            >
-              {tag.name}
-              <span className="plm-tag-count">{tag.count}</span>
-            </button>
-          ))}
-          {!tagsExpanded && hiddenCount > 0 && (
-            <button className="plm-tag-chip plm-tag-more" onClick={() => setTagsExpanded(true)}>
-              +{hiddenCount} more
-            </button>
-          )}
-          {tagsExpanded && hiddenCount > 0 && (
-            <button className="plm-tag-chip plm-tag-more" onClick={() => setTagsExpanded(false)}>
-              show less
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 
@@ -454,26 +471,25 @@ export function PromptLibraryBrowser({
                 key={template.id}
                 className={`plm-card ${isSelected ? 'selected' : ''}`}
                 onClick={() => selectCard(template)}
+                disabled={viewState === 'edit' || viewState === 'create'}
               >
                 <div className="plm-card-header">
                   <Icon size={14} />
                   <span className="plm-card-name">{template.name}</span>
-                  <div className="plm-card-badges">
-                    {template.isBuiltin && <span className="plm-badge plm-badge-builtin">Built-in</span>}
-                    {template.hasModifications && <span className="plm-badge plm-badge-modified">Modified</span>}
-                  </div>
+                  {template.hasModifications && (
+                    <div className="plm-card-badges">
+                      <span className="plm-badge plm-badge-modified">Modified</span>
+                    </div>
+                  )}
                 </div>
                 {template.description && (
                   <p className="plm-card-desc">{template.description}</p>
                 )}
                 {template.tags.length > 0 && (
                   <div className="plm-card-tags">
-                    {template.tags.slice(0, 3).map(tag => (
+                    {template.tags.map(tag => (
                       <span key={tag} className="plm-mini-tag">{tag}</span>
                     ))}
-                    {template.tags.length > 3 && (
-                      <span className="plm-mini-tag">+{template.tags.length - 3}</span>
-                    )}
                   </div>
                 )}
               </button>
@@ -609,9 +625,9 @@ export function PromptLibraryBrowser({
           </div>
           <div className="plm-field plm-field-content">
             <label>Content</label>
-            <textarea
+            <HighlightedTextarea
               value={formContent}
-              onChange={e => setFormContent(e.target.value)}
+              onChange={setFormContent}
               placeholder="Template content… Use {placeholder} for variables."
             />
             <span className="plm-hint">Use {'{'}placeholder{'}'} syntax for dynamic values</span>
@@ -676,7 +692,7 @@ export function PromptLibraryBrowser({
             </div>
           )
         )}
-        <ModeChip />
+        {ModeChip()}
         <div className="plm-header-right">
           <button
             className="plm-btn-primary plm-btn-sm"
@@ -700,8 +716,8 @@ export function PromptLibraryBrowser({
       {isWide ? (
         <div className="plm-wide-body">
           <div className="plm-wide-list">
-            <FilterBar />
-            <TemplateList />
+            {viewState !== 'edit' && viewState !== 'create' && FilterBar()}
+            {TemplateList()}
           </div>
           <div className="plm-wide-detail">
             <AnimatePresence mode="wait">
@@ -713,7 +729,7 @@ export function PromptLibraryBrowser({
                   animate={{ opacity: 1, x: 0, transition: { type: 'spring', damping: 28, stiffness: 320 } }}
                   exit={{ opacity: 0, x: 24, transition: { duration: 0.15 } }}
                 >
-                  <EditForm />
+                  {EditForm()}
                 </motion.div>
               ) : (
                 <motion.div
@@ -723,7 +739,7 @@ export function PromptLibraryBrowser({
                   animate={{ opacity: 1, transition: { duration: 0.2 } }}
                   exit={{ opacity: 0, transition: { duration: 0.1 } }}
                 >
-                  <PreviewPanel />
+                  {PreviewPanel()}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -743,8 +759,8 @@ export function PromptLibraryBrowser({
                 animate="center"
                 exit="exit"
               >
-                <FilterBar />
-                <TemplateList />
+                {FilterBar()}
+                {TemplateList()}
               </motion.div>
             ) : viewState === 'preview' ? (
               <motion.div
@@ -756,7 +772,7 @@ export function PromptLibraryBrowser({
                 animate="center"
                 exit="exit"
               >
-                <PreviewPanel />
+                {PreviewPanel()}
               </motion.div>
             ) : (
               <motion.div
@@ -768,7 +784,7 @@ export function PromptLibraryBrowser({
                 animate="center"
                 exit="exit"
               >
-                <EditForm />
+                {EditForm()}
               </motion.div>
             )}
           </AnimatePresence>
