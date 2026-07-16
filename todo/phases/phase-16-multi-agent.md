@@ -241,7 +241,11 @@
       user-media `permission-request`. Requires an **app rebuild** to take effect (Rust change).
       Windows WebView2 prompts by default. (Verify on each packaged target.)
 
-### 16.7 Ambassador v2 — conversational, tool-using, parallel relay — **planned**
+### 16.7 Ambassador v2 — conversational, tool-using, parallel relay — **shipped** (roadmap items open)
+
+> Slices 0–4 + the stability/invariants close-out are live. What remains open below is
+> the **orchestration roadmap** (capability modelling, ad-hoc/autonomous delegation,
+> switcher over server history, CC-semantics refinement) — follow-on work, not v2 itself.
 
 > **Why a rework.** 16.6 shipped the ambassador as a *stateless per-turn briefer*
 > hard-bound to the active conversation tab: `conversationId = activeTab.sessionId`,
@@ -302,7 +306,7 @@
   tool failure — all degrade gracefully (the never-raise invariant now wraps the tool
   loop, not just a single completion).
 
-**Slice 0 — stop auto-briefing + empty-conversation safety (fast, isolated)** — shipped (uncommitted)
+**Slice 0 — stop auto-briefing + empty-conversation safety (fast, isolated)** — shipped
 - [x] **No brief on open.** Decoupled open from brief: the per-message CC button
       (`ChatPanel.handleAmbassador`) now *only opens* the panel — it no longer fires
       `ccTurn`. Briefing is an explicit action inside the panel ("Brief the latest turn"
@@ -369,9 +373,11 @@
 - [x] **Responsive**: docks at `≥880px`; below that (reactive media query) callers fall
       back to the existing full-screen sheet (`DrawerPanel` is already full-screen ≤600px).
       Width clamps 340–680 (default 440 — leaves the conversation room).
-- [ ] **Payoff check (needs a visual pass)**: watch the agent stream on the left while
-      the ambassador briefs/voices on the right; verify resize/collapse, the ≥880px↔sheet
-      crossover, and mobile sheet. *(Couldn't run the app here — built + typechecked only.)*
+- [x] **Payoff check** — verified live in the browser preview (16.7 close-out): chat
+      streams left while the ambassador answers/speaks right (no backdrop, both
+      interactive); resize drag works with the 340/680 clamps + persistence; the
+      ≥880px↔sheet crossover unmounts/remounts the dock (open-state survives); mobile
+      is the exact-viewport sheet with an inline close.
 
 **Slice 1 — ambassador thread (its own conversation)**
 
@@ -412,9 +418,11 @@
       *(The two internal maps are kept as the source of truth with `threadFor` as a merge
       selector + projected `briefingsFor`/`qaFor` views — lower-risk than a physical state
       collapse, same UX.)*
-- [ ] **Voice continuity follow-up:** the spoken router (`route_voice_command`) persists to
-      the thread but still doesn't *read* prior Q&A as history — give voice the same
-      continuity the typed path has.
+- [x] **Voice continuity follow-up** — shipped (16.7 close-out). The spoken **router**
+      now reads prior settled Q&A as dialogue turns (`_thread_history` in the classify
+      messages, same seam as the answer path), so a follow-up like "relay that to the
+      agent" classifies in context. (The answer core already had continuity via
+      `_seed_answer_messages`.) Test: `test_router_hears_prior_qa_continuity`.
 
 **Slice 2 — the read-only tool belt + agentic loop** — shipped + consolidated (`0.21.76`–`78`)
 
@@ -459,8 +467,12 @@
       *Live-only* (not persisted to the sidecar — gone on reload).
 - [x] **Persist tool calls to the sidecar so chips survive reload** (`0.21.82`, with Slice 1b
       thread model — `set_entry_tool_calls` on the entry).
-- [ ] **Follow-ups:** surface tool activity in the *voice* path too (it answers server-side,
-      no live SSE today); tool chips in `QaItem`'s avatar still use the generic mark.
+- [~] **Follow-ups:** `QaItem`/`BriefingItem` marks now carry the **ambassador profile's
+      avatar** (16.7 close-out — no more generic mark once customized). Voice-path tool
+      activity: persisted chips already replay into the Inquiry after settle
+      (`onAnswerPersisted` → thread refresh); **live** chips during a voice answer stay
+      deferred — they need the voice endpoint to stream (SSE) instead of answering
+      server-side.
 
 **Slice 1d — parallel operator (de-couple the panel from turns)** — shipped (`0.21.83`)
 
@@ -636,14 +648,24 @@
       parallel guards); ambassador-*proposed* targeting; dispatch into an **existing** conversation;
       instant task echo. The survey/aide-swarm is the read-side of that same world.
 
-**Stability & invariants (apply across all slices)**
-- [ ] No-pollution regression tests extended to the thread + tool loop (nothing reaches
-      `conversation_logs`/`conv_summary:`; tools are SELECT-only).
-- [ ] Never-raise tests: empty conversation, no provider, tool error, no active tab —
-      each degrades to a clean spoken/text notice.
-- [ ] Docs: update `CLAUDE.md` (Ambassador section), `OpenApi.yaml` +
-      `docs-site/.../api/endpoints.md` (new `thread`/tool SSE events), and the endpoint
-      table here. Version + Release-Notes bump travels with each shippable slice.
+**Stability & invariants (apply across all slices)** — ✅ closed out
+- [x] No-pollution regression tests extended to the thread + tool loop:
+      `test_agentic_loop_writes_only_the_ambassador_sidecar` (a full tool round + answer
+      writes only `amb_thread:`/`ambassador:`/`amb_aide:`/`amb_user:` keys — never
+      `conv_summary:`; no PG connection exists in the test env, so a `conversation_logs`
+      write would raise) + `test_tool_belt_write_surface_is_pinned` (structural
+      SELECT-only allowlist — a new tool fails the test until classified on purpose;
+      `rename_inquiry` is the documented lone self-scoped write).
+- [x] Never-raise tests: empty conversation + no provider (already covered), **tool
+      error** (`test_execute_tool_degrades_when_a_read_fails` at the belt boundary +
+      `test_agentic_loop_survives_a_failing_tool` mid-loop), and **no conversation at
+      all** (`test_deck_thread_with_no_conversation_stays_clean` — the server-side
+      "no active tab") — each degrades to a clean notice.
+- [x] Docs: `CLAUDE.md` ambassador one-liner rewritten for v2 (tool belt, Inquiries,
+      deck, relay/dispatch); `OpenApi.yaml` + `endpoints.md` now carry the
+      `ambassador_tool_call`/`_result` SSE events, a v2 intro, and the missing
+      `/relay` + `/threads` bullets; the Development-Notes endpoint table gained
+      `/relay`, `/dispatch`, `/threads` rows.
 
 **Open questions (decide before building the relevant slice)**
 - Thread persistence depth: keep the full ambassador thread in Redis (TTL'd like

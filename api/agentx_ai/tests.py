@@ -12627,6 +12627,167 @@ class AmbassadorServiceTest(TestCase):
         # An explicit setting is honored as a hard ceiling.
         self.assertEqual(svc._max_tokens(None, {"max_tokens": 700}), 700)
 
+    # --- 16.7 close-out: stability & invariant guards (no-pollution + never-raise) ---
+
+    def test_tool_belt_write_surface_is_pinned(self):
+        # The belt is SELECT-only over the conversation world; the lone write is
+        # rename_inquiry (self-scoped to the ambassador's own thread meta). Adding a
+        # tool means classifying it here on purpose — an unclassified name fails this
+        # test before it can ship an accidental write path.
+        from agentx_ai.agent import ambassador_tools as t
+
+        read_only = {
+            "summarize_conversation", "explore_conversation", "read_conversation",
+            "list_conversations", "survey_conversations", "list_agents",
+        }
+        self_scoped_writes = {"rename_inquiry"}
+        self.assertEqual(t.TOOL_NAMES, read_only | self_scoped_writes)
+
+    def test_execute_tool_degrades_when_a_read_fails(self):
+        # Never-raise at the belt boundary covers the read itself: a dead store
+        # (Postgres down) becomes a readable note the model can keep working with.
+        from agentx_ai.agent import ambassador_tools as t
+
+        with patch.object(t, "load_recent_labeled_turns", side_effect=RuntimeError("pg down")):
+            out = t.execute_tool(
+                "read_conversation", {"conversation_id": "c9"},
+                focused_conversation_id="conv",
+            )
+        self.assertIn("read_conversation tool couldn't complete", out)
+        self.assertIn("pg down", out)
+
+    def test_agentic_loop_survives_a_failing_tool(self):
+        # Never-raise inside the loop: round 1 calls a tool whose underlying read
+        # blows up mid-turn. The failure comes back to the model as a note, the loop
+        # continues, and the turn still settles `done` with a real answer.
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        calls = {"n": 0}
+
+        async def _stream(messages, model_id, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                yield StreamChunk(
+                    content="", finish_reason="tool_calls",
+                    tool_calls=[ToolCall(id="t1", name="read_conversation",
+                                         arguments={"conversation_id": "c9"})],
+                )
+            else:
+                yield StreamChunk(content="The store was unreachable.", finish_reason="stop")
+
+        provider, reg = self._streaming_provider(_stream)
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+                patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns",
+                      side_effect=RuntimeError("pg down")):
+            events = asyncio.run(_collect(svc.answer_question("conv", "qa8", "read c9")))
+            record = a.get_qa("conv", "qa8")
+
+        joined = "".join(events)
+        self.assertIn("ambassador_tool_result", joined)  # the failure note still settled the round
+        self.assertIn("ambassador_done", joined)
+        self.assertNotIn("ambassador_error", joined)
+        self.assertNotIn("Traceback", joined)
+        self.assertEqual(record["status"], "done")
+        self.assertEqual(calls["n"], 2)
+
+    _SIDECAR_PREFIXES = ("amb_thread:", "ambassador:", "amb_aide:", "amb_user:")
+
+    def test_agentic_loop_writes_only_the_ambassador_sidecar(self):
+        # No-pollution, end-to-end over the thread + tool loop: a full agentic turn
+        # (tool round → answer → persisted entry + tool chips) may write ONLY the
+        # ambassador's own key families — never conv_summary: (the rolling summary
+        # shares this Redis). conversation_logs is Postgres, and no PG connection
+        # exists in this env — an attempted write would raise and trip the
+        # never-raise assertions.
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        calls = {"n": 0}
+
+        async def _stream(messages, model_id, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                yield StreamChunk(
+                    content="", finish_reason="tool_calls",
+                    tool_calls=[ToolCall(id="t1", name="summarize_conversation", arguments={})],
+                )
+            else:
+                yield StreamChunk(content="All quiet on the registry front.", finish_reason="stop")
+
+        provider, reg = self._streaming_provider(_stream)
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+                patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns", return_value=[]):
+            events = asyncio.run(_collect(svc.answer_question("conv", "qa9", "summarize this")))
+
+        self.assertIn("ambassador_done", "".join(events))
+        written = set(fake.kv) | set(fake.sets)
+        self.assertTrue(written, "the turn persisted nothing — vacuous pass")
+        for key in written:
+            self.assertTrue(
+                key.startswith(self._SIDECAR_PREFIXES),
+                f"agentic turn wrote outside the ambassador sidecar: {key}",
+            )
+
+    def test_deck_thread_with_no_conversation_stays_clean(self):
+        # "No active tab", server-side: a command-deck thread is bound to no
+        # conversation at all. The ask still settles cleanly (nothing to ground on)
+        # and every write stays in the deck thread's own sidecar keys.
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk
+
+        async def _stream(messages, model_id, **kwargs):
+            yield StreamChunk(content="Nothing is in flight yet.", finish_reason="stop")
+
+        provider, reg = self._streaming_provider(_stream)
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+                patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns", return_value=[]):
+            events = asyncio.run(_collect(svc.answer_question("deck:default", "qa1", "what's in flight?")))
+            record = a.get_qa("deck:default", "qa1")
+
+        joined = "".join(events)
+        self.assertIn("ambassador_done", joined)
+        self.assertNotIn("ambassador_error", joined)
+        self.assertNotIn("Traceback", joined)
+        self.assertEqual(record["status"], "done")
+        written = set(fake.kv) | set(fake.sets)
+        self.assertTrue(written)
+        for key in written:
+            self.assertTrue(
+                key.startswith(self._SIDECAR_PREFIXES),
+                f"deck ask wrote outside the ambassador sidecar: {key}",
+            )
+
 
 class _FakeConfigManager:
     """In-memory ConfigManager stand-in (dot-notation get/set + no-op save)."""
@@ -14425,6 +14586,34 @@ class AmbassadorVoiceCommandTest(TestCase):
             result = asyncio.run(svc.route_voice_command("conv1", "what's up"))
         self.assertEqual(result["action"], "answer")
         self.assertEqual(result["text"], "They searched the registry for you.")
+
+    def test_router_hears_prior_qa_continuity(self):
+        # 16.7 voice-continuity follow-up: the intent ROUTER (not just the answer
+        # core) reads prior settled Q&A as dialogue turns, so a spoken follow-up
+        # ("relay that to the agent") classifies in context instead of blind.
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import MessageRole
+
+        svc = self._service('{"action": "relay", "text": "Use Postgres."}')
+        fake = _FakeKVRedis()
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+             patch.object(svc, "_grounding_context", return_value=""), \
+             patch.object(a, "_redis", return_value=fake):
+            # A prior settled exchange in this thread's qa: sidecar.
+            a.create_qa("conv1", "qa_prev", "which store did it recommend?")
+            a.set_qa_answer("conv1", "qa_prev", "It recommended Postgres.", status="done")
+            asyncio.run(svc.route_voice_command("conv1", "relay that to the agent"))
+
+        provider = svc._registry.resolve_with_fallback.return_value[0]
+        messages = provider.complete.await_args.args[0]
+        roles = [m.role for m in messages]
+        # system → prior user/assistant turns → the classify prompt (user).
+        self.assertEqual(roles[0], MessageRole.SYSTEM)
+        self.assertIn(MessageRole.ASSISTANT, roles[1:-1])
+        contents = [m.content for m in messages]
+        self.assertTrue(any("which store did it recommend?" in c for c in contents[1:-1]))
+        self.assertTrue(any("It recommended Postgres." in c for c in contents[1:-1]))
+        self.assertIn("relay that to the agent", contents[-1])
 
     def test_empty_transcript_short_circuits(self):
         from agentx_ai.agent.ambassador import AmbassadorService
