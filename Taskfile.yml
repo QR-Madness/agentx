@@ -1053,6 +1053,11 @@ tasks:
 # RELEASE & BUILD
 # ============================================================================
 
+  versions:resolve:
+    desc: "Resolve version-bump merge conflicts: higher version wins (equal sides bump +1), both sides' release-note bullets are kept, manifests re-synced"
+    cmds:
+      - python3 scripts/resolve_version_conflicts.py
+
   versions:sync:
     desc: "Sync version from versions.yaml to all manifests (package.json, Cargo.toml, tauri.conf.json, pyproject.toml)"
     silent: true
