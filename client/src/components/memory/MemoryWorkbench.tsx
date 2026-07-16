@@ -360,7 +360,7 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <header className="mem-header">
           <div className="mem-title">
-            <MemoryIcon size={20} className="mem-title-icon" />
+            <MemoryIcon size={16} className="mem-title-icon" />
             <span>Memory</span>
           </div>
           <div className="mem-header-actions">

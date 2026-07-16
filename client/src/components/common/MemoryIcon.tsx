@@ -5,6 +5,10 @@
  * twinkle in sequence. Motion is pure CSS (see MemoryIcon.css) and honors
  * `prefers-reduced-motion`. Inherits color via `currentColor`; callers can
  * amp the glow/speed by styling descendant classes (GalaxyIcon precedent).
+ *
+ * Class namespace is `memory-glyph` — NOT `memory-icon`, which is a global
+ * class already owned by MemoryInjectionBlock.css (unlayered per-component
+ * CSS is global; that collision force-sized this icon to 18px everywhere).
  */
 
 import './MemoryIcon.css';
@@ -24,7 +28,7 @@ interface MemoryIconProps {
 export function MemoryIcon({ size = 16, className = '' }: MemoryIconProps) {
   return (
     <svg
-      className={`memory-icon ${className}`.trim()}
+      className={`memory-glyph ${className}`.trim()}
       width={size}
       height={size}
       viewBox="0 0 24 24"
@@ -36,16 +40,16 @@ export function MemoryIcon({ size = 16, className = '' }: MemoryIconProps) {
       aria-hidden="true"
     >
       {/* Hemispheres — a soft fill under stroked outlines, glowing as one */}
-      <g className="memory-lobes">
+      <g className="memory-glyph-lobes">
         <path d={`${LEFT_LOBE} ${RIGHT_LOBE}`} fill="currentColor" opacity="0.14" stroke="none" />
         <path d={LEFT_LOBE} />
         <path d={RIGHT_LOBE} />
       </g>
       {/* Synapses — staggered twinkle (delays in MemoryIcon.css) */}
-      <circle className="memory-syn" cx="7.6" cy="8.6" r="1" fill="currentColor" stroke="none" />
-      <circle className="memory-syn" cx="16.4" cy="8.6" r="1" fill="currentColor" stroke="none" />
-      <circle className="memory-syn" cx="9" cy="13.2" r="0.9" fill="currentColor" stroke="none" />
-      <circle className="memory-syn" cx="15" cy="13.2" r="0.9" fill="currentColor" stroke="none" />
+      <circle className="memory-glyph-syn" cx="7.6" cy="8.6" r="1" fill="currentColor" stroke="none" />
+      <circle className="memory-glyph-syn" cx="16.4" cy="8.6" r="1" fill="currentColor" stroke="none" />
+      <circle className="memory-glyph-syn" cx="9" cy="13.2" r="0.9" fill="currentColor" stroke="none" />
+      <circle className="memory-glyph-syn" cx="15" cy="13.2" r="0.9" fill="currentColor" stroke="none" />
     </svg>
   );
 }
