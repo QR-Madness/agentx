@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.228 -->
+<!-- release-version: 0.21.229 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -44,6 +44,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Agent-ready docs site**: the site now advertises itself to AI agents — RFC 8288 `Link` headers,
   an RFC 9727 API catalog at `/.well-known/api-catalog`, per-page Markdown twins (`<page>.md`) +
   `/llms.txt`, robots.txt content signals, and a WebMCP `search_docs` tool.
+
+- **Ambassador v2, closed out**: the spoken router now remembers the exchange you're having
+  (a follow-up like "relay that to the agent" routes in context), answers wear your ambassador's
+  own avatar, and the load-bearing invariants (SELECT-only tool belt, sidecar-only writes,
+  never-raise degrades) are regression-guarded.
 
 ### Fixes
 

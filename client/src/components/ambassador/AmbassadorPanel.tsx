@@ -251,10 +251,12 @@ function QaItem({
   entry,
   onCancel,
   speech,
+  avatar,
 }: {
   entry: AmbassadorQA;
   onCancel: () => void;
   speech: SpeechControls;
+  avatar?: string;
 }) {
   const streaming = entry.status === 'streaming';
   const speakable = entry.status === 'done' && !!entry.answer.trim();
@@ -265,7 +267,7 @@ function QaItem({
         {entry.question}
       </div>
       <div className="flex max-w-[94%] items-start gap-2 self-start">
-        <AmbassadorMark size={22} />
+        <AmbassadorMark size={22} avatar={avatar} />
         <div className="flex min-w-0 flex-col gap-1 pt-0.5 text-sm leading-relaxed text-fg">
           <ToolChips calls={entry.toolCalls} />
           <div>
@@ -320,17 +322,19 @@ function BriefingItem({
   briefing,
   onCancel,
   speech,
+  avatar,
 }: {
   briefing: AmbassadorBriefing;
   onCancel: () => void;
   speech: SpeechControls;
+  avatar?: string;
 }) {
   const streaming = briefing.status === 'streaming';
   const speakable = briefing.status === 'done' && !!briefing.summary.trim();
   const copyable = !streaming && !!briefing.summary.trim();
   return (
     <li className="flex max-w-[94%] items-start gap-2 self-start">
-      <AmbassadorMark size={22} />
+      <AmbassadorMark size={22} avatar={avatar} />
       <div className="flex min-w-0 flex-col gap-1 pt-0.5">
         <ToolChips calls={briefing.toolCalls} />
         <BriefingBody briefing={briefing} />
@@ -926,8 +930,8 @@ export function AmbassadorPanel({
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
               <AmbassadorMark size={40} avatar={ambassadorProfile?.avatar} />
               <p className="max-w-[18rem] text-sm text-fg-muted">
-                Open a conversation and the ambassador can answer, brief, and relay — in parallel,
-                without ever entering it.
+                Once a conversation is underway, the ambassador can answer, brief, and relay — in
+                parallel, without ever entering it.
               </p>
             </div>
           ) : thread.length === 0 ? (
@@ -988,6 +992,7 @@ export function AmbassadorPanel({
                     entry={item.qa}
                     onCancel={() => cancelQa(conversationId, item.id)}
                     speech={speech}
+                    avatar={ambassadorProfile?.avatar}
                   />
                 ) : (
                   <BriefingItem
@@ -995,6 +1000,7 @@ export function AmbassadorPanel({
                     briefing={item.briefing}
                     onCancel={() => cancel(conversationId, item.id)}
                     speech={speech}
+                    avatar={ambassadorProfile?.avatar}
                   />
                 ),
               )}

@@ -1242,6 +1242,11 @@ class AmbassadorService:
                 role=MessageRole.SYSTEM,
                 content=self._build_voice_command_persona(profile, agent_name),
             ),
+            # Prior settled Q&A as real dialogue turns — the router hears the
+            # conversation it's already having, so a spoken follow-up ("relay that
+            # to the agent", "what about the second one?") classifies in context
+            # instead of blind. Same continuity seam the answer path uses.
+            *self._thread_history(conversation_id),
             Message(
                 role=MessageRole.USER,
                 content=self._build_voice_command_prompt(

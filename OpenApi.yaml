@@ -1451,10 +1451,13 @@ paths:
       operationId: ambassadorStream
       summary: Tail an Ambassador briefing run
       description: >-
-        Replays then follows a briefing run's namespaced SSE events
+        Replays then follows a briefing/Q&A run's namespaced SSE events
         (`ambassador_start`, `ambassador_chunk`, `ambassador_done`,
-        `ambassador_error`). Emits `run_missing` if the run buffer expired (client
-        falls back to the persisted briefing from `/agent/ambassador/{conversation_id}`).
+        `ambassador_error`), plus `ambassador_tool_call` / `ambassador_tool_result`
+        when the agentic answer core drives its read-only tool belt (rendered as
+        tool chips; persisted on the thread entry so they survive a reload). Emits
+        `run_missing` if the run buffer expired (client falls back to the persisted
+        thread from `/agent/ambassador/thread/{thread_id}`).
       parameters:
         - name: run_id
           in: query
