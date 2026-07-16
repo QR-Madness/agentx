@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.229 -->
+<!-- release-version: 0.21.230 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -49,6 +49,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   (a follow-up like "relay that to the agent" routes in context), answers wear your ambassador's
   own avatar, and the load-bearing invariants (SELECT-only tool belt, sidecar-only writes,
   never-raise degrades) are regression-guarded.
+
+- **Memory got a face**: a custom glowing-brain mark — pulsing glow, twinkling synapses — replaces
+  the database stack in the command palette, the Memory explorer, and Settings.
 
 ### Fixes
 

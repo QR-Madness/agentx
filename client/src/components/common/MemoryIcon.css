@@ -1,0 +1,49 @@
+/* MemoryIcon (.memory-glyph) — base motion. Glow/speed can be intensified by
+   ancestors. Namespaced `memory-glyph`: `.memory-icon` is a global class
+   already owned by MemoryInjectionBlock.css. */
+.memory-glyph {
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+.memory-glyph .memory-glyph-lobes {
+  animation: memory-glyph-glow 3.2s ease-in-out infinite;
+}
+
+.memory-glyph .memory-glyph-syn {
+  animation: memory-glyph-twinkle 2.4s ease-in-out infinite;
+}
+
+.memory-glyph circle.memory-glyph-syn:nth-of-type(2) {
+  animation-delay: 0.6s;
+}
+
+.memory-glyph circle.memory-glyph-syn:nth-of-type(3) {
+  animation-delay: 1.2s;
+}
+
+.memory-glyph circle.memory-glyph-syn:nth-of-type(4) {
+  animation-delay: 1.8s;
+}
+
+@keyframes memory-glyph-glow {
+  0%, 100% { filter: drop-shadow(0 0 1.5px currentColor); }
+  50% { filter: drop-shadow(0 0 3.5px currentColor); }
+}
+
+@keyframes memory-glyph-twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .memory-glyph .memory-glyph-lobes {
+    animation: none;
+    filter: drop-shadow(0 0 2px currentColor);
+  }
+
+  .memory-glyph .memory-glyph-syn {
+    animation: none;
+    opacity: 0.85;
+  }
+}

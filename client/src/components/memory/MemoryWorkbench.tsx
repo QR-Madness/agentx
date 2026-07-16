@@ -12,9 +12,10 @@
 
 import { useState, useRef, useEffect } from 'react';
 import {
-  Database, LayoutDashboard, Users, FileText, Zap, ListChecks, GitBranch, History, Clock,
+  LayoutDashboard, Users, FileText, Zap, ListChecks, GitBranch, History, Clock,
   Search, RefreshCw, ChevronLeft, X, Download, Upload, AlertTriangle, Check,
 } from 'lucide-react';
+import { MemoryIcon } from '../common/MemoryIcon';
 import {
   useMemoryEntities, useMemoryFacts, useMemoryStrategies, useMemoryProcedures,
   useMemoryStats, useMemoryChannels, useConsolidate, useExportMemory, useImportMemory,
@@ -359,7 +360,7 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <header className="mem-header">
           <div className="mem-title">
-            <Database size={20} className="mem-title-icon" />
+            <MemoryIcon size={16} className="mem-title-icon" />
             <span>Memory</span>
           </div>
           <div className="mem-header-actions">
