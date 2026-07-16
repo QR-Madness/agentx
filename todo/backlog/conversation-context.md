@@ -58,6 +58,10 @@
 
 ### Memory Area UX Cleanup
 
+- [ ] **Memory as a first-class desktop tab** — promote the full-screen Memory surface to a
+      TopBar nav pill (desktop only; palette-only on mobile), alongside the Command Deck pill.
+      Single-sourced with the deck item in
+      [phases/phase-16-multi-agent.md](../phases/phase-16-multi-agent.md) (Ambassador v3 block).
 - [~] **Redesign the Memory area** — Memory moved from a cramped right-side `xxl` drawer to a
       **full-screen modal** (`type:'modal', size:'full'`, mirroring Settings/Toolkit; own
       `.memory-modal-content` host with a definite height so the panel fills the dialog and scrolls

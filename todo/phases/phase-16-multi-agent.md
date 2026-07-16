@@ -648,6 +648,50 @@
       parallel guards); ambassador-*proposed* targeting; dispatch into an **existing** conversation;
       instant task echo. The survey/aide-swarm is the read-side of that same world.
 
+**Ambassador v3 — context state, conversation management & analysis (proposed 2026-07-16)**
+
+> Belt review verdict: the v2 reads are strong (transcript/survey/roster + aide digests) but
+> she's blind to everything *around* the transcript — the structured conversation state, live
+> runs, memory, and spend — and discovery is recency-only (no search). The expansion keeps the
+> Slice-3 doctrine (**reads auto-run, writes confirm**) and every new tool must be classified
+> on purpose in `test_tool_belt_write_surface_is_pinned`.
+
+- [ ] **`read_conversation_state` (context state)** — SELECT over the Slice-1a structured
+      working memory (`conversation_state_storage.get_state`: goals / decisions / open_threads /
+      artifacts / narrative — already served by `GET /conversations/{id}/state`). The highest-
+      leverage add: it's the conversation's own pre-condensed dashboard (cheaper and sharper
+      than a transcript read for "where does this stand?"), making survey → state → transcript
+      a natural drill-down ladder. Follow-on: fold a one-line state hint (open-threads count /
+      freshest decision) into `survey_conversations` rows.
+- [ ] **`search_conversations`** — discovery beyond recency: full-text over PG
+      `conversation_logs` first (semantic later); returns id + hit snippets + agents, drill in
+      via `read_conversation`. Today "which conversation discussed X?" simply fails outside
+      the recent window.
+- [ ] **`list_active_runs`** — the parallel-operator gap: she can't answer "what are my agents
+      doing *right now*?". Read the detached-run registry + queued `chat_jobs` → conversation,
+      agent, phase, age. Pairs with dispatch (did it start? finish?) — the deck's live half.
+- [ ] **`usage_report`** — read-only over the usage ledger (rows already carry
+      `conversation_id` + `agent_id` + `source`): spend/tokens by conversation / agent /
+      source over a window. "What did this conversation cost?", "which agent burns the most?"
+      — the analysis half the deck exists for.
+- [ ] **`recall_memory`** — read-only `AgentMemory.remember(query)` (facts/entities — knowledge,
+      not logs): "what do my agents actually *know* about X?", distinct from transcript search.
+      Channel-scoped defaults; never-raise + Neo4j-degradable like the survey goals line.
+- [ ] **Conversation management (the confirmed-write belt)** — rename / archive / delete a
+      conversation: **meta-only writes** that never touch transcript turns (INV-2 intact — no
+      `store_turn`, no `conv_summary:` authorship; the pinned write-surface test grows a
+      documented "conversation-meta" class). Confirm-first in voice *and* text — this is what
+      finally re-opens the deferred Slice-3 `{action:'tool'}` voice confirm strip. Delete rides
+      the existing `/memory/conversations/{id}` DELETE; rename needs a conversation-meta home
+      (titles are derived from `first_user` today — sibling of the Inquiry-title decision).
+- [ ] **`read_conversation_results`** — the 16.7-deferred exhibits/sources read, folded in here.
+- [ ] **Client — promote the Command Deck (and Memory) to first-class desktop tabs**: TopBar
+      `NAV_ITEMS` gains **Deck** after Agents (and **Memory** likewise), the pill rendering
+      selected while its full-screen surface is open; both stay palette-only on mobile.
+      Dock lesson applies (`AmbassadorDock` precedent): a pill-selected full-screen surface
+      wants its open-state in layout state, not buried in the modal stack. Cross-ref:
+      [backlog/conversation-context.md](../backlog/conversation-context.md) Memory Area UX.
+
 **Stability & invariants (apply across all slices)** — ✅ closed out
 - [x] No-pollution regression tests extended to the thread + tool loop:
       `test_agentic_loop_writes_only_the_ambassador_sidecar` (a full tool round + answer

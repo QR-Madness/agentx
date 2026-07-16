@@ -138,6 +138,24 @@ marginal tenant <$1/mo + their LLM spend. **LLM/API usage dwarfs hosting in ever
       re-ingest. (Profiles/config are trivial YAML/JSON; blobs are the bulky part.)
 - [ ] **19.2.4 SSE heartbeat** — periodic comment frame on `/agent/chat/stream` so idle
       proxies (ALB) can't kill a quiet round.
+- [ ] **19.2.5 OpenRouter account linking (OAuth PKCE)** — OpenRouter is the *primary*
+      provider, yet first-run setup still means "go generate an API key by hand" — the
+      worst possible cloud-onboarding step. Replace it with a guided link flow
+      ([OpenRouter OAuth docs](https://openrouter.ai/docs/guides/overview/auth/oauth)):
+      the client opens `https://openrouter.ai/auth?callback_url=…&code_challenge=<S256>`,
+      the user approves in their browser, and the callback `code` is exchanged
+      (`POST https://openrouter.ai/api/v1/auth/keys` `{code, code_verifier,
+      code_challenge_method}` → `{key}`) for a **fresh app-provisioned key** stored as the
+      cluster's `providers.openrouter.api_key` (the existing per-server seam — nothing
+      downstream changes). The exchange is secret-less PKCE, so no server-side app secret.
+      **Detach**: one-click unlink deletes the stored key (point at openrouter.ai/keys for
+      full revocation) — the account link is never load-bearing. **Credits badge**: a linked
+      key lets us poll the key-info/credits endpoints (`GET /api/v1/auth/key`,
+      `GET /api/v1/credits` — verify exact shapes at build time) and badge remaining
+      credits in Settings → Providers (surfacing "you're about to run dry" *before* the
+      keyed-but-broke fallback dance). Callback shapes to design: web/PWA = normal
+      redirect; Tauri = localhost loopback or deep link; cloud cluster = gateway domain.
+      Useful in every deployment shape, vital for 19.3+ tenant onboarding.
 
 ### 19.3 Shape 2 — per-tenant Fly apps
 
