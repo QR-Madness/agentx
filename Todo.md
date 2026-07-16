@@ -3,7 +3,7 @@
 
 **Project**: AgentX - AI Agent Platform
 **Status**: Prototype
-**Last Updated**: 2026-07-12
+**Last Updated**: 2026-07-16
 
 **NOTE**: UI must be highly responsive between PC and mobile devices.
 
@@ -29,7 +29,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.229** (pro
 | Phases 1-11, 13, 14, 17 | **Complete** | See [roadmap.md](docs-site/src/content/docs/roadmap.md) |
 | Phase 12: Documentation | Partial | ~60% |
 | Phase 15: Plan Execution | **Core Complete** | Core shipped; parallelism/resumption deferred |
-| Phase 16: Multi-Agent Conversations | **In Progress** | ~85% (16.0–16.6 shipped; **16.7 Ambassador v2 shipped** incl. the stability/invariants close-out; open: orchestration roadmap — ad-hoc delegation, capability modelling; Factory UI deferred) |
+| Phase 16: Multi-Agent Conversations | **In Progress** | ~85% (16.0–16.6 shipped; **16.7 Ambassador v2 shipped** incl. the stability/invariants close-out; open: **Ambassador v3** — context state + conversation mgmt/analysis belt + Deck/Memory desktop tabs (proposed 2026-07-16) — and the orchestration roadmap — ad-hoc delegation, capability modelling; Factory UI deferred) |
 | Phase 18: UX + Memory Tuning | **In Progress** | ~98% (18.9 done; eval procedural cases + run persistence done; memory import/export shipped `[v0.21.22]` → eval snapshot/restore now unblocked) |
 | Phase 19: Cloud Operation | **Planned** | Scaling assessment done (2026-07-04); slices 19.1–19.5 queued — see [phase-19-cloud-operation.md](todo/phases/phase-19-cloud-operation.md) |
 
