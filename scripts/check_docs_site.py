@@ -88,10 +88,35 @@ def check_version() -> None:
         )
 
 
+def check_markdown_manifest() -> None:
+    """The Markdown twins the build emits must all be in the generated manifest.
+
+    middleware.ts only serves `Accept: text/markdown` for twins listed there, so a stale
+    manifest silently drops new pages back to HTML — invisible rot of exactly the kind
+    this gate exists to catch. A warning, not an error: `bun run build` regenerates it,
+    so the deployed site self-heals; only the committed copy can drift.
+    """
+    manifest = SITE / "src" / "generated" / "markdown-manifest.ts"
+    if not manifest.exists():
+        warnings.append(f"{rel(manifest)} missing — run `bun run gen:markdown-manifest` in docs-site")
+        return
+
+    listed = set(re.findall(r"^\s*'([^']+)':", manifest.read_text(encoding="utf-8"), re.M))
+    expected = {f"/docs/{p.relative_to(DOCS).as_posix()[:-3]}.md" for p in DOCS.rglob("*.md")}
+    if (SITE / "src" / "content" / "homepage.md").exists():
+        expected.add("/index.md")
+
+    for path in sorted(expected - listed):
+        warnings.append(f"markdown-manifest.ts: missing {path} — regenerate (agents get HTML for it)")
+    for path in sorted(listed - expected):
+        warnings.append(f"markdown-manifest.ts: stale {path} — no such twin; regenerate")
+
+
 def main() -> int:
     check_route_links()
     check_relative_links()
     check_version()
+    check_markdown_manifest()
 
     print("🌐 Docs-site drift check")
     for w in warnings:

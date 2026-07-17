@@ -53,6 +53,14 @@ This documentation site is built to be read by agents, not just people. On the h
   page, each linking to a Markdown copy.
 - **Markdown twins** — append `.md` to any docs URL (e.g. `/docs/integrate/overview.md`) for the
   raw Markdown source. Pages also advertise it via `<link rel="alternate" type="text/markdown">`.
+- **`Accept: text/markdown`** — you don't need the `.md` suffix. Request any page URL (including
+  the home page) with that header and you get the twin back as `text/markdown; charset=utf-8`,
+  plus an `x-markdown-tokens` estimate so you can budget context before reading. HTML stays the
+  default for every other client, and responses carry `Vary: Accept`. For example:
+
+  ```bash
+  curl -H 'Accept: text/markdown' https://agentx.thejpnet.net/docs/features/memory
+  ```
 - **[`/.well-known/api-catalog`](https://agentx.thejpnet.net/.well-known/api-catalog)** — an
   [RFC 9727](https://www.rfc-editor.org/rfc/rfc9727) linkset pointing at the OpenAPI spec
   (`service-desc`) and the API docs (`service-doc`). The same targets are surfaced as
