@@ -16,6 +16,9 @@ import Footer from '../components/landing/Footer.astro';
 ---
 
 <BaseLayout>
+  {/* Markdown-for-agents: advertise the raw-Markdown twin of this page. */}
+  <link slot="head" rel="alternate" type="text/markdown" href="/index.md" />
+
   <TopNav />
   <Hero />
   <WhyAgentX />

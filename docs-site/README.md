@@ -51,13 +51,24 @@ Commands (from `docs-site/`): `bun install` · `bun run dev` (→ http://localho
 ```
 docs-site/
 ├─ astro.config.mjs          Integrations (mermaid→mdx), Shiki, remark+rehype wiring, mermaid theme, site URL
+├─ vercel.json               Link headers (api-catalog/service-desc/service-doc/llms.txt) + .md content type
+├─ middleware.ts             ★ Vercel Routing Middleware: `Accept: text/markdown` → the page's .md twin (ADR-13)
+├─ scripts/
+│  ├─ distill-hero-run.mjs        Distills a real agent run into config/hero-run.json for the hero console
+│  └─ gen-markdown-manifest.mjs   Generates src/generated/markdown-manifest.ts (twin token estimates)
 ├─ src/
 │  ├─ styles/global.css      ★ THE TOKEN LAYER + .ax-prose / .ax-admon / .ax-toc / docs @media
 │  ├─ config/
 │  │  ├─ site.ts             Site metadata (name, description, repo, docsBasePath, copyright)
+│  │  ├─ landing.ts          Landing copy/data (FEATURES, PILLARS, HERO_STATS…) + product version
 │  │  └─ nav.ts              ★ Docs sidebar structure + helpers (slugToHref, groupForSlug, editUrlForSlug…)
 │  ├─ content.config.ts      `docs` collection: glob loader over content/docs
-│  ├─ content/docs/          ★ 27 migrated markdown files (untouched) — the actual docs content
+│  ├─ content/docs/          ★ 43 markdown files — the actual docs content
+│  ├─ content/homepage.md    The home page's Markdown twin (authored for agents; served at /index.md)
+│  ├─ lib/
+│  │  └─ markdown-negotiation.ts  Pure Accept q-value parsing + page→twin mapping (middleware's brain)
+│  ├─ generated/
+│  │  └─ markdown-manifest.ts     GENERATED — per-twin token estimates for `x-markdown-tokens`
 │  ├─ layouts/
 │  │  ├─ BaseLayout.astro    <html> shell, <head>, global.css + Geist <link> — used by every page
 │  │  └─ DocsLayout.astro    Docs shell: mobile top bar + drawer, breadcrumb, (Sidebar | article | TOC), article footer
@@ -70,8 +81,12 @@ docs-site/
 │  │     ├─ Search.astro           ⌘K box + Pagefind-backed modal
 │  │     └─ TableOfContents.astro  Right rail "On this page" (scroll-spy) + source/issue links
 │  ├─ pages/
-│  │  ├─ index.astro         ★ Bare landing at /  (the next design pass's hero/hub)
+│  │  ├─ index.astro         ★ The landing page at / (hero, why, subsystems, system map)
+│  │  ├─ index.md.ts         Serves content/homepage.md at /index.md (the home page's twin)
 │  │  ├─ docs/[...slug].astro Renders docs under /docs; computes last-edited (git) + edit URL
+│  │  ├─ docs/[...slug].md.ts Raw-Markdown twin of every docs page at /docs/<slug>.md
+│  │  ├─ llms.txt.ts         Agent-oriented index of the docs (llmstxt.org), linking the .md twins
+│  │  ├─ sitemap.xml.ts      Sitemap built from the nav tree
 │  │  └─ 404.astro           Custom not-found
 │  └─ plugins/
 │     ├─ remark-rewrite-md-links.mjs  Internal *.md links → /docs/... routes

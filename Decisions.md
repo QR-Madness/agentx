@@ -311,9 +311,51 @@ task-queue research (Procrastinate vs Celery/Huey/RQ).
 
 ---
 
+### ADR-13 — Markdown-for-agents is negotiated in Vercel Routing Middleware, not at Cloudflare
+**Decision:** `Accept: text/markdown` on any page URL returns that page's **authored** Markdown twin,
+served by `docs-site/middleware.ts` (Vercel Routing Middleware) rewriting to the static `.md` the
+build already emits. HTML stays the default. Three invariants hold this together:
+1. **`text/markdown` must be named explicitly to win.** Matching it through a wildcard would hand
+   Markdown to `Accept: */*` — curl, most crawlers, plenty of HTTP clients. The q-value comparison
+   in `src/lib/markdown-negotiation.ts` is the guard; its case table is the spec.
+2. **`middleware.ts`, never `proxy.ts`.** The middleware→proxy rename is a **Next.js 16** file
+   convention; this site is Astro (Vercel project `framework: null` → "Other"), where the platform
+   convention is still a root `middleware.ts` + `@vercel/functions`. A `proxy.ts` here is a file
+   Vercel never invokes — a silent no-op, the worst failure mode available.
+3. **Negotiation is by rule; the manifest is only a token lookup.** A stale
+   `src/generated/markdown-manifest.ts` costs the `x-markdown-tokens` header, never a wrong page,
+   and never a rewrite into a 404 (twin-less pages like the API explorer stay on HTML).
+**Why not Cloudflare's Content Converter** (the vendor-documented one-click option): `thejpnet.net`
+is on Cloudflare nameservers, but `agentx` is CNAME'd **DNS-only** straight to Vercel — Cloudflare's
+edge never sees this traffic and cannot convert it. Turning it on means orange-clouding the record
+(Cloudflare's edge in front of Vercel's: double CDN, double cache, header/redirect quirks) **and** a
+Pro plan, to get HTML converted *back* into Markdown — strictly worse than shipping the real source
+we already build. Revisit only if the zone gets proxied for other reasons.
+**Caveat:** middleware runs **before the cache**, so a rewrite lands on its own cache key
+(`/docs/x.md`) and cannot poison the HTML entry; `Vary: Accept` rides both branches for caches
+downstream. **`vercel.json` `headers` match the *requested* path, not the rewritten one** — proved on
+a preview by tagging the `/(.*).md` rule with a probe header that a direct `/docs/x.md` echoed and a
+negotiated `/docs/x` did not. Two consequences: the middleware's own `Content-Type` is load-bearing
+(nothing else sets it on a negotiated response), and that rule's `X-Robots-Tag: noindex` correctly
+does *not* reach the canonical URL — it exists to keep twin URLs out of search as duplicates. Don't
+set `X-Robots-Tag` from the middleware to "fix" a `noindex` seen on a preview: that one is Vercel's
+own preview-deployment header, and overriding it makes previews indexable.
+**Source:** this session; `docs-site/middleware.ts`; Cloudflare "Markdown for Agents" docs.
+
+---
+
 ## Rejected — do not relitigate
 
 Options weighed and declined (with the reason, so they don't return as "good ideas"):
+
+- **Cloudflare "Markdown for Agents" / orange-clouding the docs zone** — the subdomain is DNS-only to
+  Vercel; enabling it means a second CDN in front of Vercel plus a Pro plan, to convert HTML back to
+  Markdown we already publish from source. See ADR-13.
+- **`proxy.ts` for the docs site** — a Next.js 16 convention; on a non-Next Vercel project it is
+  never invoked. See ADR-13.
+- **A real BPE tokenizer for `x-markdown-tokens`** — `gpt-tokenizer` unpacks ~53MB for a number that
+  is an estimate regardless (every model tokenizes differently; Cloudflare's header is an estimate
+  too). A documented ~4-chars/token estimate carries the same signal at zero cost.
 
 - **DRF / drf-spectacular migration** — no serializers exist; it's a rewrite that documents nothing
   the spec-first posture doesn't already cover. See ADR-8 / Repo-Questions Q2.
