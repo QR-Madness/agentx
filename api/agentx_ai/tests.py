@@ -12801,6 +12801,187 @@ class AmbassadorServiceTest(TestCase):
                 f"deck ask wrote outside the ambassador sidecar: {key}",
             )
 
+    # --- v3: confirmed-write belt (proposal-only) ---------------------------------
+
+    def test_proposal_for_shapes_and_validation(self):
+        from agentx_ai.agent.ambassador_tools import proposal_for
+
+        p = proposal_for("rename_conversation", {"title": "Ledger Work"},
+                         focused_conversation_id="c1")
+        assert p is not None
+        self.assertEqual((p["action"], p["conversation_id"], p["title"]),
+                         ("rename", "c1", "Ledger Work"))
+        self.assertTrue(p["proposal_id"].startswith("prop_"))
+        # rename without a title is invalid
+        self.assertIsNone(proposal_for("rename_conversation", {}, focused_conversation_id="c1"))
+        # archive defaults to the focused conversation; unarchive flips the action
+        p = proposal_for("archive_conversation", {}, focused_conversation_id="c1")
+        assert p is not None
+        self.assertEqual(p["action"], "archive")
+        p = proposal_for("archive_conversation", {"unarchive": True}, focused_conversation_id="c1")
+        assert p is not None
+        self.assertEqual(p["action"], "unarchive")
+        # delete NEVER borrows the focused conversation — explicit id only
+        self.assertIsNone(proposal_for("delete_conversation", {}, focused_conversation_id="c1"))
+        p = proposal_for("delete_conversation", {"conversation_id": "c9"},
+                         focused_conversation_id="c1")
+        assert p is not None
+        self.assertEqual((p["action"], p["conversation_id"]), ("delete", "c9"))
+
+    def test_confirmed_write_tools_never_mutate(self):
+        # The belt files proposals; it must never touch the conversation_meta store
+        # (the write executes only in the user-confirmed HTTP endpoints).
+        from agentx_ai.agent import ambassador_tools as t
+
+        with patch("agentx_ai.agent.conversation_meta.set_title") as set_title, \
+                patch("agentx_ai.agent.conversation_meta.set_archived") as set_archived, \
+                patch("agentx_ai.agent.conversation_meta.delete_meta") as delete_meta:
+            out_rename = t.execute_tool(
+                "rename_conversation", {"title": "Ledger"}, focused_conversation_id="c1")
+            out_archive = t.execute_tool(
+                "archive_conversation", {}, focused_conversation_id="c1")
+            out_delete = t.execute_tool(
+                "delete_conversation", {"conversation_id": "c9"}, focused_conversation_id="c1")
+        set_title.assert_not_called()
+        set_archived.assert_not_called()
+        delete_meta.assert_not_called()
+        for out in (out_rename, out_archive, out_delete):
+            self.assertIn("awaiting the person's confirmation", out)
+        self.assertIn("Ledger", out_rename)
+
+    def test_confirmed_write_missing_args_return_notes(self):
+        from agentx_ai.agent import ambassador_tools as t
+
+        # No focused conversation and no explicit id → readable notes, nothing filed.
+        self.assertIn("missing", t.execute_tool(
+            "rename_conversation", {"title": "X"}, focused_conversation_id=""))
+        self.assertIn("explicit conversation_id", t.execute_tool(
+            "delete_conversation", {}, focused_conversation_id="c1"))
+
+    def test_agentic_loop_emits_proposal_and_stays_sidecar_clean(self):
+        # A confirmed-write round: the proposal event fires between call and result,
+        # the chip carries the proposal for replay, and — the INV-2 guard — every
+        # write still lands in the sidecar only (no PG exists here, so an accidental
+        # conversation_meta write would raise and trip the never-raise asserts).
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        calls = {"n": 0}
+
+        async def _stream(messages, model_id, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                yield StreamChunk(
+                    content="", finish_reason="tool_calls",
+                    tool_calls=[ToolCall(id="t1", name="rename_conversation",
+                                         arguments={"title": "Ledger Work"})],
+                )
+            else:
+                yield StreamChunk(
+                    content="I've proposed the rename — confirm it on screen.",
+                    finish_reason="stop",
+                )
+
+        provider, reg = self._streaming_provider(_stream)
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+                patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns", return_value=[]):
+            events = asyncio.run(_collect(svc.answer_question("conv", "qa10", "rename this")))
+            record = a.get_qa("conv", "qa10")
+
+        joined = "".join(events)
+        self.assertIn("ambassador_tool_proposal", joined)
+        self.assertIn('"action": "rename"', joined)
+        self.assertIn("Ledger Work", joined)
+        self.assertIn("ambassador_done", joined)
+        self.assertNotIn("ambassador_error", joined)
+        self.assertEqual(record["status"], "done")
+        written = set(fake.kv) | set(fake.sets)
+        self.assertTrue(written)
+        for key in written:
+            self.assertTrue(
+                key.startswith(self._SIDECAR_PREFIXES),
+                f"proposal turn wrote outside the ambassador sidecar: {key}",
+            )
+
+    # --- v3: read tools degrade + scope ------------------------------------------
+
+    def test_v3_read_tools_degrade_when_their_source_fails(self):
+        from agentx_ai.agent import ambassador_tools as t
+
+        with patch("agentx_ai.agent.conversation_state_storage.render_state_block",
+                   side_effect=RuntimeError("redis down")):
+            out = t.execute_tool("read_conversation_state", {}, focused_conversation_id="c1")
+        self.assertIn("read_conversation_state tool couldn't complete", out)
+
+        with patch("agentx_ai.agent.conversation_history.search_conversation_logs",
+                   side_effect=RuntimeError("pg down")):
+            out = t.execute_tool("search_conversations", {"query": "docker"},
+                                 focused_conversation_id="c1")
+        self.assertIn("search_conversations tool couldn't complete", out)
+
+        with patch("agentx_ai.agent.usage_ledger.aggregate_usage",
+                   side_effect=RuntimeError("pg down")):
+            out = t.execute_tool("usage_report", {}, focused_conversation_id="c1")
+        self.assertIn("usage_report tool couldn't complete", out)
+
+        # recall wraps its own degrade (friendlier note than the generic catch)
+        with patch("agentx_ai.kit.memory_utils.get_agent_memory",
+                   side_effect=RuntimeError("neo4j down")):
+            out = t.execute_tool("recall_memory", {"query": "metrics"},
+                                 focused_conversation_id="c1")
+        self.assertIn("Memory recall is unavailable", out)
+
+        # active runs: each half degrades independently → the warm empty state
+        with patch("agentx_ai.streaming.chat_run.store.list_runs",
+                   side_effect=RuntimeError("redis down")), \
+                patch("agentx_ai.background.chat_jobs.list_background_chats",
+                      side_effect=RuntimeError("redis down")):
+            out = t.execute_tool("list_active_runs", {}, focused_conversation_id="c1")
+        self.assertIn("No active runs", out)
+
+    def test_list_active_runs_scopes_to_the_plumbed_user(self):
+        from agentx_ai.agent import ambassador_tools as t
+
+        with patch("agentx_ai.streaming.chat_run.store.list_runs", return_value=[]) as runs, \
+                patch("agentx_ai.background.chat_jobs.list_background_chats",
+                      return_value=[]) as jobs:
+            t.execute_tool("list_active_runs", {}, focused_conversation_id="c1", user_id="u42")
+        self.assertEqual(runs.call_args.args[0], "u42")
+        self.assertEqual(jobs.call_args.args[0], "u42")
+
+    # --- v3: voice `tool` action ---------------------------------------------------
+
+    def test_parse_voice_command_tool_action(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        action, text, payload = AmbassadorService._parse_voice_command(
+            '{"action": "tool", "tool": "rename_conversation",'
+            ' "args": {"title": "Ledger"}, "text": "Proposing the rename."}'
+        )
+        self.assertEqual(action, "tool")
+        self.assertEqual(text, "Proposing the rename.")
+        self.assertEqual(payload, {"tool": "rename_conversation", "args": {"title": "Ledger"}})
+
+    def test_parse_voice_command_bogus_tool_degrades_to_answer(self):
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        action, text, payload = AmbassadorService._parse_voice_command(
+            '{"action": "tool", "tool": "explode_conversation", "args": {}, "text": "Boom?"}'
+        )
+        self.assertEqual(action, "answer")
+        self.assertEqual(text, "Boom?")
+        self.assertIsNone(payload)
+
 
 class _FakeConfigManager:
     """In-memory ConfigManager stand-in (dot-notation get/set + no-op save)."""
@@ -12948,6 +13129,120 @@ class AmbassadorDispatchEndpointTest(TestCase):
         self.assertIn("start fresh", fresh)
         relay = svc._build_draft_prompt(intent="look into X", context="", agent_name="Atlas", fresh=False)
         self.assertIn("message to Atlas", relay)
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint test; don't gate on local .env auth
+class ConversationMetaEndpointTest(TestCase):
+    """PATCH /api/memory/conversations/<id>/meta — the execution half of the
+    Ambassador's confirmed-write proposals (and manual rename/restore). The belt
+    itself never writes; only this user-confirmed endpoint does."""
+
+    def _patch(self, cid: str, body: dict):
+        return self.client.patch(
+            f"/api/memory/conversations/{cid}/meta",
+            data=json.dumps(body), content_type="application/json",
+        )
+
+    def test_requires_at_least_one_field(self):
+        self.assertEqual(self._patch("c1", {}).status_code, 400)
+
+    def test_title_validation(self):
+        self.assertEqual(self._patch("c1", {"title": ""}).status_code, 400)
+        self.assertEqual(self._patch("c1", {"title": "   "}).status_code, 400)
+        self.assertEqual(self._patch("c1", {"title": 42}).status_code, 400)
+        self.assertEqual(self._patch("c1", {"title": "x" * 300}).status_code, 400)
+
+    def test_archived_must_be_boolean(self):
+        self.assertEqual(self._patch("c1", {"archived": "yes"}).status_code, 400)
+
+    def test_rename_happy_path(self):
+        with patch("agentx_ai.agent.conversation_meta.set_title", return_value=True) as set_title:
+            res = self._patch("c1", {"title": "Ledger Work"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["title"], "Ledger Work")
+        set_title.assert_called_once_with("c1", "Ledger Work")
+
+    def test_archive_happy_path(self):
+        with patch("agentx_ai.agent.conversation_meta.set_archived", return_value=True) as set_arch:
+            res = self._patch("c1", {"archived": True})
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["archived"])
+        set_arch.assert_called_once_with("c1", True)
+
+    def test_write_failure_is_an_honest_503(self):
+        # A down Postgres must surface as an error — never a phantom success the
+        # confirm strip would report as applied.
+        with patch("agentx_ai.agent.conversation_meta.set_title", return_value=False):
+            res = self._patch("c1", {"title": "Ledger"})
+        self.assertEqual(res.status_code, 503)
+
+    def test_conversation_delete_drops_the_meta_row(self):
+        with patch("agentx_ai.agent.conversation_meta.delete_meta") as delete_meta:
+            res = self.client.delete("/api/memory/conversations/c9")
+        self.assertEqual(res.status_code, 200)
+        delete_meta.assert_called_once_with("c9")
+
+
+class _FakeSummaryCursor:
+    """Canned-cursor stand-in for the `_conversation_summaries` query pair."""
+
+    def __init__(self, rows, total):
+        self.rows, self.total, self.queries = rows, total, []
+
+    def execute(self, sql, params=None):
+        self.queries.append(sql)
+
+    def fetchall(self):
+        return self.rows
+
+    def fetchone(self):
+        return (self.total,)
+
+
+class ConversationSummariesTest(TestCase):
+    """The shared listing query: conversation_meta read-through (custom title
+    overlays the derived one; archived filter applies to rows AND the COUNT)."""
+
+    @staticmethod
+    def _row(cid="c1", first="hello there, long opener", custom=None, archived=False):
+        return (cid, None, None, 3, "_global", None, first, "latest words", custom, archived)
+
+    def test_custom_title_overrides_derived(self):
+        from agentx_ai.views import _conversation_summaries
+
+        cur = _FakeSummaryCursor([self._row(custom="Ledger Work")], 1)
+        rows, total = _conversation_summaries(cur)
+        self.assertEqual(rows[0]["title"], "Ledger Work")
+        self.assertEqual(total, 1)
+
+    def test_derived_title_when_no_custom(self):
+        from agentx_ai.views import _conversation_summaries
+
+        cur = _FakeSummaryCursor([self._row()], 1)
+        rows, _ = _conversation_summaries(cur)
+        self.assertEqual(rows[0]["title"], "hello there, long opener")
+        self.assertFalse(rows[0]["archived"])
+
+    def test_archived_flag_surfaces(self):
+        from agentx_ai.views import _conversation_summaries
+
+        cur = _FakeSummaryCursor([self._row(archived=True)], 1)
+        rows, _ = _conversation_summaries(cur, include_archived=True)
+        self.assertTrue(rows[0]["archived"])
+
+    def test_archived_filter_applies_to_rows_and_count(self):
+        from agentx_ai.views import _conversation_summaries
+
+        cur = _FakeSummaryCursor([], 0)
+        _conversation_summaries(cur)  # default: exclude archived
+        self.assertEqual(len(cur.queries), 2)  # rows + COUNT
+        for sql in cur.queries:
+            self.assertIn("COALESCE(cm.archived, FALSE) = FALSE", sql)
+
+        cur = _FakeSummaryCursor([], 0)
+        _conversation_summaries(cur, include_archived=True)
+        for sql in cur.queries:
+            self.assertNotIn("COALESCE(cm.archived, FALSE) = FALSE", sql)
 
 
 class PromptLayerStoreTest(TestCase):
