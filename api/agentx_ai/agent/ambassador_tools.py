@@ -470,6 +470,7 @@ def execute_tool(
     *,
     focused_conversation_id: str,
     agent_name: str = "",
+    user_id: str = "default",
 ) -> str:
     """Execute one ambassador tool, read-only. Returns a string for the model.
 
@@ -477,7 +478,8 @@ def execute_tool(
     (the subject the no-id tools default to) — not "the one active agent". Agent
     names come per-turn from the conversation itself (``metadata.agent_name``);
     ``agent_name`` is only a fallback label for unstamped turns of the focused
-    conversation. Never raises — a bad/unknown call returns a readable note so the
+    conversation. ``user_id`` scopes the user-keyed reads (active runs, memory
+    recall). Never raises — a bad/unknown call returns a readable note so the
     agentic loop stays alive."""
     args = arguments if isinstance(arguments, dict) else {}
     focused_label = (agent_name or "").strip()

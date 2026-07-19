@@ -784,12 +784,14 @@ class AmbassadorService:
         agent_name: str = "",
         artifacts: dict | None = None,
         active_conversation: dict | None = None,
+        user_id: str = "default",
     ) -> AsyncGenerator[str]:
         """Answer a free-form question about the conversation. Yields ``ambassador_*``
         SSE (keyed by ``qa_id`` in the ``message_id`` field, so the client pump is
         shared with briefings). The ambassador drives its read-only tool belt to look
         at the conversation (and the person's others) before answering. Never raises;
-        persists only to the Q&A sidecar."""
+        persists only to the Q&A sidecar. ``user_id`` scopes the user-keyed belt
+        reads (active runs, memory recall)."""
         cfg = self._config()
         run_id = self._current_run_id()
         self._maybe_autotitle(conversation_id, question)
@@ -840,6 +842,7 @@ class AmbassadorService:
             empty_text="(The ambassador had no answer.)",
             log_label="Q&A",
             agent_id=getattr(profile, "agent_id", None),
+            user_id=user_id,
         ):
             yield ev
 
@@ -862,6 +865,7 @@ class AmbassadorService:
         empty_text: str,
         log_label: str,
         agent_id: str | None = None,
+        user_id: str = "default",
     ) -> AsyncGenerator[str]:
         """The unified streaming agentic answer core (text Q&A + voice).
 
@@ -952,6 +956,7 @@ class AmbassadorService:
                         tc.arguments,
                         focused_conversation_id=conversation_id,
                         agent_name=agent_name,
+                        user_id=user_id,
                     )
                     messages.append(
                         Message(
@@ -1158,6 +1163,7 @@ class AmbassadorService:
         temperature: float,
         cfg: dict[str, Any],
         active_conversation: dict | None = None,
+        user_id: str = "default",
     ) -> str:
         """Run the agentic answer core to completion (persisting to the ``qa:``
         sidecar) and return the final spoken text. The voice path uses this so a
@@ -1194,6 +1200,7 @@ class AmbassadorService:
             empty_text="(The ambassador had no answer.)",
             log_label="voice Q&A",
             agent_id=getattr(profile, "agent_id", None),
+            user_id=user_id,
         )
         async for _ev in agen:  # consume the SSE (no client tail on the voice path)
             pass
@@ -1207,6 +1214,7 @@ class AmbassadorService:
         agent_name: str = "",
         artifacts: dict | None = None,
         active_conversation: dict | None = None,
+        user_id: str = "default",
     ) -> dict:
         """Interpret a spoken voice command: the ambassador first decides whether to
         **answer** it or draft a **relay** for the user to send. An *answer* is then
@@ -1290,7 +1298,7 @@ class AmbassadorService:
                 conversation_id=conversation_id, qa_id=qa_id, question=transcript,
                 agent_name=agent_name, artifacts=artifacts, profile=profile,
                 provider=provider, model_id=model_id, temperature=temperature, cfg=cfg,
-                active_conversation=active_conversation,
+                active_conversation=active_conversation, user_id=user_id,
             )
         except Exception as e:  # noqa: BLE001 — never break the call
             logger.warning(f"Ambassador voice answer failed: {e}")

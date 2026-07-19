@@ -3448,6 +3448,7 @@ def ambassador_ask(request):
             agent_name=agent_name,
             artifacts=artifacts,
             active_conversation=active_conversation,
+            user_id=_bg_user_id(request),
         )
 
     run_id = start_chat_run(
@@ -3769,7 +3770,7 @@ async def ambassador_voice_command(request):
 
     result = await get_ambassador().route_voice_command(
         conversation_id, transcript, agent_name=agent_name, artifacts=artifacts,
-        active_conversation=active_conversation,
+        active_conversation=active_conversation, user_id=_bg_user_id(request),
     )
     return JsonResponse(result)
 
