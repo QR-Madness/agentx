@@ -370,6 +370,103 @@ def list_recent_conversations(
         return []
 
 
+def search_conversation_logs(
+    query: str,
+    *,
+    limit: int = 8,
+    per_conversation: int = 2,
+    include_archived: bool = False,
+) -> list[dict]:
+    """Lexical full-text search over ``conversation_logs`` (the 0008 GIN index).
+
+    ``websearch_to_tsquery('simple', …)`` semantics: bare words AND together,
+    ``"quoted phrases"`` match adjacently, ``-word`` negates. Groups hits by
+    conversation (best-rank order), keeping ``per_conversation`` snippet(s) per
+    conversation with ``**bold**`` markdown match markers. Returns
+    ``[{conversation_id, title, last_at, agents, snippets: [{role, snippet}]}]``.
+    Read-only, never raises — empty on error/no match.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    limit = min(max(1, limit), 20)
+    per_conversation = min(max(1, per_conversation), 5)
+    try:
+        from ..kit.agent_memory.connections import PostgresConnection
+
+        conn: Any = PostgresConnection.get_engine().raw_connection()
+        try:
+            with conn.cursor() as cur:
+                # (%s OR NOT archived) — same bound-flag idiom as the lister.
+                # ts_headline recomputes only on the <= limit*per_conversation
+                # rows that survive; the GIN expression index answers the @@.
+                cur.execute(
+                    """
+                    WITH q AS (SELECT websearch_to_tsquery('simple', %s) AS tsq),
+                    hits AS (
+                        SELECT cl.conversation_id, cl.role, cl.content,
+                               ts_rank(to_tsvector('simple', cl.content), q.tsq) AS rank,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY cl.conversation_id
+                                   ORDER BY ts_rank(to_tsvector('simple', cl.content), q.tsq) DESC,
+                                            cl.turn_index DESC
+                               ) AS rn
+                        FROM conversation_logs cl CROSS JOIN q
+                        WHERE to_tsvector('simple', cl.content) @@ q.tsq
+                    ),
+                    ranked_convs AS (
+                        SELECT h.conversation_id, MAX(h.rank) AS best_rank
+                        FROM hits h
+                        LEFT JOIN conversation_meta cm
+                               ON cm.conversation_id = h.conversation_id::text
+                        WHERE (%s OR COALESCE(cm.archived, FALSE) = FALSE)
+                        GROUP BY h.conversation_id
+                        ORDER BY best_rank DESC
+                        LIMIT %s
+                    )
+                    SELECT
+                        h.conversation_id::text,
+                        h.role,
+                        ts_headline('simple', h.content, q.tsq,
+                                    'MaxWords=18,MinWords=6,MaxFragments=2,'
+                                    'FragmentDelimiter= … ,StartSel=**,StopSel=**') AS snippet,
+                        (SELECT MAX(s.timestamp) FROM conversation_logs s
+                         WHERE s.conversation_id = h.conversation_id) AS last_at,
+                        (SELECT cm2.title FROM conversation_meta cm2
+                         WHERE cm2.conversation_id = h.conversation_id::text) AS title,
+                        (SELECT string_agg(DISTINCT s.metadata->>'agent_name', ', ')
+                         FROM conversation_logs s
+                         WHERE s.conversation_id = h.conversation_id
+                           AND s.role = 'assistant'
+                           AND s.metadata->>'agent_name' IS NOT NULL) AS agents
+                    FROM hits h
+                    JOIN ranked_convs rc ON rc.conversation_id = h.conversation_id
+                    CROSS JOIN q
+                    WHERE h.rn <= %s
+                    ORDER BY rc.best_rank DESC, h.conversation_id, h.rn
+                    """,
+                    (q, include_archived, limit, per_conversation),
+                )
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        grouped: dict[str, dict] = {}
+        for cid, role, snippet, last_at, title, agents in rows:
+            entry = grouped.setdefault(cid, {
+                "conversation_id": cid,
+                "title": title or "",
+                "last_at": str(last_at) if last_at is not None else "",
+                "agents": agents or "",
+                "snippets": [],
+            })
+            entry["snippets"].append({"role": role or "", "snippet": snippet or ""})
+        return list(grouped.values())
+    except Exception as e:  # pragma: no cover - DB offline / index missing
+        logger.debug(f"conversation search failed: {e}")
+        return []
+
+
 def load_recent_turns(
     conversation_id: str,
     *,

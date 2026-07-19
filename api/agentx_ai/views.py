@@ -6800,33 +6800,17 @@ def usage_metrics(request):
 
     try:
         from sqlalchemy import text
+        from .agent.usage_ledger import aggregate_usage
         from .kit.agent_memory.connections import get_postgres_session
 
-        # Foundation #5: usage now aggregates the unified `usage_events` ledger
-        # (chat + alloy + ambassador + voice), not just conversation_logs. Units
-        # are JSONB so token rows and audio rows coexist; audio rows contribute 0
-        # tokens. Latency isn't a spend metric (and the ledger has none), so it's
-        # still read from conversation_logs separately.
-        tokens_in = "COALESCE((units->>'tokens_in')::int, 0)"
-        tokens_out = "COALESCE((units->>'tokens_out')::int, 0)"
-        tokens_total = "COALESCE((units->>'tokens_total')::int, 0)"
-        cost = "COALESCE(cost_total, 0)"
-        window = "ts >= NOW() - (:days || ' days')::interval"
+        # Foundation #5: usage aggregates the unified `usage_events` ledger
+        # (chat + alloy + ambassador + voice) via the shared aggregate_usage
+        # helper (also behind the Ambassador's usage_report belt tool). Latency
+        # isn't a spend metric (and the ledger has none), so it's still read
+        # from conversation_logs separately here.
+        report = aggregate_usage(days)
 
         with get_postgres_session() as session:
-            totals_row = session.execute(text(f"""
-                SELECT
-                    COUNT(*) AS turns,
-                    SUM({tokens_in}) AS tokens_input,
-                    SUM({tokens_out}) AS tokens_output,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total,
-                    MAX(currency) AS cost_currency
-                FROM usage_events
-                WHERE {window}
-            """), {"days": days}).mappings().first() or {}
-
-            # Latency lives with the transcript, not the spend ledger.
             avg_latency = session.execute(text("""
                 SELECT AVG((metadata->>'latency_ms')::float) AS avg_latency_ms
                 FROM conversation_logs
@@ -6834,94 +6818,8 @@ def usage_metrics(request):
                   AND timestamp >= NOW() - (:days || ' days')::interval
             """), {"days": days}).scalar()
 
-            by_model_rows = session.execute(text(f"""
-                SELECT
-                    COALESCE(model, 'unknown') AS model,
-                    COUNT(*) AS turns,
-                    SUM({tokens_in}) AS tokens_input,
-                    SUM({tokens_out}) AS tokens_output,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total
-                FROM usage_events
-                WHERE {window}
-                GROUP BY COALESCE(model, 'unknown')
-                ORDER BY cost_total DESC, tokens_total DESC
-            """), {"days": days}).mappings().all()
-
-            by_agent_rows = session.execute(text(f"""
-                SELECT
-                    COALESCE(agent_id, '_default') AS agent_id,
-                    COUNT(*) AS turns,
-                    SUM({tokens_in}) AS tokens_input,
-                    SUM({tokens_out}) AS tokens_output,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total
-                FROM usage_events
-                WHERE {window}
-                GROUP BY COALESCE(agent_id, '_default')
-                ORDER BY cost_total DESC, tokens_total DESC
-            """), {"days": days}).mappings().all()
-
-            by_source_rows = session.execute(text(f"""
-                SELECT
-                    source,
-                    COUNT(*) AS turns,
-                    SUM({tokens_in}) AS tokens_input,
-                    SUM({tokens_out}) AS tokens_output,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total
-                FROM usage_events
-                WHERE {window}
-                GROUP BY source
-                ORDER BY cost_total DESC, turns DESC
-            """), {"days": days}).mappings().all()
-
-            daily_rows = session.execute(text(f"""
-                SELECT
-                    to_char(date_trunc('day', ts), 'YYYY-MM-DD') AS date,
-                    COUNT(*) AS turns,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total
-                FROM usage_events
-                WHERE {window}
-                GROUP BY date_trunc('day', ts)
-                ORDER BY date_trunc('day', ts)
-            """), {"days": days}).mappings().all()
-
-        def _tok_row(r, key):
-            return {
-                key: r[key],
-                "turns": int(r["turns"] or 0),
-                "tokens_input": int(r["tokens_input"] or 0),
-                "tokens_output": int(r["tokens_output"] or 0),
-                "tokens_total": int(r["tokens_total"] or 0),
-                "cost_total": round(float(r["cost_total"] or 0.0), 6),
-            }
-
-        return JsonResponse({
-            "totals": {
-                "turns": int(totals_row["turns"] or 0),
-                "tokens_input": int(totals_row["tokens_input"] or 0),
-                "tokens_output": int(totals_row["tokens_output"] or 0),
-                "tokens_total": int(totals_row["tokens_total"] or 0),
-                "cost_total": round(float(totals_row["cost_total"] or 0.0), 6),
-                "cost_currency": totals_row["cost_currency"] or "USD",
-                "avg_latency_ms": round(float(avg_latency or 0.0), 1),
-            },
-            "by_model": [_tok_row(r, "model") for r in by_model_rows],
-            "by_agent": [_tok_row(r, "agent_id") for r in by_agent_rows],
-            "by_source": [_tok_row(r, "source") for r in by_source_rows],
-            "daily": [
-                {
-                    "date": r["date"],
-                    "turns": int(r["turns"] or 0),
-                    "tokens_total": int(r["tokens_total"] or 0),
-                    "cost_total": round(float(r["cost_total"] or 0.0), 6),
-                }
-                for r in daily_rows
-            ],
-            "days": days,
-        })
+        report["totals"]["avg_latency_ms"] = round(float(avg_latency or 0.0), 1)
+        return JsonResponse(report)
 
     except Exception as e:
         logger.warning(f"Usage metrics unavailable (database may be offline): {e}")

@@ -110,3 +110,127 @@ def record_usage(
             session.commit()
     except Exception as e:  # noqa: BLE001 — metering is best-effort, never break a turn
         logger.debug(f"usage_ledger record failed (source={source}, model={model}): {e}")
+
+
+def _tok_row(r: Any, key: str) -> dict[str, Any]:  # RowMapping | Mapping
+    return {
+        key: r[key],
+        "turns": int(r["turns"] or 0),
+        "tokens_input": int(r["tokens_input"] or 0),
+        "tokens_output": int(r["tokens_output"] or 0),
+        "tokens_total": int(r["tokens_total"] or 0),
+        "cost_total": round(float(r["cost_total"] or 0.0), 6),
+    }
+
+
+def aggregate_usage(days: int, *, conversation_id: str | None = None) -> dict[str, Any]:
+    """Aggregate the ledger over the last ``days`` days (clamped 1-90), optionally
+    scoped to one conversation. Returns ``{totals, by_model, by_agent, by_source,
+    daily, days}`` — the shared read behind ``/metrics/usage`` and the Ambassador's
+    ``usage_report`` belt tool. Raises on DB failure (callers own their degrade).
+
+    The SQL stays fully static (this module is not S608-exempt): the token
+    expressions are inlined per query and the optional conversation scope binds a
+    nullable param.
+    """
+    days = max(1, min(int(days), 90))
+    from sqlalchemy import text
+
+    from ..kit.agent_memory.connections import get_postgres_session
+
+    params = {"days": days, "cid": conversation_id}
+    with get_postgres_session() as session:
+        totals_row = session.execute(text("""
+            SELECT
+                COUNT(*) AS turns,
+                SUM(COALESCE((units->>'tokens_in')::int, 0)) AS tokens_input,
+                SUM(COALESCE((units->>'tokens_out')::int, 0)) AS tokens_output,
+                SUM(COALESCE((units->>'tokens_total')::int, 0)) AS tokens_total,
+                SUM(COALESCE(cost_total, 0)) AS cost_total,
+                MAX(currency) AS cost_currency
+            FROM usage_events
+            WHERE ts >= NOW() - (:days || ' days')::interval
+              AND (CAST(:cid AS TEXT) IS NULL OR conversation_id = :cid)
+        """), params).mappings().first() or {}
+
+        by_model_rows = session.execute(text("""
+            SELECT
+                COALESCE(model, 'unknown') AS model,
+                COUNT(*) AS turns,
+                SUM(COALESCE((units->>'tokens_in')::int, 0)) AS tokens_input,
+                SUM(COALESCE((units->>'tokens_out')::int, 0)) AS tokens_output,
+                SUM(COALESCE((units->>'tokens_total')::int, 0)) AS tokens_total,
+                SUM(COALESCE(cost_total, 0)) AS cost_total
+            FROM usage_events
+            WHERE ts >= NOW() - (:days || ' days')::interval
+              AND (CAST(:cid AS TEXT) IS NULL OR conversation_id = :cid)
+            GROUP BY COALESCE(model, 'unknown')
+            ORDER BY cost_total DESC, tokens_total DESC
+        """), params).mappings().all()
+
+        by_agent_rows = session.execute(text("""
+            SELECT
+                COALESCE(agent_id, '_default') AS agent_id,
+                COUNT(*) AS turns,
+                SUM(COALESCE((units->>'tokens_in')::int, 0)) AS tokens_input,
+                SUM(COALESCE((units->>'tokens_out')::int, 0)) AS tokens_output,
+                SUM(COALESCE((units->>'tokens_total')::int, 0)) AS tokens_total,
+                SUM(COALESCE(cost_total, 0)) AS cost_total
+            FROM usage_events
+            WHERE ts >= NOW() - (:days || ' days')::interval
+              AND (CAST(:cid AS TEXT) IS NULL OR conversation_id = :cid)
+            GROUP BY COALESCE(agent_id, '_default')
+            ORDER BY cost_total DESC, tokens_total DESC
+        """), params).mappings().all()
+
+        by_source_rows = session.execute(text("""
+            SELECT
+                source,
+                COUNT(*) AS turns,
+                SUM(COALESCE((units->>'tokens_in')::int, 0)) AS tokens_input,
+                SUM(COALESCE((units->>'tokens_out')::int, 0)) AS tokens_output,
+                SUM(COALESCE((units->>'tokens_total')::int, 0)) AS tokens_total,
+                SUM(COALESCE(cost_total, 0)) AS cost_total
+            FROM usage_events
+            WHERE ts >= NOW() - (:days || ' days')::interval
+              AND (CAST(:cid AS TEXT) IS NULL OR conversation_id = :cid)
+            GROUP BY source
+            ORDER BY cost_total DESC, turns DESC
+        """), params).mappings().all()
+
+        daily_rows = session.execute(text("""
+            SELECT
+                to_char(date_trunc('day', ts), 'YYYY-MM-DD') AS date,
+                COUNT(*) AS turns,
+                SUM(COALESCE((units->>'tokens_total')::int, 0)) AS tokens_total,
+                SUM(COALESCE(cost_total, 0)) AS cost_total
+            FROM usage_events
+            WHERE ts >= NOW() - (:days || ' days')::interval
+              AND (CAST(:cid AS TEXT) IS NULL OR conversation_id = :cid)
+            GROUP BY date_trunc('day', ts)
+            ORDER BY date_trunc('day', ts)
+        """), params).mappings().all()
+
+    return {
+        "totals": {
+            "turns": int(totals_row["turns"] or 0) if totals_row else 0,
+            "tokens_input": int(totals_row["tokens_input"] or 0) if totals_row else 0,
+            "tokens_output": int(totals_row["tokens_output"] or 0) if totals_row else 0,
+            "tokens_total": int(totals_row["tokens_total"] or 0) if totals_row else 0,
+            "cost_total": round(float(totals_row["cost_total"] or 0.0), 6) if totals_row else 0.0,
+            "cost_currency": (totals_row.get("cost_currency") or "USD") if totals_row else "USD",
+        },
+        "by_model": [_tok_row(r, "model") for r in by_model_rows],
+        "by_agent": [_tok_row(r, "agent_id") for r in by_agent_rows],
+        "by_source": [_tok_row(r, "source") for r in by_source_rows],
+        "daily": [
+            {
+                "date": r["date"],
+                "turns": int(r["turns"] or 0),
+                "tokens_total": int(r["tokens_total"] or 0),
+                "cost_total": round(float(r["cost_total"] or 0.0), 6),
+            }
+            for r in daily_rows
+        ],
+        "days": days,
+    }

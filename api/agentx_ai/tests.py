@@ -12639,6 +12639,9 @@ class AmbassadorServiceTest(TestCase):
         read_only = {
             "summarize_conversation", "explore_conversation", "read_conversation",
             "list_conversations", "survey_conversations", "list_agents",
+            # v3 reads — SELECT-only over state/logs/runs/ledger/memory:
+            "read_conversation_state", "search_conversations", "list_active_runs",
+            "usage_report", "recall_memory",
         }
         self_scoped_writes = {"rename_inquiry"}
         self.assertEqual(t.TOOL_NAMES, read_only | self_scoped_writes)
