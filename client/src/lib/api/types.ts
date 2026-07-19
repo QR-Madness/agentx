@@ -377,12 +377,15 @@ export interface ActiveChatRun {
 
 export interface ConversationSummary {
   conversation_id: string;
+  /** Custom title (conversation_meta) when set, else derived from the first user message. */
   title: string;
   preview: string;
   message_count: number;
   channel: string;
   /** The project (workspace) this conversation belongs to, if any. */
   workspace_id?: string | null;
+  /** Archived conversations are excluded from listings unless include_archived is passed. */
+  archived?: boolean;
   created_at: string | null;
   last_message_at: string | null;
 }

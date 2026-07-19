@@ -312,6 +312,81 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "rename_conversation",
+            "description": (
+                "PROPOSE renaming a conversation (not your Inquiry — the person's actual "
+                "conversation) to a clearer title. This only files a proposal: nothing "
+                "changes until the person confirms it on screen. Omit conversation_id for "
+                "the active conversation. For titling THIS Inquiry thread, use "
+                "rename_inquiry instead."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "The proposed conversation title (a few words).",
+                    },
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "The conversation to rename; omit for the active one.",
+                    },
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "archive_conversation",
+            "description": (
+                "PROPOSE archiving a conversation (or restoring one with unarchive=true). "
+                "Archived conversations leave the recents and surveys but are never "
+                "deleted. This only files a proposal: nothing changes until the person "
+                "confirms it on screen. Omit conversation_id for the active conversation."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "The conversation to archive; omit for the active one.",
+                    },
+                    "unarchive": {
+                        "type": "boolean",
+                        "description": "true to restore an archived conversation instead.",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_conversation",
+            "description": (
+                "PROPOSE permanently deleting a conversation and its stored turns. "
+                "Destructive and irreversible, so conversation_id is REQUIRED — never "
+                "guess it; read or list first. This only files a proposal: nothing is "
+                "deleted until the person explicitly confirms on screen. Prefer "
+                "archive_conversation unless the person clearly wants deletion."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "The conversation to delete (required — no default).",
+                    }
+                },
+                "required": ["conversation_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "recall_memory",
             "description": (
                 "Ask the agents' long-term memory what they actually KNOW about something — "
@@ -342,6 +417,61 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 TOOL_NAMES = {t["function"]["name"] for t in TOOL_SCHEMAS}
+
+# The confirmed-write class: conversation-meta writes (rename/archive/delete).
+# The belt NEVER executes these — a call only files a *proposal* (see
+# ``proposal_for``); the write happens solely in the user-confirmed HTTP
+# endpoints (PATCH /memory/conversations/<id>/meta, DELETE /memory/conversations/<id>)
+# after the person clicks Confirm. INV-2 stays intact: no store_turn, no
+# conv_summary: authorship, nothing mutated from the loop.
+CONFIRMED_WRITE_TOOLS = {"rename_conversation", "archive_conversation", "delete_conversation"}
+
+
+def proposal_for(
+    name: str, arguments: dict[str, Any], *, focused_conversation_id: str
+) -> dict[str, Any] | None:
+    """Validate a confirmed-write tool call into a proposal payload the client
+    can render as a confirm strip — or ``None`` when the call is invalid
+    (missing id/title). Pure: builds a dict, touches nothing.
+
+    Payload: ``{proposal_id, action, conversation_id, title?}`` with
+    ``action ∈ rename|archive|unarchive|delete``.
+    """
+    import uuid
+
+    args = arguments if isinstance(arguments, dict) else {}
+    if name == "rename_conversation":
+        title = (args.get("title") or "").strip()
+        cid = (args.get("conversation_id") or "").strip() or focused_conversation_id
+        if not title or not cid:
+            return None
+        return {
+            "proposal_id": f"prop_{uuid.uuid4().hex[:12]}",
+            "action": "rename",
+            "conversation_id": cid,
+            "title": title[:200],
+        }
+    if name == "archive_conversation":
+        cid = (args.get("conversation_id") or "").strip() or focused_conversation_id
+        if not cid:
+            return None
+        action = "unarchive" if bool(args.get("unarchive")) else "archive"
+        return {
+            "proposal_id": f"prop_{uuid.uuid4().hex[:12]}",
+            "action": action,
+            "conversation_id": cid,
+        }
+    if name == "delete_conversation":
+        # Destructive ⇒ explicit id only — never default to the focused conversation.
+        cid = (args.get("conversation_id") or "").strip()
+        if not cid:
+            return None
+        return {
+            "proposal_id": f"prop_{uuid.uuid4().hex[:12]}",
+            "action": "delete",
+            "conversation_id": cid,
+        }
+    return None
 
 
 # --- Read helpers ------------------------------------------------------------
@@ -943,6 +1073,35 @@ def execute_tool(
                 top_k = 6
             channel = (args.get("channel") or "").strip()
             return _render_recall(query, max(1, min(top_k, 12)), channel, user_id)
+        if name in CONFIRMED_WRITE_TOOLS:
+            # Proposal-only: NOTHING is executed here. The loop emits the proposal
+            # to the client (confirm strip); the write lands via the user-confirmed
+            # HTTP endpoints. The returned string is what the model reads.
+            proposal = proposal_for(
+                name, args, focused_conversation_id=focused_conversation_id
+            )
+            if proposal is None:
+                if name == "delete_conversation":
+                    return (
+                        "(delete_conversation needs an explicit conversation_id — "
+                        "never guess one; list or read first.)"
+                    )
+                return (
+                    f"({name} is missing what it needs — a conversation to act on"
+                    " (and a title, for a rename).)"
+                )
+            action = proposal["action"]
+            cid = proposal["conversation_id"]
+            if action == "rename":
+                summary = f"renaming conversation {cid} to \"{proposal['title']}\""
+            elif action == "delete":
+                summary = f"permanently deleting conversation {cid}"
+            else:
+                summary = f"{action[:-1]}ing conversation {cid}"  # archiv/unarchiv+ing
+            return (
+                f"(Proposed {summary} — awaiting the person's confirmation on screen. "
+                "Tell them what you proposed and stop; do not assume it happened.)"
+            )
     except Exception as e:  # noqa: BLE001 — a tool never breaks the loop
         logger.warning(f"ambassador tool '{name}' failed: {e}")
         return f"(The {name} tool couldn't complete: {str(e)[:160]})"

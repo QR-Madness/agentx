@@ -12644,7 +12644,17 @@ class AmbassadorServiceTest(TestCase):
             "usage_report", "recall_memory",
         }
         self_scoped_writes = {"rename_inquiry"}
-        self.assertEqual(t.TOOL_NAMES, read_only | self_scoped_writes)
+        # v3 conversation-meta writes: PROPOSAL-ONLY in the belt (execute_tool
+        # never mutates); the write executes solely in the user-confirmed HTTP
+        # endpoints (PATCH /memory/conversations/<id>/meta + DELETE). INV-2 holds.
+        confirmed_conversation_meta_writes = {
+            "rename_conversation", "archive_conversation", "delete_conversation",
+        }
+        self.assertEqual(
+            t.TOOL_NAMES,
+            read_only | self_scoped_writes | confirmed_conversation_meta_writes,
+        )
+        self.assertEqual(t.CONFIRMED_WRITE_TOOLS, confirmed_conversation_meta_writes)
 
     def test_execute_tool_degrades_when_a_read_fails(self):
         # Never-raise at the belt boundary covers the read itself: a dead store

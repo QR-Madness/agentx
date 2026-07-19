@@ -14,11 +14,14 @@ export const historyApi = {
     limit?: number;
     offset?: number;
     channel?: string;
+    /** Include archived conversations (excluded by default). */
+    includeArchived?: boolean;
   }): Promise<ConversationListResponse> {
     const searchParams = new URLSearchParams();
     if (params?.limit) searchParams.set('limit', String(params.limit));
     if (params?.offset) searchParams.set('offset', String(params.offset));
     if (params?.channel) searchParams.set('channel', params.channel);
+    if (params?.includeArchived) searchParams.set('include_archived', '1');
     const qs = searchParams.toString();
     return apiRequest(`/api/conversations${qs ? `?${qs}` : ''}`);
   },
@@ -48,6 +51,19 @@ export const historyApi = {
   async deleteConversation(conversationId: string): Promise<{ message: string; deleted: Record<string, number> }> {
     return apiRequest(`/api/memory/conversations/${encodeURIComponent(conversationId)}`, {
       method: 'DELETE',
+    });
+  },
+
+  /** Set user-set conversation metadata: a custom title and/or the archived flag.
+   *  The execution half of the Ambassador's confirmed-write proposals, and the
+   *  manual rename/restore actions. */
+  async patchConversationMeta(
+    conversationId: string,
+    meta: { title?: string; archived?: boolean },
+  ): Promise<{ conversation_id: string; title?: string; archived?: boolean }> {
+    return apiRequest(`/api/memory/conversations/${encodeURIComponent(conversationId)}/meta`, {
+      method: 'PATCH',
+      body: JSON.stringify(meta),
     });
   },
 

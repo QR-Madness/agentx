@@ -196,7 +196,11 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     }
     for (const conv of serverConversations) {
       if (openSessionIds.has(conv.conversation_id)) continue;
-      const meta = getMeta(conv.conversation_id);
+      const localMeta = getMeta(conv.conversation_id);
+      // The server's durable archived flag (conversation_meta — settable via the
+      // Ambassador's confirmed writes) folds into the local flag so either source
+      // routes the row into the Archived section; restore clears both.
+      const meta = conv.archived ? { ...localMeta, archived: true } : localMeta;
       out.push({
         key: conv.conversation_id, kind: 'server', title: meta.title ?? conv.title, meta,
         lastMessageAt: conv.last_message_at, messageCount: conv.message_count,
@@ -365,6 +369,11 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
     if (next) {
       if (it.kind === 'tab' && it.tabId) renameTab(it.tabId, next);
       else setTitleOverride(it.key, next);
+      // Durable server-side title (conversation_meta) for real conversations —
+      // the same store the Ambassador's confirmed renames write. Best-effort.
+      if (it.conversationId) {
+        void api.patchConversationMeta(it.conversationId, { title: next }).catch(() => undefined);
+      }
     }
     setEditingKey(null);
   }, [renameTab]);
@@ -387,6 +396,9 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
       }
       if (it.kind === 'tab' && it.tabId) renameTab(it.tabId, title);
       else setTitleOverride(it.key, title);
+      if (it.conversationId) {
+        void api.patchConversationMeta(it.conversationId, { title }).catch(() => undefined);
+      }
     } catch (err) {
       notifyError(err, 'Could not auto-title');
     } finally {
@@ -403,7 +415,18 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
 
   // --- Management mutators (patchMeta is module-level, so these are stable) ---
   const togglePin = useCallback((it: ConversationItem) => patchMeta(it.key, { pinned: !it.meta.pinned }), []);
-  const toggleArchive = useCallback((it: ConversationItem) => patchMeta(it.key, { archived: !it.meta.archived }), []);
+  // Archive is server-backed for real conversations (conversation_meta) so the
+  // flag is durable and the Ambassador's survey/search respect it; local meta
+  // keeps the instant UI + pre-session tabs. Best-effort write-through.
+  const toggleArchive = useCallback((it: ConversationItem) => {
+    const next = !it.meta.archived;
+    patchMeta(it.key, { archived: next });
+    if (it.conversationId) {
+      void api.patchConversationMeta(it.conversationId, { archived: next })
+        .then(() => refreshHistory())
+        .catch(() => undefined);
+    }
+  }, [refreshHistory]);
   const setGroup = useCallback((it: ConversationItem, group: string | undefined) => patchMeta(it.key, { group }), []);
 
   // Move a conversation into/out of a project. Meta updates immediately (drives
@@ -438,7 +461,16 @@ export function useConversationList({ onActivated, autoFocusSearch = true }: Use
   const clearSelection = useCallback(() => { setSelectionMode(false); setSelected(new Set()); }, []);
 
   const bulkPin = useCallback(() => { selected.forEach(k => patchMeta(k, { pinned: true })); clearSelection(); }, [selected, clearSelection]);
-  const bulkArchive = useCallback(() => { selected.forEach(k => patchMeta(k, { archived: true })); clearSelection(); }, [selected, clearSelection]);
+  const bulkArchive = useCallback(() => {
+    selected.forEach(k => {
+      patchMeta(k, { archived: true });
+      const it = itemByKey.get(k);
+      if (it?.conversationId) {
+        void api.patchConversationMeta(it.conversationId, { archived: true }).catch(() => undefined);
+      }
+    });
+    clearSelection();
+  }, [selected, clearSelection, itemByKey]);
   const bulkDelete = useCallback(async () => {
     const keys = [...selected];
     if (keys.length === 0) return;

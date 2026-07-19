@@ -244,18 +244,26 @@ def _voice_command_persona(agent_name: str = "") -> str:
         f"conversation with their AI agent ({agent_ref}). They just spoke to you. Decide what "
         "they want and respond with ONLY a JSON object — nothing else.\n\n"
 
-        "Two possible actions:\n"
+        "Three possible actions:\n"
         '- "answer" — they are asking YOU a question, or want information/explanation ABOUT the '
         "conversation (what happened, what the agent found or did, a clarification). You answer it "
         "yourself, grounded only in the conversation.\n"
         f'- "relay" — they are giving an instruction meant for {agent_ref}: something they want it '
         'to DO, or a message to pass along ("tell it to…", "ask the agent to…", "have it use X"). '
-        "You turn it into a clear first-person message FROM the person TO the agent, ready to send.\n\n"
+        "You turn it into a clear first-person message FROM the person TO the agent, ready to send.\n"
+        '- "tool" — they are asking you to MANAGE a conversation itself: rename it, archive or '
+        "restore it, or delete it. You file a proposal they confirm on screen; nothing happens "
+        "until they confirm.\n\n"
 
-        'Respond with exactly: {"action": "answer" | "relay", "text": "..."}\n'
+        'Respond with exactly: {"action": "answer" | "relay" | "tool", "text": "..."}\n'
         '- For "answer": "text" is your spoken reply — plain, conversational, no markdown, no lists.\n'
         '- For "relay": "text" is the first-person message to the agent — direct, ready to send, no '
         "preamble or quotation marks.\n"
+        '- For "tool": add "tool": "rename_conversation" | "archive_conversation" | '
+        '"delete_conversation" and "args": {"title": "..."} for a rename (add '
+        '"conversation_id" only if they named another conversation; "unarchive": true to '
+        'restore). "text" is your short spoken say-back, e.g. "Proposing the rename — confirm '
+        'it on screen."\n'
         f"You CAN relay messages to {agent_ref} — any instruction or request directed at it (even an "
         'implicit one) is a "relay"; never refuse it or answer that you "can\'t talk to the agent". '
         'Only choose "answer" when they are genuinely asking YOU about the conversation. When truly '
@@ -888,7 +896,12 @@ class AmbassadorService:
         grounded one-shot over ``fallback_messages``. SSE/persist callbacks mirror
         ``_stream_and_settle`` so the client pump is identical; a tool-round's preamble
         is superseded by the authoritative ``ambassador_done`` (and ``on_done``)."""
-        from .ambassador_tools import TOOL_SCHEMAS, execute_tool
+        from .ambassador_tools import (
+            CONFIRMED_WRITE_TOOLS,
+            TOOL_SCHEMAS,
+            execute_tool,
+            proposal_for,
+        )
 
         settled = False
         # Accumulated tool-call chips, persisted onto the entry as they happen so they
@@ -953,12 +966,29 @@ class AmbassadorService:
                     )
                 )
                 for tc in round_calls:
-                    tool_chips.append({"tool": tc.name, "args": tc.arguments, "done": False})
+                    # Confirmed-write tools file a *proposal* (the belt never
+                    # executes them) — stamp it on the chip so the Text-tab replay
+                    # can rebuild the confirm strip, and emit it as its own event.
+                    proposal = None
+                    if tc.name in CONFIRMED_WRITE_TOOLS:
+                        proposal = proposal_for(
+                            tc.name, tc.arguments,
+                            focused_conversation_id=conversation_id,
+                        )
+                    chip = {"tool": tc.name, "args": tc.arguments, "done": False}
+                    if proposal is not None:
+                        chip["proposal"] = proposal
+                    tool_chips.append(chip)
                     store.set_entry_tool_calls(conversation_id, item_id, tool_chips)
                     yield _sse(
                         "ambassador_tool_call",
                         {"message_id": item_id, "tool": tc.name, "args": tc.arguments},
                     )
+                    if proposal is not None:
+                        yield _sse(
+                            "ambassador_tool_proposal",
+                            {"message_id": item_id, "tool": tc.name, "proposal": proposal},
+                        )
                     output = execute_tool(
                         tc.name,
                         tc.arguments,
@@ -1131,10 +1161,14 @@ class AmbassadorService:
         return "\n\n".join(sections)
 
     @staticmethod
-    def _parse_voice_command(content: str) -> tuple[str, str]:
-        """Parse the routing model's reply into ``(action, text)``. Defensive:
-        strips code fences, extracts the first JSON object, and falls back to
-        treating the whole reply as an ``answer`` when anything is off."""
+    def _parse_voice_command(content: str) -> tuple[str, str, dict[str, Any] | None]:
+        """Parse the routing model's reply into ``(action, text, tool_payload)``.
+        ``tool_payload`` is ``{"tool", "args"}`` for a valid ``tool`` action, else
+        ``None``. Defensive: strips code fences, extracts the first JSON object,
+        and degrades to ``answer`` when anything is off (unknown action, unknown
+        tool name, missing text)."""
+        from .ambassador_tools import CONFIRMED_WRITE_TOOLS
+
         raw = (content or "").strip()
         if raw.startswith("```"):
             raw = raw.strip("`")
@@ -1152,10 +1186,17 @@ class AmbassadorService:
                 data = {}
         action = data.get("action")
         text = (data.get("text") or "").strip()
+        if action == "tool":
+            tool = (data.get("tool") or "").strip()
+            args = data.get("args")
+            if tool in CONFIRMED_WRITE_TOOLS:
+                return "tool", text, {"tool": tool, "args": args if isinstance(args, dict) else {}}
+            # Unknown tool — degrade to speaking whatever we have.
+            return "answer", text or raw, None
         if action not in ("answer", "relay") or not text:
             # Couldn't route — speak whatever the model produced.
-            return "answer", text or raw
-        return action, text
+            return "answer", text or raw, None
+        return action, text, None
 
     async def _answer_to_text(
         self,
@@ -1287,13 +1328,32 @@ class AmbassadorService:
                     tokens_in=result.usage.get("prompt_tokens", 0) or 0,
                     tokens_out=result.usage.get("completion_tokens", 0) or 0,
                 )
-            action, text = self._parse_voice_command(result.content)
+            action, text, tool_payload = self._parse_voice_command(result.content)
         except Exception as e:  # noqa: BLE001 — the call must never break
             logger.warning(f"Ambassador voice-command failed: {e}")
             return {"action": "answer", "text": "Sorry, I couldn't process that.", "qa_id": None}
 
         if action == "relay":
             return {"action": "relay", "text": text, "qa_id": None}
+
+        if action == "tool" and tool_payload is not None:
+            # A conversation-management command → a *proposal* the person confirms
+            # on screen (the confirmed-write doctrine; nothing executes here).
+            from .ambassador_tools import proposal_for
+
+            proposal = proposal_for(
+                tool_payload["tool"], tool_payload.get("args") or {},
+                focused_conversation_id=conversation_id,
+            )
+            if proposal is not None:
+                say_back = text or "I've filed the proposal — confirm it on screen."
+                return {"action": "tool", "text": say_back, "tool": proposal, "qa_id": None}
+            # Invalid args (e.g. delete without an id) — fall through to the
+            # answer path so the person hears why nothing was filed.
+            transcript = (
+                f"{transcript}\n\n(Note: you tried to file a {tool_payload['tool']} proposal "
+                "but it was missing what it needs — explain what you'd need to proceed.)"
+            )
 
         # 2) Answer through the agentic core (tools + continuity), persisted as Q&A so
         # the Text tab replays it. (The classifier's own answer text is discarded — the

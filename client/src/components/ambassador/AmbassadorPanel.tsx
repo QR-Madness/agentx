@@ -48,7 +48,13 @@ import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { getAvatarIcon, isImageAvatar } from '../../lib/avatars';
 import { AgentAvatar } from '../common/AgentAvatar';
-import { toolChipLabel } from '../../lib/ambassadorTools';
+import {
+  getProposalResolution,
+  proposalSentence,
+  setProposalResolution,
+  toolChipLabel,
+} from '../../lib/ambassadorTools';
+import { useNotify } from '../../contexts/NotificationContext';
 import { planRelay, type RelayOutcome } from '../../lib/ambassadorRelay';
 import { DECK_STARTERS, type DeckInquiry } from '../../lib/ambassadorDeck';
 import { AmbassadorInquirySwitcher } from './AmbassadorInquirySwitcher';
@@ -69,7 +75,12 @@ import {
 } from '../ui';
 import { useConfirm } from '../ui/ConfirmDialog';
 import { api } from '../../lib/api';
-import type { AmbassadorBriefing, AmbassadorQA, AmbassadorToolCall } from '../../lib/api';
+import type {
+  AmbassadorBriefing,
+  AmbassadorQA,
+  AmbassadorToolCall,
+  AmbassadorToolProposal,
+} from '../../lib/api';
 
 type PanelMode = 'ask' | 'relay' | 'dispatch';
 
@@ -196,7 +207,8 @@ function AmbassadorMark({ size = 20, avatar }: { size?: number; avatar?: string 
 }
 
 /** Live chips for the read-only tools the ambassador calls while answering —
- *  spinner while running, check when done — so you can see it reading/surveying. */
+ *  spinner while running, check when done — so you can see it reading/surveying.
+ *  Confirmed-write proposals get a distinct "needs you" warning tone. */
 function ToolChips({ calls }: { calls?: AmbassadorToolCall[] }) {
   if (!calls?.length) return null;
   return (
@@ -204,10 +216,14 @@ function ToolChips({ calls }: { calls?: AmbassadorToolCall[] }) {
       {calls.map((c, i) => (
         <span
           key={`${c.tool}-${i}`}
-          className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] text-fg-secondary"
+          className={
+            c.proposal
+              ? 'inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning'
+              : 'inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] text-fg-secondary'
+          }
         >
           {c.done ? (
-            <Check size={11} className="text-success" />
+            <Check size={11} className={c.proposal ? 'text-warning' : 'text-success'} />
           ) : (
             <Loader2 size={11} className="animate-spin text-accent" />
           )}
@@ -215,6 +231,75 @@ function ToolChips({ calls }: { calls?: AmbassadorToolCall[] }) {
           {!c.done && '…'}
         </span>
       ))}
+    </div>
+  );
+}
+
+/** The confirm strip for the belt's confirmed-write proposals (rename / archive /
+ *  delete). Only the *latest* entry renders live Confirm/Dismiss buttons — older
+ *  or already-actioned proposals collapse to a passive status line. Nothing
+ *  executes until Confirm: the belt only files the proposal. */
+function ProposalStrips({
+  calls,
+  isLatest,
+  onConfirm,
+  onDismiss,
+  resolutionVersion,
+}: {
+  calls?: AmbassadorToolCall[];
+  isLatest: boolean;
+  onConfirm: (p: AmbassadorToolProposal) => void;
+  onDismiss: (p: AmbassadorToolProposal) => void;
+  resolutionVersion: number;
+}) {
+  void resolutionVersion; // re-render trigger — resolutions are read from storage
+  const proposals = (calls ?? []).filter((c) => c.proposal).map((c) => c.proposal!);
+  if (!proposals.length) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      {proposals.map((p) => {
+        const resolution = getProposalResolution(p.proposal_id);
+        if (resolution === 'confirmed') {
+          return (
+            <span key={p.proposal_id} className="inline-flex items-center gap-1 text-[11px] text-success">
+              <Check size={11} /> {p.action === 'rename' ? `Renamed to "${p.title ?? ''}"` :
+                p.action === 'archive' ? 'Archived' :
+                p.action === 'unarchive' ? 'Restored' : 'Deleted'}
+            </span>
+          );
+        }
+        if (resolution === 'dismissed') {
+          return (
+            <span key={p.proposal_id} className="inline-flex items-center gap-1 text-[11px] text-fg-muted">
+              <X size={11} /> Proposal dismissed
+            </span>
+          );
+        }
+        if (!isLatest) {
+          return (
+            <span key={p.proposal_id} className="inline-flex items-center gap-1 text-[11px] text-fg-muted">
+              proposal expired — ask again to redo it
+            </span>
+          );
+        }
+        const danger = p.action === 'delete';
+        return (
+          <div
+            key={p.proposal_id}
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5"
+          >
+            <span className="text-xs text-fg">{proposalSentence(p)}</span>
+            <div className="ml-auto flex items-center gap-1.5">
+              <Button size="sm" variant={danger ? 'danger' : 'primary'} onClick={() => onConfirm(p)}>
+                {danger ? 'Delete…' : 'Confirm'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => onDismiss(p)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -252,11 +337,14 @@ function QaItem({
   onCancel,
   speech,
   avatar,
+  proposalStrip,
 }: {
   entry: AmbassadorQA;
   onCancel: () => void;
   speech: SpeechControls;
   avatar?: string;
+  /** Confirm strip(s) for any confirmed-write proposals this entry filed. */
+  proposalStrip?: ReactNode;
 }) {
   const streaming = entry.status === 'streaming';
   const speakable = entry.status === 'done' && !!entry.answer.trim();
@@ -270,6 +358,7 @@ function QaItem({
         <AmbassadorMark size={22} avatar={avatar} />
         <div className="flex min-w-0 flex-col gap-1 pt-0.5 text-sm leading-relaxed text-fg">
           <ToolChips calls={entry.toolCalls} />
+          {proposalStrip}
           <div>
           {entry.status === 'error' ? (
             <span className="flex items-start gap-1.5 text-error">
@@ -323,11 +412,14 @@ function BriefingItem({
   onCancel,
   speech,
   avatar,
+  proposalStrip,
 }: {
   briefing: AmbassadorBriefing;
   onCancel: () => void;
   speech: SpeechControls;
   avatar?: string;
+  /** Confirm strip(s) for any confirmed-write proposals this entry filed. */
+  proposalStrip?: ReactNode;
 }) {
   const streaming = briefing.status === 'streaming';
   const speakable = briefing.status === 'done' && !!briefing.summary.trim();
@@ -337,6 +429,7 @@ function BriefingItem({
       <AmbassadorMark size={22} avatar={avatar} />
       <div className="flex min-w-0 flex-col gap-1 pt-0.5">
         <ToolChips calls={briefing.toolCalls} />
+        {proposalStrip}
         <BriefingBody briefing={briefing} />
         {streaming ? (
           <button
@@ -388,13 +481,58 @@ export function AmbassadorPanel({
   deckThreadId, deckHomeId, deckInquiries, onSelectInquiry, onNewInquiry,
 }: AmbassadorPanelProps = {}) {
   const isDeck = !!deckThreadId;
-  const { activeTab, tabs, relayToConversation, restoreConversation } = useConversation();
+  const { activeTab, tabs, relayToConversation, restoreConversation, refreshHistory } = useConversation();
   const {
     briefingsFor, refresh, cancel, qaFor,
     threadFor, titleFor, renameThread, clearThread, ask, cancelQa, listInquiries,
   } = useAmbassador();
   const confirm = useConfirm();
+  const { notifyError, notifySuccess } = useNotify();
   const { profiles, getAgentName } = useAgentProfile();
+
+  // --- Confirmed-write proposals (rename/archive/delete a conversation) -------
+  // The belt only *files* these; the write happens here, after the person
+  // confirms. Resolution is client-side (localStorage) keyed by proposal_id so
+  // a thread replay never resurrects a live strip.
+  const [resolutionVersion, setResolutionVersion] = useState(0);
+  const dismissProposal = useCallback((p: AmbassadorToolProposal) => {
+    setProposalResolution(p.proposal_id, 'dismissed');
+    setResolutionVersion((v) => v + 1);
+  }, []);
+  const confirmProposal = useCallback(async (p: AmbassadorToolProposal) => {
+    try {
+      if (p.action === 'delete') {
+        // Destructive → the repo's ConfirmDialog, showing WHAT dies, not an id.
+        let detail = `Conversation ${p.conversation_id}`;
+        try {
+          const res = await api.listConversations({ limit: 100, includeArchived: true });
+          const row = res.conversations.find((c) => c.conversation_id === p.conversation_id);
+          if (row) detail = `"${row.title}" (${row.message_count} messages)`;
+        } catch { /* fall back to the id */ }
+        const ok = await confirm({
+          title: 'Delete conversation?',
+          body: `${detail} will be permanently removed from the server. This can't be undone.`,
+          confirmLabel: 'Delete', danger: true,
+        });
+        if (!ok) return;
+        await api.deleteConversation(p.conversation_id);
+      } else if (p.action === 'rename') {
+        await api.patchConversationMeta(p.conversation_id, { title: p.title ?? '' });
+      } else {
+        await api.patchConversationMeta(p.conversation_id, { archived: p.action === 'archive' });
+      }
+      setProposalResolution(p.proposal_id, 'confirmed');
+      setResolutionVersion((v) => v + 1);
+      notifySuccess(
+        p.action === 'rename' ? 'Conversation renamed' :
+        p.action === 'archive' ? 'Conversation archived' :
+        p.action === 'unarchive' ? 'Conversation restored' : 'Conversation deleted',
+      );
+      void refreshHistory().catch(() => undefined);
+    } catch (err) {
+      notifyError(err, 'Could not apply the proposal');
+    }
+  }, [confirm, notifySuccess, notifyError, refreshHistory]);
 
   // Conversations the ambassador can be pointed at — the open tabs that have a saved
   // session (id + title). (Server-history conversations are a follow-up for the full
@@ -985,14 +1123,24 @@ export function AmbassadorPanel({
             )
           ) : (
             <ul className="flex flex-col gap-3.5">
-              {thread.map((item) =>
-                item.kind === 'qa' ? (
+              {thread.map((item, idx) => {
+                const strip = (
+                  <ProposalStrips
+                    calls={item.kind === 'qa' ? item.qa.toolCalls : item.briefing.toolCalls}
+                    isLatest={idx === thread.length - 1}
+                    onConfirm={confirmProposal}
+                    onDismiss={dismissProposal}
+                    resolutionVersion={resolutionVersion}
+                  />
+                );
+                return item.kind === 'qa' ? (
                   <QaItem
                     key={`qa:${item.id}`}
                     entry={item.qa}
                     onCancel={() => cancelQa(conversationId, item.id)}
                     speech={speech}
                     avatar={ambassadorProfile?.avatar}
+                    proposalStrip={strip}
                   />
                 ) : (
                   <BriefingItem
@@ -1001,9 +1149,10 @@ export function AmbassadorPanel({
                     onCancel={() => cancel(conversationId, item.id)}
                     speech={speech}
                     avatar={ambassadorProfile?.avatar}
+                    proposalStrip={strip}
                   />
-                ),
-              )}
+                );
+              })}
             </ul>
           )}
         </div>
@@ -1028,6 +1177,7 @@ export function AmbassadorPanel({
           activeConversation={activeConversation}
           onRelay={relay}
           onAnswerPersisted={onAnswerPersisted}
+          onConfirmProposal={confirmProposal}
         />
       ) : (
         <div className="flex flex-col gap-2 border-t border-line p-3">
