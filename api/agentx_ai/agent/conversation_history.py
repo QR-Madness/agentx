@@ -290,17 +290,21 @@ def render_conversation_images_block(conversation_id: str) -> str:
     return "\n".join(lines)
 
 
-def _default_conversation_lister(limit: int) -> list[dict]:
+def _default_conversation_lister(limit: int, *, include_archived: bool = False) -> list[dict]:
     """Read the most-recent conversations (newest first) from ``conversation_logs``.
 
     Read-only and SELECT-only — backs the ambassador's cross-conversation survey
     ("what have my agents discovered?") without touching the main agent's world.
+    A ``conversation_meta`` row overlays a custom ``title`` and carries the
+    archived flag; archived conversations stay out of the survey unless asked for.
     """
     from ..kit.agent_memory.connections import PostgresConnection
 
     conn: Any = PostgresConnection.get_engine().raw_connection()
     try:
         with conn.cursor() as cur:
+            # (%s OR NOT archived): include_archived=True keeps every row,
+            # False reduces to the archived exclusion — static SQL, bound flag.
             cur.execute(
                 """
                 SELECT
@@ -317,13 +321,17 @@ def _default_conversation_lister(limit: int) -> list[dict]:
                      FROM conversation_logs s
                      WHERE s.conversation_id = cl.conversation_id
                        AND s.role = 'assistant'
-                       AND s.metadata->>'agent_name' IS NOT NULL) AS agents
+                       AND s.metadata->>'agent_name' IS NOT NULL) AS agents,
+                    MAX(cm.title) AS title,
+                    BOOL_OR(COALESCE(cm.archived, FALSE)) AS archived
                 FROM conversation_logs cl
+                LEFT JOIN conversation_meta cm ON cm.conversation_id = cl.conversation_id::text
+                WHERE (%s OR COALESCE(cm.archived, FALSE) = FALSE)
                 GROUP BY cl.conversation_id
                 ORDER BY MAX(cl.timestamp) DESC
                 LIMIT %s
                 """,
-                (limit,),
+                (include_archived, limit),
             )
             return [
                 {
@@ -333,6 +341,8 @@ def _default_conversation_lister(limit: int) -> list[dict]:
                     "first_user": r[3] or "",
                     "last_message": r[4] or "",
                     "agents": r[5] or "",
+                    "title": r[6] or "",
+                    "archived": bool(r[7]),
                 }
                 for r in cur.fetchall()
             ]
@@ -341,10 +351,18 @@ def _default_conversation_lister(limit: int) -> list[dict]:
 
 
 def list_recent_conversations(
-    limit: int = 20, *, lister: ConversationLister | None = None
+    limit: int = 20, *, lister: ConversationLister | None = None,
+    include_archived: bool = False,
 ) -> list[dict]:
-    """Recent conversations, newest-first. Empty on error (read-only, never raises)."""
-    lister = lister or _default_conversation_lister
+    """Recent conversations, newest-first. Empty on error (read-only, never raises).
+
+    ``include_archived`` only reaches the default lister — the injected ``lister``
+    seam keeps its one-arg signature.
+    """
+    if lister is None:
+        def _lister(n: int) -> list[dict]:
+            return _default_conversation_lister(n, include_archived=include_archived)
+        lister = _lister
     try:
         return lister(min(max(1, limit), 50))
     except Exception as e:  # pragma: no cover - DB offline

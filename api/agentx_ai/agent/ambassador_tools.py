@@ -226,6 +226,15 @@ def _render_transcript(conversation_id: str, fallback_label: str) -> str:
     return "\n".join(lines)
 
 
+def _custom_title(c: dict) -> str:
+    """The user-set conversation title (``conversation_meta``), clipped — ``""``
+    when the conversation only has a derived topic."""
+    title = (c.get("title") or "").strip().replace("\n", " ")
+    if len(title) > _SURVEY_SNIPPET:
+        title = title[:_SURVEY_SNIPPET].rstrip() + "…"
+    return title
+
+
 def _render_survey(limit: int) -> str:
     convs = list_recent_conversations(limit)
     if not convs:
@@ -233,7 +242,7 @@ def _render_survey(limit: int) -> str:
     lines = []
     for c in convs:
         cid = c.get("conversation_id", "")
-        title = (c.get("first_user") or "Untitled").strip().replace("\n", " ")
+        title = _custom_title(c) or (c.get("first_user") or "Untitled").strip().replace("\n", " ")
         if len(title) > _SURVEY_SNIPPET:
             title = title[:_SURVEY_SNIPPET].rstrip() + "…"
         last = (c.get("last_message") or "").strip().replace("\n", " ")
@@ -333,7 +342,10 @@ def _render_deep_survey(limit: int) -> str:
         count = c.get("message_count", 0)
         when = c.get("last_at", "")
         agents = (c.get("agents") or "").strip()
+        named = _custom_title(c)
         piece = f"- id={cid} · {count} messages · last active {when}"
+        if named:
+            piece += f'\n    title: "{named}"'
         if agents:
             piece += f"\n    agent(s): {agents}"
 
