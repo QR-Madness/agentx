@@ -142,6 +142,67 @@ class AlloyExecutor:
                     )
         return None
 
+    def _chain_nesting_for(
+        self,
+        specialist_agent,
+        target_agent_id: str,
+        *,
+        depth: int,
+        path: tuple[str, ...],
+        delegation_id: str,
+    ) -> tuple[dict | None, AlloyExecutor | None]:
+        """Chain nesting (Agentic Orgs): when the delegated specialist is itself
+        a lead, return a ``delegate_to`` descriptor scoped to its own members
+        plus a nested executor to run them — ``(None, None)`` otherwise.
+
+        Nested runs are BLOCKING-ONLY in v1 (``non_blocking_enabled=False`` —
+        no ``delegate_start`` work orders below the top level); members already
+        on the delegation path are excluded (loop guard, enforced again at
+        validation). Fan-out amplification (N leads × M members) is bounded by
+        the depth ceiling — the documented v1 posture.
+
+        The TARGET must be an org participant: a supervisor of a manager-less
+        team stays a leaf specialist exactly as today (org-free installs are
+        untouched — nesting is a chain-of-command feature).
+        """
+        from . import org_chart
+        from .delegation_tool import _annotate_chain_hint, _build_descriptor
+
+        if not org_chart.chain_of_command_enabled():
+            return None, None
+        if depth + 1 >= self.max_delegation_depth:
+            return None, None
+        try:
+            if not org_chart.in_org(target_agent_id):
+                return None, None
+            down = [
+                t for t in org_chart.chain_targets(target_agent_id)
+                if t.relation == "down_member" and t.agent_id not in path
+            ]
+        except Exception as e:  # noqa: BLE001 - derivation must never kill a delegation
+            logger.warning(f"Chain nesting derivation failed for {target_agent_id!r}: {e}")
+            return None, None
+        if not down:
+            return None, None
+
+        descriptor = _build_descriptor(
+            [(t.agent_id, t.name, _annotate_chain_hint(t)) for t in down]
+        )
+        nested = AlloyExecutor(
+            specialist_agent,
+            self.session,
+            channel=self.channel,
+            delegator_agent_id=target_agent_id,
+            max_delegation_depth=self.max_delegation_depth,
+            max_parallel_delegations=self.max_parallel_delegations,
+            delegation_timeout_seconds=self.delegation_timeout_seconds,
+            non_blocking_enabled=False,
+            base_depth=depth + 1,
+            delegation_path=(*path, target_agent_id),
+            parent_delegation_id=delegation_id,
+        )
+        return descriptor, nested
+
     async def delegate(
         self,
         target_agent_id: str,
@@ -283,11 +344,19 @@ class AlloyExecutor:
             direct_mode=getattr(profile, "direct_mode", False),
         )
         specialist = Agent(specialist_config)
-        # Specialists do not re-delegate. Only the supervisor receives the
-        # `delegate_to` tool; giving it to leaf specialists creates a
-        # self-referential descriptor (the only listed target is the
-        # specialist themselves) and routinely confuses smaller models into
-        # emitting fake delegation JSON as their assistant text.
+        # LEAF specialists do not re-delegate: giving them `delegate_to` creates
+        # a self-referential descriptor and routinely confuses smaller models
+        # into emitting fake delegation JSON as their assistant text.
+        # Chain nesting (Agentic Orgs) is the one exception: a specialist that
+        # LEADS a team gets a `delegate_to` scoped to its own members, executed
+        # by a nested executor attached below (the specialist's tool loop routes
+        # delegate_to via `_active_alloy_executor`).
+        nested_descriptor, nested_executor = self._chain_nesting_for(
+            specialist, target_agent_id,
+            depth=depth, path=path, delegation_id=delegation_id,
+        )
+        if nested_executor is not None:
+            specialist._active_alloy_executor = nested_executor  # type: ignore[attr-defined]
 
         # ------- resolve handed-over media (document ids → typed refs) -------
         # Same access rule as view_image: attached workspace or the user's Home.
@@ -356,6 +425,19 @@ class AlloyExecutor:
         tools = None if image_only else (
             specialist._get_tools_for_provider() if profile.enable_tools else None
         )
+        # Chain nesting: offer the members-scoped delegate_to even when the
+        # lead-specialist's other tools are off (parity with the main chat
+        # path, which appends delegation descriptors independently of
+        # enable_tools). Image-only specialists never delegate.
+        if not image_only and nested_descriptor is not None:
+            tools = list(tools or []) + [{
+                "type": "function",
+                "function": {
+                    "name": nested_descriptor["name"],
+                    "description": nested_descriptor["description"],
+                    "parameters": nested_descriptor["input_schema"],
+                },
+            }]
 
         # ------- stream specialist run -------
         # Bind a specialist-scoped internal-tool context for the duration of the
@@ -477,6 +559,28 @@ class AlloyExecutor:
                     # the streaming delegation card.
                     if event_name == "exhibit" and len(forwarded_exhibits) < 5:
                         forwarded_exhibits.append(inner)
+                    yield event_str, accumulated
+                elif event_name.startswith("delegation_"):
+                    # Chain nesting (Agentic Orgs): a lead-specialist working its
+                    # members emits its own delegation_* stream. Pass it through
+                    # top-level UNCHANGED — the events carry their own
+                    # delegation_id + parent_delegation_id, so the client nests
+                    # them under this work order (buildDelegationTree).
+                    if event_name == "delegation_complete":
+                        # The nested complete owns persistence of its exhibits
+                        # (they streamed through the exhibit branch above first)
+                        # — drop them from OUR forwarded set to avoid double
+                        # persistence on this delegation's complete event.
+                        nested_ids = {
+                            e.get("id")
+                            for e in (inner.get("exhibits") or [])
+                            if isinstance(e, dict)
+                        }
+                        if nested_ids:
+                            forwarded_exhibits[:] = [
+                                e for e in forwarded_exhibits
+                                if e.get("id") not in nested_ids
+                            ]
                     yield event_str, accumulated
                 # Drop info/status/other events — they would create top-level cards.
                 accumulated = loop_result.content

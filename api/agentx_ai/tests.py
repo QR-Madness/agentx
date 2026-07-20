@@ -10530,6 +10530,205 @@ class MediaTokenEstimateTest(TestCase):
         self.assertEqual(delta, IMAGE_TOKEN_ESTIMATE)
 
 
+class NestedLeadDelegationTest(TestCase):
+    """Agentic Orgs Slice 2 — downward nesting: a delegated specialist that
+    LEADS a manager-owned team gets a members-scoped delegate_to + a nested
+    executor; nested delegation_* events pass through the outer re-wrap."""
+
+    def _patched_org(self, knob=True):
+        """Team t1: manager m-aa → lead l1-aa → members a-aa, b-aa."""
+        from contextlib import ExitStack
+        from types import SimpleNamespace
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        wfs = [Workflow(
+            id="t1", name="Team One", supervisor_agent_id="l1-aa",
+            manager_agent_id="m-aa",
+            members=[WorkflowMember(agent_id="l1-aa", role=MemberRole.SUPERVISOR),
+                     WorkflowMember(agent_id="a-aa", role=MemberRole.SPECIALIST),
+                     WorkflowMember(agent_id="b-aa", role=MemberRole.SPECIALIST)],
+        )]
+        profiles = {
+            aid: SimpleNamespace(agent_id=aid, name=aid, kind="agent",
+                                 org_level="agent", delegation_hint=None,
+                                 description="", available_for_delegation=False)
+            for aid in ("m-aa", "l1-aa", "a-aa", "b-aa")
+        }
+        stack = ExitStack()
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_profile_manager",
+            return_value=SimpleNamespace(
+                get_profile_by_agent_id=lambda aid: profiles.get(aid))))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_workflow_manager",
+            return_value=SimpleNamespace(list=lambda: wfs)))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_config_manager",
+            return_value=SimpleNamespace(
+                get=lambda key, default=None: knob
+                if key == "alloy.chain_of_command" else default)))
+        return stack
+
+    def _executor(self, delegator="m-aa", **kwargs):
+        from types import SimpleNamespace
+        from agentx_ai.alloy.executor import AlloyExecutor
+        supervisor = SimpleNamespace(
+            config=SimpleNamespace(user_id="u", default_model="m", max_tool_rounds=3),
+            memory=None,
+        )
+        return AlloyExecutor(
+            supervisor, SimpleNamespace(id="sess"),  # type: ignore[arg-type]
+            channel="_global", delegator_agent_id=delegator, **kwargs,
+        )
+
+    def test_nesting_for_lead_specialist(self):
+        from types import SimpleNamespace
+        ex = self._executor()
+        with self._patched_org():
+            desc, nested = ex._chain_nesting_for(
+                SimpleNamespace(), "l1-aa", depth=0, path=("m-aa",), delegation_id="d1")
+        assert desc is not None and nested is not None
+        self.assertEqual(desc["input_schema"]["properties"]["agent_id"]["enum"],
+                         ["a-aa", "b-aa"])
+        self.assertEqual(nested.base_depth, 1)
+        self.assertEqual(nested.delegation_path, ("m-aa", "l1-aa"))
+        self.assertEqual(nested.parent_delegation_id, "d1")
+        self.assertFalse(nested.non_blocking_enabled)  # v1: blocking-only below top
+        self.assertEqual(nested.delegator_agent_id, "l1-aa")
+
+    def test_nesting_excludes_path_members(self):
+        from types import SimpleNamespace
+        ex = self._executor()
+        with self._patched_org():
+            desc, _ = ex._chain_nesting_for(
+                SimpleNamespace(), "l1-aa", depth=0, path=("m-aa", "a-aa"),
+                delegation_id="d1")
+            assert desc is not None
+            self.assertEqual(desc["input_schema"]["properties"]["agent_id"]["enum"],
+                             ["b-aa"])
+            # Every member already on the path → no nesting at all.
+            desc2, nested2 = ex._chain_nesting_for(
+                SimpleNamespace(), "l1-aa", depth=0,
+                path=("m-aa", "a-aa", "b-aa"), delegation_id="d1")
+        self.assertIsNone(desc2)
+        self.assertIsNone(nested2)
+
+    def test_nesting_denied_cases(self):
+        """No nesting at the depth ceiling, with the knob off, for a non-lead
+        target, or for a lead whose team is org-free (manager-less)."""
+        from types import SimpleNamespace
+        ex = self._executor()
+        with self._patched_org():
+            # depth+1 == max_delegation_depth → ceiling.
+            self.assertEqual(
+                ex._chain_nesting_for(SimpleNamespace(), "l1-aa", depth=2,
+                                      path=(), delegation_id="d"),
+                (None, None))
+            # Non-lead target (a member) has no down_member edges.
+            self.assertEqual(
+                ex._chain_nesting_for(SimpleNamespace(), "a-aa", depth=0,
+                                      path=(), delegation_id="d"),
+                (None, None))
+        with self._patched_org(knob=False):
+            self.assertEqual(
+                ex._chain_nesting_for(SimpleNamespace(), "l1-aa", depth=0,
+                                      path=(), delegation_id="d"),
+                (None, None))
+        # Org-free lead (manager-less team) stays a leaf specialist.
+        from contextlib import ExitStack
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        wfs = [Workflow(
+            id="t3", name="Free Team", supervisor_agent_id="l3-aa",
+            members=[WorkflowMember(agent_id="l3-aa", role=MemberRole.SUPERVISOR),
+                     WorkflowMember(agent_id="d-aa", role=MemberRole.SPECIALIST)],
+        )]
+        with ExitStack() as stack:
+            stack.enter_context(patch(
+                "agentx_ai.alloy.org_chart.get_workflow_manager",
+                return_value=SimpleNamespace(list=lambda: wfs)))
+            stack.enter_context(patch(
+                "agentx_ai.alloy.org_chart.get_config_manager",
+                return_value=SimpleNamespace(get=lambda key, default=None: True)))
+            self.assertEqual(
+                ex._chain_nesting_for(SimpleNamespace(), "l3-aa", depth=0,
+                                      path=(), delegation_id="d"),
+                (None, None))
+
+    def test_nested_events_pass_through_rewrap(self):
+        """Nested delegation_* events emitted inside the specialist's tool loop
+        surface top-level UNCHANGED (own delegation_id + parent id → the client
+        nests them), and a nested complete's exhibits are deduped from the
+        outer complete's persistence set."""
+        from types import SimpleNamespace
+        ex = self._executor(delegator="alpha-agent")
+        profile = SimpleNamespace(
+            name="Beta", default_model="m", agent_id="beta-agent", prompt_profile_id=None,
+            enable_memory=False, enable_tools=False, temperature=0.5, system_prompt=None,
+        )
+        fake_provider = SimpleNamespace(get_capabilities=lambda mid: object())
+        fake_specialist = SimpleNamespace(
+            config=SimpleNamespace(default_model="m", max_tool_rounds=3),
+            registry=SimpleNamespace(resolve_with_fallback=lambda m, **kw: (fake_provider, "m", None)),
+            _get_tools_for_provider=lambda: None,
+            memory=None,
+        )
+        wire = {"id": "exh_nested_1", "schema_version": 1, "elements": []}
+        nested_chunk = ('event: delegation_chunk\ndata: {"delegation_id": "n1", '
+                        '"target_agent_id": "a-aa", "content": "hi"}\n\n')
+        nested_complete = (
+            'event: delegation_complete\ndata: '
+            + json.dumps({"delegation_id": "n1", "tool_call_id": "inner-t",
+                          "status": "success", "exhibits": [wire]})
+            + "\n\n"
+        )
+
+        async def fake_stream(*args, **kwargs):
+            yield f"event: exhibit\ndata: {json.dumps(wire)}\n\n"
+            yield nested_chunk
+            yield nested_complete
+            kwargs["result"].content = "lead result"
+            yield 'event: chunk\ndata: {"content": "lead result"}\n\n'
+
+        pm = SimpleNamespace(
+            get_profile_by_agent_id=lambda a: profile if a == "beta-agent" else None,
+            list_profiles=lambda: [profile],
+        )
+        with patch("agentx_ai.alloy.executor.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.agent.core.Agent", return_value=fake_specialist), \
+             patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_stream), \
+             patch("agentx_ai.prompts.get_prompt_manager",
+                   return_value=SimpleNamespace(get_system_prompt=lambda **k: "sys")), \
+             patch("agentx_ai.providers.pricing.estimate_cost", return_value=None):
+            events = asyncio.run(
+                AdhocDelegationTest._drain(ex.delegate("beta-agent", "go",
+                                                       tool_call_id="outer-t")))
+        sse = [e[0] for e in events]
+        self.assertIn(nested_chunk, sse)      # passed through unchanged
+        self.assertIn(nested_complete, sse)   # ditto
+        # The OUTER complete (tool_call_id=outer-t) must not carry the nested
+        # exhibit — the nested complete owns its persistence.
+        outer_done = next(
+            json.loads(s.split("data: ", 1)[1].rstrip()) for s in sse
+            if s.startswith("event: delegation_complete\n")
+            and '"tool_call_id": "outer-t"' in s
+        )
+        self.assertIsNone(outer_done.get("exhibits"))
+        self.assertEqual(outer_done["status"], "success")
+
+    def test_complete_metric_capture_keys_on_tool_call_id(self):
+        """_run_delegations must only capture metrics from ITS branch's
+        delegation_complete — a nested complete (foreign tool_call_id) passing
+        through the same generator is ignored."""
+        from agentx_ai.streaming.tool_loop import _complete_matches_tool_call
+        own = ('event: delegation_complete\ndata: '
+               '{"tool_call_id": "t-1", "status": "success"}\n\n')
+        foreign = ('event: delegation_complete\ndata: '
+                   '{"tool_call_id": "inner-9", "status": "success"}\n\n')
+        malformed = 'event: delegation_complete\ndata: {not json}\n\n'
+        self.assertTrue(_complete_matches_tool_call(own, "t-1"))
+        self.assertFalse(_complete_matches_tool_call(foreign, "t-1"))
+        self.assertFalse(_complete_matches_tool_call(malformed, "t-1"))
+
+
 class MediaDelegationTest(TestCase):
     """Media rides delegation: document-id resolution, the delegation `media` arg,
     image-to-image plumbing, and roster modality tags."""
