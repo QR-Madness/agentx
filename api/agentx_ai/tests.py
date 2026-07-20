@@ -2152,15 +2152,16 @@ class ImageConversationTest(TestCase):
         self.assertEqual(info["workspace_id"], "ws_attached")
         home.assert_not_called()
 
-    def test_emit_image_exhibit_signals_workspace_attached(self) -> None:
+    def test_emit_media_exhibits_signals_workspace_attached(self) -> None:
         # A generated image emits the `image` exhibit AND a `workspace_attached`
         # signal carrying the workspace the media landed in (so a workspace-less
         # conversation can durably attach the Home store it fell back to).
         import json
         from types import SimpleNamespace
-        from agentx_ai.streaming.tool_loop import _emit_image_exhibit
+        from agentx_ai.streaming.tool_loop import _emit_media_exhibits
 
         tm = SimpleNamespace(
+            name="generate_image",
             tool_call_id="tc_1",
             content=json.dumps({
                 "success": True,
@@ -2169,7 +2170,7 @@ class ImageConversationTest(TestCase):
                 "prompt": "a mountain",
             }),
         )
-        events = _emit_image_exhibit(tm)
+        events = _emit_media_exhibits(tm)
         kinds = [e.split("\n", 1)[0] for e in events]
         self.assertIn("event: exhibit", kinds)
         self.assertIn("event: workspace_attached", kinds)
@@ -2177,18 +2178,71 @@ class ImageConversationTest(TestCase):
         payload = json.loads(attach.split("data: ", 1)[1].strip())
         self.assertEqual(payload, {"workspace_id": "ws_home"})
 
-    def test_emit_image_exhibit_skips_signal_without_workspace(self) -> None:
+    def test_emit_media_exhibits_skips_signal_without_workspace(self) -> None:
         # No workspace_id in the result → only the exhibit, no attach signal.
         import json
         from types import SimpleNamespace
-        from agentx_ai.streaming.tool_loop import _emit_image_exhibit
+        from agentx_ai.streaming.tool_loop import _emit_media_exhibits
 
         tm = SimpleNamespace(
+            name="generate_image",
             tool_call_id="tc_2",
-            content=json.dumps({"success": True, "url": "/x/raw", "prompt": "p"}),
+            content=json.dumps({
+                "success": True,
+                "url": "/api/workspaces/ws_2/documents/doc_2/raw",
+                "prompt": "p",
+            }),
         )
-        kinds = [e.split("\n", 1)[0] for e in _emit_image_exhibit(tm)]
+        kinds = [e.split("\n", 1)[0] for e in _emit_media_exhibits(tm)]
         self.assertEqual(kinds, ["event: exhibit"])
+
+    def test_emit_media_exhibits_renders_generated_speech(self) -> None:
+        # A generate_speech result renders an `audio` exhibit with the spoken
+        # text as its caption.
+        import json
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_media_exhibits
+
+        tm = SimpleNamespace(
+            name="generate_speech",
+            tool_call_id="tc_3",
+            content=json.dumps({
+                "success": True,
+                "url": "/api/workspaces/ws_home/documents/doc_9/raw",
+                "workspace_id": "ws_home",
+                "text_preview": "hello there",
+            }),
+        )
+        events = _emit_media_exhibits(tm)
+        exhibit = json.loads(events[0].split("data: ", 1)[1].strip())
+        self.assertEqual(exhibit["elements"][0]["type"], "audio")
+        self.assertEqual(exhibit["elements"][0]["caption"], "hello there")
+
+    def test_emit_media_exhibits_renders_mcp_stored_media(self) -> None:
+        # An external MCP tool result whose passthrough stored media renders
+        # image/audio exhibits (one per stored entry).
+        import json
+        from types import SimpleNamespace
+        from agentx_ai.streaming.tool_loop import _emit_media_exhibits
+
+        tm = SimpleNamespace(
+            name="some_mcp_tool",
+            tool_call_id="tc_4",
+            content=json.dumps({
+                "text": "took a screenshot",
+                "stored_media": [
+                    {"url": "/api/workspaces/w/documents/d1/raw", "media_type": "image/png"},
+                    {"url": "/api/workspaces/w/documents/d2/raw", "media_type": "audio/wav"},
+                ],
+            }),
+        )
+        events = _emit_media_exhibits(tm)
+        self.assertEqual(len(events), 2)
+        types = [
+            json.loads(e.split("data: ", 1)[1].strip())["elements"][0]["type"]
+            for e in events
+        ]
+        self.assertEqual(types, ["image", "audio"])
 
 
 class ExceptionHierarchyTest(TestCase):
@@ -9579,6 +9633,78 @@ class PresentExhibitToolTest(TestCase):
         self.assertTrue(result.success)
         self.assertEqual(self._result_payload(result)["element_count"], 2)
 
+    # --- media + text elements, grid layout (multi-modal slice) ---------
+
+    def test_media_elements_validate_with_served_blob_urls(self):
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        ex = exhibit_from_present_call({"elements": [
+            {"type": "image", "url": "/api/workspaces/ws_1/documents/d1/raw", "alt": "a chart"},
+            {"type": "audio", "url": "/api/workspaces/ws_1/documents/d2/raw", "caption": "spoken"},
+            {"type": "video", "url": "/api/workspaces/ws_1/documents/d3/raw"},
+        ]})
+        self.assertEqual([e.type for e in ex.elements], ["image", "audio", "video"])
+
+    def test_media_elements_reject_external_urls(self):
+        # The served-blob validator is the exfiltration guard: an agent-authored
+        # exhibit can never point media at an external or arbitrary URL.
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        for bad in (
+            "https://evil.example/x.png",
+            "/api/workspaces/ws_1/documents/d1/raw/../secret",
+            "//evil.example/x.wav",
+            "",
+        ):
+            with self.assertRaises(ValidationError, msg=bad):
+                exhibit_from_present_call({"elements": [{"type": "audio", "url": bad}]})
+
+    def test_text_element_renders_markdown_and_rejects_blank(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        ex = exhibit_from_present_call(
+            {"elements": [{"type": "text", "content": "**Verdict:** ship it", "title": "Summary"}]}
+        )
+        self.assertEqual(ex.elements[0].type, "text")
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({"elements": [{"type": "text", "content": "   "}]})
+
+    def test_grid_layout_accepted_and_unknown_rejected(self):
+        from pydantic import ValidationError
+        from agentx_ai.streaming.exhibits import exhibit_from_present_call
+        ex = exhibit_from_present_call({
+            "layout": "grid",
+            "elements": [{"type": "mermaid", "content": "graph TD; A-->B"}],
+        })
+        self.assertEqual(ex.layout, "grid")
+        with self.assertRaises(ValidationError):
+            exhibit_from_present_call({
+                "layout": "carousel",
+                "elements": [{"type": "mermaid", "content": "graph TD; A-->B"}],
+            })
+
+    def test_media_exhibit_from_stored(self):
+        from agentx_ai.streaming.exhibits import media_exhibit_from_stored
+        img = media_exhibit_from_stored(
+            {"url": "/api/workspaces/w/documents/d/raw", "media_type": "image/png",
+             "filename": "mcp/shot.png"},
+            exhibit_id="exh_t1",
+        )
+        assert img is not None
+        self.assertEqual(img.elements[0].type, "image")
+        aud = media_exhibit_from_stored(
+            {"url": "/api/workspaces/w/documents/d2/raw", "media_type": "audio/wav"},
+            exhibit_id="exh_t2",
+        )
+        assert aud is not None
+        self.assertEqual(aud.elements[0].type, "audio")
+        # Non-media / missing url → None, never a raise.
+        self.assertIsNone(media_exhibit_from_stored({"media_type": "image/png"}, exhibit_id="x"))
+        self.assertIsNone(media_exhibit_from_stored(
+            {"url": "/api/workspaces/w/documents/d/raw", "media_type": "text/plain"},
+            exhibit_id="x",
+        ))
+
+
     def test_emit_exhibit_event_choice(self):
         from types import SimpleNamespace
         from agentx_ai.streaming.tool_loop import _emit_exhibit_event
@@ -9676,6 +9802,208 @@ class PresentExhibitToolTest(TestCase):
         tc = SimpleNamespace(id="tc_2", name="present_exhibit", arguments={"elements": []})
         self.assertEqual(_emit_exhibit_event(tc), [])
 
+
+class MultiModalContentTest(TestCase):
+    """The multi-modal payload foundation: MCP/ACP content blocks, the MCP media
+    passthrough flatten, audio-input provider conversion, and provider media capture."""
+
+    # --- content blocks (MCP/ACP vocabulary) ----------------------------
+
+    def test_blocks_from_mcp_types_round_trip(self):
+        from mcp.types import AudioContent, ImageContent, ResourceLink, TextContent
+        from agentx_ai.content_blocks import block_from_mcp
+
+        text = block_from_mcp(TextContent(type="text", text="hi"))
+        self.assertEqual(text.to_wire(), {"type": "text", "text": "hi"})
+
+        img = block_from_mcp(ImageContent(type="image", data="aGk=", mimeType="image/png"))
+        self.assertEqual(img.to_wire(), {"type": "image", "data": "aGk=", "mimeType": "image/png"})
+
+        # AudioContent + ResourceLink used to degrade to `"unknown"` stringification.
+        aud = block_from_mcp(AudioContent(type="audio", data="aGk=", mimeType="audio/wav"))
+        self.assertEqual(aud.to_wire(), {"type": "audio", "data": "aGk=", "mimeType": "audio/wav"})
+
+        link = block_from_mcp(ResourceLink(type="resource_link", name="spec", uri="file:///x"))
+        wire = link.to_wire()
+        self.assertEqual(wire["type"], "resource_link")
+        self.assertEqual(wire["name"], "spec")
+
+    def test_block_from_wire_parses_and_tolerates_unknown(self):
+        from agentx_ai.content_blocks import AudioBlock, block_from_wire
+        b = block_from_wire({"type": "audio", "data": "aGk=", "mimeType": "audio/mpeg"})
+        self.assertIsInstance(b, AudioBlock)
+        self.assertIsNone(block_from_wire({"type": "hologram", "data": "x"}))
+
+    # --- MCP media passthrough flatten ----------------------------------
+
+    def test_flatten_text_only_is_legacy_identical(self):
+        from agentx_ai.mcp.media_passthrough import flatten_result_content
+        content = [
+            {"type": "text", "text": "line one"},
+            {"type": "text", "text": "line two"},
+        ]
+        self.assertEqual(
+            flatten_result_content(content, tool_name="t", server_name="s"),
+            "line one\nline two",
+        )
+
+    def test_flatten_stores_media_and_reports_refs(self):
+        from unittest.mock import patch
+        from agentx_ai.mcp.media_passthrough import flatten_result_content
+        stored_entry = {
+            "url": "/api/workspaces/w/documents/d/raw",
+            "media_type": "image/png", "filename": "mcp/s-t-1.png",
+        }
+        with patch(
+            "agentx_ai.mcp.media_passthrough.store_media_block", return_value=stored_entry,
+        ) as store:
+            out = flatten_result_content(
+                [
+                    {"type": "text", "text": "took a screenshot"},
+                    {"type": "image", "data": "aGk=", "mimeType": "image/png"},
+                    {"type": "resource_link", "uri": "https://x/y", "name": "page"},
+                ],
+                tool_name="screenshot", server_name="browser",
+            )
+        store.assert_called_once()
+        payload = json.loads(out)
+        self.assertEqual(payload["text"], "took a screenshot")
+        self.assertEqual(payload["stored_media"], [stored_entry])
+        self.assertEqual(payload["resource_links"], [{"uri": "https://x/y", "name": "page"}])
+
+    def test_flatten_degrades_unstorable_media_to_note(self):
+        from unittest.mock import patch
+        from agentx_ai.mcp.media_passthrough import flatten_result_content
+        with patch("agentx_ai.mcp.media_passthrough.store_media_block", return_value=None):
+            out = flatten_result_content(
+                [{"type": "audio", "data": "aGk=", "mimeType": "audio/wav"}],
+                tool_name="t", server_name="s",
+            )
+        self.assertIn("audio content omitted", out)
+
+    def test_flatten_caps_stored_blocks(self):
+        from unittest.mock import patch
+        from agentx_ai.mcp.media_passthrough import MAX_STORED_BLOCKS, flatten_result_content
+        entry = {"url": "/api/workspaces/w/documents/d/raw", "media_type": "image/png"}
+        blocks = [
+            {"type": "image", "data": "aGk=", "mimeType": "image/png"}
+            for _ in range(MAX_STORED_BLOCKS + 2)
+        ]
+        with patch(
+            "agentx_ai.mcp.media_passthrough.store_media_block", return_value=entry,
+        ) as store:
+            out = flatten_result_content(blocks, tool_name="t", server_name="s")
+        self.assertEqual(store.call_count, MAX_STORED_BLOCKS)
+        self.assertEqual(len(json.loads(out)["stored_media"]), MAX_STORED_BLOCKS)
+
+    # --- audio input: provider conversion --------------------------------
+
+    def test_openai_format_carries_input_audio_blocks(self):
+        from unittest.mock import patch
+        from agentx_ai.providers.base import (
+            MediaRef, Message, MessageRole, convert_messages_to_openai_format,
+        )
+        msg = Message(
+            role=MessageRole.USER, content="what is said here?",
+            audio=[MediaRef(workspace_id="w", doc_id="d", media_type="audio/wav")],
+        )
+        with patch(
+            "agentx_ai.providers.base.resolve_media_data",
+            return_value=("audio/wav", "aGk="),
+        ):
+            out = convert_messages_to_openai_format([msg])
+        blocks = out[0]["content"]
+        self.assertEqual(blocks[0], {"type": "text", "text": "what is said here?"})
+        self.assertEqual(
+            blocks[1],
+            {"type": "input_audio", "input_audio": {"data": "aGk=", "format": "wav"}},
+        )
+
+    def test_openai_format_skips_non_native_audio_container(self):
+        # webm is storable but NOT accepted by the native input_audio block —
+        # the converter must skip it (the STT fallback happens upstream).
+        from unittest.mock import patch
+        from agentx_ai.providers.base import (
+            MediaRef, Message, MessageRole, convert_messages_to_openai_format,
+        )
+        msg = Message(
+            role=MessageRole.USER, content="hi",
+            audio=[MediaRef(workspace_id="w", doc_id="d", media_type="audio/webm")],
+        )
+        with patch(
+            "agentx_ai.providers.base.resolve_media_data",
+            return_value=("audio/webm", "aGk="),
+        ):
+            out = convert_messages_to_openai_format([msg])
+        types = [b["type"] for b in out[0]["content"]]
+        self.assertNotIn("input_audio", types)
+
+    def test_image_ref_alias_still_constructs(self):
+        # Persisted metadata predating MediaRef must keep parsing.
+        from agentx_ai.providers.base import ImageRef, MediaRef
+        ref = ImageRef(workspace_id="w", doc_id="d", media_type="image/png")
+        self.assertIsInstance(ref, MediaRef)
+        self.assertIsNone(ref.transcript)
+
+    # --- provider media capture (StreamChunk.media) ----------------------
+
+    def test_extract_media_blocks_openrouter_image_shape(self):
+        from agentx_ai.providers.base import extract_media_blocks
+        message = {
+            "images": [
+                {"image_url": {"url": "data:image/png;base64,aGk="}},
+                {"image_url": {"url": "not-a-data-url"}},  # ignored
+            ],
+        }
+        blocks = extract_media_blocks(message)
+        self.assertEqual(
+            blocks, [{"type": "image", "data": "aGk=", "mimeType": "image/png"}],
+        )
+
+    def test_extract_media_blocks_audio_and_empty(self):
+        from agentx_ai.providers.base import extract_media_blocks
+        blocks = extract_media_blocks({"audio": {"data": "aGk=", "format": "wav"}})
+        self.assertEqual(
+            blocks, [{"type": "audio", "data": "aGk=", "mimeType": "audio/wav"}],
+        )
+        self.assertIsNone(extract_media_blocks({"content": "plain text"}))
+        self.assertIsNone(extract_media_blocks(None))
+
+    # --- generate_speech tool --------------------------------------------
+
+    def test_generate_speech_tool_success(self):
+        from unittest.mock import AsyncMock, patch
+        with patch(
+            "agentx_ai.agent.audio_gen.generate_and_store_speech",
+            new=AsyncMock(return_value={
+                "url": "/api/workspaces/w/documents/d/raw",
+                "doc_id": "d", "workspace_id": "w",
+                "content_type": "audio/mpeg", "text": "hello",
+            }),
+        ):
+            result = execute_internal_tool("generate_speech", {"text": "hello"})
+        self.assertTrue(result.success)
+        payload = json.loads(result.content[0]["text"])
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["url"], "/api/workspaces/w/documents/d/raw")
+        self.assertEqual(payload["text_preview"], "hello")
+
+    def test_generate_speech_tool_surfaces_unavailable_voice(self):
+        from unittest.mock import AsyncMock, patch
+        from agentx_ai.agent.ambassador import SpeechUnavailable
+        with patch(
+            "agentx_ai.agent.audio_gen.generate_and_store_speech",
+            new=AsyncMock(side_effect=SpeechUnavailable("no key", code="voice_unconfigured")),
+        ):
+            result = execute_internal_tool("generate_speech", {"text": "hello"})
+        payload = json.loads(result.content[0]["text"])
+        self.assertFalse(payload["success"])
+        self.assertIn("Speech generation isn't available", payload["error"])
+
+    def test_generate_speech_tool_requires_text(self):
+        result = execute_internal_tool("generate_speech", {"text": "   "})
+        payload = json.loads(result.content[0]["text"])
+        self.assertFalse(payload["success"])
 
 class WebSearchCapabilityTest(TestCase):
     """Capability-aware web tools (Slice 4): the active-backend pre-check that

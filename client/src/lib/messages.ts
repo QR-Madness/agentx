@@ -3,7 +3,7 @@
  */
 
 import type { Exhibit } from './exhibits';
-import type { ChatImageRef } from './api/types';
+import type { ChatAudioRef, ChatImageRef } from './api/types';
 
 export type MessageType =
   | 'user'
@@ -51,6 +51,8 @@ export interface UserMessage extends BaseMessage {
   steered?: boolean;
   /** Images attached for vision input — rendered on the bubble (live + reload). */
   images?: ChatImageRef[];
+  /** Audio clips attached for audio input — rendered on the bubble (live + reload). */
+  audio?: ChatAudioRef[];
 }
 
 export interface AssistantMessage extends BaseMessage {

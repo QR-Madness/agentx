@@ -1,10 +1,13 @@
 /**
- * ImagesSection — image-generation settings (avatars + in-conversation image generation).
+ * ImagesSection — image & audio media settings (avatars, in-conversation image
+ * generation, audio input + speech generation).
  *
  * OpenRouter-only today: a model picker (default flux.2-klein-4b), the app-level avatar
- * STYLE prompt (the per-profile SUBJECT prompt is appended at generation time), and an
- * enable toggle. Persists under `images.*` (vision input under `vision.*`), autosaved
+ * STYLE prompt (the per-profile SUBJECT prompt is appended at generation time), and
+ * enable toggles. Persists under `images.*` / `vision.*` / `audio.*`, autosaved
  * via useSettingsAutosave + the settings field kit. Leads with the OpenRouter notice.
+ * (The TTS/STT *models* are configured on the Ambassador's voice settings — one
+ * resolution shared by voice mode and the chat `generate_speech`/transcribe seams.)
  */
 
 import { ImageIcon, RefreshCw, Info } from 'lucide-react';
@@ -21,6 +24,10 @@ interface ImageSettings extends Record<string, unknown> {
   avatar_style_prompt: string;
   // Vision input (image *input* — the user attaches a picture a model can see).
   visionEnabled: boolean;
+  // Audio input (the user attaches/records a clip — heard natively or transcribed).
+  audioInputEnabled: boolean;
+  // Speech output (the `generate_speech` tool — agents speak into the conversation).
+  speechEnabled: boolean;
 }
 
 const FALLBACK: ImageSettings = {
@@ -29,6 +36,8 @@ const FALLBACK: ImageSettings = {
   avatar_style_prompt:
     'A photorealistic headshot portrait, centered, clean studio lighting, subtle depth of field, with a softly rounded border.',
   visionEnabled: true,
+  audioInputEnabled: true,
+  speechEnabled: true,
 };
 
 export default function ImagesSection() {
@@ -39,30 +48,39 @@ export default function ImagesSection() {
       const config = await api.getConfig();
       const im = (config.images || {}) as Partial<ImageSettings>;
       const vi = (config.vision || {}) as { enabled?: boolean };
+      const au = (config.audio || {}) as { input_enabled?: boolean; speech_enabled?: boolean };
       return {
         enabled: im.enabled ?? FALLBACK.enabled,
         default_model: im.default_model || FALLBACK.default_model,
         avatar_style_prompt: im.avatar_style_prompt || FALLBACK.avatar_style_prompt,
         visionEnabled: vi.enabled ?? FALLBACK.visionEnabled,
+        audioInputEnabled: au.input_enabled ?? FALLBACK.audioInputEnabled,
+        speechEnabled: au.speech_enabled ?? FALLBACK.speechEnabled,
       };
     },
     save: async changed => {
-      // `visionEnabled` persists under vision.*; everything else under images.*.
-      const { visionEnabled, ...images } = changed;
+      // vision.* / audio.* keys split off; everything else persists under images.*.
+      const { visionEnabled, audioInputEnabled, speechEnabled, ...images } = changed;
       const payload: Parameters<typeof api.updateConfig>[0] = {};
       if (Object.keys(images).length > 0) payload.images = images;
       if (visionEnabled !== undefined) payload.vision = { enabled: visionEnabled };
+      if (audioInputEnabled !== undefined || speechEnabled !== undefined) {
+        payload.audio = {
+          ...(audioInputEnabled !== undefined ? { input_enabled: audioInputEnabled } : {}),
+          ...(speechEnabled !== undefined ? { speech_enabled: speechEnabled } : {}),
+        };
+      }
       await api.updateConfig(payload);
     },
-    onError: err => notifyError(err, 'Image settings'),
+    onError: err => notifyError(err, 'Media settings'),
   });
 
   return (
     <div className="settings-section fade-in">
       <SectionHeader
         icon={<ImageIcon size={20} />}
-        title="Images"
-        description="Generate agent avatars and images in conversations — via OpenRouter."
+        title="Images & Audio"
+        description="Generate avatars, images, and speech in conversations; attach pictures and audio for the model — via OpenRouter."
         actions={<SaveStatusChip status={status} />}
       />
 
@@ -97,6 +115,20 @@ export default function ImagesSection() {
             onChange={visionEnabled => update({ visionEnabled })}
             label="Enable vision input"
             hint="Let you attach images to a message so a vision-capable model can see them. When off, the composer's attach button is hidden."
+          />
+
+          <ToggleField
+            checked={settings.audioInputEnabled}
+            onChange={audioInputEnabled => update({ audioInputEnabled })}
+            label="Enable audio input"
+            hint="Let you attach audio clips or record voice notes on a message. Audio-capable models hear them natively; other models get an automatic transcript."
+          />
+
+          <ToggleField
+            checked={settings.speechEnabled}
+            onChange={speechEnabled => update({ speechEnabled })}
+            label="Enable speech generation"
+            hint={'Lets agents speak — the `generate_speech` tool renders an audio player in the conversation. Uses the voice model from the Ambassador\'s voice settings.'}
           />
 
           <div className="setting-row">

@@ -4,6 +4,7 @@ import { useAgentProfileOptional } from '../../../contexts/AgentProfileContext';
 import { resolveMentionToken } from '../../../lib/mentions';
 import type { AgentProfile } from '../../../lib/api/types';
 import { MessageImages } from '../MessageImages';
+import { MessageAudio } from '../MessageAudio';
 
 const MENTION_RE = /(^|[^\w/@])@([\w-]+)/g;
 
@@ -53,6 +54,9 @@ export function UserBubble({ message, onEdit }: BubbleProps<'user'>) {
         )}
         {message.images && message.images.length > 0 && (
           <MessageImages images={message.images} />
+        )}
+        {message.audio && message.audio.length > 0 && (
+          <MessageAudio audio={message.audio} />
         )}
         <div className="message-meta">
           <span className="message-time">

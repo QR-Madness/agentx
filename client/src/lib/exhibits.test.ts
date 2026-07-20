@@ -39,6 +39,45 @@ describe('exhibitFromWire', () => {
     expect(el.type === 'image' && el.url).toBe('/api/workspaces/ws_home/documents/doc_1/raw');
     expect(el.type === 'image' && el.alt).toBe('a sunset');
   });
+
+  it('maps audio and video elements (url/caption)', () => {
+    const ex = exhibitFromWire({
+      id: 'e5',
+      elements: [
+        { type: 'audio', url: '/api/workspaces/w/documents/d1/raw', caption: 'spoken summary' },
+        { type: 'video', url: '/api/workspaces/w/documents/d2/raw' },
+      ],
+    });
+    expect(ex.elements.map((e) => e.type)).toEqual(['audio', 'video']);
+    const audio = ex.elements[0];
+    expect(audio.type === 'audio' && audio.url).toBe('/api/workspaces/w/documents/d1/raw');
+    expect(audio.type === 'audio' && audio.caption).toBe('spoken summary');
+  });
+
+  it('maps a text element (markdown content)', () => {
+    const ex = exhibitFromWire({
+      id: 'e6',
+      elements: [{ type: 'text', content: '**Verdict:** ship it', title: 'Summary' }],
+    });
+    const el = ex.elements[0];
+    expect(el.type).toBe('text');
+    expect(el.type === 'text' && el.content).toBe('**Verdict:** ship it');
+  });
+
+  it('honors the grid layout and degrades unknown layouts to stack', () => {
+    const grid = exhibitFromWire({
+      id: 'e7',
+      layout: 'grid',
+      elements: [{ type: 'text', content: 'a' }],
+    });
+    expect(grid.layout).toBe('grid');
+    const unknown = exhibitFromWire({
+      id: 'e8',
+      layout: 'carousel',
+      elements: [{ type: 'text', content: 'a' }],
+    });
+    expect(unknown.layout).toBe('stack');
+  });
 });
 
 describe('citationExhibitFromWebSearch', () => {

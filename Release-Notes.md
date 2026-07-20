@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.236 -->
+<!-- release-version: 0.21.237 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -74,6 +74,14 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   drills back into the source when a summary can't answer, tells you what's read-directly vs.
   reported, and leads with the answer. Her voice-command routing is now a fourth editable
   persona in the profile editor.
+
+- **Agents can hear and speak now**: attach an audio clip or record a voice note on any message —
+  audio-capable models hear it natively, every other model gets an automatic transcript (cached,
+  never re-billed) — and ask an agent to read something aloud: `generate_speech` renders an
+  inline player in the conversation.
+- **Exhibits went multi-modal**: new audio/video/markdown-text elements plus a side-by-side
+  `grid` layout; media an external MCP tool returns (screenshots, clips) now renders as an
+  exhibit instead of being silently dropped; and generated media survives reload.
 
 - **Memory got a face**: a custom glowing-brain mark — pulsing glow, twinkling synapses — replaces
   the database stack in the command palette, the Memory explorer, and Settings.

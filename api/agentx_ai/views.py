@@ -100,14 +100,14 @@ def _parse_image_refs(raw_images):
     entries are dropped (a bad attachment must never 500 the turn). Kept out of the
     chat-stream generator so its loop+conditionals don't inflate pyright's path budget."""
     from .providers.base import ImageRef
-    from .kit.workspaces.service import MEDIA_CONTENT_TYPES
+    from .kit.workspaces.service import IMAGE_CONTENT_TYPES
 
     refs = []
     for item in raw_images or []:
         if not isinstance(item, dict):
             continue
         ws, doc, mt = item.get("workspace_id"), item.get("doc_id"), item.get("media_type")
-        if ws and doc and mt in MEDIA_CONTENT_TYPES:
+        if ws and doc and mt in IMAGE_CONTENT_TYPES:
             refs.append(ImageRef(workspace_id=ws, doc_id=doc, media_type=mt))
     return refs
 
@@ -128,6 +128,137 @@ def _strip_message_images(messages, accepts_vision):
     if accepts_vision:
         return messages
     return [m.model_copy(update={"images": None}) if m.images else m for m in messages]
+
+
+def _parse_audio_refs(raw_audio):
+    """Validate wire audio-input refs into MediaRefs (mirror of ``_parse_image_refs``).
+    A wire ref may carry a cached ``transcript`` (from a prior turn's STT fallback) —
+    kept so a regenerate never re-transcribes."""
+    from .providers.base import MediaRef
+    from .kit.workspaces.service import AUDIO_CONTENT_TYPES
+
+    refs = []
+    for item in raw_audio or []:
+        if not isinstance(item, dict):
+            continue
+        ws, doc, mt = item.get("workspace_id"), item.get("doc_id"), item.get("media_type")
+        if ws and doc and mt in AUDIO_CONTENT_TYPES:
+            t = item.get("transcript")
+            refs.append(MediaRef(
+                workspace_id=ws, doc_id=doc, media_type=mt,
+                transcript=t if isinstance(t, str) and t.strip() else None,
+            ))
+    return refs
+
+
+async def _model_accepts_audio(provider, model_id, caps) -> bool:
+    """True when the model accepts audio *input* (``input_modalities`` includes
+    ``audio``). Mirrors ``_model_accepts_vision`` including the one-shot catalog
+    warm for cold caps. Never raises — degrade to the STT-transcript fallback
+    rather than sending audio blocks a model would 400 on."""
+    def _audio(c) -> bool:
+        mods = [str(m).lower() for m in (getattr(c, "input_modalities", None) or [])]
+        return "audio" in mods
+
+    try:
+        if _audio(caps):
+            return True
+        warm = getattr(provider, "fetch_models", None)
+        if warm is not None:
+            await warm()
+            caps = provider.get_capabilities(model_id)
+        return _audio(caps)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"[audio-detect] capability probe failed, treating as non-audio: {e}")
+        return False
+
+
+# Native `input_audio` clips beyond this raw size fall back to STT (a base64
+# multi-MB clip per round trip melts context + latency; transcripts don't).
+_NATIVE_AUDIO_MAX_BYTES = 10 * 1024 * 1024
+
+
+async def _gate_audio_input(user_audio, accepts_audio, emit):
+    """Split attached audio into (native_refs, transcript_lines).
+
+    A clip rides **native** ``input_audio`` only when the model accepts audio AND
+    its container is in the OpenRouter-native set AND it's ≤ the native size cap.
+    Everything else is transcribed via the Ambassador's STT seam (one shared
+    model resolution) into a clearly-labeled transcript line; the transcript is
+    cached onto the ref so persistence/regeneration never re-bills. A clip that
+    can't transcribe (no STT configured / failure) degrades to a short notice
+    line — never a dead turn.
+    """
+    from .providers.base import INPUT_AUDIO_FORMATS
+
+    native, lines = [], []
+    if not user_audio:
+        return native, lines
+
+    for i, ref in enumerate(user_audio, start=1):
+        label = f"Audio attachment {i}"
+        try:
+            from .kit.workspaces import repository
+
+            doc = repository.get_document(ref.doc_id) or {}
+            fname = (doc.get("filename") or "").rsplit("/", 1)[-1]
+            if fname:
+                label = f'Audio attachment "{fname}"'
+            size_ok = (doc.get("size_bytes") or 0) <= _NATIVE_AUDIO_MAX_BYTES
+        except Exception:  # noqa: BLE001
+            size_ok = True
+
+        if accepts_audio and ref.media_type in INPUT_AUDIO_FORMATS and size_ok:
+            native.append(ref)
+            continue
+
+        if not ref.transcript:
+            emit("transcribing", f"Transcribing audio… ({label})")
+            ref.transcript = await _transcribe_ref(ref)
+        if ref.transcript:
+            lines.append(f"[{label} — transcript]: {ref.transcript}")
+        else:
+            lines.append(f"[{label}: attached, but it couldn't be transcribed "
+                         "and this model can't hear audio]")
+    if lines and not accepts_audio:
+        emit("audio_fallback", "the selected model can't hear audio — transcripts sent instead")
+    return native, lines
+
+
+async def _transcribe_ref(ref) -> str | None:
+    """Transcribe one stored clip via the Ambassador's STT seam (shared model
+    resolution: profile → ``ambassador.transcription_model`` → whisper default).
+    Returns None on any failure (the caller degrades to a notice line)."""
+    try:
+        from .agent.ambassador import get_ambassador
+        from .kit.workspaces import repository, storage
+
+        doc = repository.get_document(ref.doc_id)
+        if not doc or doc.get("workspace_id") != ref.workspace_id:
+            return None
+        raw = storage.read_blob(doc["storage_key"])
+        if not raw:
+            return None
+        fmt = {
+            "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav",
+            "audio/x-wav": "wav", "audio/ogg": "ogg", "audio/webm": "webm",
+            "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac",
+            "audio/flac": "flac",
+        }.get(ref.media_type, "webm")
+        text = await get_ambassador().transcribe(raw, audio_format=fmt)
+        return (text or "").strip() or None
+    except Exception as e:  # noqa: BLE001 — fallback is best-effort
+        logger.warning(f"Chat audio transcription failed for doc {ref.doc_id}: {e}")
+        return None
+
+
+def _strip_message_audio(messages, accepts_audio):
+    """Audio twin of ``_strip_message_images`` — drop audio refs from history
+    when the current model can't hear them (transcript lines already ride the
+    turn text, so nothing is lost)."""
+    if accepts_audio:
+        return messages
+    return [m.model_copy(update={"audio": None}) if m.audio else m for m in messages]
 
 
 def _resolve_project_channel_workspace(workspace_id, session_id):
@@ -2011,7 +2142,10 @@ async def agent_chat_stream(request):
         # Vision input: refs to already-uploaded images (workspace_id/doc_id/media_type).
         # Parsed into ImageRef objects below; an image-only turn may carry an empty message.
         raw_images = data.get("images") or []
-        if not message and not raw_images:
+        # Audio input: refs to already-uploaded clips (same shape, plus an optional
+        # cached `transcript` from a prior turn's STT fallback).
+        raw_audio = data.get("audio") or []
+        if not message and not raw_images and not raw_audio:
             return JsonResponse({'error': 'Missing required field: message'}, status=400)
         message = message or ""
 
@@ -2056,9 +2190,10 @@ async def agent_chat_stream(request):
         from .prompts import get_prompt_manager
         from .providers.base import ImageRef, Message, MessageRole
 
-        # Build validated vision-input ImageRefs from the wire payload (helper keeps
-        # the loop + conditionals out of this already-huge generator's path budget).
+        # Build validated media-input refs from the wire payload (helpers keep
+        # the loops + conditionals out of this already-huge generator's path budget).
         user_images: list[ImageRef] = _parse_image_refs(raw_images)
+        user_audio = _parse_audio_refs(raw_audio)
 
         task_id = str(uuid.uuid4())[:8]  # Short ID for UI display
         full_conversation_id = str(uuid.uuid4())  # Full UUID for database storage
@@ -2304,9 +2439,12 @@ async def agent_chat_stream(request):
             logger.debug(f"Session rehydration skipped: {_hy_err}")
 
         # Store full message in session for memory/history purposes. Carries the
-        # attached images so a later turn (same warm process) can re-feed them to a
-        # vision model; the outgoing message list is gated/stripped per-turn below.
-        session.add_message(Message(role=MessageRole.USER, content=message, images=user_images or None))
+        # attached media so a later turn (same warm process) can re-feed it to a
+        # capable model; the outgoing message list is gated/stripped per-turn below.
+        session.add_message(Message(
+            role=MessageRole.USER, content=message,
+            images=user_images or None, audio=user_audio or None,
+        ))
         context = session.get_messages()[:-1]
 
         # Resolve conversation ID — must match session.id exactly so the
@@ -2386,6 +2524,22 @@ async def agent_chat_stream(request):
                 and await _model_accepts_vision(provider, model_id, caps)
             )
             model_images = _gate_vision_images(user_images, accepts_vision, emit_status)
+
+            # Audio gating (capability-driven dual path): clips ride native
+            # `input_audio` blocks when the model can hear them (and the container/
+            # size qualify); everything else becomes a labeled STT transcript inline
+            # in the turn text. Transcripts cache onto the refs → persisted metadata.
+            accepts_audio = (
+                get_config_manager().get("audio.input_enabled", True)
+                and await _model_accepts_audio(provider, model_id, caps)
+            )
+            model_audio, audio_transcript_lines = await _gate_audio_input(
+                user_audio, accepts_audio, emit_status
+            )
+            if audio_transcript_lines:
+                message_for_context = (
+                    message_for_context + "\n\n" + "\n".join(audio_transcript_lines)
+                ).strip()
 
             # Direct mode (bare turn): the model receives ONLY the user message — no
             # system prompt, no memory, no tools. Manual via the agent profile, and
@@ -2619,7 +2773,8 @@ async def agent_chat_stream(request):
             ledger_result = None  # set on the standard path; done-event telemetry
             if direct_mode:
                 messages = [Message(
-                    role=MessageRole.USER, content=message_for_context, images=model_images or None
+                    role=MessageRole.USER, content=message_for_context,
+                    images=model_images or None, audio=model_audio or None,
                 )]
                 tools = None
             else:
@@ -2627,7 +2782,8 @@ async def agent_chat_stream(request):
                     blocks=blocks,
                     history=[m for m in context if m.role != MessageRole.SYSTEM],
                     new_message=Message(
-                        role=MessageRole.USER, content=message_for_context, images=model_images or None
+                        role=MessageRole.USER, content=message_for_context,
+                        images=model_images or None, audio=model_audio or None,
                     ),
                     context_window=context_window,
                     reserved_tokens=max_output_tokens + 2000,
@@ -2668,6 +2824,7 @@ async def agent_chat_stream(request):
             # messages. Non-mutating + helper-wrapped (keeps the comprehension out of
             # this generator's pyright path budget); the warm session keeps its images.
             messages = _strip_message_images(messages, accepts_vision)
+            messages = _strip_message_audio(messages, accepts_audio)
 
             # Resolve prompt profile name for metadata
             prompt_profile = prompt_manager.get_profile(profile_id) if profile_id else None
@@ -2804,13 +2961,20 @@ async def agent_chat_stream(request):
                             pass
 
                         idx = next_index
-                        # Persist the attached vision images (refs) on the user turn so
-                        # they re-render on the bubble after reload and can be re-fed to a
-                        # vision model on later turns. Full set regardless of whether the
-                        # current model could see them (gating only strips the model-bound copy).
-                        _user_turn_meta = (
-                            {"images": [r.model_dump() for r in user_images]} if user_images else None
-                        )
+                        # Persist the attached media (refs) on the user turn so it
+                        # re-renders on the bubble after reload and can be re-fed to a
+                        # capable model on later turns. Full set regardless of whether the
+                        # current model could use it (gating only strips the model-bound
+                        # copy). Audio refs carry any cached STT transcript — a reload/
+                        # regenerate never re-transcribes.
+                        _user_turn_meta = {}
+                        if user_images:
+                            _user_turn_meta["images"] = [r.model_dump() for r in user_images]
+                        if user_audio:
+                            _user_turn_meta["audio"] = [
+                                r.model_dump(exclude_none=True) for r in user_audio
+                            ]
+                        _user_turn_meta = _user_turn_meta or None
                         turns = [build_user_turn(conv_id, message, idx, metadata=_user_turn_meta)]
                         idx += 1
                         tool_turns, idx = build_tool_turns(conv_id, tool_turns_data, idx)
@@ -3566,6 +3730,14 @@ def ambassador_dispatch(request):
 
 
 _IMAGE_EXT = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
+# Chat media upload: content-type → stored extension for every attachable kind.
+_MEDIA_UPLOAD_EXT = {
+    **_IMAGE_EXT,
+    "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
+    "audio/ogg": "ogg", "audio/webm": "webm", "audio/mp4": "m4a", "audio/x-m4a": "m4a",
+    "audio/aac": "aac", "audio/flac": "flac",
+    "video/mp4": "mp4", "video/webm": "webm",
+}
 
 
 @csrf_exempt
@@ -3652,13 +3824,15 @@ async def avatar_generate(request):
 @csrf_exempt
 def chat_image_upload(request):
     """
-    POST /api/agent/chat/images  (multipart: ``file``)
+    POST /api/agent/chat/images  (multipart: ``file``; alias: /api/agent/chat/media)
 
-    Store a user-attached image for **vision input** in the user's reserved **Home**
+    Store a user-attached media file (image for **vision input**, audio for
+    **audio input**, video for render-only display) in the user's reserved **Home**
     workspace (under ``uploads/``, no text ingestion) and return a ref the chat stream
-    can carry in ``images[]``. Reuses the same content-addressed blob store + quota as
-    document upload; types are limited to png/jpeg/webp/gif by ``store_media``. Degrades
-    to a structured 422 on a policy failure (unsupported type / too large / over quota).
+    can carry in ``images[]`` / ``audio[]``. Reuses the same content-addressed blob
+    store + quota as document upload; allowed types + per-kind caps live in
+    ``store_media``. Degrades to a structured 422 on a policy failure (unsupported
+    type / too large / over quota).
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -3669,15 +3843,19 @@ def chat_image_upload(request):
 
     from .config import get_config_manager
 
-    if not get_config_manager().get("vision.enabled", True):
+    content_type = (getattr(upload, "content_type", None) or "").split(";")[0].strip().lower()
+    kind = content_type.split("/", 1)[0] if "/" in content_type else "image"
+    cfg = get_config_manager()
+    if kind == "image" and not cfg.get("vision.enabled", True):
         return JsonResponse({"error": "Vision input is disabled in settings.", "code": "disabled"}, status=422)
+    if kind == "audio" and not cfg.get("audio.input_enabled", True):
+        return JsonResponse({"error": "Audio input is disabled in settings.", "code": "disabled"}, status=422)
 
     from .kit.workspaces import repository
     from .kit.workspaces.service import WorkspaceError, store_media
 
     raw = upload.read()
-    content_type = (getattr(upload, "content_type", None) or "").split(";")[0].strip().lower()
-    ext = _IMAGE_EXT.get(content_type, "png")
+    ext = _MEDIA_UPLOAD_EXT.get(content_type, "png" if kind == "image" else "bin")
     from datetime import datetime
 
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
@@ -3685,7 +3863,7 @@ def chat_image_upload(request):
     try:
         doc = store_media(
             workspace_id=ws["id"],
-            filename=f"uploads/image-{stamp}.{ext}",
+            filename=f"uploads/{kind}-{stamp}.{ext}",
             content_type=content_type,
             raw=raw,
         )

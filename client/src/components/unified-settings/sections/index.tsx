@@ -83,10 +83,10 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
       },
       {
         id: 'images',
-        label: 'Images',
+        label: 'Images & Audio',
         icon: <ImageIcon size={18} />,
         component: lazy(() => import('./ImagesSection')),
-        keywords: ['image', 'images', 'avatar', 'avatars', 'generate', 'flux', 'openrouter', 'multimodal']
+        keywords: ['image', 'images', 'avatar', 'avatars', 'generate', 'flux', 'openrouter', 'multimodal', 'audio', 'voice', 'speech', 'record', 'transcribe']
       },
     ]
   },

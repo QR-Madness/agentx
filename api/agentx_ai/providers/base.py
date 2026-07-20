@@ -52,18 +52,26 @@ class MessageRole(str, Enum):
     TOOL = "tool"
 
 
-class ImageRef(BaseModel):
-    """A reference to an image attached to a user message (vision input).
+class MediaRef(BaseModel):
+    """A reference to a media blob attached to a user message (image/audio input).
 
     Points at an already-uploaded blob in the workspace store (typically the
     personal ``ws_home`` workspace) rather than carrying bytes — the actual
     base64 is materialized lazily at provider-conversion time
-    (:func:`resolve_image_data`). The same shape rides the chat wire request and
-    the persisted user-turn ``metadata.images``.
+    (:func:`resolve_media_data`). The same shape rides the chat wire request and
+    the persisted user-turn ``metadata.images`` / ``metadata.audio``.
+
+    ``transcript`` (audio only) caches an STT fallback result on the persisted
+    ref so reloads/regenerations never re-transcribe (or re-bill).
     """
     workspace_id: str
     doc_id: str
-    media_type: str  # "image/png" | "image/jpeg" | "image/webp" | "image/gif"
+    media_type: str  # e.g. "image/png" | "audio/wav" | "audio/mpeg"
+    transcript: str | None = None
+
+
+# Back-compat alias — the vision path predates the multi-modal generalization.
+ImageRef = MediaRef
 
 
 class Message(BaseModel):
@@ -76,7 +84,11 @@ class Message(BaseModel):
     # Vision input: images attached to a user message. Default None → every
     # existing Message(...) construction is unaffected. Materialized to base64
     # blocks only by the provider converters when the model accepts vision.
-    images: list[ImageRef] | None = None
+    images: list[MediaRef] | None = None
+    # Audio input: clips attached to a user message. Same lazy-ref pattern —
+    # converted to `input_audio` blocks only when the model accepts audio
+    # (a non-capable model gets the STT-transcript fallback upstream instead).
+    audio: list[MediaRef] | None = None
 
 
 class ToolCall(BaseModel):
@@ -180,8 +192,8 @@ def finalize_tool_calls(pending_calls: dict[int, dict[str, Any]]) -> list[ToolCa
     return completed
 
 
-def resolve_image_data(ref: ImageRef) -> tuple[str, str] | None:
-    """Materialize an :class:`ImageRef` into ``(media_type, base64_str)``.
+def resolve_media_data(ref: MediaRef) -> tuple[str, str] | None:
+    """Materialize a :class:`MediaRef` into ``(media_type, base64_str)``.
 
     Reads the auth-gated workspace blob (which an external provider can't fetch)
     and base64-encodes it so it can be inlined as a data-URI / base64 source.
@@ -194,17 +206,37 @@ def resolve_image_data(ref: ImageRef) -> tuple[str, str] | None:
 
         doc = repository.get_document(ref.doc_id)
         if not doc or doc.get("workspace_id") != ref.workspace_id:
-            logger.warning("Vision image ref unresolved (doc %s missing/mismatched)", ref.doc_id)
+            logger.warning("Media ref unresolved (doc %s missing/mismatched)", ref.doc_id)
             return None
         raw = storage.read_blob(doc["storage_key"])
         if not raw:
-            logger.warning("Vision image blob missing for doc %s", ref.doc_id)
+            logger.warning("Media blob missing for doc %s", ref.doc_id)
             return None
         media_type = doc.get("content_type") or ref.media_type
         return media_type, base64.b64encode(raw).decode("ascii")
-    except Exception:  # noqa: BLE001 — best-effort; a bad image must not break the turn
-        logger.warning("Vision image resolution failed for doc %s", ref.doc_id, exc_info=True)
+    except Exception:  # noqa: BLE001 — best-effort; a bad attachment must not break the turn
+        logger.warning("Media resolution failed for doc %s", ref.doc_id, exc_info=True)
         return None
+
+
+# Back-compat alias (pre-multi-modal name).
+resolve_image_data = resolve_media_data
+
+
+# Audio containers OpenRouter's OpenAI-spec `input_audio` block accepts, mapped
+# to the block's `format` string. webm is NOT accepted natively — a webm clip
+# rides the STT-transcript fallback instead (gated upstream in views).
+INPUT_AUDIO_FORMATS = {
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/ogg": "ogg",
+    "audio/mp4": "m4a",
+    "audio/x-m4a": "m4a",
+    "audio/aac": "aac",
+    "audio/flac": "flac",
+}
 
 
 def convert_messages_to_openai_format(messages: list[Message]) -> list[dict[str, Any]]:
@@ -218,21 +250,36 @@ def convert_messages_to_openai_format(messages: list[Message]) -> list[dict[str,
             "role": msg.role.value,
             "content": msg.content,
         }
-        # Vision input: when a user message carries images, content becomes a
-        # block list (text + image_url data-URIs). Text-only messages keep the
-        # plain string form, so the 99% path is byte-identical.
-        if msg.images:
+        # Media input: when a user message carries images/audio, content becomes
+        # a block list (text + image_url data-URIs + input_audio). Text-only
+        # messages keep the plain string form, so the 99% path is byte-identical.
+        if msg.images or msg.audio:
             blocks: list[dict[str, Any]] = []
             if msg.content:
                 blocks.append({"type": "text", "text": msg.content})
-            for ref in msg.images:
-                resolved = resolve_image_data(ref)
+            for ref in msg.images or []:
+                resolved = resolve_media_data(ref)
                 if resolved is None:
                     continue
                 media_type, b64 = resolved
                 blocks.append({
                     "type": "image_url",
                     "image_url": {"url": f"data:{media_type};base64,{b64}"},
+                })
+            for ref in msg.audio or []:
+                # Refs reaching here passed the upstream capability/format gate;
+                # an unmapped container is skipped (never a malformed block).
+                resolved = resolve_media_data(ref)
+                if resolved is None:
+                    continue
+                media_type, b64 = resolved
+                fmt = INPUT_AUDIO_FORMATS.get(media_type)
+                if fmt is None:
+                    logger.warning("Audio ref %s has non-native container %s; skipped", ref.doc_id, media_type)
+                    continue
+                blocks.append({
+                    "type": "input_audio",
+                    "input_audio": {"data": b64, "format": fmt},
                 })
             if blocks:
                 m["content"] = blocks
@@ -277,6 +324,11 @@ class StreamChunk(BaseModel):
     # USD for the request) and `reasoning_tokens` (hidden thinking tokens —
     # billed as output but invisible to any text-side estimate).
     usage: dict[str, Any] | None = None
+    # Non-text payloads the completion carried (image/audio-output models):
+    # content-block wire dicts (see `content_blocks` — {"type":"image", data,
+    # mimeType}). None on the 99% text path; consumers that ignore it lose
+    # nothing they had before.
+    media: list[dict[str, Any]] | None = None
 
 
 def normalize_openai_usage(usage: Any) -> dict[str, Any]:
@@ -319,6 +371,52 @@ def normalize_openai_usage(usage: Any) -> dict[str, Any]:
     return out
 
 
+def extract_media_blocks(message_like: Any) -> list[dict[str, Any]] | None:
+    """Extract non-text payloads from an OpenAI-format message/delta into
+    content-block wire dicts (see :mod:`agentx_ai.content_blocks`).
+
+    Handles the OpenRouter image-output shape (``message.images[] →
+    image_url.url`` base64 data URLs) and the OpenAI audio-output shape
+    (``message.audio.data``). Accepts an SDK object or a plain dict (unknown
+    SDK fields ride ``model_extra``). Returns ``None`` when the message carries
+    no media — the 99% text path allocates nothing. Never raises.
+    """
+    def _get(obj: Any, key: str, default: Any = None) -> Any:
+        if obj is None:
+            return default
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        val = getattr(obj, key, None)
+        if val is not None:
+            return val
+        extra = getattr(obj, "model_extra", None)
+        if isinstance(extra, dict):
+            return extra.get(key, default)
+        return default
+
+    try:
+        blocks: list[dict[str, Any]] = []
+        for img in _get(message_like, "images") or []:
+            url = _get(_get(img, "image_url"), "url") or ""
+            if not (isinstance(url, str) and url.startswith("data:") and "," in url):
+                continue
+            header, b64 = url.split(",", 1)
+            mime = header[len("data:"):].split(";", 1)[0] or "image/png"
+            blocks.append({"type": "image", "data": b64, "mimeType": mime})
+        audio = _get(message_like, "audio")
+        audio_b64 = _get(audio, "data")
+        if isinstance(audio_b64, str) and audio_b64:
+            fmt = _get(audio, "format") or "mp3"
+            mime = {"wav": "audio/wav", "mp3": "audio/mpeg", "ogg": "audio/ogg"}.get(
+                str(fmt).lower(), "audio/mpeg"
+            )
+            blocks.append({"type": "audio", "data": audio_b64, "mimeType": mime})
+        return blocks or None
+    except Exception:  # noqa: BLE001 — media capture must never break a completion
+        logger.debug("media block extraction failed", exc_info=True)
+        return None
+
+
 class CompletionResult(BaseModel):
     """Result of a completion request."""
     content: str
@@ -327,6 +425,8 @@ class CompletionResult(BaseModel):
     usage: dict[str, int] | None = None
     model: str
     raw_response: dict[str, Any] | None = None
+    # Non-text payloads (see StreamChunk.media) — content-block wire dicts.
+    media: list[dict[str, Any]] | None = None
 
 
 @dataclass

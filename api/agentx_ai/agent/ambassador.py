@@ -1471,6 +1471,7 @@ class AmbassadorService:
         profile_id: str | None = None,
         voice: str | None = None,
         model: str | None = None,
+        usage_source: str = "ambassador_tts",
     ) -> SpeechResult:
         """Synthesize spoken audio for ``text`` (a briefing / Q&A answer).
 
@@ -1533,7 +1534,7 @@ class AmbassadorService:
                 from .usage_ledger import record_usage
                 from ..providers.pricing import estimate_audio_cost
                 record_usage(
-                    source="ambassador_tts",
+                    source=usage_source,
                     model=speech_model,
                     provider=getattr(provider, "name", None),
                     agent_id=getattr(profile, "agent_id", None),

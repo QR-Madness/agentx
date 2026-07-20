@@ -1580,12 +1580,15 @@ paths:
     post:
       tags: [Agent]
       operationId: chatImageUpload
-      summary: Upload an image for vision input
+      summary: Upload chat media (image for vision, audio for audio input, video render-only)
       description: >-
-        Stores a user-attached image (multipart `file`) in the reserved "Home" workspace
+        Stores a user-attached media file (multipart `file`) in the reserved "Home" workspace
         under `uploads/` (no text ingestion) and returns a ref to carry in the chat stream's
-        `images[]`. Reuses the workspace blob store + per-file/quota policy; types limited to
-        png/jpeg/webp/gif. Degrades to 422 when vision is disabled or on a policy failure.
+        `images[]` / `audio[]`. Reuses the workspace blob store + per-file/quota policy; images
+        png/jpeg/webp/gif, audio mp3/wav/ogg/webm/m4a/aac/flac (≤25MB), video mp4/webm
+        (≤100MB, display-only — never model input). Degrades to 422 when the kind is disabled
+        (`vision.enabled` / `audio.input_enabled`) or on a policy failure.
+        `/agent/chat/media` is an alias of this endpoint (the historical path predates audio).
       requestBody:
         required: true
         content:
@@ -1609,11 +1612,33 @@ paths:
                   doc_id: { type: string }
                   workspace_id: { type: string }
                   media_type: { type: string }
-                  url: { type: string, description: Relative served-blob path for the image. }
+                  url: { type: string, description: Relative served-blob path for the media. }
         '400':
           description: No file provided
         '422':
           description: Disabled, unsupported type, too large, or over quota (carries an error code)
+  /agent/chat/media:
+    post:
+      tags: [Agent]
+      operationId: chatMediaUpload
+      summary: Alias of /agent/chat/images (accepts image/audio/video)
+      description: >-
+        Same handler as `/agent/chat/images` — the alias exists so new clients read
+        sensibly now that the upload accepts audio and video alongside images.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Stored (same shape as /agent/chat/images)
   /agent/ambassador/relay:
     post:
       tags: [Agent]
@@ -5783,10 +5808,22 @@ components:
           description: >-
             Vision input — refs to images already uploaded via `/agent/chat/images`. A
             vision-capable model receives them as image blocks; a non-vision model gets the
-            text only (a `status` notice is emitted). An image-only turn may send an empty
+            text only (a `status` notice is emitted). A media-only turn may send an empty
             `message`.
           items:
             $ref: '#/components/schemas/ChatImageRef'
+        audio:
+          type: array
+          description: >-
+            Audio input — refs to clips already uploaded via `/agent/chat/images` (or the
+            `/agent/chat/media` alias). Capability-driven dual path: an audio-capable model
+            receives native `input_audio` blocks (natively-accepted containers ≤10MB);
+            anything else is transcribed server-side (the shared Ambassador STT seam) and
+            inlined as a labeled transcript, with `status: transcribing` / `audio_fallback`
+            notices. A computed transcript is persisted onto the turn's `metadata.audio` and
+            honored when resent — a regenerate never re-transcribes.
+          items:
+            $ref: '#/components/schemas/ChatAudioRef'
 
     ChatImageRef:
       type: object
@@ -5799,6 +5836,21 @@ components:
         media_type:
           type: string
           enum: [image/png, image/jpeg, image/webp, image/gif]
+
+    ChatAudioRef:
+      type: object
+      required: [workspace_id, doc_id, media_type]
+      properties:
+        workspace_id:
+          type: string
+        doc_id:
+          type: string
+        media_type:
+          type: string
+          description: Audio container MIME type (audio/wav, audio/mpeg, audio/ogg, audio/webm, audio/mp4, audio/aac, audio/flac).
+        transcript:
+          type: string
+          description: Cached STT transcript from a prior turn's fallback (skips re-transcription when resent).
 
     ChatResponse:
       type: object

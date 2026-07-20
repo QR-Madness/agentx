@@ -16,6 +16,9 @@ import { ChoiceElement } from './ChoiceElement';
 import { TableElement } from './TableElement';
 import { CitationElement } from './CitationElement';
 import { ImageElement } from './ImageElement';
+import { AudioElement } from './AudioElement';
+import { VideoElement } from './VideoElement';
+import { TextElement } from './TextElement';
 
 export type { ElementRenderProps };
 
@@ -27,4 +30,7 @@ export const elementRegistry: Partial<
   table: TableElement,
   citation: CitationElement,
   image: ImageElement,
+  audio: AudioElement,
+  video: VideoElement,
+  text: TextElement,
 };

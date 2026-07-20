@@ -1,9 +1,10 @@
 /**
  * ExhibitBubble — renders one agent-presented Exhibit in a single bubble.
  *
- * Iterates the exhibit's elements (in `layout` order; `stack` = vertical) and
- * renders each via the element registry. Unknown element types degrade to a
- * safe source-as-code fallback so a newer backend can't break the transcript.
+ * Iterates the exhibit's elements and renders each via the element registry.
+ * `layout: 'stack'` = vertical; `'grid'` = responsive 2-column (collapsing to
+ * stack on narrow viewports). Unknown element types degrade to a safe
+ * source-as-code fallback so a newer backend can't break the transcript.
  */
 
 import { elementRegistry } from '../exhibits/elementRegistry';
@@ -28,7 +29,13 @@ export function ExhibitBubble({ message, busy, onSubmitChoice }: BubbleProps<'ex
         {!citationOnly && exhibit.title && (
           <div className="text-sm font-medium text-fg">{exhibit.title}</div>
         )}
-        <div className="flex flex-col gap-3">
+        <div
+          className={
+            exhibit.layout === 'grid'
+              ? 'grid grid-cols-1 gap-3 sm:grid-cols-2'
+              : 'flex flex-col gap-3'
+          }
+        >
           {exhibit.elements.map((el, i) => {
             const Renderer = elementRegistry[el.type];
             if (Renderer) {

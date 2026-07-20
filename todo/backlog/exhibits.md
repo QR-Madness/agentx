@@ -20,9 +20,15 @@ protocol + `present_exhibit` tool, `mermaid`/`choice`/`table`/`citation` element
 research via the `tavily-python` SDK), universal model fallback + bulk/inherited memory-stage models,
 and the static client-only conversation **Bibliography** ("Sources" drawer).
 
+**Shipped (multi-modal content slice, `[v0.21.237]`):** `text` element (markdown via the chat
+pipeline), media elements `image`/`audio`/`video` (served-blob-only URL validator — the
+exfiltration guard), **`grid` layout**, auto-emitted media exhibits (`generate_image` /
+`generate_speech` / MCP media passthrough) now persisted as synthetic `present_exhibit` turns
+(reload-safe). See Development-Notes → "Multi-modal content protocol".
+
 Open:
-- [ ] **`text` element** + absorbs the former "Advanced memory visualization (interactive graph,
-      embedding clusters)" item as a registered element type.
+- [ ] **Advanced memory visualization** (interactive graph, embedding clusters) as a registered
+      element type (the `text` element itself shipped v0.21.237).
 - [ ] **Active-citation context-injection** — fold `active` sources' `quote`s back into the agent's
       context (bounded) so it can reference tracked sources later (the "tracked in the chat" payoff).
       Still to do: `memory` citations deep-linking into the Memory drawer fact, and `web_extract` →
@@ -41,8 +47,8 @@ Open:
       no floor without one. Add a picker in settings.
 - [ ] **`form` (multi-field) interactive element** — multiple inputs submitted together as one
       turn; builds on the `choice` next-turn mechanism.
-- [ ] **`grid` (and richer) layouts** + a dedicated browsable **Gallery panel** (drawer) listing a
-      conversation's exhibits.
+- [ ] **Richer layouts beyond `grid`** (shipped v0.21.237) + a dedicated browsable **Gallery panel**
+      (drawer) listing a conversation's exhibits.
 - [ ] **Inline-fence fallback** — also render the model's *native* ` ```mermaid ` fences (no tool
       call) by parsing them into exhibits, for models that under-reach for the tool.
 - [ ] **Exhibits in delegation streams** — extend the typed event to `delegation_chunk` so a

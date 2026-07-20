@@ -24,6 +24,8 @@ import {
   Image as ImageIcon,
   Inbox,
   MemoryStick,
+  Mic,
+  Music,
   NotebookPen,
   Orbit,
   Paperclip,
@@ -68,6 +70,14 @@ interface RelayMenuProps {
   uploadingImage?: boolean;
   /** Whether the active model/profile supports vision (gates the image tile). */
   visionEnabled?: boolean;
+  /** Open the audio picker — attaches clips to the next message (audio input). */
+  onAttachAudio?: () => void;
+  /** Start/stop a voice-note recording (undefined when the mic isn't available). */
+  onRecordVoice?: () => void;
+  uploadingAudio?: boolean;
+  recordingVoice?: boolean;
+  /** Global audio-input gate (audio.input_enabled) — hides both audio tiles. */
+  audioEnabled?: boolean;
   /** Open the Projects hub for this conversation's project. */
   onOpenProject?: () => void;
   /** Name of the conversation's project, if it belongs to one. */
@@ -148,6 +158,11 @@ export function RelayMenu({
   onAttachImage,
   uploadingImage,
   visionEnabled,
+  onAttachAudio,
+  onRecordVoice,
+  uploadingAudio,
+  recordingVoice,
+  audioEnabled,
   onOpenProject,
   projectName,
   hasProject,
@@ -406,6 +421,27 @@ export function RelayMenu({
             disabled={!onAttachImage || uploadingImage}
             onClick={() => { onAttachImage?.(); onClose(); }}
             title="Attach an image to the next message — or just paste one into the composer"
+          />
+        )}
+        {audioEnabled && (
+          <RelayTile
+            icon={<Music size={16} />}
+            label={uploadingAudio ? 'Uploading…' : 'Attach audio'}
+            hint="For the model to hear"
+            disabled={!onAttachAudio || uploadingAudio}
+            onClick={() => { onAttachAudio?.(); onClose(); }}
+            title="Attach an audio clip — audio models hear it; others get a transcript"
+          />
+        )}
+        {audioEnabled && onRecordVoice && (
+          <RelayTile
+            icon={<Mic size={16} />}
+            label={recordingVoice ? 'Recording…' : 'Voice note'}
+            hint={recordingVoice ? 'Stop from the composer' : 'Record for the message'}
+            on={recordingVoice}
+            disabled={recordingVoice}
+            onClick={() => { onRecordVoice(); onClose(); }}
+            title="Record a voice note to attach to the next message"
           />
         )}
         <RelayTile
