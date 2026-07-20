@@ -119,7 +119,7 @@ The full **client surface map** (chat page anatomy, Ambassador Deck, Projects hu
 editors, theme internals) lives in [`Development-Notes.md`](Development-Notes.md) — read it before
 touching a surface. The rules that must not drift:
 
-- 3 primary pages (Start, Dashboard, AgentX) routed via `RootLayout` + `TopBar`; gate pages `AuthPage` (`AGENTX_AUTH_ENABLED`) + `VersionMismatchPage`.
+- 3 primary pages (Start, Dashboard, AgentX) routed via `RootLayout` + `TopBar`; gate pages `AuthPage` (`AGENTX_AUTH_ENABLED`) + `VersionMismatchPage`. TopBar also carries desktop **surface pills** (Deck, Memory) — no new `PageId`s: selected state derives from `useModal().isOpen`, the surfaces sit below the 56px bar, and pills are palette-only on mobile.
 - **Command palette is the primary command surface** — `components/common/CommandPalette.tsx` over the `hooks/useCommands.tsx` registry; palette + TopBar icons share `lib/surfaces.ts` (`SURFACES.*`) so they can't drift.
 - Destructive actions use `ui/ConfirmDialog` (`useConfirm()`), never native `confirm`.
 - **Settings sections** build on `components/settings/fields/` + `useSettingsAutosave`

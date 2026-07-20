@@ -50,6 +50,7 @@ const SELF_CLOSING = new Set<string>([
   'unifiedProfileEditor',
   'profileEditor',
   'memory',
+  'ambassadorDeck',
   'changePassword',
   'toolOutput',
   'alloyFactory',
@@ -79,6 +80,7 @@ const FULLSCREEN_SURFACES = new Set<string>([
   'tools',
   'unifiedProfileEditor',
   'memory',
+  'ambassadorDeck',
 ]);
 
 function ModalRenderer({ modal }: { modal: ModalInstance }) {

@@ -59,11 +59,12 @@ export function AmbassadorDrawerContent({ onClose: _onClose }: ModalContentProps
   );
 }
 
-export function AmbassadorDeckContent({ onClose: _onClose }: ModalContentProps) {
+export function AmbassadorDeckContent({ onClose }: ModalContentProps) {
   // The standalone command deck: the ambassador with no conversation. Holds multiple named
   // Inquiries (the home deck thread + minted ones); this owns which one is selected and the
-  // registry list. Full-screen host (like Memory) so the stream fills the dialog; the shell
-  // owns the close button.
+  // registry list. A BARE full-screen surface (FULLSCREEN_SURFACES + SELF_CLOSING, like
+  // Memory): owns its own backdrop + Escape + scroll lock; the panel renders the inline
+  // close button (never a floating one).
   const { sessionInfo } = useAuth();
   const { inquiries, listInquiries, createInquiry } = useAmbassador();
   const homeId = deckThreadId(sessionInfo?.user_id);
@@ -71,21 +72,49 @@ export function AmbassadorDeckContent({ onClose: _onClose }: ModalContentProps) 
 
   useEffect(() => { void listInquiries(); }, [listInquiries]);
 
+  // ESC to close + body scroll lock (bare full-screen surface owns these).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+    };
+    window.addEventListener('keydown', handler);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', handler);
+      document.body.style.overflow = '';
+    };
+  }, [onClose]);
+
   const onNewInquiry = async () => {
     const id = await createInquiry();
     if (id) setSelectedId(id);
   };
 
   return (
-    <div className="memory-modal-content">
-      <AmbassadorPanel
-        deckThreadId={selectedId}
-        deckHomeId={homeId}
-        deckInquiries={inquiries}
-        onSelectInquiry={setSelectedId}
-        onNewInquiry={onNewInquiry}
+    <>
+      {/* Desktop (>600px): sit BELOW the 56px TopBar so the Deck pill stays visible,
+          lit, and clickable (toggle-close) — first-class tab behavior. Mobile keeps
+          full-viewport (pills don't exist there; the palette is the entry). */}
+      <div
+        className="fixed inset-0 z-[1999] bg-[var(--glass-backdrop)] min-[601px]:top-14"
+        onClick={onClose}
       />
-    </div>
+      <div
+        className="fixed inset-0 z-[2000] flex flex-col overflow-hidden bg-surface-base text-fg animate-in fade-in-0 zoom-in-[0.99] duration-150 min-[601px]:top-14"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command Deck"
+      >
+        <AmbassadorPanel
+          deckThreadId={selectedId}
+          deckHomeId={homeId}
+          deckInquiries={inquiries}
+          onSelectInquiry={setSelectedId}
+          onNewInquiry={onNewInquiry}
+          onClose={onClose}
+        />
+      </div>
+    </>
   );
 }
 

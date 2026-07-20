@@ -475,10 +475,13 @@ interface AmbassadorPanelProps {
   onSelectInquiry?: (threadId: string) => void;
   /** Mint + switch to a new Inquiry. */
   onNewInquiry?: () => void;
+  /** Bare full-screen host (the Deck): render an inline header close button —
+   *  the shell close button doesn't exist there. */
+  onClose?: () => void;
 }
 
 export function AmbassadorPanel({
-  deckThreadId, deckHomeId, deckInquiries, onSelectInquiry, onNewInquiry,
+  deckThreadId, deckHomeId, deckInquiries, onSelectInquiry, onNewInquiry, onClose,
 }: AmbassadorPanelProps = {}) {
   const isDeck = !!deckThreadId;
   const { activeTab, tabs, relayToConversation, restoreConversation, refreshHistory } = useConversation();
@@ -1032,8 +1035,9 @@ export function AmbassadorPanel({
       <div
         className={`flex flex-col gap-1 border-b border-line px-4 pb-2.5 pt-3.5 transition-colors duration-300 ${voiceActive ? 'bg-gradient-to-b from-accent/8 to-transparent' : ''}`}
       >
-        {/* pr-10 clears the shell's absolute close button (top-right). */}
-        <div className="flex items-center gap-2 pr-10">
+        {/* pr-10 clears the shell's absolute close button — only when the shell owns
+            it (drawer/dialog hosts); a bare host passes onClose for an inline X. */}
+        <div className={`flex items-center gap-2 ${onClose ? '' : 'pr-10'}`}>
           <span className="relative inline-flex shrink-0">
             <AmbassadorMark size={26} avatar={ambassadorProfile?.avatar} />
             {anyStreaming && (
@@ -1053,6 +1057,17 @@ export function AmbassadorPanel({
           </div>
           {modeToggle}
           {overflowMenu}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-transparent text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+              title="Close"
+              aria-label="Close Command Deck"
+            >
+              <X size={17} />
+            </button>
+          )}
         </div>
         <p className="pl-[34px] text-[11px] leading-snug text-fg-muted">{contextLine}</p>
       </div>
