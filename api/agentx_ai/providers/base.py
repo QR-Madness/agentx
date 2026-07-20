@@ -219,10 +219,6 @@ def resolve_media_data(ref: MediaRef) -> tuple[str, str] | None:
         return None
 
 
-# Back-compat alias (pre-multi-modal name).
-resolve_image_data = resolve_media_data
-
-
 # Audio containers OpenRouter's OpenAI-spec `input_audio` block accepts, mapped
 # to the block's `format` string. webm is NOT accepted natively — a webm clip
 # rides the STT-transcript fallback instead (gated upstream in views).
