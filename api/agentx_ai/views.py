@@ -633,11 +633,12 @@ def _effective_min_output(
     return max(present) if present else None
 
 
-def _append_team_blocks(blocks: list, agent, active_workflow, session) -> None:
+def _append_team_blocks(blocks: list, agent, agent_profile, active_workflow, session) -> None:
     """Append multi-agent framing ledger blocks: the workflow supervisor prompt OR
-    participant awareness, plus the ad-hoc delegation roster. Factored out of the
-    chat-stream generator (like `_append_corpus_awareness_blocks`) to keep its
-    conditional-path count within the type-checker's analysis budget.
+    participant awareness, the manager tier charter (Agentic Orgs), plus the
+    ad-hoc delegation roster. Factored out of the chat-stream generator (like
+    `_append_corpus_awareness_blocks`) to keep its conditional-path count within
+    the type-checker's analysis budget.
     """
     from .agent.context_ledger import LedgerBlock, shrink_tail
 
@@ -662,6 +663,18 @@ def _append_team_blocks(blocks: list, agent, active_workflow, session) -> None:
                 content=participants_block,
                 shrink_fn=shrink_tail,
             ))
+
+    # Manager report contract (Agentic Orgs): mandatory behavioral charter for
+    # manager-tier profiles in normal chats — additive to participant awareness;
+    # the structural half is the report-only tool template on the profile.
+    if active_workflow is None and getattr(agent_profile, "org_level", "agent") == "manager":
+        from .alloy.prompts import build_manager_charter_prompt
+        blocks.append(LedgerBlock(
+            key="manager_charter",
+            priority=92,
+            mandatory=True,
+            content=build_manager_charter_prompt(),
+        ))
 
     # Ad-hoc delegation roster (Phase 16.4): outside a workflow, when `delegate_to`
     # is on offer, tell the model who its teammates are. Non-mandatory — droppable
@@ -2442,10 +2455,11 @@ async def agent_chat_stream(request):
                 *_thinking_blocks(thinking_plan),
             ]
 
-            # Multi-agent framing: workflow supervisor OR participant awareness, plus
-            # the ad-hoc delegation roster. Extracted to a helper (see its docstring)
-            # to keep this generator under the type-checker's complexity budget.
-            _append_team_blocks(blocks, agent, active_workflow, session)
+            # Multi-agent framing: workflow supervisor OR participant awareness, the
+            # manager tier charter, plus the ad-hoc delegation roster. Extracted to a
+            # helper (see its docstring) to keep this generator under the
+            # type-checker's complexity budget.
+            _append_team_blocks(blocks, agent, agent_profile, active_workflow, session)
 
             # Skills index (progressive disclosure — bodies load via use_skill).
             blocks.extend(_skills_block(agent))

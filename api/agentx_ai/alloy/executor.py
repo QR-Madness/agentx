@@ -47,6 +47,9 @@ class AlloyExecutor:
         max_parallel_delegations: int = 3,
         delegation_timeout_seconds: int = 300,
         non_blocking_enabled: bool = True,
+        base_depth: int = 0,
+        delegation_path: tuple[str, ...] | None = None,
+        parent_delegation_id: str | None = None,
     ):
         """Owns one delegating agent's in-flight delegations.
 
@@ -55,7 +58,17 @@ class AlloyExecutor:
           delegator id are derived from it and targets must be workflow
           specialists.
         - **Ad-hoc** (Phase 16.4): pass ``channel`` + ``delegator_agent_id``;
-          any agent profile (except the delegator) is a valid target.
+          any agent profile (except the delegator) is a valid target — gated to
+          chain adjacency for org participants (Agentic Orgs).
+
+        Chain nesting (Agentic Orgs): a NESTED executor (attached to a
+        lead-specialist mid-delegation) carries per-instance immutables —
+        ``base_depth`` (its delegations start there: the tool loop calls
+        ``delegate()`` without a depth), ``delegation_path`` (agent_ids from the
+        top-level delegator down to this executor's owner; the loop guard), and
+        ``parent_delegation_id`` (stamped on its ``delegation_*`` events so the
+        client nests them under the parent work order). Immutable per instance —
+        one executor per branch — so concurrent fan-out never races shared state.
         """
         self.workflow = workflow
         self.supervisor = supervisor_agent
@@ -66,6 +79,8 @@ class AlloyExecutor:
         # and the gate for offering `delegate_start` (background work orders).
         self.delegation_timeout_seconds = delegation_timeout_seconds
         self.non_blocking_enabled = non_blocking_enabled
+        self.base_depth = base_depth
+        self.parent_delegation_id = parent_delegation_id
         # `history` is appended from concurrent delegate() branches (fan-out);
         # guard slot allocation + append with a lock so Turn indices stay unique.
         self.history: list[dict] = []  # {target_agent_id, status, result_preview}
@@ -78,12 +93,30 @@ class AlloyExecutor:
             self.channel = channel or "_global"
             self.delegator_agent_id = delegator_agent_id or ""
 
-    def _validate_target(self, target_agent_id: str) -> str | None:
+        if delegation_path is not None:
+            self.delegation_path: tuple[str, ...] = delegation_path
+        else:
+            self.delegation_path = (
+                (self.delegator_agent_id,) if self.delegator_agent_id else ()
+            )
+
+    def _validate_target(
+        self, target_agent_id: str, *, path: tuple[str, ...] = ()
+    ) -> str | None:
         """Return an error string if ``target_agent_id`` is not delegable, else None."""
         # No self-delegation (both modes) — satisfies the Phase 16.4 safeguard
         # and is harmless for workflow supervisors (they never list themselves).
+        # Checked before the loop guard so direct self-delegation keeps its
+        # specific message (self is always on its own path).
         if target_agent_id == self.delegator_agent_id:
             return "an agent cannot delegate to itself"
+        # Loop guard (both modes): a target already on the delegation path would
+        # cycle (manager→lead→member→lead…) — reject categorically.
+        if target_agent_id in path:
+            return (
+                f"delegation loop: {target_agent_id!r} is already in this "
+                "delegation chain"
+            )
         if self.workflow is not None:
             member = self.workflow.get_member(target_agent_id)
             if member is None or member.role != MemberRole.SPECIALIST:
@@ -91,6 +124,22 @@ class AlloyExecutor:
         else:
             if get_profile_manager().get_profile_by_agent_id(target_agent_id) is None:
                 return f"no agent profile for agent_id {target_agent_id!r}"
+            # Chain of command (Agentic Orgs): an org participant may only
+            # delegate along its chain. Second enforcement point — the tool
+            # enum is the first (INV: dual enforcement, one derivation source).
+            from . import org_chart
+
+            if (
+                self.delegator_agent_id
+                and org_chart.chain_of_command_enabled()
+                and org_chart.in_org(self.delegator_agent_id)
+            ):
+                legal = {t.agent_id for t in org_chart.chain_targets(self.delegator_agent_id)}
+                if target_agent_id not in legal:
+                    return (
+                        f"chain of command: {target_agent_id!r} is not adjacent to "
+                        f"{self.delegator_agent_id!r} in the organization"
+                    )
         return None
 
     async def delegate(
@@ -104,6 +153,7 @@ class AlloyExecutor:
         parent_delegation_id: str | None = None,
         delegation_id: str | None = None,
         media: list[str] | None = None,
+        delegation_path: list[str] | None = None,
     ) -> AsyncGenerator[tuple[str, str]]:
         """
         Run one specialist for one task.
@@ -132,6 +182,12 @@ class AlloyExecutor:
         # A caller-minted id lets the tool loop cite the work order in its
         # dispatch receipt before this generator first yields.
         delegation_id = delegation_id or uuid4().hex[:8]
+        # Chain nesting: the tool loop calls delegate() without depth/path/parent
+        # kwargs (test-fake compatibility) — a nested executor supplies its own
+        # per-instance defaults; the top-level executor's are 0 / (delegator,) / None.
+        depth = depth if depth else self.base_depth
+        path = tuple(delegation_path) if delegation_path is not None else self.delegation_path
+        parent_delegation_id = parent_delegation_id or self.parent_delegation_id
 
         def _reject_payload(err: str) -> dict:
             return {
@@ -146,7 +202,7 @@ class AlloyExecutor:
             }
 
         # ------- validate target -------
-        err = self._validate_target(target_agent_id)
+        err = self._validate_target(target_agent_id, path=path)
         if err is not None:
             yield _sse("delegation_complete", _reject_payload(err)), \
                 f"[delegation rejected: {err}]"

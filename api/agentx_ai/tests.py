@@ -8998,6 +8998,83 @@ class AdhocRosterPromptTest(TestCase):
         ids = [aid for aid, _, _ in targets]
         self.assertEqual(ids, ["logic-cc-dd"])
 
+    # ---- chain of command (Agentic Orgs) ----
+
+    def _patched_org(self, knob=True, org=True):
+        """Patch org_chart's accessors: one manager-owned team t1
+        (manager m-aa → lead l1-aa → member a-aa) when ``org``, else none."""
+        from contextlib import ExitStack
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        wfs = [Workflow(
+            id="t1", name="Team One", supervisor_agent_id="l1-aa",
+            manager_agent_id="m-aa",
+            members=[WorkflowMember(agent_id="l1-aa", role=MemberRole.SUPERVISOR),
+                     WorkflowMember(agent_id="a-aa", role=MemberRole.SPECIALIST,
+                                    delegation_hint="pattern analysis")],
+        )] if org else []
+        profiles = {
+            aid: SimpleNamespace(agent_id=aid, name=name, kind="agent",
+                                 org_level=level, delegation_hint=None,
+                                 description=f"{name} desc",
+                                 available_for_delegation=False)
+            for aid, name, level in (
+                ("m-aa", "Mable", "manager"), ("l1-aa", "Lena", "lead"),
+                ("a-aa", "Aria", "agent"),
+            )
+        }
+        stack = ExitStack()
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_profile_manager",
+            return_value=SimpleNamespace(
+                get_profile_by_agent_id=lambda aid: profiles.get(aid))))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_workflow_manager",
+            return_value=SimpleNamespace(list=lambda: wfs)))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_config_manager",
+            return_value=SimpleNamespace(
+                get=lambda key, default=None: knob
+                if key == "alloy.chain_of_command" else default)))
+        return stack
+
+    def test_in_org_roster_uses_chain_targets_and_relations(self):
+        """An org participant's roster IS its chain adjacency, relation-tagged,
+        under the chain-of-command header — enum and prompt share the source."""
+        from agentx_ai.alloy.prompts import build_adhoc_roster_prompt
+        with self._patched_org(), self._patched():
+            manager_roster = build_adhoc_roster_prompt("m-aa")
+            lead_roster = build_adhoc_roster_prompt("l1-aa")
+            member_roster = build_adhoc_roster_prompt("a-aa")
+        assert manager_roster and lead_roster and member_roster
+        self.assertIn("chain of command", manager_roster)
+        self.assertIn("[lead of your team 'Team One']", manager_roster)
+        self.assertNotIn("Logician", manager_roster)  # flat roster fully replaced
+        self.assertIn("[your team member — 'Team One']", lead_roster)
+        self.assertIn("pattern analysis", lead_roster)  # member hint rendered
+        self.assertIn("[your lead — escalation only]", member_roster)
+        self.assertIn("NEEDS ESCALATION", member_roster)  # convention documented
+
+    def test_org_free_roster_unchanged(self):
+        """No manager-owned teams → the flat opted-in roster, byte-identical."""
+        from agentx_ai.alloy.prompts import ADHOC_ROSTER_HEADER, build_adhoc_roster_prompt
+        with self._patched_org(org=False), self._patched():
+            roster = build_adhoc_roster_prompt("self-aa-bb")
+        assert roster is not None
+        self.assertIn(ADHOC_ROSTER_HEADER, roster)
+        self.assertIn("Logician", roster)
+
+    def test_knob_off_restores_flat_roster(self):
+        """chain_of_command=False → org participants fall back to the flat
+        roster (kill switch)."""
+        from agentx_ai.alloy.prompts import ADHOC_ROSTER_HEADER, build_adhoc_roster_prompt
+        with self._patched_org(knob=False), self._patched():
+            roster = build_adhoc_roster_prompt("m-aa")
+        assert roster is not None
+        self.assertIn(ADHOC_ROSTER_HEADER, roster)
+        self.assertIn("Logician", roster)
+
     def test_roster_block_helper_gating(self):
         """views helper: no roster inside a workflow or without an attached
         ad-hoc executor; present when the executor is attached outside one."""
@@ -9177,6 +9254,107 @@ class AdhocDelegationTest(TestCase):
                    return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
             done = self._parse_complete(asyncio.run(self._drain(
                 ex.delegate("beta-agent", "x", tool_call_id="t", depth=3))))
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("max delegation depth", done["error"])
+
+    # ---- chain of command (Agentic Orgs) ----
+
+    def _patched_org(self, knob=True, org=True):
+        """Patch org_chart: one manager-owned team (m-aa → l1-aa → a-aa)."""
+        from contextlib import ExitStack
+        from types import SimpleNamespace
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        wfs = [Workflow(
+            id="t1", name="Team One", supervisor_agent_id="l1-aa",
+            manager_agent_id="m-aa",
+            members=[WorkflowMember(agent_id="l1-aa", role=MemberRole.SUPERVISOR),
+                     WorkflowMember(agent_id="a-aa", role=MemberRole.SPECIALIST)],
+        )] if org else []
+        profiles = {
+            aid: SimpleNamespace(agent_id=aid, name=aid, kind="agent",
+                                 org_level="agent", delegation_hint=None,
+                                 description="", available_for_delegation=False)
+            for aid in ("m-aa", "l1-aa", "a-aa")
+        }
+        stack = ExitStack()
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_profile_manager",
+            return_value=SimpleNamespace(
+                get_profile_by_agent_id=lambda aid: profiles.get(aid))))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_workflow_manager",
+            return_value=SimpleNamespace(list=lambda: wfs)))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_config_manager",
+            return_value=SimpleNamespace(
+                get=lambda key, default=None: knob
+                if key == "alloy.chain_of_command" else default)))
+        return stack
+
+    def _make_org_executor(self, delegator, **kwargs):
+        from types import SimpleNamespace
+        from agentx_ai.alloy.executor import AlloyExecutor
+        supervisor = SimpleNamespace(
+            config=SimpleNamespace(user_id="u", default_model="m", max_tool_rounds=3),
+            memory=None,
+        )
+        return AlloyExecutor(
+            supervisor, SimpleNamespace(id="sess"),  # type: ignore[arg-type]
+            channel="_global", delegator_agent_id=delegator, **kwargs,
+        )
+
+    def test_chain_gate_blocks_non_adjacent_target(self):
+        """A manager may not skip a level: manager → member is rejected at the
+        executor even though the member's profile resolves (defense in depth —
+        the enum is the first gate, this is the reality check)."""
+        from types import SimpleNamespace
+        ex = self._make_org_executor("m-aa")
+        with self._patched_org(), \
+             patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            done = self._parse_complete(asyncio.run(self._drain(
+                ex.delegate("a-aa", "x", tool_call_id="t"))))
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("chain of command", done["error"])
+
+    def test_chain_gate_allows_adjacent_and_escalation(self):
+        from types import SimpleNamespace
+        with self._patched_org(), \
+             patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            # manager → its lead (down_lead)
+            self.assertIsNone(self._make_org_executor("m-aa")._validate_target("l1-aa"))
+            # member ↑ its lead (up_lead escalation)
+            self.assertIsNone(self._make_org_executor("a-aa")._validate_target("l1-aa"))
+
+    def test_chain_gate_inert_for_org_free_delegator(self):
+        """No manager-owned teams → the gate never fires (back-compat)."""
+        from types import SimpleNamespace
+        ex = self._make_org_executor("alpha-agent")
+        with self._patched_org(org=False), \
+             patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            self.assertIsNone(ex._validate_target("beta-agent"))
+
+    def test_delegation_loop_rejected(self):
+        """A target already on the delegation path is refused categorically —
+        kills manager→lead→member→lead cycles before any other check."""
+        ex = self._make_org_executor("l1-aa", delegation_path=("m-aa", "l1-aa"))
+        done = self._parse_complete(asyncio.run(self._drain(
+            ex.delegate("m-aa", "x", tool_call_id="t"))))
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("delegation loop", done["error"])
+
+    def test_nested_executor_base_depth_used_when_depth_omitted(self):
+        """The tool loop calls delegate() without depth — a nested executor's
+        base_depth must apply (here: already at the ceiling → rejected)."""
+        from types import SimpleNamespace
+        ex = self._make_org_executor("alpha-agent", base_depth=3, max_delegation_depth=3)
+        with self._patched_org(org=False), \
+             patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            done = self._parse_complete(asyncio.run(self._drain(
+                ex.delegate("beta-agent", "x", tool_call_id="t"))))
         self.assertEqual(done["status"], "failed")
         self.assertIn("max delegation depth", done["error"])
 
