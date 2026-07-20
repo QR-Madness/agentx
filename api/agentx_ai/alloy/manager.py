@@ -53,6 +53,7 @@ def _parse_workflow(data: dict) -> Workflow:
         name=data["name"],
         description=data.get("description"),
         supervisor_agent_id=data["supervisor_agent_id"],
+        manager_agent_id=data.get("manager_agent_id"),
         members=[_parse_member(m) for m in data.get("members", [])],
         routes=[_parse_route(r) for r in data.get("routes", [])],
         shared_channel=data.get("shared_channel") or "",
@@ -150,6 +151,42 @@ class WorkflowManager:
                 f"workflow {wf.id!r} declares {len(wf.routes)} routes; "
                 "declarative routes are accepted but not executed in v1"
             )
+
+        # Agentic Organizations: the owning manager. Hard rules run only on
+        # create/update (never at YAML load — old files keep booting); tier
+        # mismatches are warn-only (routes-warning precedent) so existing
+        # workflows.yaml can't be bricked by a profile edit.
+        if wf.manager_agent_id:
+            manager_profile = next(
+                (
+                    p
+                    for p in pm.list_profiles()
+                    if p.agent_id == wf.manager_agent_id and p.kind == "agent"
+                ),
+                None,
+            )
+            if manager_profile is None:
+                raise ValueError(
+                    f"manager_agent_id {wf.manager_agent_id!r} does not match any agent profile"
+                )
+            if wf.manager_agent_id == wf.supervisor_agent_id:
+                raise ValueError("manager_agent_id must not be the team's own lead")
+            if any(m.agent_id == wf.manager_agent_id for m in wf.members):
+                raise ValueError("manager_agent_id must not be a member of the team it owns")
+            if manager_profile.org_level != "manager":
+                logger.warning(
+                    f"workflow {wf.id!r}: manager {wf.manager_agent_id!r} has "
+                    f"org_level={manager_profile.org_level!r} (expected 'manager')"
+                )
+            supervisor_profile = next(
+                (p for p in pm.list_profiles() if p.agent_id == wf.supervisor_agent_id),
+                None,
+            )
+            if supervisor_profile is not None and supervisor_profile.org_level != "lead":
+                logger.warning(
+                    f"workflow {wf.id!r}: lead {wf.supervisor_agent_id!r} has "
+                    f"org_level={supervisor_profile.org_level!r} (expected 'lead')"
+                )
 
     # ------------------------------------------------------------------
     # CRUD

@@ -122,6 +122,26 @@ class AmbassadorConfig(BaseModel):
     )
 
 
+# Agentic Organizations — the manager "report contract" tool template. Merged into
+# `blocked_tools` ONCE when a profile transitions to org_level="manager" (create or
+# update); editable afterward — a template, not a live gate. Manual-work families
+# only: document writes, shell exec/write, media generation. Read/report tools and
+# MCP tools stay available. Mirrored client-side in `client/src/lib/managerTemplate.ts`
+# (keep the two lists in sync — both are pinned by tests).
+MANAGER_REPORT_ONLY_BLOCKED_TOOLS: tuple[str, ...] = (
+    "_internal.create_document",
+    "_internal.update_document",
+    "_internal.append_to_document",
+    "_internal.edit_document",
+    "_internal.rename_document",
+    "_internal.delete_document",
+    "_internal.run_command",
+    "_internal.write_file",
+    "_internal.generate_image",
+    "_internal.generate_speech",
+)
+
+
 class AgentProfile(BaseModel):
     """
     Configuration profile for an agent persona.
@@ -219,6 +239,15 @@ class AgentProfile(BaseModel):
     delegation_hint: str | None = Field(
         None,
         description="One-line specialty shown to teammates deciding whom to delegate to",
+    )
+    # Agentic Organizations: org tier, orthogonal to `kind` (managers/leads/members
+    # are all kind="agent" — routable, chattable). Plays NO role in chain-edge
+    # derivation (tier on the profile, structure on the workflow); mismatches are
+    # log-warn only. "executive" is reserved in the enum so future YAML loads
+    # today, but it is never offered in the UI and has no semantics yet.
+    org_level: Literal["executive", "manager", "lead", "agent"] = Field(
+        "agent",
+        description="Org tier (Agentic Organizations); 'executive' is reserved and never offered in UI",
     )
 
     # Ambassador (Phase 16.6): optional extra section turning this profile into a

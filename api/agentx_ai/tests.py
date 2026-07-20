@@ -8506,6 +8506,39 @@ class DelegatableProfileTest(TestCase):
         p = AgentProfile(id="n", name="N", agent_id="new-one-two")  # type: ignore[call-arg]
         self.assertFalse(p.available_for_delegation)
 
+    def test_org_level_round_trips_save_reload(self):
+        """Agentic Orgs: org_level survives save→reload (hand-picked save dict —
+        the Phase-18.2 silent-drop regression class)."""
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.agent.models import AgentProfile
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "profiles.yaml"
+            mgr = self._manager(path)
+            mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+                id="ld", name="Lead", agent_id="org-lead-one", org_level="lead",
+            ))
+            reloaded = self._manager(path)
+            self.assertEqual(reloaded.get_profile("ld").org_level, "lead")
+
+    def test_org_level_defaults_agent_on_old_yaml(self):
+        """Boot-with-old-YAML: a profiles.yaml written before org_level existed
+        loads unchanged, defaulting every profile to the 'agent' tier."""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "profiles.yaml"
+            path.write_text(
+                "profiles:\n"
+                "  - id: old\n"
+                "    name: Old Timer\n"
+                "    agent_id: old-time-r1\n"
+            )
+            mgr = self._manager(path)
+            self.assertEqual(mgr.get_profile("old").org_level, "agent")
+
     def test_adhoc_gate_predicate(self):
         """_adhoc_delegation_enabled: config default ON; per-conversation Solo
         flag short-circuits; an explicit persisted False stays off."""
@@ -8547,6 +8580,187 @@ class DelegatableProfileTest(TestCase):
         self.assertEqual(
             descs[0]["input_schema"]["properties"]["agent_id"]["enum"], ["spec-aa-bb"]
         )
+
+
+class OrgWorkflowFieldsTest(TestCase):
+    """Agentic Orgs Slice 1: Workflow.manager_agent_id — persistence round trip
+    (including the PATCH merge path), old-YAML back-compat, and validation."""
+
+    def _profiles(self):
+        from types import SimpleNamespace
+        return [
+            SimpleNamespace(agent_id="mgr-aa-bb", kind="agent", org_level="manager"),
+            SimpleNamespace(agent_id="lead-cc-dd", kind="agent", org_level="lead"),
+            SimpleNamespace(agent_id="spec-ee-ff", kind="agent", org_level="agent"),
+            SimpleNamespace(agent_id="amb-gg-hh", kind="ambassador", org_level="agent"),
+        ]
+
+    def _wf(self, **overrides):
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        base: dict = {
+            "id": "team-x", "name": "Team X",
+            "supervisor_agent_id": "lead-cc-dd",
+            "members": [
+                WorkflowMember(agent_id="lead-cc-dd", role=MemberRole.SUPERVISOR),
+                WorkflowMember(agent_id="spec-ee-ff", role=MemberRole.SPECIALIST),
+            ],
+            "manager_agent_id": "mgr-aa-bb",
+        }
+        base.update(overrides)
+        return Workflow(**base)
+
+    def _mgr_env(self):
+        """(context manager patching profile lookups, tmp workflows path)."""
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        pm = SimpleNamespace(list_profiles=self._profiles)
+        ctx = patch("agentx_ai.alloy.manager.get_profile_manager", return_value=pm)
+        path = Path(tempfile.mkdtemp()) / "workflows.yaml"
+        return ctx, path
+
+    def test_manager_agent_id_round_trips_save_reload_and_patch(self):
+        from agentx_ai.alloy.manager import WorkflowManager
+        ctx, path = self._mgr_env()
+        with ctx:
+            mgr = WorkflowManager(config_path=path)
+            mgr.create(self._wf())
+            # Fresh manager reload → field survives disk.
+            reloaded = WorkflowManager(config_path=path)
+            self.assertEqual(reloaded.get("team-x").manager_agent_id, "mgr-aa-bb")
+            self.assertEqual(reloaded.get("team-x").to_dict()["manager_agent_id"], "mgr-aa-bb")
+            # PATCH merge path: an unrelated update must NOT drop the field
+            # (to_dict → merge → _parse_workflow round trip).
+            updated = reloaded.update("team-x", {"name": "Team X2"})
+            self.assertEqual(updated.manager_agent_id, "mgr-aa-bb")
+            # Explicit null clears it (org-free again).
+            cleared = reloaded.update("team-x", {"manager_agent_id": None})
+            self.assertIsNone(cleared.manager_agent_id)
+
+    def test_old_yaml_without_manager_loads_none(self):
+        """Boot-with-old-YAML: workflows.yaml written before the field loads
+        unchanged; manager_agent_id defaults to None (org-free team)."""
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.alloy.manager import WorkflowManager
+        path = Path(tempfile.mkdtemp()) / "workflows.yaml"
+        path.write_text(
+            "workflows:\n"
+            "  - id: legacy\n"
+            "    name: Legacy Team\n"
+            "    supervisor_agent_id: lead-cc-dd\n"
+            "    members:\n"
+            "      - agent_id: lead-cc-dd\n"
+            "        role: supervisor\n"
+        )
+        mgr = WorkflowManager(config_path=path)
+        self.assertIsNone(mgr.get("legacy").manager_agent_id)
+
+    def test_validate_manager_hard_rules(self):
+        from agentx_ai.alloy.manager import WorkflowManager
+        ctx, path = self._mgr_env()
+        with ctx:
+            mgr = WorkflowManager(config_path=path)
+            with self.assertRaises(ValueError):  # unknown id
+                mgr.create(self._wf(manager_agent_id="ghost-xx-yy"))
+            with self.assertRaises(ValueError):  # ambassador can't manage
+                mgr.create(self._wf(manager_agent_id="amb-gg-hh"))
+            with self.assertRaises(ValueError):  # manager ≠ the team's own lead
+                mgr.create(self._wf(manager_agent_id="lead-cc-dd"))
+            with self.assertRaises(ValueError):  # manager not a member
+                mgr.create(self._wf(manager_agent_id="spec-ee-ff"))
+
+    def test_validate_tier_mismatches_warn_only(self):
+        """Tier mismatches must never brick a save — log-warn like routes."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.alloy.manager import WorkflowManager
+        profiles = [
+            # Manager slot filled by an 'agent'-tier profile; lead slot by 'agent' too.
+            SimpleNamespace(agent_id="mgr-aa-bb", kind="agent", org_level="agent"),
+            SimpleNamespace(agent_id="lead-cc-dd", kind="agent", org_level="agent"),
+            SimpleNamespace(agent_id="spec-ee-ff", kind="agent", org_level="agent"),
+        ]
+        pm = SimpleNamespace(list_profiles=lambda: profiles)
+        import tempfile
+        from pathlib import Path
+        path = Path(tempfile.mkdtemp()) / "workflows.yaml"
+        with patch("agentx_ai.alloy.manager.get_profile_manager", return_value=pm):
+            mgr = WorkflowManager(config_path=path)
+            with self.assertLogs("agentx_ai.alloy.manager", level="WARNING") as logs:
+                created = mgr.create(self._wf())
+            self.assertIsNotNone(created)  # saved despite mismatches
+            joined = "\n".join(logs.output)
+            self.assertIn("expected 'manager'", joined)
+            self.assertIn("expected 'lead'", joined)
+
+
+class ManagerTemplateTest(TestCase):
+    """Agentic Orgs Slice 1: the manager report-only blocklist template —
+    merged ONCE on the tier transition; user-owned afterward."""
+
+    def _manager(self, tmp_path):
+        from agentx_ai.agent.profiles import ProfileManager
+        return ProfileManager(config_path=tmp_path)
+
+    def _tmp(self):
+        import tempfile
+        from pathlib import Path
+        return Path(tempfile.mkdtemp()) / "profiles.yaml"
+
+    def test_transition_to_manager_merges_template(self):
+        from agentx_ai.agent.models import MANAGER_REPORT_ONLY_BLOCKED_TOOLS, AgentProfile
+        mgr = self._manager(self._tmp())
+        mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+            id="m", name="M", agent_id="mgr-one-aa",
+            blocked_tools=["custom.tool"],
+        ))
+        updated = mgr.update_profile("m", {"org_level": "manager"})
+        # Pre-existing entries preserved (and first), template appended, no dupes.
+        self.assertEqual(updated.blocked_tools[0], "custom.tool")
+        for t in MANAGER_REPORT_ONLY_BLOCKED_TOOLS:
+            self.assertIn(t, updated.blocked_tools)
+        self.assertEqual(len(updated.blocked_tools), len(set(updated.blocked_tools)))
+
+    def test_already_manager_save_does_not_reapply(self):
+        """A template, not a live gate: entries removed after the transition
+        stay removed on later saves."""
+        from agentx_ai.agent.models import AgentProfile
+        mgr = self._manager(self._tmp())
+        mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+            id="m", name="M", agent_id="mgr-two-bb",
+        ))
+        mgr.update_profile("m", {"org_level": "manager"})
+        # User unblocks run_command for this manager.
+        trimmed = [
+            t for t in mgr.get_profile("m").blocked_tools
+            if t != "_internal.run_command"
+        ]
+        mgr.update_profile("m", {"blocked_tools": trimmed})
+        # An unrelated later edit must not re-add it.
+        after = mgr.update_profile("m", {"description": "staffing director"})
+        self.assertNotIn("_internal.run_command", after.blocked_tools)
+
+    def test_create_as_manager_applies_template(self):
+        from agentx_ai.agent.models import MANAGER_REPORT_ONLY_BLOCKED_TOOLS, AgentProfile
+        mgr = self._manager(self._tmp())
+        created = mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+            id="m", name="M", agent_id="mgr-three-cc", org_level="manager",
+        ))
+        for t in MANAGER_REPORT_ONLY_BLOCKED_TOOLS:
+            self.assertIn(t, created.blocked_tools)
+
+    def test_demotion_strips_nothing(self):
+        """The merged list is user-owned after templating — demotion keeps it."""
+        from agentx_ai.agent.models import MANAGER_REPORT_ONLY_BLOCKED_TOOLS, AgentProfile
+        mgr = self._manager(self._tmp())
+        mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+            id="m", name="M", agent_id="mgr-four-dd", org_level="manager",
+        ))
+        demoted = mgr.update_profile("m", {"org_level": "agent"})
+        for t in MANAGER_REPORT_ONLY_BLOCKED_TOOLS:
+            self.assertIn(t, demoted.blocked_tools)
 
 
 class AdhocRosterPromptTest(TestCase):
@@ -14665,6 +14879,23 @@ class AgentProfileKindTest(TestCase):
         amb = mgr.get_default_ambassador()
         self.assertIsNone(mgr.get_profile_by_agent_id(amb.agent_id))
         self.assertIsNone(mgr.get_profile_by_name(amb.name))
+
+    def test_default_ambassador_delete_refused(self):
+        """Agentic Orgs Slice 1: the default ambassador is system-owned — the
+        delete guard refuses outright instead of delete-then-resurrect."""
+        mgr = self._manager(self._tmp())
+        amb = mgr.get_default_ambassador()
+        with self.assertRaises(ValueError):
+            mgr.delete_profile(amb.id)
+        self.assertIsNotNone(mgr.get_profile(amb.id))  # still present
+
+    def test_non_default_ambassador_still_deletable(self):
+        from agentx_ai.agent.models import AgentProfile, AmbassadorConfig
+        mgr = self._manager(self._tmp())
+        mgr.create_profile(AgentProfile(id="amb2", name="Scribe", kind="ambassador",
+                                        ambassador=AmbassadorConfig(enabled=True)))
+        self.assertTrue(mgr.delete_profile("amb2"))
+        self.assertIsNone(mgr.get_profile("amb2"))
 
     def test_migration_converts_dedicated_not_default_agent(self):
         from agentx_ai.agent.models import AgentProfile, AmbassadorConfig
