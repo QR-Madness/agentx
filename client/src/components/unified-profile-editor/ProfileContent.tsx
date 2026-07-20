@@ -562,7 +562,9 @@ export function ProfileContent({
                       When on, other agents see this profile as a teammate and can hand it
                       subtasks via the <code>delegate_to</code> tool.
                     </span>
-                    <div className="profile-form-field" style={{ marginTop: 12, opacity: availableForDelegation ? 1 : 0.55 }}>
+                    {/* Deliberately NOT gated on the roster toggle: team + chain rosters
+                        read the hint too, and org members are often flat-opted-out. */}
+                    <div className="profile-form-field" style={{ marginTop: 12 }}>
                       <label className="profile-form-label">Specialty</label>
                       <textarea
                         value={delegationHint}
@@ -570,12 +572,12 @@ export function ProfileContent({
                         placeholder="What this agent is best at — teammates read this when deciding whom to delegate to"
                         rows={2}
                         maxLength={200}
-                        disabled={!availableForDelegation}
                         className="profile-system-prompt"
                       />
                       <span className="profile-form-hint">
-                        One line, shown in teammates' rosters. Leave empty to fall back to the
-                        profile description.
+                        {availableForDelegation
+                          ? 'One line, shown in teammates’ rosters. Leave empty to fall back to the profile description.'
+                          : 'One line, shown wherever teammates pick delegates — team and chain-of-command rosters read it even while this profile is off the flat roster.'}
                       </span>
                     </div>
                     <span className="profile-form-hint" style={{ marginTop: 10 }}>

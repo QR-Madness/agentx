@@ -592,6 +592,9 @@
 
 /* ── Slider ── */
 .profile-slider {
+  /* Unfilled track must be OPAQUE: accent tints are transparent (theme
+     gotcha), which made the track vanish against varying card surfaces. */
+  --slider-rest: color-mix(in srgb, var(--cosmic-violet) 18%, var(--surface-sunken));
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -601,8 +604,8 @@
     to right,
     var(--cosmic-violet) 0%,
     var(--cosmic-violet) calc(var(--pct, 35%) ),
-    var(--accent-tint-medium) calc(var(--pct, 35%)),
-    var(--accent-tint-medium) 100%
+    var(--slider-rest) calc(var(--pct, 35%)),
+    var(--slider-rest) 100%
   );
   outline: none;
   cursor: pointer;
@@ -621,6 +624,27 @@
 
 .profile-slider::-webkit-slider-thumb:hover {
   transform: scale(1.2);
+}
+
+/* Firefox: the --pct gradient rides the element background either way, but
+   the thumb needs its own vendor rules (and the default border removed). */
+.profile-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--cosmic-violet);
+  cursor: pointer;
+  box-shadow: 0 0 8px var(--accent-tint-strong);
+  transition: transform 0.15s;
+}
+
+.profile-slider::-moz-range-thumb:hover {
+  transform: scale(1.2);
+}
+
+.profile-slider::-moz-range-track {
+  background: transparent;
 }
 
 .profile-slider-labels {
