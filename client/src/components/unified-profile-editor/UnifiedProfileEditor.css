@@ -1504,7 +1504,17 @@
   flex: 1;
   min-width: 0;
 }
+.profile-hero__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.profile-hero__name-row .ax-iconbtn { color: var(--text-tertiary); }
+.profile-hero__name-row .ax-iconbtn:hover { color: var(--text-primary); }
+
 .profile-hero__name {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   background: none;
   border: none;

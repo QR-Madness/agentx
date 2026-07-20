@@ -37,6 +37,7 @@ import { PromptEditor } from '../common/PromptEditor';
 import { EffectivePromptPreview } from '../common/EffectivePromptPreview';
 import { OverridablePromptField } from '../common/OverridablePromptField';
 import { api } from '../../lib/api';
+import { NameDeck } from './NameDeck';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { ToolAccessSection } from './ToolAccessSection';
 import { useProfileEditorState } from './hooks/useProfileEditorState';
@@ -371,13 +372,16 @@ export function ProfileContent({
               <span className="profile-hero__aura" />
               <AvatarPicker value={avatar} onChange={setAvatar} size="lg" accent={accent} ariaLabel="Choose agent avatar" />
               <div className="profile-hero__main">
-                <input
-                  className="profile-hero__name"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="Name your agent…"
-                  aria-label="Agent name"
-                />
+                <div className="profile-hero__name-row">
+                  <input
+                    className="profile-hero__name"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Name your agent…"
+                    aria-label="Agent name"
+                  />
+                  <NameDeck onPick={setName} />
+                </div>
                 <div className="profile-hero__meta">
                   <Badge variant={isAmbassador ? 'accent' : 'neutral'} size="sm">
                     {isAmbassador ? 'Ambassador' : 'Agent'}
