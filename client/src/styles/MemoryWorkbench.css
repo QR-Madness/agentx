@@ -22,6 +22,16 @@
   animation: memWorkbenchIn 0.18s ease;
 }
 
+/* Desktop: sit BELOW the 56px TopBar so the Memory pill stays visible, lit, and
+   clickable (toggle-close) — first-class tab behavior. Mobile (bottom-dock bar)
+   keeps the full-viewport surface. */
+@media (min-width: 601px) {
+  .mem-workbench-backdrop,
+  .mem-workbench {
+    top: 56px;
+  }
+}
+
 @keyframes memWorkbenchIn {
   from { opacity: 0; transform: scale(0.99); }
   to { opacity: 1; transform: scale(1); }

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.233 -->
+<!-- release-version: 0.21.234 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -60,6 +60,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   strip (deletes get a full confirm dialog); nothing ever executes on its own. Titles and
   archives are now durable server-side, manual rename/archive in the conversation list rides
   the same store, and archived conversations rest in the Archived section until restored.
+- **Deck and Memory became real tabs**: both now live in the top bar on desktop — the surface
+  slides in under the bar, the lit pill closes it again, and the Deck pill pulses while your
+  agents have runs in flight. On mobile they stay a command-palette reach away.
 
 - **Memory got a face**: a custom glowing-brain mark — pulsing glow, twinkling synapses — replaces
   the database stack in the command palette, the Memory explorer, and Settings.

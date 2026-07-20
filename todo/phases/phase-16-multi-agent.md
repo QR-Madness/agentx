@@ -689,11 +689,17 @@
       rename/auto-title/archive to the server store so the local meta and the durable overlay
       stay in step. Pinned test grows the documented `confirmed_conversation_meta_writes` class.
 - [ ] **`read_conversation_results`** — the 16.7-deferred exhibits/sources read, folded in here.
-- [ ] **Client — promote the Command Deck (and Memory) to first-class desktop tabs**: TopBar
-      `NAV_ITEMS` gains **Deck** after Agents (and **Memory** likewise), the pill rendering
-      selected while its full-screen surface is open; both stay palette-only on mobile.
-      Dock lesson applies (`AmbassadorDock` precedent): a pill-selected full-screen surface
-      wants its open-state in layout state, not buried in the modal stack. Cross-ref:
+- [x] **Client — promote the Command Deck (and Memory) to first-class desktop tabs** —
+      **shipped (`0.21.234`)**. TopBar gains a **surface-pill group** after Agents (Deck +
+      Memory — no new `PageId`s; selected state *derives* from `useModal().isOpen`, the Dock
+      lesson applied by deriving rather than duplicating open-state). True tab semantics: on
+      desktop both surfaces render **below the 56px bar** (`top: 56px`; the Deck joined
+      `FULLSCREEN_SURFACES`/`SELF_CLOSING` and owns its chrome — inline close in the panel
+      header, Escape, scroll lock), the lit pill toggle-closes, and navigating to a page
+      dismisses the open surface (the page pill goes quiet while a tab-surface holds the
+      selection). Deck pill carries a live pulse while background runs are active (30s poll,
+      quiet once open). Pills are hidden ≤600px — the palette entries remain the mobile path;
+      mobile keeps full-viewport surfaces. Cross-ref:
       [backlog/conversation-context.md](../backlog/conversation-context.md) Memory Area UX.
 
 **Stability & invariants (apply across all slices)** — ✅ closed out

@@ -7,6 +7,7 @@
  * palette — the old TopBar conversation switchers were removed.
  */
 
+import { useEffect, useState } from 'react';
 import {
   Home,
   LayoutDashboard,
@@ -16,8 +17,10 @@ import {
   Eye,
   EyeOff,
   Search,
+  Radar,
 } from 'lucide-react';
 import { GalaxyIcon } from '../components/common/GalaxyIcon';
+import { MemoryIcon } from '../components/common/MemoryIcon';
 import { useModal } from '../contexts/ModalContext';
 import { usePlans } from '../contexts/PlansContext';
 import { useUIChrome } from '../contexts/UIChromeContext';
@@ -26,6 +29,7 @@ import { useIsMobile } from '../lib/hooks';
 import { useConsolidation } from '../contexts/ConsolidationContext';
 import { WindowControls } from './WindowControls';
 import { showWindowControls, isMac } from '../lib/platform';
+import { api } from '../lib/api';
 import './TopBar.css';
 
 export type PageId = 'start' | 'dashboard' | 'agentx';
@@ -42,7 +46,7 @@ const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
 ];
 
 export function TopBar({ activePage, onPageChange }: TopBarProps) {
-  const { openModal } = useModal();
+  const { openModal, closeModal, isOpen } = useModal();
   const { livePlans } = usePlans();
   const consolidation = useConsolidation();
 
@@ -52,6 +56,33 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
   const { focusMode, toggleFocusMode } = useUIChrome();
   const isMobile = useIsMobile();
 
+  // Surface pills (Deck / Memory) — first-class desktop tabs whose selected
+  // state DERIVES from the modal stack (the Dock lesson: never duplicate
+  // open-state). Clicking a selected pill closes its surface (toggle).
+  // Palette-only on mobile — the entries in useCommands stay unconditional.
+  const deckId = SURFACES.ambassadorDeck.id ?? 'ambassador-deck';
+  const memoryId = SURFACES.memory.id ?? 'memory';
+  const deckOpen = isOpen(deckId);
+  const memoryOpen = isOpen(memoryId);
+  const toggleDeck = () =>
+    deckOpen ? closeModal(deckId) : openModal(SURFACES.ambassadorDeck);
+  const toggleMemory = () =>
+    memoryOpen ? closeModal(memoryId) : openModal(SURFACES.memory);
+
+  // Deck pill live-pulse: background runs in flight (precedent: the consolidation
+  // lightning). Cheap 30s poll, desktop only, quiet once the Deck is open.
+  const [runsActive, setRunsActive] = useState(false);
+  useEffect(() => {
+    if (isMobile) return;
+    let alive = true;
+    const check = () =>
+      api.listChatRuns()
+        .then(r => { if (alive) setRunsActive(r.runs.some(x => x.status === 'running')); })
+        .catch(() => { if (alive) setRunsActive(false); });
+    check();
+    const t = window.setInterval(check, 30_000);
+    return () => { alive = false; window.clearInterval(t); };
+  }, [isMobile]);
 
   const openPalette = () =>
     window.dispatchEvent(new CustomEvent('agentx:toggle-command-palette'));
@@ -79,18 +110,54 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
         </button>
       </div>
 
-      {/* Center-left: Navigation pills */}
+      {/* Center-left: Navigation pills + desktop surface pills (Deck / Memory) */}
       <nav className="top-bar-nav">
         {NAV_ITEMS.map(item => (
           <button
             key={item.id}
-            className={`nav-pill ${activePage === item.id ? 'active' : ''}`}
-            onClick={() => onPageChange(item.id)}
+            // Tab semantics: while a tab-surface (Deck/Memory) is open it holds the
+            // selection — the underlying page pill goes quiet until it closes.
+            className={`nav-pill ${activePage === item.id && !deckOpen && !memoryOpen ? 'active' : ''}`}
+            onClick={() => {
+              onPageChange(item.id);
+              // Tab behavior: navigating to a page dismisses an open tab-surface.
+              if (deckOpen) closeModal(deckId);
+              if (memoryOpen) closeModal(memoryId);
+            }}
           >
             {item.icon}
             <span>{item.label}</span>
           </button>
         ))}
+        {!isMobile && (
+          <>
+            <span className="mx-1 h-4 w-px shrink-0 self-center bg-line" aria-hidden />
+            <button
+              className={`nav-pill relative ${deckOpen ? 'active' : ''}`}
+              onClick={toggleDeck}
+              aria-pressed={deckOpen}
+              title={deckOpen ? 'Close the Command Deck' : 'Open the Command Deck'}
+            >
+              <Radar size={16} />
+              <span>Deck</span>
+              {runsActive && !deckOpen && (
+                <span
+                  className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+                  aria-hidden
+                />
+              )}
+            </button>
+            <button
+              className={`nav-pill ${memoryOpen ? 'active' : ''}`}
+              onClick={toggleMemory}
+              aria-pressed={memoryOpen}
+              title={memoryOpen ? 'Close Memory' : 'Open Memory'}
+            >
+              <MemoryIcon size={16} />
+              <span>Memory</span>
+            </button>
+          </>
+        )}
       </nav>
 
       {/* Center: drag area (conversations now live in the chat-page sidebar) */}
