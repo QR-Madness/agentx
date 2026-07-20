@@ -700,6 +700,63 @@ class MCPOAuthTest(TestCase):
 
 
 @override_settings(AGENTX_AUTH_ENABLED=False)
+class ApiCsrfExemptionTest(TestCase):
+    """API views are consumed by cookie-less clients (web shell fetch, Tauri,
+    curl) that can never present a CSRF token — every routed view handling an
+    unsafe method must be csrf_exempt, or Django's CsrfViewMiddleware 403s it.
+
+    The default Django test client BYPASSES CSRF checks, which is exactly how
+    the agent_profiles_list gap shipped unnoticed — these tests enforce with
+    ``enforce_csrf_checks=True`` and a source-level sweep."""
+
+    def test_profile_create_passes_csrf_enforcement(self):
+        """Regression: POST /api/agent/profiles must not 403 for a cookie-less
+        client (was the one unsafe-method route missing @csrf_exempt)."""
+        from types import SimpleNamespace
+        from django.test import Client
+        from agentx_ai.agent.models import AgentProfile
+
+        created = {}
+
+        def fake_create(profile):
+            created["profile"] = profile
+            return profile
+
+        pm = SimpleNamespace(create_profile=fake_create)
+        client = Client(enforce_csrf_checks=True)
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            resp = client.post(
+                "/api/agent/profiles",
+                data=json.dumps({"id": "csrf-t", "name": "Csrf Probe"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 201, resp.content[:200])
+        self.assertIsInstance(created.get("profile"), AgentProfile)
+
+    def test_all_unsafe_method_api_views_are_csrf_exempt(self):
+        """Source-level sweep: any view routed in agentx_ai.urls whose body
+        dispatches on POST/PUT/PATCH/DELETE must carry csrf_exempt — the guard
+        that keeps this whole bug class from recurring."""
+        import inspect
+        from agentx_ai import urls as api_urls
+
+        offenders = []
+        for pattern in api_urls.urlpatterns:
+            callback = pattern.callback
+            if getattr(callback, "csrf_exempt", False):
+                continue
+            try:
+                src = inspect.getsource(inspect.unwrap(callback))
+            except (OSError, TypeError):
+                continue
+            if any(f"'{m}'" in src or f'"{m}"' in src
+                   for m in ("POST", "PUT", "PATCH", "DELETE")):
+                offenders.append(callback.__name__)
+        self.assertEqual(offenders, [],
+                         f"unsafe-method API views missing @csrf_exempt: {offenders}")
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
 class MCPRegistrySearchTest(TestCase):
     """GET /api/mcp/registry/search — the official-registry proxy: filtering,
     flattening, caching, and friendly egress failure."""
