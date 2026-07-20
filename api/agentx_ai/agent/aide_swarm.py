@@ -38,12 +38,24 @@ _AIDE_FLOOR_MODEL = "anthropic:claude-haiku-4-5-20251001"
 
 # The aide's task description — objective, output shape, and boundaries (a detailed
 # brief prevents vague, padded digests). It receives one conversation's transcript.
+# The `Facts:` tail is the anti-lossiness contract: compression may lose prose, never
+# the load-bearing specifics — the orchestrator answers people FROM these digests, so
+# a fact dropped here is a fact the person never hears.
 _AIDE_SYSTEM = (
-    "You are an aide to an orchestrator agent. You are given ONE conversation transcript "
-    "between a user and an AI agent. In at most 3 sentences, produce a high-level digest: "
-    "what the agent set out to do, what it found or decided, and what is still open. "
+    "You are an aide condensing ONE conversation for an orchestrator agent who has NOT "
+    "read it and will answer a person's questions from your digest alone.\n\n"
+    "Output exactly two parts, nothing else:\n"
+    "1. A digest of 2-3 sentences: what the agent set out to do, what it found or "
+    "decided, and what is still open. Name the agents by the names shown in the "
+    "transcript and attribute who did or found what.\n"
+    "2. Then ONE line starting with 'Facts: ' — the load-bearing specifics carried "
+    "VERBATIM from the transcript, separated by ' | ': proper names, numbers with their "
+    "units, dates, decisions taken, titles of sources or documents (with their URLs when "
+    "shown), and statuses. At most 8 items; pick the ones an answer would hinge on. "
+    "Every fact must appear in the transcript — never inferred, never rounded. If the "
+    "conversation holds no such specifics, omit the Facts line entirely (no padding).\n\n"
     "Be concrete and specific to THIS conversation. Do not invent details, do not add "
-    "preamble, and do not address the user — output only the digest."
+    "preamble, do not address the user, and use no markdown beyond the 'Facts:' label."
 )
 
 

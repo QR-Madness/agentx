@@ -48,13 +48,10 @@ import { useConversation } from '../../contexts/ConversationContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
 import { getAvatarIcon, isImageAvatar } from '../../lib/avatars';
 import { AgentAvatar } from '../common/AgentAvatar';
-import {
-  getProposalResolution,
-  proposalSentence,
-  setProposalResolution,
-  toolChipLabel,
-} from '../../lib/ambassadorTools';
+import { setProposalResolution } from '../../lib/ambassadorTools';
+import { EntryModules } from './entryModules';
 import { useNotify } from '../../contexts/NotificationContext';
+import { stripThinkBlocks } from '../../lib/ambassadorText';
 import { createMessageId, type UserMessage } from '../../lib/messages';
 import { planRelay, type RelayOutcome } from '../../lib/ambassadorRelay';
 import { DECK_STARTERS, type DeckInquiry } from '../../lib/ambassadorDeck';
@@ -79,7 +76,6 @@ import { api } from '../../lib/api';
 import type {
   AmbassadorBriefing,
   AmbassadorQA,
-  AmbassadorToolCall,
   AmbassadorToolProposal,
 } from '../../lib/api';
 
@@ -207,107 +203,15 @@ function AmbassadorMark({ size = 20, avatar }: { size?: number; avatar?: string 
   );
 }
 
-/** Live chips for the read-only tools the ambassador calls while answering —
- *  spinner while running, check when done — so you can see it reading/surveying.
- *  Confirmed-write proposals get a distinct "needs you" warning tone. */
-function ToolChips({ calls }: { calls?: AmbassadorToolCall[] }) {
-  if (!calls?.length) return null;
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {calls.map((c, i) => (
-        <span
-          key={`${c.tool}-${i}`}
-          className={
-            c.proposal
-              ? 'inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning'
-              : 'inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 text-[11px] text-fg-secondary'
-          }
-        >
-          {c.done ? (
-            <Check size={11} className={c.proposal ? 'text-warning' : 'text-success'} />
-          ) : (
-            <Loader2 size={11} className="animate-spin text-accent" />
-          )}
-          {toolChipLabel(c.tool, c.args)}
-          {!c.done && '…'}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-/** The confirm strip for the belt's confirmed-write proposals (rename / archive /
- *  delete). Only the *latest* entry renders live Confirm/Dismiss buttons — older
- *  or already-actioned proposals collapse to a passive status line. Nothing
- *  executes until Confirm: the belt only files the proposal. */
-function ProposalStrips({
-  calls,
-  isLatest,
-  onConfirm,
-  onDismiss,
-  resolutionVersion,
-}: {
-  calls?: AmbassadorToolCall[];
-  isLatest: boolean;
-  onConfirm: (p: AmbassadorToolProposal) => void;
-  onDismiss: (p: AmbassadorToolProposal) => void;
-  resolutionVersion: number;
-}) {
-  void resolutionVersion; // re-render trigger — resolutions are read from storage
-  const proposals = (calls ?? []).filter((c) => c.proposal).map((c) => c.proposal!);
-  if (!proposals.length) return null;
-  return (
-    <div className="flex flex-col gap-1.5">
-      {proposals.map((p) => {
-        const resolution = getProposalResolution(p.proposal_id);
-        if (resolution === 'confirmed') {
-          return (
-            <span key={p.proposal_id} className="inline-flex items-center gap-1 text-[11px] text-success">
-              <Check size={11} /> {p.action === 'rename' ? `Renamed to "${p.title ?? ''}"` :
-                p.action === 'archive' ? 'Archived' :
-                p.action === 'unarchive' ? 'Restored' :
-                p.action === 'dispatch' ? `Dispatched to ${p.agent_name ?? 'the worker'}` : 'Deleted'}
-            </span>
-          );
-        }
-        if (resolution === 'dismissed') {
-          return (
-            <span key={p.proposal_id} className="inline-flex items-center gap-1 text-[11px] text-fg-muted">
-              <X size={11} /> Proposal dismissed
-            </span>
-          );
-        }
-        if (!isLatest) {
-          return (
-            <span key={p.proposal_id} className="inline-flex items-center gap-1 text-[11px] text-fg-muted">
-              proposal expired — ask again to redo it
-            </span>
-          );
-        }
-        const danger = p.action === 'delete';
-        return (
-          <div
-            key={p.proposal_id}
-            className="flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5"
-          >
-            <span className="text-xs text-fg">{proposalSentence(p)}</span>
-            <div className="ml-auto flex items-center gap-1.5">
-              <Button size="sm" variant={danger ? 'danger' : 'primary'} onClick={() => onConfirm(p)}>
-                {danger ? 'Delete…' : p.action === 'dispatch' ? 'Dispatch' : 'Confirm'}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => onDismiss(p)}>
-                Dismiss
-              </Button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// Tool chips + proposal strips now live in the entry-module registry
+// (`entryModules.tsx`) — the thread's extensibility seam. Future in-entry
+// surfaces (aide delegation, exhibits, forms, reports) register there.
 
 function BriefingBody({ briefing }: { briefing: AmbassadorBriefing | undefined }) {
   if (!briefing) return null;
+  // Records persisted before the server-side think-strip may carry reasoning
+  // blocks — never show them (mirrors the speech/copy hygiene below).
+  const summary = stripThinkBlocks(briefing.summary);
   if (briefing.status === 'error') {
     return (
       <p className="flex items-start gap-1.5 whitespace-pre-wrap text-sm text-error">
@@ -319,15 +223,15 @@ function BriefingBody({ briefing }: { briefing: AmbassadorBriefing | undefined }
   if (briefing.status === 'empty_provider') {
     return (
       <p className="whitespace-pre-wrap text-sm text-warning">
-        {briefing.summary || 'No model provider is configured for the ambassador.'}
+        {summary || 'No model provider is configured for the ambassador.'}
       </p>
     );
   }
   const streaming = briefing.status === 'streaming';
-  if (!briefing.summary && !streaming) return null;
+  if (!summary && !streaming) return null;
   return (
     <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
-      {briefing.summary}
+      {summary}
       {streaming && <Cursor />}
     </p>
   );
@@ -339,18 +243,21 @@ function QaItem({
   onCancel,
   speech,
   avatar,
-  proposalStrip,
+  modules,
 }: {
   entry: AmbassadorQA;
   onCancel: () => void;
   speech: SpeechControls;
   avatar?: string;
-  /** Confirm strip(s) for any confirmed-write proposals this entry filed. */
-  proposalStrip?: ReactNode;
+  /** The entry's module stack (tool chips, proposal strips, future surfaces). */
+  modules?: ReactNode;
 }) {
   const streaming = entry.status === 'streaming';
-  const speakable = entry.status === 'done' && !!entry.answer.trim();
-  const copyable = !streaming && !!entry.answer.trim();
+  // Records persisted before the server-side think-strip may carry reasoning
+  // blocks — never render, speak, or copy them.
+  const answer = stripThinkBlocks(entry.answer);
+  const speakable = entry.status === 'done' && !!answer.trim();
+  const copyable = !streaming && !!answer.trim();
   return (
     <li className="flex flex-col gap-2">
       <div className="max-w-[88%] self-end rounded-2xl rounded-br-md bg-accent px-3 py-1.5 text-sm leading-snug text-fg-inverse shadow-sm">
@@ -359,8 +266,7 @@ function QaItem({
       <div className="flex max-w-[94%] items-start gap-2 self-start">
         <AmbassadorMark size={22} avatar={avatar} />
         <div className="flex min-w-0 flex-col gap-1 pt-0.5 text-sm leading-relaxed text-fg">
-          <ToolChips calls={entry.toolCalls} />
-          {proposalStrip}
+          {modules}
           <div>
           {entry.status === 'error' ? (
             <span className="flex items-start gap-1.5 text-error">
@@ -369,13 +275,13 @@ function QaItem({
             </span>
           ) : entry.status === 'empty_provider' ? (
             <span className="text-warning">
-              {entry.answer || 'No model provider is configured for the ambassador.'}
+              {answer || 'No model provider is configured for the ambassador.'}
             </span>
           ) : (
             <span className="whitespace-pre-wrap">
-              {entry.answer}
+              {answer}
               {streaming && <Cursor />}
-              {entry.status === 'cancelled' && !entry.answer && (
+              {entry.status === 'cancelled' && !answer && (
                 <span className="text-fg-muted">cancelled</span>
               )}
             </span>
@@ -396,8 +302,8 @@ function QaItem({
               {entry.created_at && (
                 <span className="mr-0.5 text-[10px] tabular-nums">{relativeTime(entry.created_at)}</span>
               )}
-              {speakable && <SpeakButton id={`qa:${entry.qa_id}`} text={entry.answer} speech={speech} />}
-              {copyable && <CopyButton text={entry.answer} />}
+              {speakable && <SpeakButton id={`qa:${entry.qa_id}`} text={answer} speech={speech} />}
+              {copyable && <CopyButton text={answer} />}
             </div>
           )}
         </div>
@@ -414,24 +320,24 @@ function BriefingItem({
   onCancel,
   speech,
   avatar,
-  proposalStrip,
+  modules,
 }: {
   briefing: AmbassadorBriefing;
   onCancel: () => void;
   speech: SpeechControls;
   avatar?: string;
-  /** Confirm strip(s) for any confirmed-write proposals this entry filed. */
-  proposalStrip?: ReactNode;
+  /** The entry's module stack (tool chips, proposal strips, future surfaces). */
+  modules?: ReactNode;
 }) {
   const streaming = briefing.status === 'streaming';
-  const speakable = briefing.status === 'done' && !!briefing.summary.trim();
-  const copyable = !streaming && !!briefing.summary.trim();
+  const summary = stripThinkBlocks(briefing.summary);
+  const speakable = briefing.status === 'done' && !!summary.trim();
+  const copyable = !streaming && !!summary.trim();
   return (
     <li className="flex max-w-[94%] items-start gap-2 self-start">
       <AmbassadorMark size={22} avatar={avatar} />
       <div className="flex min-w-0 flex-col gap-1 pt-0.5">
-        <ToolChips calls={briefing.toolCalls} />
-        {proposalStrip}
+        {modules}
         <BriefingBody briefing={briefing} />
         {streaming ? (
           <button
@@ -449,9 +355,9 @@ function BriefingItem({
                 <span className="mr-0.5 text-[10px] tabular-nums">{relativeTime(briefing.created_at)}</span>
               )}
               {speakable && (
-                <SpeakButton id={`brief:${briefing.message_id}`} text={briefing.summary} speech={speech} />
+                <SpeakButton id={`brief:${briefing.message_id}`} text={summary} speech={speech} />
               )}
-              {copyable && <CopyButton text={briefing.summary} />}
+              {copyable && <CopyButton text={summary} />}
             </div>
           )
         )}
@@ -801,10 +707,10 @@ export function AmbassadorPanel({
     const items: Item[] = [];
     for (const b of briefingsFor(conversationId))
       if (b.status === 'done' && b.summary.trim())
-        items.push({ id: `brief:${b.message_id}`, text: b.summary, ts: Date.parse(b.updated_at ?? '') || 0 });
+        items.push({ id: `brief:${b.message_id}`, text: stripThinkBlocks(b.summary), ts: Date.parse(b.updated_at ?? '') || 0 });
     for (const q of qaFor(conversationId))
       if (q.status === 'done' && q.answer.trim())
-        items.push({ id: `qa:${q.qa_id}`, text: q.answer, ts: Date.parse(q.updated_at ?? '') || 0 });
+        items.push({ id: `qa:${q.qa_id}`, text: stripThinkBlocks(q.answer), ts: Date.parse(q.updated_at ?? '') || 0 });
     // Only items created HERE this session (streamed locally) are eligible — never
     // persisted history loaded from the sidecar. This is what keeps reopening silent.
     const fresh = items.filter(
@@ -1144,14 +1050,15 @@ export function AmbassadorPanel({
                     Ask across everything your agents are doing — no conversation needed.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                <div className="flex max-w-[26rem] flex-wrap items-center justify-center gap-1.5">
                   {DECK_STARTERS.map((s) => (
                     <button
                       key={s.label}
                       type="button"
                       onClick={() => askAmbassador(s.prompt)}
-                      className="rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-raised px-2.5 py-1 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
                     >
+                      <s.icon size={12} className="shrink-0 text-accent/80" />
                       {s.label}
                     </button>
                   ))}
@@ -1186,13 +1093,15 @@ export function AmbassadorPanel({
           ) : (
             <ul className="flex flex-col gap-3.5">
               {thread.map((item, idx) => {
-                const strip = (
-                  <ProposalStrips
-                    calls={item.kind === 'qa' ? item.qa.toolCalls : item.briefing.toolCalls}
-                    isLatest={idx === thread.length - 1}
-                    onConfirm={confirmProposal}
-                    onDismiss={dismissProposal}
-                    resolutionVersion={resolutionVersion}
+                const modules = (
+                  <EntryModules
+                    entry={{ toolCalls: item.kind === 'qa' ? item.qa.toolCalls : item.briefing.toolCalls }}
+                    ctx={{
+                      isLatest: idx === thread.length - 1,
+                      resolutionVersion,
+                      onConfirmProposal: confirmProposal,
+                      onDismissProposal: dismissProposal,
+                    }}
                   />
                 );
                 return item.kind === 'qa' ? (
@@ -1202,7 +1111,7 @@ export function AmbassadorPanel({
                     onCancel={() => cancelQa(conversationId, item.id)}
                     speech={speech}
                     avatar={ambassadorProfile?.avatar}
-                    proposalStrip={strip}
+                    modules={modules}
                   />
                 ) : (
                   <BriefingItem
@@ -1211,7 +1120,7 @@ export function AmbassadorPanel({
                     onCancel={() => cancel(conversationId, item.id)}
                     speech={speech}
                     avatar={ambassadorProfile?.avatar}
-                    proposalStrip={strip}
+                    modules={modules}
                   />
                 );
               })}

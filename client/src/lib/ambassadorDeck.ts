@@ -44,27 +44,45 @@ export function inquiryLabel(inq: DeckInquiry, deckThreadId: string): string {
   return inq.thread_id === deckThreadId ? 'Command Deck' : 'New Inquiry';
 }
 
+import { Activity, Coins, Compass, Sparkles, Users, type LucideIcon } from 'lucide-react';
+
 export interface DeckStarter {
   label: string;
   prompt: string;
+  /** Chip glyph (the app's chip language). */
+  icon: LucideIcon;
 }
 
 /**
- * Starter chips for the deck — survey + roster oriented, so the first tap exercises the
- * conversation-agnostic tools (`survey_conversations`, `list_agents`) rather than anything
- * that needs a focused conversation.
+ * Starter chips for the deck — a capability tour of the conversation-agnostic belt:
+ * survey, roster, discoveries, live runs, and spend (`survey_conversations`,
+ * `list_agents`, `list_active_runs`, `usage_report`) — nothing that needs a focused
+ * conversation.
  */
 export const DECK_STARTERS: DeckStarter[] = [
   {
     label: 'What have my agents been working on?',
     prompt: 'Survey my recent conversations and summarize what my agents have been working on.',
+    icon: Compass,
   },
   {
     label: 'List my agents',
     prompt: 'List my agents and what each one can do.',
+    icon: Users,
   },
   {
     label: 'What have my agents discovered?',
     prompt: 'Across my recent conversations, what have my agents discovered or concluded lately?',
+    icon: Sparkles,
+  },
+  {
+    label: "What's running right now?",
+    prompt: 'What are my agents doing right now — live runs and queued work?',
+    icon: Activity,
+  },
+  {
+    label: 'What have I spent this week?',
+    prompt: 'Report my model spend and token usage over the last 7 days — totals and the biggest consumers.',
+    icon: Coins,
   },
 ];

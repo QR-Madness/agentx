@@ -31,6 +31,7 @@ interface RawAgentProfile {
     briefing_persona?: string | null;
     qa_persona?: string | null;
     draft_persona?: string | null;
+    voice_persona?: string | null;
     voice_mode?: boolean;
     speech_model?: string | null;
     voice?: string | null;
@@ -73,6 +74,7 @@ function mapProfile(p: RawAgentProfile): AgentProfile {
           briefingPersona: p.ambassador.briefing_persona,
           qaPersona: p.ambassador.qa_persona,
           draftPersona: p.ambassador.draft_persona,
+          voicePersona: p.ambassador.voice_persona,
           voiceMode: p.ambassador.voice_mode ?? false,
           speechModel: p.ambassador.speech_model,
           voice: p.ambassador.voice,

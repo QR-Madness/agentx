@@ -337,7 +337,13 @@ async function pumpAmbassadorSse(
 export const ambassadorApi = {
   /** The shipped default persona text for the ambassador's functional voices,
    *  so the editor can show + diff overrides against them. */
-  async ambassadorPersonaDefaults(): Promise<{ briefing: string; qa: string; draft: string }> {
+  async ambassadorPersonaDefaults(): Promise<{
+    briefing: string;
+    qa: string;
+    draft: string;
+    /** The voice-command router persona (spoken-command intent routing). */
+    voice: string;
+  }> {
     return apiRequest('/api/agent/ambassador/persona-defaults');
   },
 

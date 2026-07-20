@@ -51,6 +51,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   const [briefingPersona, setBriefingPersona] = useState<string | null>(null);
   const [qaPersona, setQaPersona] = useState<string | null>(null);
   const [draftPersona, setDraftPersona] = useState<string | null>(null);
+  const [voicePersona, setVoicePersona] = useState<string | null>(null);
   // Voice (TTS) block — spoken briefings + the immersive voice-mode opt-in.
   const [voiceMode, setVoiceMode] = useState(false);
   const [speechModel, setSpeechModel] = useState('');
@@ -95,6 +96,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setBriefingPersona(profile.ambassador?.briefingPersona ?? null);
       setQaPersona(profile.ambassador?.qaPersona ?? null);
       setDraftPersona(profile.ambassador?.draftPersona ?? null);
+      setVoicePersona(profile.ambassador?.voicePersona ?? null);
       setVoiceMode(profile.ambassador?.voiceMode ?? false);
       setSpeechModel(profile.ambassador?.speechModel ?? '');
       setVoice(profile.ambassador?.voice ?? '');
@@ -123,6 +125,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setBriefingPersona(null);
       setQaPersona(null);
       setDraftPersona(null);
+      setVoicePersona(null);
     }
     setError(null);
     // Mark this profile id as hydrated → the baseline effect snapshots the freshly
@@ -196,6 +199,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
           briefing_persona: briefingPersona,
           qa_persona: qaPersona,
           draft_persona: draftPersona,
+          voice_persona: voicePersona,
           voice_mode: voiceMode,
           speech_model: speechModel.trim() ? speechModel.trim() : null,
           voice: voice.trim() ? voice.trim() : null,
@@ -241,7 +245,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     baseTemplateId, systemPrompt, enableMemory, memoryChannel, enableTools, directMode,
     allowedTools, blockedTools, availableForDelegation, delegationHint, kind,
     ambassadorBriefingPrompt, ambassadorVerbosity, briefingPersona, qaPersona, draftPersona,
-    voiceMode, speechModel, voice, transcriptionModel,
+    voicePersona, voiceMode, speechModel, voice, transcriptionModel,
   ]);
 
   const handleSubmit = async (
@@ -318,6 +322,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     briefingPersona, setBriefingPersona,
     qaPersona, setQaPersona,
     draftPersona, setDraftPersona,
+    voicePersona, setVoicePersona,
     voiceMode, setVoiceMode,
     speechModel, setSpeechModel,
     voice, setVoice,

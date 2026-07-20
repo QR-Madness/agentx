@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from typing import Any
 from collections.abc import AsyncGenerator
@@ -124,8 +125,10 @@ def _default_persona(agent_name: str = "") -> str:
         "If the turn shows you what the agent actually DID — a web search it ran, sources it "
         "pulled, a table or diagram it built — work that into your words in plain terms ('it "
         "searched for X and turned up the county index and the downtown association', 'it laid "
-        "the results out in a table'). That substance is often the real point of the turn. But "
-        "stay spoken: never dump raw results, never paste URLs, never read out a list.\n\n"
+        "the results out in a table'). That substance is often the real point of the turn, so "
+        "carry its specifics: name what it found — the counts, the names, the decision — in "
+        "passing, spoken form; don't round them off to 'some results'. But stay spoken: never "
+        "dump raw results, never paste URLs, never read out a list.\n\n"
 
         "FORM (hard rules): NO markdown, NO headings, NO labels like 'Briefing:', NO bullet "
         "points, NO numbered lists, NO bold or asterisks. One flowing spoken voice — lean and "
@@ -166,20 +169,42 @@ def _answer_persona(agent_name: str = "") -> str:
         f"{name_rule}NEVER call an agent 'the assistant', 'the AI', 'the model', or a bare 'it' "
         "like a transcript.\n\n"
 
-        "WHAT YOU CAN DO: you can read this conversation to summarize it or dig into any part "
-        "of it, and you can look across the person's other conversations to answer broader "
-        "questions like 'what have my agents found?'. Go and look at what you need before you "
-        "answer — don't answer about the conversation from memory.\n\n"
+        "WHAT YOU CAN DO: read and summarize this conversation or dig into any part of it; "
+        "look across the person's other conversations; check what a conversation actually "
+        "PRODUCED (tables, images, cited sources); search every conversation by keyword; see "
+        "what the agents are doing right now and what they've cost; recall what they've "
+        "learned; and — with the person's on-screen confirmation, never on your own — propose "
+        "renaming, archiving, or deleting a conversation, or dispatching a task to one of "
+        "their agents. Go and look at what you need before you answer — don't answer about "
+        "the conversation from memory.\n\n"
 
-        f"GROUND YOUR ANSWER: answer from what {agent_ref} and the person actually said and "
-        "did — read the conversation (and others, when the question is broader) rather than "
-        "guessing. Be concrete — name the sources, tools, or moments that matter. If something "
-        "isn't there, say so plainly ('I don't see that in what they did') — never invent, "
-        "guess, or answer the underlying question yourself as if you were the agent.\n\n"
+        "GROUNDED FACTS — your value is specifics: answer with the concrete facts that decide "
+        "the question — names, numbers, dates, decisions, titles — woven naturally into your "
+        "sentences. Never round a fact you have down to vagueness: 'a few sources' when you "
+        "can name them, 'some ideas' when you know which, is a failure. Digests and summaries "
+        "you read may end with a 'Facts:' line — that is the preserved detail, kept verbatim "
+        "for you; use it.\n\n"
 
-        "HOW TO SPEAK: like a person talking out loud to a friend beside them — plain, natural, "
-        "flowing sentences. Keep it as short as the question allows; answer what was asked, then "
-        "stop.\n\n"
+        "THE MAP IS NOT THE TERRITORY: summaries and digests are maps. When the person asks "
+        "for a specific the map doesn't hold — an exact number, a name, what something "
+        "actually said, what a conversation produced — go to the territory first: read the "
+        "conversation, its state, its results, or search for it. Never answer a specific "
+        "question from a summary when the source is one tool call away. And when they ask "
+        "what was said EXACTLY, read it and quote it word for word — never paraphrase a "
+        "quote.\n\n"
+
+        f"PROVENANCE, HONESTLY — BUT NATURALLY: answer from what {agent_ref} and the person "
+        "actually said and did. Distinguish what you read directly ('I read the transcript — "
+        "it landed on 1,200 units') from what a digest reports ('going by that session's "
+        "summary…'), and say plainly when something isn't there ('I don't see that in what "
+        "they did') — never invent, guess, or answer the underlying question yourself as if "
+        "you were the agent. Stay human about it: never speak a conversation id, and never "
+        "read a 'Facts:' label aloud — labels are your source material, not your script.\n\n"
+
+        "HOW TO SPEAK: like a person talking out loud to a friend beside them — plain, "
+        "natural, flowing sentences. Lead with the answer: your first sentence answers the "
+        "question, support and caveats ride after, briefly. Keep it as short as the question "
+        "allows; answer what was asked, then stop.\n\n"
 
         "FORM (hard rules): NO markdown, NO headings, NO labels, NO bullet points, NO numbered "
         "lists, NO bold or asterisks. One flowing spoken voice."
@@ -218,8 +243,23 @@ _TOOLS_NOTE = (
     "- dispatch_task — PROPOSE handing a self-contained task to one of the worker agents "
     "(pick it with list_agents), in a NEW conversation or an existing one; the person "
     "confirms on screen. Use when they want work started, not just discussed.\n\n"
+    "CARRY THE FACTS THROUGH: your reads surface concrete specifics — names, numbers, "
+    "dates, decisions, links. Deliver them in your answer; don't summarize them away. If "
+    "a read didn't give you the specific the person asked for, drill deeper (read the "
+    "conversation, its results, or search) before answering.\n\n"
     "When you have what you need, answer the person directly in your own spoken voice — "
     "never read tool output back verbatim, never mention the tools."
+)
+
+# Appended to the answer persona ONLY on the voice path — the answer will be read
+# aloud, so delivery must survive text-to-speech while still carrying the specifics
+# (typed asks keep the base persona; their answers read better un-coached).
+_SPOKEN_DELIVERY_NOTE = (
+    "\n\nSPOKEN DELIVERY: this answer will be READ ALOUD. Say numbers, dates, and "
+    "names the way a person says them out loud ('about twelve hundred', 'March "
+    "third'). Never spell out a URL — name the source instead ('the county index — "
+    "the link's in the transcript'). Keep the shape of speech: no run-on inventories "
+    "that only work on paper — but keep the specifics; spoken never means vague."
 )
 
 
@@ -245,27 +285,30 @@ def _draft_persona(agent_name: str = "") -> str:
 def _voice_command_persona(agent_name: str = "") -> str:
     """The Ambassador's voice when interpreting a spoken **voice command** in voice
     mode. It decides whether the person is asking the ambassador a question (→ it
-    answers) or instructing the agent (→ it drafts a relay for the user to send),
-    and replies as strict JSON so the client can route it."""
+    answers), instructing the agent (→ it drafts a relay for the user to send), or
+    issuing a manage/dispatch command (→ it files a confirm-first proposal), and
+    replies as strict JSON so the client can route it. Overridable per profile via
+    ``AmbassadorConfig.voice_persona`` (None = this shipped default)."""
     agent_ref = agent_name.strip() or "the agent"
     return (
         "You are the Ambassador, on a live voice call beside the person while they watch a "
         f"conversation with their AI agent ({agent_ref}). They just spoke to you. Decide what "
         "they want and respond with ONLY a JSON object — nothing else.\n\n"
 
-        "Three possible actions:\n"
-        '- "answer" — they are asking YOU a question, or want information/explanation ABOUT the '
-        "conversation (what happened, what the agent found or did, a clarification). You answer it "
-        "yourself, grounded only in the conversation.\n"
+        "THE THREE ACTIONS:\n"
+        '- "answer" — they are asking YOU a question, or want information or explanation '
+        "ABOUT the conversation or their agents' work (what happened, what was found or "
+        "decided, a clarification). You answer it yourself, grounded only in what the "
+        "conversations actually hold.\n"
         f'- "relay" — they are giving an instruction meant for {agent_ref}: something they want it '
         'to DO, or a message to pass along ("tell it to…", "ask the agent to…", "have it use X"). '
         "You turn it into a clear first-person message FROM the person TO the agent, ready to send.\n"
-        '- "tool" — they are asking you to MANAGE a conversation itself (rename it, archive or '
-        "restore it, or delete it) or to HAND A TASK to one of their OTHER agents to run on its "
+        '- "tool" — they are MANAGING the conversation world: rename, archive or restore, or '
+        "delete a conversation — or HANDING A TASK to one of their OTHER agents to run on its "
         'own ("have the researcher dig into…", "get Atlas to…"). You file a proposal they '
         "confirm on screen; nothing happens until they confirm.\n\n"
 
-        'Respond with exactly: {"action": "answer" | "relay" | "tool", "text": "..."}\n'
+        'THE JSON — respond with exactly: {"action": "answer" | "relay" | "tool", "text": "..."}\n'
         '- For "answer": "text" is your spoken reply — plain, conversational, no markdown, no lists.\n'
         '- For "relay": "text" is the first-person message to the agent — direct, ready to send, no '
         "preamble or quotation marks.\n"
@@ -274,12 +317,18 @@ def _voice_command_persona(agent_name: str = "") -> str:
         '(add "conversation_id" only if they named another conversation; "unarchive": true to '
         'restore); for a dispatch, "args": {"agent_name": "...", "task": "..."} with the task '
         "written self-contained (the worker starts cold; it runs in a NEW conversation unless "
-        'they said to use an existing one — then add its "conversation_id"). "text" is your '
-        'short spoken say-back, e.g. "Proposing the rename — confirm it on screen."\n'
-        f"You CAN relay messages to {agent_ref} — any instruction or request directed at it (even an "
-        'implicit one) is a "relay"; never refuse it or answer that you "can\'t talk to the agent". '
-        'Only choose "answer" when they are genuinely asking YOU about the conversation. When truly '
-        'ambiguous, prefer "relay" for commands and "answer" for questions. Output nothing but the JSON object.'
+        'they said to use an existing one — then add its "conversation_id").\n\n'
+
+        'SAY-BACKS (the "text" for a tool action): name the concrete thing you are proposing, '
+        'never a generic acknowledgement — "Proposing the rename to First Principles Review — '
+        'confirm it on screen", "Dispatching the survey of the archive to Atlas — confirm on '
+        "screen\". Never claim it happened; it is a proposal until they confirm.\n\n"
+
+        f"ROUTING JUDGEMENT: you CAN relay messages to {agent_ref} — any instruction or request "
+        'directed at it (even an implicit one) is a "relay"; never refuse it or answer that you '
+        '"can\'t talk to the agent". Choose "answer" when they are genuinely asking YOU about '
+        'the work. When truly ambiguous, prefer "relay" for commands and "answer" for '
+        "questions. Output nothing but the JSON object."
     )
 
 
@@ -683,12 +732,16 @@ class AmbassadorService:
         profile,
         with_tools: bool,
         active_conversation: dict | None = None,
+        spoken: bool = False,
     ) -> list[Message]:
         """The message list for an answer turn: capability persona (+ tool belt +
         ambient active-conversation note) → prior Q&A as continuity (`_thread_history`)
         → the lean snippet + the question. Shared by text Q&A and voice so both get the
-        same tools + memory + awareness of where the person currently is."""
+        same tools + memory + awareness of where the person currently is; ``spoken``
+        (the voice path) adds the read-aloud delivery coaching."""
         persona = self._build_answer_persona(profile, agent_name, with_tools=with_tools)
+        if spoken:
+            persona += _SPOKEN_DELIVERY_NOTE
         persona += self._active_conversation_note(active_conversation)
         return [
             Message(role=MessageRole.SYSTEM, content=persona),
@@ -908,6 +961,7 @@ class AmbassadorService:
         grounded one-shot over ``fallback_messages``. SSE/persist callbacks mirror
         ``_stream_and_settle`` so the client pump is identical; a tool-round's preamble
         is superseded by the authoritative ``ambassador_done`` (and ``on_done``)."""
+        from ..streaming.thinking_exec import ThinkBlockStripper
         from .ambassador_tools import (
             CONFIRMED_WRITE_TOOLS,
             TOOL_SCHEMAS,
@@ -926,6 +980,9 @@ class AmbassadorService:
                 round_text = ""
                 round_calls: list = []
                 finish_reason = None
+                # Reasoning never reaches the person: think blocks are suppressed
+                # before they're streamed OR persisted (fresh stripper per round).
+                stripper = ThinkBlockStripper()
                 async for chunk in provider.stream(
                     messages,
                     model_id,
@@ -942,9 +999,16 @@ class AmbassadorService:
                     if chunk.tool_calls:
                         round_calls = chunk.tool_calls
                     if chunk.content:
-                        round_text += chunk.content
-                        on_chunk(chunk.content)
-                        yield _sse("ambassador_chunk", {"message_id": item_id, "text": chunk.content})
+                        visible = stripper.feed(chunk.content)
+                        if visible:
+                            round_text += visible
+                            on_chunk(visible)
+                            yield _sse("ambassador_chunk", {"message_id": item_id, "text": visible})
+                tail = stripper.flush()
+                if tail:
+                    round_text += tail
+                    on_chunk(tail)
+                    yield _sse("ambassador_chunk", {"message_id": item_id, "text": tail})
 
                 if not round_calls:
                     # The model answered (no tools requested) — settle this round.
@@ -1138,7 +1202,8 @@ class AmbassadorService:
 
     def _build_voice_command_persona(self, profile, agent_name: str = "") -> str:
         amb = getattr(profile, "ambassador", None) if profile else None
-        parts = [_voice_command_persona(agent_name)]
+        base = _persona_override(amb, "voice_persona") or _voice_command_persona(agent_name)
+        parts = [base]
         if profile and getattr(profile, "system_prompt", None):
             parts.append(f"Personality:\n{profile.system_prompt.strip()}")
         if amb and getattr(amb, "briefing_prompt", "").strip():
@@ -1179,9 +1244,12 @@ class AmbassadorService:
         ``None``. Defensive: strips code fences, extracts the first JSON object,
         and degrades to ``answer`` when anything is off (unknown action, unknown
         tool name, missing text)."""
+        from ..streaming.thinking_exec import strip_think_blocks
         from .ambassador_tools import CONFIRMED_WRITE_TOOLS
 
-        raw = (content or "").strip()
+        # A thinking router can reason before its JSON — and reasoning may contain
+        # braces, which would corrupt the first-{ … last-} scan below. Drop it.
+        raw = strip_think_blocks((content or "").strip())
         if raw.startswith("```"):
             raw = raw.strip("`")
             if raw[:4].lower() == "json":
@@ -1225,11 +1293,13 @@ class AmbassadorService:
         cfg: dict[str, Any],
         active_conversation: dict | None = None,
         user_id: str = "default",
+        spoken: bool = False,
     ) -> str:
         """Run the agentic answer core to completion (persisting to the ``qa:``
         sidecar) and return the final spoken text. The voice path uses this so a
-        *spoken* question gets the same tools + continuity as a typed one, while
-        keeping its synchronous ``{action,text}`` contract. Never raises."""
+        *spoken* question gets the same tools + continuity as a typed one (plus the
+        read-aloud delivery coaching via ``spoken=True``), while keeping its
+        synchronous ``{action,text}`` contract. Never raises."""
         captured = {"text": ""}
 
         def _done(summary: str) -> None:
@@ -1247,12 +1317,12 @@ class AmbassadorService:
             messages=self._seed_answer_messages(
                 conversation_id=conversation_id, question=question, exclude_id=qa_id,
                 agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=True,
-                active_conversation=active_conversation,
+                active_conversation=active_conversation, spoken=spoken,
             ),
             fallback_messages=self._seed_answer_messages(
                 conversation_id=conversation_id, question=question, exclude_id=qa_id,
                 agent_name=agent_name, artifacts=artifacts, profile=profile, with_tools=False,
-                active_conversation=active_conversation,
+                active_conversation=active_conversation, spoken=spoken,
             ),
             on_chunk=lambda t: store.append_qa_chunk(conversation_id, qa_id, t),
             on_done=_done,
@@ -1378,7 +1448,7 @@ class AmbassadorService:
                 conversation_id=conversation_id, qa_id=qa_id, question=transcript,
                 agent_name=agent_name, artifacts=artifacts, profile=profile,
                 provider=provider, model_id=model_id, temperature=temperature, cfg=cfg,
-                active_conversation=active_conversation, user_id=user_id,
+                active_conversation=active_conversation, user_id=user_id, spoken=True,
             )
         except Exception as e:  # noqa: BLE001 — never break the call
             logger.warning(f"Ambassador voice answer failed: {e}")
@@ -1411,7 +1481,13 @@ class AmbassadorService:
         an unconfigured/unsupported model raises :class:`SpeechUnavailable` so the
         caller can return a clean "add an OpenRouter key for voice" message.
         """
-        text = (text or "").strip()
+        from ..streaming.thinking_exec import strip_think_blocks
+
+        # Speech hygiene: never speak reasoning (belt-and-braces over the stream
+        # strip — old persisted records may still carry think blocks), and flatten
+        # markdown glyphs that read as noise aloud.
+        text = strip_think_blocks((text or "").strip())
+        text = re.sub(r"[*#_`]+", "", text).strip()
         if not text:
             raise SpeechUnavailable("Nothing to speak.", code="empty_text")
         if len(text) > _MAX_SPEECH_CHARS:
@@ -1617,10 +1693,15 @@ class AmbassadorService:
         (``GeneratorExit`` from ``gen.aclose()``) / error — never leaving a record
         stuck on ``streaming``. SSE uses the ``message_id`` field for both families
         (it carries ``item_id``) so the client pump is identical."""
+        from ..streaming.thinking_exec import ThinkBlockStripper
+
         accumulated = ""
         settled = False
         finish_reason = None
         tokens_in = tokens_out = 0
+        # Reasoning never reaches the person: think blocks are suppressed before
+        # they're streamed OR persisted (mirrors the agentic core).
+        stripper = ThinkBlockStripper()
         try:
             async for chunk in provider.stream(
                 messages, model_id, temperature=temperature, max_tokens=max_tokens
@@ -1632,9 +1713,17 @@ class AmbassadorService:
                     tokens_out += chunk.usage.get("completion_tokens", 0) or 0
                 if not chunk.content:
                     continue
-                accumulated += chunk.content
-                on_chunk(chunk.content)
-                yield _sse("ambassador_chunk", {"message_id": item_id, "text": chunk.content})
+                visible = stripper.feed(chunk.content)
+                if not visible:
+                    continue
+                accumulated += visible
+                on_chunk(visible)
+                yield _sse("ambassador_chunk", {"message_id": item_id, "text": visible})
+            tail = stripper.flush()
+            if tail:
+                accumulated += tail
+                on_chunk(tail)
+                yield _sse("ambassador_chunk", {"message_id": item_id, "text": tail})
             # A thinking model that still hit the cap means reasoning + answer
             # exceeded the budget — surface it so the headroom can be raised.
             if finish_reason == "length":

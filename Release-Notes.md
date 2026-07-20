@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.235 -->
+<!-- release-version: 0.21.236 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -70,6 +70,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   *you* confirm — into a fresh conversation or an existing one — and the task appears in its tab
   instantly instead of a blank wait. Deleting a conversation also now clears every sidecar
   (state, summary, Inquiry thread) — nothing strands.
+- **The Ambassador speaks in facts now**: digests carry the load-bearing specifics verbatim, she
+  drills back into the source when a summary can't answer, tells you what's read-directly vs.
+  reported, and leads with the answer. Her voice-command routing is now a fourth editable
+  persona in the profile editor.
 
 - **Memory got a face**: a custom glowing-brain mark — pulsing glow, twinkling synapses — replaces
   the database stack in the command palette, the Memory explorer, and Settings.
@@ -80,6 +84,12 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **No more leaked thinking**: a reasoning model's `<think>` blocks are now stripped from the
+  Ambassador's answers, replays, and speech — previously they could persist into the thread,
+  render raw, and even be read aloud by TTS.
+- **Deck menus surface properly**: the Inquiry switcher, ⋯ actions, worker picker, and relay
+  picker no longer open *behind* the Command Deck (dropdown/popover portals now clear the
+  full-screen surfaces).
 - **Research reports are dated correctly**: a report is now stamped with today's date instead of a
   date guessed from its sources. (Bundled with internal housekeeping — declared ambassador voice
   config keys, typed the plan-executor's subtask status, and Anthropic cache-token metering.)
