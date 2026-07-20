@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.232 -->
+<!-- release-version: 0.21.233 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -51,6 +51,15 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   (a follow-up like "relay that to the agent" routes in context), answers wear your ambassador's
   own avatar, and the load-bearing invariants (SELECT-only tool belt, sidecar-only writes,
   never-raise degrades) are regression-guarded.
+- **Ambassador v3 — she can see everything now**: five new reads — a conversation's structured
+  state ("where does this stand?"), full-text search across ALL your conversations, live
+  runs ("what are my agents doing right now?"), a spend/usage report, and long-term memory
+  recall ("what do my agents *know* about X?").
+- **Ambassador v3 — conversation management, confirm-first**: ask her (typed or spoken) to
+  rename, archive, or delete a conversation — she files a proposal and *you* confirm it on a
+  strip (deletes get a full confirm dialog); nothing ever executes on its own. Titles and
+  archives are now durable server-side, manual rename/archive in the conversation list rides
+  the same store, and archived conversations rest in the Archived section until restored.
 
 - **Memory got a face**: a custom glowing-brain mark — pulsing glow, twinkling synapses — replaces
   the database stack in the command palette, the Memory explorer, and Settings.
