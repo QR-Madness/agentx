@@ -13,8 +13,9 @@ import { mediaAvatarPath } from './avatars';
 
 const _cache = new Map<string, Promise<string>>();
 
-/** Resolve a served-blob raw path (e.g. `/api/workspaces/{ws}/documents/{doc}/raw`) to an object URL (cached). */
-export function resolveMediaImage(rawPath: string): Promise<string> {
+/** Resolve a served-blob raw path (e.g. `/api/workspaces/{ws}/documents/{doc}/raw`) to an
+ * object URL (cached). Type-agnostic — images, audio, and video all resolve the same way. */
+export function resolveMediaBlob(rawPath: string): Promise<string> {
   const cached = _cache.get(rawPath);
   if (cached) return cached;
 
@@ -28,6 +29,9 @@ export function resolveMediaImage(rawPath: string): Promise<string> {
   _cache.set(rawPath, p);
   return p;
 }
+
+/** Back-compat alias (predates audio/video support). */
+export const resolveMediaImage = resolveMediaBlob;
 
 /** Resolve a `media:{ws}/{doc}` avatar ref to an object URL (cached). Rejects if not a media ref. */
 export function resolveAvatarImage(avatar: string): Promise<string> {

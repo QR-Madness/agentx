@@ -9,7 +9,7 @@
 
 import type { ConversationMessage, PlanSubtask, PlanExecutionMessage } from '../../lib/messages';
 import { createMessageId } from '../../lib/messages';
-import type { ChatImageRef } from '../../lib/api/types';
+import type { ChatAudioRef, ChatImageRef } from '../../lib/api/types';
 import {
   exhibitFromWire,
   citationExhibitFromWebSearch,
@@ -61,7 +61,7 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
         });
         continue;
       }
-      // Vision input: image refs persisted on the user turn re-render on the bubble.
+      // Media input: image/audio refs persisted on the user turn re-render on the bubble.
       const rawImages = m.metadata?.images;
       const images = Array.isArray(rawImages)
         ? (rawImages as unknown[]).filter(
@@ -71,6 +71,15 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
               typeof (r as ChatImageRef).doc_id === 'string',
           )
         : undefined;
+      const rawAudio = m.metadata?.audio;
+      const audio = Array.isArray(rawAudio)
+        ? (rawAudio as unknown[]).filter(
+            (r): r is ChatAudioRef =>
+              !!r && typeof r === 'object' &&
+              typeof (r as ChatAudioRef).workspace_id === 'string' &&
+              typeof (r as ChatAudioRef).doc_id === 'string',
+          )
+        : undefined;
       out.push({
         ...base,
         type: 'user',
@@ -78,6 +87,7 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
         // Sent mid-turn to steer a running agent (live steering).
         steered: m.metadata?.steered === true,
         ...(images && images.length ? { images } : {}),
+        ...(audio && audio.length ? { audio } : {}),
       });
       continue;
     }

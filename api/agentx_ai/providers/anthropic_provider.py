@@ -210,6 +210,8 @@ class AnthropicProvider(ModelProvider):
                 elif role == "user" and msg.images:
                     # Vision input: user message carries images → content becomes a
                     # block list (text + base64 image sources). Text-only stays a string.
+                    # `msg.audio` is intentionally NOT converted — the Anthropic API has
+                    # no audio input block; the STT-transcript fallback upstream covers it.
                     from .base import resolve_image_data
 
                     user_blocks: list[dict[str, Any]] = []

@@ -131,3 +131,12 @@
       The world-knowledge hosted ecosystem is thin/key-gated (unlike dev tools) — most options are
       api-key remote or reputable local stdio.
 
+- [ ] **ACP/A2A agent bridge (parked, v0.21.237 groundwork)** — expose AgentX agents over Zed's
+      **Agent Client Protocol** (editors as clients; JSON-RPC over stdio) and/or **A2A** (which
+      absorbed IBM's Agent Communication Protocol). Deliberately NOT built now — AgentX is a
+      platform with its own client/SSE, and neither protocol fits that transport. What we DID do:
+      the internal payload vocabulary (`agentx_ai/content_blocks.py`) mirrors the MCP ContentBlock
+      union that ACP reuses verbatim (text/image/audio/resource_link/resource, base64 `data` +
+      `mimeType`), so a future bridge is a serializer + session shim, not a redesign. (There is no
+      "Agent Content Protocol" — the acronym space is ACP=Agent Client Protocol, the defunct
+      Agent Communication Protocol→A2A, and unrelated Agentic Commerce / Agent Control Protocols.)

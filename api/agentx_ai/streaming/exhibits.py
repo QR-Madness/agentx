@@ -4,8 +4,8 @@ Exhibits — typed, declarative agent-authored content presented to the user.
 An **Exhibit** is one presented unit the agent builds and arranges declaratively
 by calling the ``present_exhibit`` internal tool (see
 :mod:`agentx_ai.mcp.internal_tools`). It is a constrained tree of typed
-**Elements** (Slice 1: ``mermaid`` only) arranged by a ``layout``. A conversation
-accumulates exhibits into a **Gallery**.
+**Elements** (see :data:`ALLOWED_ELEMENT_TYPES`) arranged by a ``layout``
+(``stack`` or ``grid``). A conversation accumulates exhibits into a **Gallery**.
 
 The agent declares the *desired state* (with a stable ``id``); re-declaring the
 same ``id`` across turns is an amend (replace-in-place). This module owns the
@@ -17,17 +17,37 @@ never raw HTML.
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 # Bump only on a breaking change to the Exhibit wire shape (honors the v0.20
-# "migratable across platforms" rule — every exhibit carries this).
+# "migratable across platforms" rule — every exhibit carries this). New element
+# types and layouts are ADDITIVE (old clients fall back to source-as-code /
+# stack), so audio/video/text + grid did not bump it.
 EXHIBIT_SCHEMA_VERSION = 1
 
 # The allow-list. Adding an element type = add it here + a client renderer.
-ALLOWED_ELEMENT_TYPES: frozenset[str] = frozenset({"mermaid", "choice", "table", "citation", "image"})
+ALLOWED_ELEMENT_TYPES: frozenset[str] = frozenset(
+    {"mermaid", "choice", "table", "citation", "image", "audio", "video", "text"}
+)
+
+# Media element `url`s must be served-blob paths — the client fetches them through
+# the authed API client. An agent-authored exhibit can never point at an external
+# or arbitrary URL (exfiltration/markup-injection guard).
+_SERVED_BLOB_RE = re.compile(r"^/api/workspaces/[A-Za-z0-9_-]+/documents/[A-Za-z0-9_-]+/raw$")
+
+
+def _validate_served_blob_url(url: str) -> str:
+    s = (url or "").strip()
+    if not _SERVED_BLOB_RE.match(s):
+        raise ValueError(
+            "media element url must be a served-blob path "
+            "(/api/workspaces/{ws}/documents/{doc}/raw)"
+        )
+    return s
 
 # Upper bound on choice options — keep the rendered button set usable.
 MAX_CHOICE_OPTIONS = 10
@@ -146,11 +166,69 @@ class ImageElement(BaseModel):
     alt: str | None = None
     title: str | None = None
 
+    @field_validator("url")
+    @classmethod
+    def _url_is_served_blob(cls, v: str) -> str:
+        return _validate_served_blob_url(v)
+
+
+class AudioElement(BaseModel):
+    """A generated/stored audio clip, rendered as an inline player. Same
+    served-blob ``url`` contract (and validator) as :class:`ImageElement`."""
+
+    type: Literal["audio"]
+    url: str
+    caption: str | None = None
+    title: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _url_is_served_blob(cls, v: str) -> str:
+        return _validate_served_blob_url(v)
+
+
+class VideoElement(BaseModel):
+    """A stored video, rendered as an inline ``<video>`` player (render-only —
+    video never enters model context). Same served-blob ``url`` contract."""
+
+    type: Literal["video"]
+    url: str
+    caption: str | None = None
+    title: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _url_is_served_blob(cls, v: str) -> str:
+        return _validate_served_blob_url(v)
+
+
+class TextElement(BaseModel):
+    """A markdown text passage rendered through the client's chat markdown
+    pipeline (same sanitization — never raw HTML)."""
+
+    type: Literal["text"]
+    content: str
+    title: str | None = None
+
+    @field_validator("content")
+    @classmethod
+    def _content_non_blank(cls, v: str) -> str:
+        if not (v or "").strip():
+            raise ValueError("text element content is empty")
+        return v
+
 
 # Element union — discriminated on `type`; the discriminator enforces the
 # allow-list (an unknown type raises). Widen as new element types ship.
 Element = Annotated[
-    MermaidElement | ChoiceElement | TableElement | CitationElement | ImageElement,
+    MermaidElement
+    | ChoiceElement
+    | TableElement
+    | CitationElement
+    | ImageElement
+    | AudioElement
+    | VideoElement
+    | TextElement,
     Field(discriminator="type"),
 ]
 
@@ -161,7 +239,9 @@ class Exhibit(BaseModel):
     schema_version: int = EXHIBIT_SCHEMA_VERSION
     id: str
     title: str | None = None
-    layout: Literal["stack"] = "stack"
+    # `grid` flows elements into responsive columns (client-side; degrades to
+    # stack on narrow viewports and on clients that predate it).
+    layout: Literal["stack", "grid"] = "stack"
     elements: list[Element] = Field(min_length=1)
 
 
@@ -282,6 +362,41 @@ def image_exhibit_from_generate(url: str, *, exhibit_id: str, alt: str | None = 
         layout="stack",
         elements=[ImageElement(type="image", url=url, alt=alt)],
     )
+
+
+def audio_exhibit_from_generate(
+    url: str, *, exhibit_id: str, caption: str | None = None
+) -> Exhibit | None:
+    """Build an ``audio`` exhibit from a stored clip (``generate_speech`` result or
+    MCP audio passthrough). Mirrors :func:`image_exhibit_from_generate`."""
+    if not url:
+        return None
+    return Exhibit(
+        schema_version=EXHIBIT_SCHEMA_VERSION,
+        id=exhibit_id,
+        layout="stack",
+        elements=[AudioElement(type="audio", url=url, caption=caption)],
+    )
+
+
+def media_exhibit_from_stored(
+    stored: dict[str, Any], *, exhibit_id: str
+) -> Exhibit | None:
+    """Build an image/audio exhibit from one stored-media passthrough entry
+    (``{url, media_type, filename?}`` — see ``mcp.media_passthrough``). Returns
+    ``None`` for missing urls or non-media types (never raises: passthrough is
+    best-effort)."""
+    url = (stored.get("url") or "").strip()
+    media_type = (stored.get("media_type") or "").lower()
+    label = stored.get("filename") or None
+    try:
+        if media_type.startswith("image/"):
+            return image_exhibit_from_generate(url, exhibit_id=exhibit_id, alt=label)
+        if media_type.startswith("audio/"):
+            return audio_exhibit_from_generate(url, exhibit_id=exhibit_id, caption=label)
+    except Exception:  # noqa: BLE001 — a malformed entry must not break the turn
+        return None
+    return None
 
 
 def exhibit_from_present_call(arguments: dict[str, Any]) -> Exhibit:

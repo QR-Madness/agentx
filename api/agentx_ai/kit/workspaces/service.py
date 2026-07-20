@@ -256,16 +256,40 @@ def rename_document(*, workspace_id: str, document_id: str, new_base: str) -> di
     return updated
 
 
-# Image media the blob store can hold + serve (no text ingestion).
-MEDIA_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+# Binary media the blob store can hold + serve (no text ingestion), by kind.
+# IMAGE types are also valid *model input* (vision); AUDIO types are model input
+# only via the native/STT gate (see views); VIDEO is render-only — never model input.
+IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+AUDIO_CONTENT_TYPES = {
+    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/ogg",
+    "audio/webm", "audio/mp4", "audio/x-m4a", "audio/aac", "audio/flac",
+}
+VIDEO_CONTENT_TYPES = {"video/mp4", "video/webm"}
+
+# Back-compat name: historically image-only; now the full storable-media union.
+# Callers that mean "viewable image" should use IMAGE_CONTENT_TYPES.
+MEDIA_CONTENT_TYPES = IMAGE_CONTENT_TYPES | AUDIO_CONTENT_TYPES | VIDEO_CONTENT_TYPES
+
+# Per-kind size ceilings (still bounded by the workspace per-file limit below).
+AUDIO_MAX_BYTES = 25 * 1024 * 1024
+VIDEO_MAX_BYTES = 100 * 1024 * 1024
+
+
+def _media_kind_cap(content_type: str) -> int | None:
+    if content_type in AUDIO_CONTENT_TYPES:
+        return AUDIO_MAX_BYTES
+    if content_type in VIDEO_CONTENT_TYPES:
+        return VIDEO_MAX_BYTES
+    return None  # images ride the workspace per-file limit alone
 
 
 def store_media(
     *, workspace_id: str, filename: str, content_type: str, raw: bytes
 ) -> dict[str, Any]:
-    """Store a binary image blob + a manifest row, **skipping text ingestion** (images
-    aren't parsed/chunked/embedded). The row is ``ready`` immediately. Reuses the same
-    size/quota policy as uploads. Raises :class:`WorkspaceError` on a policy failure."""
+    """Store a binary media blob (image/audio/video) + a manifest row, **skipping text
+    ingestion** (media isn't parsed/chunked/embedded). The row is ``ready`` immediately.
+    Reuses the same size/quota policy as uploads (plus per-kind ceilings for audio/video).
+    Raises :class:`WorkspaceError` on a policy failure."""
     settings = get_settings()
 
     if repository.get_workspace(workspace_id) is None:
@@ -278,11 +302,17 @@ def store_media(
 
     size = len(raw)
     if size == 0:
-        raise WorkspaceError("unsupported", "image is empty")
+        raise WorkspaceError("unsupported", "media is empty")
+    kind_cap = _media_kind_cap(content_type)
+    if kind_cap is not None and size > kind_cap:
+        raise WorkspaceError(
+            "too_large",
+            f"media is {size} bytes; the {content_type} limit is {kind_cap}",
+        )
     if size > settings.workspace_max_file_bytes:
         raise WorkspaceError(
             "too_large",
-            f"image is {size} bytes; per-file limit is {settings.workspace_max_file_bytes}",
+            f"media is {size} bytes; per-file limit is {settings.workspace_max_file_bytes}",
         )
     used = repository.workspace_usage_bytes(workspace_id)
     if used + size > settings.workspace_quota_bytes:

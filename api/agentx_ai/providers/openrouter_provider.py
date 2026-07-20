@@ -25,6 +25,7 @@ from .base import (
     TranscriptionResult,
     accumulate_tool_call_delta,
     convert_messages_to_openai_format,
+    extract_media_blocks,
     finalize_tool_calls,
     log_llm_request,
     normalize_openai_usage,
@@ -184,6 +185,9 @@ class OpenRouterProvider(ModelProvider):
             usage=usage,
             model=response.model,
             raw_response=response.model_dump(),
+            # Image/audio-output models carry payloads on non-standard message
+            # fields — captured as content blocks instead of silently dropped.
+            media=extract_media_blocks(choice.message),
         )
 
     async def stream(
@@ -234,6 +238,7 @@ class OpenRouterProvider(ModelProvider):
             pending_tool_calls: dict[int, dict[str, Any]] = {}
             in_reasoning = False
             usage_payload: dict[str, Any] | None = None
+            media_blocks: list[dict[str, Any]] = []
 
             async for chunk in stream:
                 # Usage rides a trailing chunk with EMPTY `choices` — read it
@@ -246,6 +251,10 @@ class OpenRouterProvider(ModelProvider):
                 choice = chunk.choices[0]
                 delta = choice.delta
                 finish_reason = choice.finish_reason
+
+                # Image/audio-output models attach payloads to deltas (an
+                # OpenRouter extension field) — collect, deliver on the tail chunk.
+                media_blocks.extend(extract_media_blocks(delta) or [])
 
                 # Accumulate tool call deltas
                 if delta.tool_calls:
@@ -291,8 +300,12 @@ class OpenRouterProvider(ModelProvider):
                     elif finish_reason != "tool_calls":
                         yield StreamChunk(content="", finish_reason=finish_reason)
 
-            if usage_payload is not None:
-                yield StreamChunk(content="", usage=usage_payload)
+            if usage_payload is not None or media_blocks:
+                yield StreamChunk(
+                    content="",
+                    usage=usage_payload,
+                    media=media_blocks or None,
+                )
         finally:
             await client.close()
 

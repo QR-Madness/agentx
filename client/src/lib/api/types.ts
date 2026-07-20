@@ -263,6 +263,15 @@ export interface ChatImageRef {
   media_type: string;  // image/png | image/jpeg | image/webp | image/gif
 }
 
+/** A reference to an already-uploaded audio clip attached to a chat message.
+ * `transcript` caches a prior turn's STT fallback so a regenerate never re-bills. */
+export interface ChatAudioRef {
+  workspace_id: string;
+  doc_id: string;
+  media_type: string;  // audio/wav | audio/mpeg | audio/ogg | audio/webm | …
+  transcript?: string;
+}
+
 export interface ChatRequest {
   message: string;
   session_id?: string;
@@ -285,6 +294,9 @@ export interface ChatRequest {
   workflow_id?: string;  // Optional Agent Alloy workflow — supervisor takes over the chat
   workspace_id?: string;  // Optional attached document workspace (Document RAG)
   images?: ChatImageRef[];  // Vision input: refs to uploaded images the model should see
+  // Audio input: refs to uploaded clips. Audio-capable models hear them natively;
+  // others get a server-side STT transcript inline (capability-driven fallback).
+  audio?: ChatAudioRef[];
 }
 
 export interface ChatResponse {
@@ -943,6 +955,12 @@ export interface ConfigUpdate {
   vision?: {
     enabled?: boolean;
     refeed_recent_turns?: number;
+  };
+  audio?: {
+    /** Attach/record audio on a message (native or STT-fallback input). */
+    input_enabled?: boolean;
+    /** The `generate_speech` tool (agents speak into the conversation). */
+    speech_enabled?: boolean;
   };
   models?: {
     /** Only `roles.{fast_utility,deep_reasoning,summarizer}` is writable —

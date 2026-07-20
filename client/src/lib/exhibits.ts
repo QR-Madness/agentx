@@ -60,20 +60,47 @@ export interface ImageElement {
   title?: string;
 }
 
+/** An audio clip rendered as an inline player (same served-blob url contract as image). */
+export interface AudioElement {
+  type: 'audio';
+  url: string;
+  caption?: string;
+  title?: string;
+}
+
+/** A stored video rendered as an inline player (render-only — never model input). */
+export interface VideoElement {
+  type: 'video';
+  url: string;
+  caption?: string;
+  title?: string;
+}
+
+/** A markdown passage rendered through the chat markdown pipeline (sanitized). */
+export interface TextElement {
+  type: 'text';
+  content: string;
+  title?: string;
+}
+
 /** Union of element kinds. Widen as new element types ship. */
 export type ExhibitElement =
   | MermaidElement
   | ChoiceElement
   | TableElement
   | CitationElement
-  | ImageElement;
+  | ImageElement
+  | AudioElement
+  | VideoElement
+  | TextElement;
 
-/** UI-shape exhibit. */
+/** UI-shape exhibit. `grid` flows elements into responsive columns; unknown
+ * layouts (from a newer backend) degrade to stack. */
 export interface Exhibit {
   schemaVersion: number;
   id: string;
   title?: string;
-  layout: 'stack';
+  layout: 'stack' | 'grid';
   elements: ExhibitElement[];
 }
 
@@ -98,6 +125,9 @@ export interface ExhibitWireElement {
   title?: string;
 }
 
+/** Layouts this client can arrange. Unknown wire layouts degrade to `stack`. */
+const KNOWN_LAYOUTS = new Set<Exhibit['layout']>(['stack', 'grid']);
+
 /** Raw wire shape emitted by the backend `exhibit` SSE event. */
 export interface ExhibitWire {
   schema_version?: number;
@@ -114,6 +144,9 @@ const KNOWN_ELEMENT_TYPES = new Set<ExhibitElement['type']>([
   'table',
   'citation',
   'image',
+  'audio',
+  'video',
+  'text',
 ]);
 
 export function isKnownElementType(type: string): type is ExhibitElement['type'] {
@@ -153,6 +186,12 @@ function elementFromWire(el: ExhibitWireElement): ExhibitElement {
   if (el.type === 'image') {
     return { type: 'image', url: el.url ?? '', alt: el.alt, title: el.title };
   }
+  if (el.type === 'audio' || el.type === 'video') {
+    return { type: el.type, url: el.url ?? '', caption: el.caption, title: el.title };
+  }
+  if (el.type === 'text') {
+    return { type: 'text', content: el.content ?? '', title: el.title };
+  }
   // mermaid (and any unknown type) — unknown types survive at runtime; the
   // element registry misses and ExhibitBubble shows a source-as-code fallback.
   return { type: el.type as 'mermaid', content: el.content ?? '', title: el.title };
@@ -164,7 +203,9 @@ export function exhibitFromWire(w: ExhibitWire): Exhibit {
     schemaVersion: w.schema_version ?? 1,
     id: w.id,
     title: w.title,
-    layout: 'stack',
+    layout: KNOWN_LAYOUTS.has(w.layout as Exhibit['layout'])
+      ? (w.layout as Exhibit['layout'])
+      : 'stack',
     elements: (w.elements ?? []).map(elementFromWire),
   };
 }

@@ -40,8 +40,10 @@ import {
 } from '../../lib/thinkingModes';
 import { ThinkingModeMenu } from './ThinkingModeMenu';
 import { MessageImages } from './MessageImages';
+import { MessageAudio } from './MessageAudio';
+import { AudioRecorder, RecordingError, isRecordingSupported } from '../../lib/audioRecorder';
 import { ConversationStateBadge } from './ConversationStateBadge';
-import type { ChatImageRef } from '../../lib/api/types';
+import type { ChatAudioRef, ChatImageRef } from '../../lib/api/types';
 import { RelayMenu } from './relay/RelayMenu';
 import { MessageContent } from './MessageContent';
 import { ThinkingBubble } from './ThinkingBubble';
@@ -93,10 +95,18 @@ import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import './ChatPanel.css';
 
-// Vision input: accepted image types (mirrors the server's MEDIA_CONTENT_TYPES) and a
+// Vision input: accepted image types (mirrors the server's IMAGE_CONTENT_TYPES) and a
 // client-side size cap (the server enforces the workspace per-file limit too).
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const MAX_IMAGE_BYTES = 8_000_000;
+// Audio input: accepted clip types (mirrors the server's AUDIO_CONTENT_TYPES). webm is
+// storable but always rides the server's STT fallback (OpenRouter's native input_audio
+// doesn't take it); voice notes record straight to WAV so they qualify natively.
+const AUDIO_TYPES = [
+  'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/ogg',
+  'audio/webm', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/flac',
+];
+const MAX_AUDIO_BYTES = 25_000_000;
 
 // Thinking Mode — the unified per-conversation selection (patterns + Research).
 // Options/labels/gating + the tab-patch + wire derivation live in
@@ -273,6 +283,13 @@ export function ChatPanel() {
   const [pendingImages, setPendingImages] = useState<ChatImageRef[]>([]);
   const [uploadingImages, setUploadingImages] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  // Audio input: clips attached to the next message (same Home-ref pattern), plus
+  // the in-flight upload count and the voice-note recorder (records WAV directly).
+  const [pendingAudio, setPendingAudio] = useState<ChatAudioRef[]>([]);
+  const [uploadingAudio, setUploadingAudio] = useState(0);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+  const [recording, setRecording] = useState(false);
+  const recorderRef = useRef<AudioRecorder | null>(null);
   // Document attachment (Relay → Attach file): uploads into the conversation's
   // workspace (Document RAG), creating + attaching one if none exists.
   const [attachingFile, setAttachingFile] = useState(false);
@@ -320,9 +337,12 @@ export function ChatPanel() {
   // can see them (shared model-catalog cache; server-side gating is authoritative
   // regardless). An unknown model → no warning (don't second-guess).
   const hasPendingImages = pendingImages.length > 0;
+  const hasPendingAudio = pendingAudio.length > 0;
   // Vision input opt-out (Settings → Images). Defaults to shown; hides the attach
   // button only when explicitly disabled. Read once per mount.
   const [visionEnabled, setVisionEnabled] = useState(true);
+  // Audio input opt-out (audio.input_enabled) — same pattern.
+  const [audioEnabled, setAudioEnabled] = useState(true);
   // Global ad-hoc delegation gate — decides whether the Solo/Team chip shows at
   // all (read from the same one-shot config fetch as the vision flag).
   const [adhocDelegationEnabled, setAdhocDelegationEnabled] = useState(true);
@@ -339,6 +359,7 @@ export function ChatPanel() {
       .then(cfg => {
         if (!alive) return;
         setVisionEnabled((cfg.vision as { enabled?: boolean })?.enabled ?? true);
+        setAudioEnabled((cfg.audio as { input_enabled?: boolean })?.input_enabled ?? true);
         setAdhocDelegationEnabled(
           (cfg.alloy as { allow_adhoc_delegation?: boolean })?.allow_adhoc_delegation ?? true,
         );
@@ -373,9 +394,11 @@ export function ChatPanel() {
       p.kind === 'agent' && p.availableForDelegation && p.agentId !== tabProfile?.agentId,
     );
   const [modelSupportsVision, setModelSupportsVision] = useState<boolean | null>(null);
+  const [modelHearsAudio, setModelHearsAudio] = useState<boolean | null>(null);
   useEffect(() => {
-    if (!hasPendingImages || !effectiveModel) {
+    if ((!hasPendingImages && !hasPendingAudio) || !effectiveModel) {
       setModelSupportsVision(null);
+      setModelHearsAudio(null);
       return;
     }
     let alive = true;
@@ -383,10 +406,13 @@ export function ChatPanel() {
       if (!alive) return;
       const m = models.find(x => x.id === effectiveModel);
       setModelSupportsVision(m ? !!m.supports_vision : null);
+      setModelHearsAudio(m ? (m.input_modalities ?? []).includes('audio') : null);
     });
     return () => { alive = false; };
-  }, [hasPendingImages, effectiveModel]);
+  }, [hasPendingImages, hasPendingAudio, effectiveModel]);
   const visionUnsupported = hasPendingImages && modelSupportsVision === false;
+  // Audio "unsupported" is soft — the server transcribes instead of dropping.
+  const audioViaTranscript = hasPendingAudio && modelHearsAudio === false;
 
   const resolveAgentName = useCallback(
     (agentId: string) => profiles.find(p => p.agentId === agentId)?.name,
@@ -661,6 +687,76 @@ export function ChatPanel() {
     }
   };
 
+  // Upload picked audio clips for audio input (same Home-ref flow as images).
+  const handlePickAudio = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      const type = (file.type || '').split(';')[0];
+      if (!AUDIO_TYPES.includes(type)) {
+        notifyError(`${file.name}: only MP3, WAV, OGG, M4A, AAC, FLAC, or WebM audio is supported.`);
+        continue;
+      }
+      if (file.size > MAX_AUDIO_BYTES) {
+        notifyError(`${file.name} is too large (max ${Math.round(MAX_AUDIO_BYTES / 1_000_000)} MB).`);
+        continue;
+      }
+      setUploadingAudio(n => n + 1);
+      try {
+        const ref = await api.uploadChatMedia(file);
+        setPendingAudio(prev => [...prev, { workspace_id: ref.workspace_id, doc_id: ref.doc_id, media_type: ref.media_type }]);
+        attachStoredMediaWorkspace(ref.workspace_id);
+      } catch (err) {
+        notifyError(err, `Failed to upload ${file.name}`);
+      } finally {
+        setUploadingAudio(n => n - 1);
+      }
+    }
+  };
+
+  // Voice note: record straight to WAV (lib/audioRecorder — no MediaRecorder, works
+  // in every webview), then upload like any picked clip. Stop uploads; cancel discards.
+  const handleRecordToggle = async () => {
+    if (recording) {
+      const recorder = recorderRef.current;
+      recorderRef.current = null;
+      setRecording(false);
+      const result = await recorder?.stop().catch(() => null);
+      if (!result) return;
+      if (result.blob.size > MAX_AUDIO_BYTES) {
+        notifyError('That voice note is too long to attach.');
+        return;
+      }
+      setUploadingAudio(n => n + 1);
+      try {
+        const ref = await api.uploadChatMedia(result.blob, `voice-note.${result.format}`);
+        setPendingAudio(prev => [...prev, { workspace_id: ref.workspace_id, doc_id: ref.doc_id, media_type: ref.media_type }]);
+        attachStoredMediaWorkspace(ref.workspace_id);
+      } catch (err) {
+        notifyError(err, 'Failed to upload the voice note');
+      } finally {
+        setUploadingAudio(n => n - 1);
+      }
+      return;
+    }
+    try {
+      const recorder = new AudioRecorder();
+      await recorder.start();
+      recorderRef.current = recorder;
+      setRecording(true);
+    } catch (err) {
+      notifyError(err instanceof RecordingError ? err.message : 'Could not start recording.');
+    }
+  };
+
+  const handleRecordCancel = () => {
+    recorderRef.current?.cancel();
+    recorderRef.current = null;
+    setRecording(false);
+  };
+
+  // Never leave the mic open on unmount/tab switch.
+  useEffect(() => () => { recorderRef.current?.cancel(); }, []);
+
   // Attach a document to this conversation's project (Document RAG). If the
   // conversation isn't in a project, create one and add it, so one click "just works".
   const handlePickDocs = async (files: FileList | null) => {
@@ -704,9 +800,10 @@ export function ChatPanel() {
   };
 
   const handleSend = async () => {
-    if ((!input.trim() && pendingImages.length === 0) || !activeTab) return;
+    if ((!input.trim() && pendingImages.length === 0 && pendingAudio.length === 0) || !activeTab) return;
 
     const imgs = pendingImages;
+    const clips = pendingAudio;
     const userMessage: UserMessage = {
       id: createMessageId(),
       type: 'user',
@@ -714,12 +811,14 @@ export function ChatPanel() {
       timestamp: new Date().toISOString(),
       targetAgentIds: extractMentionedAgentIds(input, profiles),
       ...(imgs.length ? { images: imgs } : {}),
+      ...(clips.length ? { audio: clips } : {}),
     };
 
     appendMessage(userMessage);
     const messageText = input;
     setInput('');
     setPendingImages([]);
+    setPendingAudio([]);
     closeMention();
 
     stream.send({
@@ -734,6 +833,7 @@ export function ChatPanel() {
       workflow_id: activeTab.workflowId || undefined,
       workspace_id: getMeta(activeTab.sessionId ?? activeTab.id).workspaceId || undefined,
       ...(imgs.length ? { images: imgs } : {}),
+      ...(clips.length ? { audio: clips } : {}),
     });
   };
 
@@ -987,9 +1087,9 @@ export function ChatPanel() {
   // Unified submit: steer while a turn streams, else background-queue when
   // armed, else start a new streaming turn.
   const submit = () => {
-    // Allow an image-only turn (no text) when not steering; steering stays text-only.
-    if (!input.trim() && (isTyping || pendingImages.length === 0)) return;
-    if (uploadingImages > 0) return;
+    // Allow a media-only turn (no text) when not steering; steering stays text-only.
+    if (!input.trim() && (isTyping || (pendingImages.length === 0 && pendingAudio.length === 0))) return;
+    if (uploadingImages > 0 || uploadingAudio > 0 || recording) return;
     if (isTyping) {
       handleSteer();
     } else if (bgArmed) {
@@ -1517,18 +1617,40 @@ export function ChatPanel() {
             </button>
           </ThinkingModeMenu>
         </div>
-        {(pendingImages.length > 0 || uploadingImages > 0) && (
+        {(pendingImages.length > 0 || uploadingImages > 0 || pendingAudio.length > 0 ||
+          uploadingAudio > 0 || recording) && (
           <div className="composer-images">
             <MessageImages
               images={pendingImages}
               onRemove={(i) => setPendingImages(prev => prev.filter((_, idx) => idx !== i))}
             />
-            {uploadingImages > 0 && (
-              <span className="composer-images-uploading">Uploading {uploadingImages}…</span>
+            <MessageAudio
+              audio={pendingAudio}
+              onRemove={(i) => setPendingAudio(prev => prev.filter((_, idx) => idx !== i))}
+            />
+            {recording && (
+              <span className="composer-recording">
+                <span className="composer-recording-dot" aria-hidden />
+                Recording…
+                <button type="button" onClick={handleRecordToggle} title="Stop and attach">
+                  Stop
+                </button>
+                <button type="button" onClick={handleRecordCancel} title="Discard the recording">
+                  Cancel
+                </button>
+              </span>
+            )}
+            {(uploadingImages > 0 || uploadingAudio > 0) && (
+              <span className="composer-images-uploading">Uploading {uploadingImages + uploadingAudio}…</span>
             )}
             {visionUnsupported && (
               <span className="composer-images-warning" title="The selected model can't see images">
                 <AlertTriangle size={13} /> This model can't see images — they'll be sent as text only.
+              </span>
+            )}
+            {audioViaTranscript && (
+              <span className="composer-images-warning" title="The selected model can't hear audio">
+                <AlertTriangle size={13} /> This model can't hear audio — a transcript will be sent instead.
               </span>
             )}
           </div>
@@ -1555,6 +1677,17 @@ export function ChatPanel() {
             hidden
             onChange={(e) => {
               handlePickImages(e.target.files);
+              e.target.value = '';
+            }}
+          />
+          <input
+            ref={audioInputRef}
+            type="file"
+            accept={AUDIO_TYPES.join(',')}
+            multiple
+            hidden
+            onChange={(e) => {
+              handlePickAudio(e.target.files);
               e.target.value = '';
             }}
           />
@@ -1613,6 +1746,11 @@ export function ChatPanel() {
             onAttachImage={() => imageInputRef.current?.click()}
             uploadingImage={uploadingImages > 0}
             visionEnabled={visionEnabled}
+            onAttachAudio={() => audioInputRef.current?.click()}
+            onRecordVoice={isRecordingSupported() ? handleRecordToggle : undefined}
+            uploadingAudio={uploadingAudio > 0}
+            recordingVoice={recording}
+            audioEnabled={audioEnabled}
             onOpenProject={() => openModal(SURFACES.workspaces)}
             projectName={projectName}
             hasProject={!!attachedWorkspaceId}
@@ -1707,7 +1845,10 @@ export function ChatPanel() {
             <button
               className={`send-button ${bgArmed ? 'armed' : ''}`}
               onClick={submit}
-              disabled={(!input.trim() && pendingImages.length === 0) || uploadingImages > 0}
+              disabled={
+                (!input.trim() && pendingImages.length === 0 && pendingAudio.length === 0) ||
+                uploadingImages > 0 || uploadingAudio > 0 || recording
+              }
               title={bgArmed ? 'Send to background' : 'Send'}
             >
               {bgArmed ? <Box size={18} /> : <Send size={18} />}

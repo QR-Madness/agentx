@@ -12,7 +12,9 @@ from collections.abc import Callable
 
 from anyio import BrokenResourceError, ClosedResourceError
 from mcp import ClientSession
-from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
+from mcp.types import Tool
+
+from ..content_blocks import block_from_mcp
 
 logger = logging.getLogger(__name__)
 
@@ -159,22 +161,14 @@ class ToolExecutor:
             
             result = await session.call_tool(tool_name, arguments)
             
-            # Convert content to serializable format
+            # Convert content to the MCP/ACP content-block wire shape (see
+            # `content_blocks`). Text/image keep their historical dicts; audio and
+            # resource_link now survive instead of degrading to "unknown".
             content = []
             for item in result.content:
-                if isinstance(item, TextContent):
-                    content.append({"type": "text", "text": item.text})
-                elif isinstance(item, ImageContent):
-                    content.append({
-                        "type": "image",
-                        "data": item.data,
-                        "mimeType": item.mimeType,
-                    })
-                elif isinstance(item, EmbeddedResource):
-                    content.append({
-                        "type": "resource",
-                        "resource": str(item.resource),
-                    })
+                block = block_from_mcp(item)
+                if block is not None:
+                    content.append(block.to_wire())
                 else:
                     content.append({"type": "unknown", "data": str(item)})
             

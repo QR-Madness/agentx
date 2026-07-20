@@ -19,17 +19,24 @@ export const agentApi = {
   },
 
   /**
-   * Upload an image for vision input. Stored in the user's Home workspace (no
-   * ingestion) and returned as a ref the chat stream carries in `images[]`.
+   * Upload a media file (image for vision input, audio for audio input) to the
+   * user's Home workspace (no ingestion). Returns a ref the chat stream carries
+   * in `images[]` / `audio[]`.
    */
-  async uploadChatImage(file: File): Promise<ChatImageRef & { url: string }> {
+  async uploadChatMedia(file: File | Blob, filename?: string): Promise<ChatImageRef & { url: string }> {
     const form = new FormData();
-    form.append('file', file);
+    if (filename) form.append('file', file, filename);
+    else form.append('file', file as File);
     const res = await apiRequest<{ doc_id: string; workspace_id: string; media_type: string; url: string }>(
-      '/api/agent/chat/images',
+      '/api/agent/chat/media',
       { method: 'POST', body: form },
     );
     return { workspace_id: res.workspace_id, doc_id: res.doc_id, media_type: res.media_type, url: res.url };
+  },
+
+  /** Back-compat alias for image callers (predates the media generalization). */
+  async uploadChatImage(file: File): Promise<ChatImageRef & { url: string }> {
+    return agentApi.uploadChatMedia(file);
   },
 
   async chat(request: ChatRequest): Promise<ChatResponse> {

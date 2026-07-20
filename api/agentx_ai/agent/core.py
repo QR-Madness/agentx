@@ -412,8 +412,16 @@ class Agent:
                     tc.name,
                     tc.arguments,
                 )
-                # Always use the text content - even errors from MCP tools are in content
-                content = tool_result.text
+                # Flatten content blocks — text-only results are byte-identical to the
+                # legacy `.text`; image/audio blocks get stored + surfaced as served-blob
+                # refs (see mcp.media_passthrough). Errors from MCP tools ride content too.
+                from ..mcp.media_passthrough import flatten_result_content
+
+                content = flatten_result_content(
+                    tool_result.content,
+                    tool_name=tc.name,
+                    server_name=tool_info.server_name,
+                )
                 if not content:
                     content = tool_result.error or "Tool execution failed (no output)"
                 if not tool_result.success:

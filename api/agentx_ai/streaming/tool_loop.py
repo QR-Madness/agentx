@@ -290,30 +290,120 @@ def _emit_document_citation(tm) -> list[str]:
     return [_sse("exhibit", exhibit.model_dump())]
 
 
-def _emit_image_exhibit(tm) -> list[str]:
-    """Auto-render a `generate_image` result as an `image` exhibit (the user-facing
-    artifact). Reads the tool result for the served-blob url + prompt.
+def _media_exhibit_wires(tm) -> list[dict]:
+    """Exhibit wires derivable from one tool message: a `generate_image`/
+    `generate_speech` result, or MCP media-passthrough `stored_media` entries.
 
-    Also emits a lightweight ``workspace_attached`` signal carrying the workspace the
-    image landed in — so a conversation that had no workspace (and thus fell back to
-    the personal Home store) can durably attach to it client-side."""
+    One definition serves both the live SSE emit and the synthetic
+    `present_exhibit` persistence turns (so a media exhibit reloads exactly as
+    it rendered live). Best-effort: unparseable/failed results yield nothing.
+    """
     try:
         data = json.loads(tm.content)
     except (ValueError, TypeError):
         return []
-    if not isinstance(data, dict) or not data.get("success") or not data.get("url"):
+    if not isinstance(data, dict):
         return []
 
-    from .exhibits import image_exhibit_from_generate
-
-    exhibit = image_exhibit_from_generate(
-        data["url"], exhibit_id=f"exh_img_{tm.tool_call_id}", alt=data.get("prompt"),
+    from .exhibits import (
+        audio_exhibit_from_generate,
+        image_exhibit_from_generate,
+        media_exhibit_from_stored,
     )
-    if exhibit is None:
+
+    wires: list[dict] = []
+    if tm.name == "generate_image":
+        if data.get("success") and data.get("url"):
+            ex = image_exhibit_from_generate(
+                data["url"], exhibit_id=f"exh_img_{tm.tool_call_id}", alt=data.get("prompt"),
+            )
+            if ex is not None:
+                wires.append(ex.model_dump())
+    elif tm.name == "generate_speech":
+        if data.get("success") and data.get("url"):
+            ex = audio_exhibit_from_generate(
+                data["url"], exhibit_id=f"exh_aud_{tm.tool_call_id}", caption=data.get("text_preview"),
+            )
+            if ex is not None:
+                wires.append(ex.model_dump())
+    else:
+        for i, stored in enumerate(data.get("stored_media") or []):
+            if not isinstance(stored, dict):
+                continue
+            ex = media_exhibit_from_stored(stored, exhibit_id=f"exh_mcp_{tm.tool_call_id}_{i}")
+            if ex is not None:
+                wires.append(ex.model_dump())
+    return wires
+
+
+# Cheap content pre-gate for `_media_exhibit_wires` — avoids a json.loads on
+# every ordinary tool message.
+def _may_carry_media(tm) -> bool:
+    if tm.name in ("generate_image", "generate_speech"):
+        return True
+    return '"stored_media"' in (tm.content or "")
+
+
+def _emit_model_media(media_blocks, result, capture_tool_turns: bool, model_id: str) -> list[str]:
+    """Render non-text payloads a chat completion itself carried (`StreamChunk.media`
+    — an image/audio-output model answering *as* the agent, no tool call involved).
+
+    Each block is stored as workspace media (same caps as MCP passthrough) and
+    surfaced as an image/audio exhibit; with `capture_tool_turns` the synthetic
+    `present_exhibit` persistence turn rides `result.tool_turns_data` so the
+    exhibit survives reload. Best-effort — a bad payload never breaks the turn."""
+    import uuid as _uuid
+
+    from ..mcp.media_passthrough import store_media_block
+    from .exhibits import media_exhibit_from_stored
+
+    events: list[str] = []
+    for blk in media_blocks or []:
+        if not isinstance(blk, dict) or blk.get("type") not in ("image", "audio"):
+            continue
+        stored = store_media_block(
+            blk.get("data") or "", blk.get("mimeType") or "",
+            tool_name="model-output", server_name=model_id,
+        )
+        if stored is None:
+            continue
+        exhibit_id = f"exh_out_{_uuid.uuid4().hex[:10]}"
+        ex = media_exhibit_from_stored(stored, exhibit_id=exhibit_id)
+        if ex is None:
+            continue
+        wire = ex.model_dump()
+        events.append(_sse("exhibit", wire))
+        if capture_tool_turns:
+            result.tool_turns_data.append({
+                "type": "tool_call",
+                "tool": "present_exhibit",
+                "tool_call_id": exhibit_id,
+                "arguments": wire,
+            })
+    return events
+
+
+def _emit_media_exhibits(tm) -> list[str]:
+    """Auto-render a tool message's media as exhibits (the user-facing artifact):
+    a generated image/speech clip, or media an external MCP tool returned
+    (stored by `mcp.media_passthrough`).
+
+    For generation tools, also emits a lightweight ``workspace_attached`` signal
+    carrying the workspace the media landed in — so a conversation that had no
+    workspace (and thus fell back to the personal Home store) can durably attach
+    to it client-side."""
+    if not _may_carry_media(tm):
         return []
-    events = [_sse("exhibit", exhibit.model_dump())]
-    if data.get("workspace_id"):
-        events.append(_sse("workspace_attached", {"workspace_id": data["workspace_id"]}))
+    events = [_sse("exhibit", wire) for wire in _media_exhibit_wires(tm)]
+    if not events:
+        return []
+    if tm.name in ("generate_image", "generate_speech"):
+        try:
+            ws_id = json.loads(tm.content).get("workspace_id")
+        except (ValueError, TypeError, AttributeError):
+            ws_id = None
+        if ws_id:
+            events.append(_sse("workspace_attached", {"workspace_id": ws_id}))
     return events
 
 
@@ -907,9 +997,10 @@ async def _execute_and_emit_tools(
             elif tm.name in _DOC_CITATION_TOOLS and not is_error:
                 for event_str in _emit_document_citation(tm):
                     yield event_str
-            # A generated image renders inline as an `image` exhibit.
-            elif tm.name == "generate_image" and not is_error:
-                for event_str in _emit_image_exhibit(tm):
+            # Generated media (image/speech) and MCP media passthrough render
+            # inline as image/audio exhibits.
+            elif not is_error:
+                for event_str in _emit_media_exhibits(tm):
                     yield event_str
 
         if capture_tool_turns:
@@ -954,6 +1045,18 @@ async def _execute_and_emit_tools(
                     "tool_call_id": wire.get("id") or f"exh_dlg_{tm.tool_call_id}_{i}",
                     "arguments": wire,
                 })
+            # Same synthetic-turn persistence for auto-rendered media exhibits
+            # (generate_image / generate_speech / MCP media passthrough) — the
+            # live `exhibit` SSE has no storage of its own, so without this the
+            # media card was lost on reload.
+            if not is_error and _may_carry_media(tm):
+                for i, wire in enumerate(_media_exhibit_wires(tm)):
+                    result.tool_turns_data.append({
+                        "type": "tool_call",
+                        "tool": "present_exhibit",
+                        "tool_call_id": wire.get("id") or f"exh_med_{tm.tool_call_id}_{i}",
+                        "arguments": wire,
+                    })
 
     messages.extend(tool_messages)
 
@@ -1171,6 +1274,13 @@ async def _run_tool_loop(
                 result.content += chunk.content
                 round_content += chunk.content
                 yield _sse("chunk", {"content": chunk.content})
+            # Non-text payloads the completion itself carried (image/audio-output
+            # models) — stored + rendered as exhibits instead of silently dropped.
+            if chunk.media:
+                for event_str in _emit_model_media(
+                    chunk.media, result, capture_tool_turns, model_id,
+                ):
+                    yield event_str
 
         result.finish_reason = round_finish
         if round_finish == "length":

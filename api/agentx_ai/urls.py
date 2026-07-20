@@ -61,6 +61,8 @@ urlpatterns = [
     path("agent/ambassador/persona-defaults", views.ambassador_persona_defaults, name="ambassador-persona-defaults"),
     path("agent/avatar/generate", views.avatar_generate, name="avatar-generate"),
     path("agent/chat/images", views.chat_image_upload, name="chat-image-upload"),
+    # Alias: the upload accepts image/audio/video since the multi-modal slice.
+    path("agent/chat/media", views.chat_image_upload, name="chat-media-upload"),
     path("agent/ambassador/relay", views.ambassador_relay, name="ambassador-relay"),
     path("agent/ambassador/dispatch", views.ambassador_dispatch, name="ambassador-dispatch"),
     path("agent/ambassador/threads", views.ambassador_threads, name="ambassador-threads"),

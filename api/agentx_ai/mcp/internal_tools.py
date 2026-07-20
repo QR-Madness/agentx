@@ -1158,7 +1158,7 @@ def view_image(document_id: str) -> dict[str, Any]:
     can see). Here we only validate access + that it's an image; resolution is scoped to
     the attached workspace or the user's Home (where generated images land)."""
     from ..kit.workspaces import repository
-    from ..kit.workspaces.service import MEDIA_CONTENT_TYPES
+    from ..kit.workspaces.service import AUDIO_CONTENT_TYPES, IMAGE_CONTENT_TYPES, VIDEO_CONTENT_TYPES
     from .internal_context import current_context
 
     document_id = (document_id or "").strip()
@@ -1179,7 +1179,13 @@ def view_image(document_id: str) -> dict[str, Any]:
             "success": False,
         }
     media_type = doc.get("content_type")
-    if media_type not in MEDIA_CONTENT_TYPES:
+    if media_type in AUDIO_CONTENT_TYPES or media_type in VIDEO_CONTENT_TYPES:
+        return {
+            "error": f"{doc.get('filename')} is {media_type} — view_image only handles "
+                     "pictures. Audio/video can't be loaded into vision.",
+            "success": False,
+        }
+    if media_type not in IMAGE_CONTENT_TYPES:
         return {
             "error": f"{doc.get('filename')} isn't a viewable image (type {media_type}). "
                      "Use read_document for text files.",
@@ -1262,6 +1268,72 @@ def generate_image(prompt: str) -> dict[str, Any]:
         "workspace_id": info["workspace_id"],
         "url": info["url"],
         "prompt": prompt,
+    }
+
+
+# --- Speech generation (multi-modal; the result renders as an audio exhibit) --
+
+
+@register_tool(
+    name="generate_speech",
+    description=(
+        "Turn text into spoken audio and show the user an inline player in this conversation. "
+        "Use when the user asks you to say something aloud, read a passage out, or produce a "
+        "voice clip / narration. Keep the text natural to speak (plain sentences, no markdown). "
+        "The clip is rendered for the user automatically — just confirm what you spoke."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "Exactly what to say, as plain speakable prose."},
+            "voice": {"type": "string", "description": "Optional voice id override (model-specific)."},
+        },
+        "required": ["text"],
+    },
+)
+def generate_speech(text: str, voice: str | None = None) -> dict[str, Any]:
+    from ..config import get_config_manager
+    from .internal_context import current_context
+
+    text = (text or "").strip()
+    if not text:
+        return {"error": "text is required", "success": False}
+
+    if not get_config_manager().get("audio.speech_enabled", True):
+        return {"error": "Speech generation is disabled in settings.", "success": False}
+
+    ctx = current_context()
+    user_id = ctx.user_id if ctx else "default"
+
+    from ..agent.ambassador import SpeechUnavailable
+
+    try:
+        from ..agent.audio_gen import generate_and_store_speech
+        from ..utils.async_bridge import run_coro_sync
+
+        info = run_coro_sync(
+            generate_and_store_speech(
+                text,
+                voice=(voice or "").strip() or None,
+                workspace_id=(ctx.workspace_id if ctx and ctx.workspace_id else None),
+                user_id=user_id,
+                agent_id=(ctx.agent_id if ctx else None),
+            ),
+            timeout=120.0,
+        )
+    except SpeechUnavailable as e:
+        return {"error": f"Speech generation isn't available: {e}", "success": False}
+    except Exception as e:  # noqa: BLE001 — a tool error never breaks the turn
+        logger.warning(f"generate_speech failed: {e}")
+        return {"error": f"Speech generation failed: {str(e)[:200]}", "success": False}
+
+    return {
+        "success": True,
+        "doc_id": info["doc_id"],
+        "workspace_id": info["workspace_id"],
+        "url": info["url"],
+        # The tool loop uses this as the audio exhibit's caption.
+        "text_preview": text[:160],
     }
 
 
@@ -1658,6 +1730,15 @@ def update_conversation_state(
         "(with a short `quote`), and add any non-web sources (docs/memory) you used. "
         "Sources default to `passive` (record-keeping); `active` is for references "
         "you may point back to. Don't pad.\n"
+        "- `text`: a standalone markdown passage worth presenting as its own card "
+        "(a summary, a verdict, a callout) — `content` is markdown. Don't mirror "
+        "your whole reply into one.\n"
+        "- `image` / `audio` / `video`: media already stored in this conversation "
+        "(a served `/api/workspaces/.../raw` url from a generation or attachment). "
+        "Generated media renders automatically — only declare these to re-present "
+        "or arrange existing media, never with external urls (they're rejected).\n"
+        "Layout: `stack` (default, vertical) or `grid` (side-by-side cards — good "
+        "for comparing 2-4 diagrams/tables/media).\n"
         "For diagrams/tables, still describe them briefly in your normal reply — "
         "an exhibit complements your text, it doesn't replace it."
     ),
@@ -1673,12 +1754,20 @@ def update_conversation_state(
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["mermaid", "choice", "table", "citation"],
-                            "description": "Element type: 'mermaid', 'choice', 'table', or 'citation'.",
+                            "enum": ["mermaid", "choice", "table", "citation", "text", "image", "audio", "video"],
+                            "description": "Element type.",
                         },
                         "content": {
                             "type": "string",
-                            "description": "Raw Mermaid diagram source (required for 'mermaid').",
+                            "description": "Raw Mermaid source (for 'mermaid') or markdown (for 'text').",
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "Served-blob path (/api/workspaces/{ws}/documents/{doc}/raw) for 'image'/'audio'/'video'. External urls are rejected.",
+                        },
+                        "alt": {
+                            "type": "string",
+                            "description": "Optional alt text for 'image'.",
                         },
                         "options": {
                             "type": "array",
@@ -1701,7 +1790,7 @@ def update_conversation_state(
                         },
                         "caption": {
                             "type": "string",
-                            "description": "Optional caption shown under a 'table'.",
+                            "description": "Optional caption shown under a 'table', 'audio', or 'video'.",
                         },
                         "sources": {
                             "type": "array",
@@ -1744,8 +1833,8 @@ def update_conversation_state(
             },
             "layout": {
                 "type": "string",
-                "enum": ["stack"],
-                "description": "How elements are arranged. Only 'stack' (vertical) for now.",
+                "enum": ["stack", "grid"],
+                "description": "How elements are arranged: 'stack' (vertical, default) or 'grid' (responsive side-by-side).",
                 "default": "stack",
             },
         },

@@ -219,6 +219,7 @@ describe('api facade', () => {
         "updateTextDocument",
         "updateWorkspace",
         "uploadChatImage",
+        "uploadChatMedia",
         "uploadDocument",
         "validateMCPServer",
         "version",
