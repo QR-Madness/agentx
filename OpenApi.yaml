@@ -6063,6 +6063,17 @@ components:
             One-line specialty shown to teammates deciding whom to delegate
             to (roster prompt + `delegate_to` target list). Falls back to
             `description` when unset. Trimmed; max 200 chars.
+        org_level:
+          type: string
+          enum: [executive, manager, lead, agent]
+          default: agent
+          description: >-
+            Agentic Organizations tier, orthogonal to `kind`. Managers own
+            teams (`Workflow.manager_agent_id`) and delegate to their leads;
+            setting `manager` merges the report-only blocked-tools template
+            once on transition. `executive` is reserved (accepted, no
+            semantics, never offered in the UI). Plays no role in chain-edge
+            derivation — structure lives on the workflow.
         is_default:
           type: boolean
         created_at:
@@ -6088,6 +6099,15 @@ components:
           nullable: true
         supervisor_agent_id:
           type: string
+        manager_agent_id:
+          type: string
+          nullable: true
+          description: >-
+            Agentic Organizations — the manager that OWNS this team (chain of
+            command: manager → this team's lead). Must resolve to an
+            agent-kind profile that is neither the lead nor a member; null =
+            org-free team (flat roster behavior unchanged). PATCHing null
+            clears it.
         members:
           type: array
           items:

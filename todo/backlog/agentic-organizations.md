@@ -67,77 +67,86 @@ directives.
   bespoke, curated memory ("everything must be perfect": likely verified-only facts, a distinct
   channel policy). Never manual work.
 
-### Slice 1 — Org data model, Role picker, ambassador hardening
+### Slice 1 — Org data model, Role picker, ambassador hardening `[v0.21.240]` ✅
 
 > Additive fields + one guard; ships standalone value (roles visible/editable, ambassador
 > system-owned) and unblocks every later slice.
 
-- [ ] **`AgentProfile.org_level`** — `Literal["executive","manager","lead","agent"]`, default
+- [x] **`AgentProfile.org_level`** — `Literal["executive","manager","lead","agent"]`, default
       `"agent"`, in `agent/models.py` beside `available_for_delegation`. Orthogonal to `kind`;
       `"executive"` is reserved in the enum *now* (pydantic rejects unknown values at YAML load,
       so pre-reserving avoids a data migration when executives unpark) but never offered in UI.
-- [ ] **`Workflow.manager_agent_id: str | None`** — in `alloy/models.py` (+ `to_dict`), parsed in
+- [x] **`Workflow.manager_agent_id: str | None`** — in `alloy/models.py` (+ `to_dict`), parsed in
       `alloy/manager.py::_parse_workflow` and `views.py::_parse_workflow_payload`. Semantics: a
       manager owns *teams*, not agents — manager→leads derives as "supervisors of workflows where
       `manager_agent_id == X`"; one team has ≤1 manager, one manager may own many teams.
-- [ ] **Persistence round-trip test** — `org_level` and `manager_agent_id` must be added to
+- [x] **Persistence round-trip test** — `org_level` and `manager_agent_id` added to
       `profiles.py::save_config`'s hand-enumerated field list **and** the four hand-picked profile
-      serializer blocks in `views.py`, or they're silently dropped on restart (the documented
-      Phase-18.2 regression class). The test asserts a full save→load→serialize round trip.
-- [ ] **Soft validation** in `manager._validate`: `manager_agent_id` must resolve to a known
-      profile, must not equal `supervisor_agent_id`, must not appear in `members`. Tier mismatches
-      (manager profile whose `org_level != "manager"`, supervisor not `"lead"`) are **log-warn
-      only** (like the routes warning) — hard rules would break existing `workflows.yaml` on boot.
-- [ ] **Profile editor Role picker** — agent-kind profiles only: Agent (member) / Lead / Manager;
-      Executive omitted; ambassador profiles show no picker (`kind` stays read-only in the
-      editor). Hint copy: once an agent is in an org, chain of command supersedes
-      `available_for_delegation` (which keeps governing only the flat roster). Choosing
-      **Manager** applies the report-only tool template (manual-work tools stripped via the
-      existing tool-gating; keeps `delegate_to` + read/report tools) — the report contract.
-- [ ] **Ambassador delete guard** — `ProfileManager.delete_profile` refuses the default ambassador
-      (`kind=='ambassador' and is_default_ambassador`) with `ValueError` → 4xx from the DELETE
-      handler; client hides the delete affordance. Today deletion "works" and the boot reconciler
-      resurrects a fresh one — the guard makes the system-owned contract explicit and immediate;
-      `_ensure_ambassador_defaults` stays as the safety net.
-- [ ] **Docs**: `OpenApi.yaml` + `endpoints.md` (profile + workflow schemas), version +
-      Release-Notes bump with the slice.
+      serializer blocks in `views.py` (the documented Phase-18.2 regression class).
+      `DelegatableProfileTest` + `OrgWorkflowFieldsTest` cover save→load→serialize **and the
+      PATCH merge path** (`update()` round-trips through `to_dict`→`_parse_workflow`), plus
+      boot-with-old-YAML per store.
+- [x] **Soft validation** in `manager._validate`: `manager_agent_id` must resolve to a known
+      *agent-kind* profile, must not equal `supervisor_agent_id`, must not appear in `members`
+      (hard, create/update only — never YAML load). Tier mismatches are log-warn only.
+- [x] **Profile editor Role picker** — agent-kind profiles only (SegmentedControl in Team
+      membership): Agent / Lead / Manager; Executive omitted; ambassadors show no picker.
+      Choosing **Manager** merges the report-only blocklist template
+      (`MANAGER_REPORT_ONLY_BLOCKED_TOOLS`: document writes, shell, media generation) **once on
+      transition** — server-side in ProfileManager AND mirrored client-side
+      (`lib/managerTemplate.ts`; the form never rehydrates post-autosave, so a server-only merge
+      would be wiped by the next PUT; union-of-unions converges; both lists test-pinned).
+      Editable afterward; demotion strips nothing. Plus a mandatory `manager_charter` prompt
+      block (prio 92) in normal chats.
+- [x] **Ambassador delete guard** — `ProfileManager.delete_profile` refuses the default
+      ambassador with `ValueError` → 400; client hides the delete affordance;
+      `_ensure_ambassador_defaults` stays as the safety net. → **INV-11**.
+- [x] **Docs**: `OpenApi.yaml` + `endpoints.md` (profile + workflow schemas), Decisions.md
+      INV-9/10/11, Development-Notes chain-of-command entry, version + Release-Notes.
 
-### Slice 2 — Chain of command (the strict delegation gate)
+### Slice 2 — Chain of command (the strict delegation gate) `[v0.21.240]` ✅
 
 > One pure derivation module, consumed at both existing choke points. Adjacency-only by
 > construction — no level-skipping, no peer-to-peer.
 
-- [ ] **`alloy/org_chart.py`** — pure functions over `get_profile_manager()` +
-      `get_workflow_manager()`: `teams_managed_by`, `teams_led_by`, `teams_of_member`, `in_org`,
-      and the single source of truth `chain_targets(agent_id) → [(agent_id, name, hint,
-      relation)]` with relation ∈ {`down_lead` (manager→lead of owned team), `down_member`
-      (lead→own team member), `up_lead` (member→own lead, escalation)}. Unit-tested standalone.
-- [ ] **Tool-enum gate** — `list_adhoc_delegation_targets`: if `in_org(self_agent_id)` and the new
-      knob `alloy.chain_of_command` (default **on**) is set, return `chain_targets(...)` (still
-      excluding self and non-`kind=='agent'`); otherwise today's flat opted-in roster unchanged.
-      The roster prompt block shares this function, so prompt and enum stay in lockstep for free.
-      Deliberate asymmetry, documented: **chain edges ignore `available_for_delegation`** —
-      adjacency implies delegability (exactly as workflow supervisors already delegate to
-      specialists regardless of the flag); the flag keeps governing only the flat roster.
-- [ ] **Executor gate** — `AlloyExecutor._validate_target`: in ad-hoc mode, when the delegator is
-      in-org + knob on, the target must be in `chain_targets(delegator)`. Workflow mode is already
-      adjacency-only (supervisor→specialists) and stays as is. Defense in depth: the enum
-      constrains the model, the executor constrains reality.
-- [ ] **Loop guard** — thread a `delegation_path: list[agent_id]` parameter down
-      `AlloyExecutor.delegate` → nested executors (a parameter like `depth`, not instance state,
-      so concurrent fan-out branches don't race); `_validate_target` rejects any target already in
-      the path — kills manager→lead→member→lead cycles categorically.
-- [ ] **Downward nesting** — when a delegated specialist is itself a **lead of a team** (knob on),
-      its ephemeral Agent gets a `delegate_to` scoped to its `down_member` targets at `depth+1`
-      (`max_delegation_depth=3` already fits manager(0)→lead(1)→member(2)). Members in-chain still
-      get **no** delegation tool.
-- [ ] **Upward escalation** — *top-level* member chats get an `up_lead`-scoped `delegate_to`
-      (uniform tooling: same tool, same SSE events, same cards — zero new client work). *Mid-run*
-      escalation is a structured-result convention (`[NEEDS ESCALATION] …` block the awaiting
-      lead's own loop reacts to) — a distinct `escalate` verb/tool with its own UX is an open
-      question below.
-- [ ] **Docs**: Decisions.md new INV candidate — *"chain of command is enforced at the tool enum
-      AND the executor; adjacency only"*; existing delegation tests in `tests.py` updated.
+- [x] **`alloy/org_chart.py`** — pure functions over the two stores + config (all three
+      accessors imported at module top — the ONE test patch point): `teams_managed_by`,
+      `teams_led_by`, `teams_of_member`, `in_org`, and the single source of truth
+      `chain_targets(agent_id) → [ChainTarget(agent_id, name, hint, relation, team_id,
+      team_name)]`, relation ∈ {`down_lead`, `down_member`, `up_lead`}. Unit-tested standalone
+      (`OrgChartTest`). **Deliberate refinement:** `in_org` is **manager-anchored** — true only
+      via a `manager_agent_id` edge — so existing manager-less Agent Teams installs keep the
+      flat roster byte-identical (a naive "in any workflow" definition would have replaced every
+      existing lead's roster on upgrade). Down/up edges then derive from EVERY team the agent
+      leads/belongs to. Known consequence (documented): leads have no upward edge in v1.
+- [x] **Tool-enum gate** — `list_adhoc_delegation_targets`: knob `alloy.chain_of_command`
+      (default **on**) + `in_org(self)` → relation-annotated `chain_targets(...)` rows;
+      otherwise today's flat opted-in roster unchanged. Roster prompt shares the function
+      (lockstep for free) and swaps to `CHAIN_ROSTER_HEADER` for org participants. Chain edges
+      ignore `available_for_delegation` (deliberate asymmetry — the flag governs only the flat
+      roster). → **INV-10**.
+- [x] **Executor gate** — `AlloyExecutor._validate_target`: ad-hoc + delegator in-org + knob on
+      → target must be in `chain_targets(delegator)`. Workflow mode stays as-is.
+- [x] **Loop guard** — `delegation_path` threads through `delegate()` → nested executors as
+      per-instance immutables (`base_depth`/`delegation_path`/`parent_delegation_id` — instance
+      *defaults* rather than pure parameters because the tool loop calls `delegate()` without
+      those kwargs; one executor per branch keeps fan-out race-free); any target already on the
+      path is rejected categorically.
+- [x] **Downward nesting** — a delegated specialist that leads a team (knob on, **target
+      in-org**, depth allows) gets a members-scoped `delegate_to` + nested executor
+      (`_chain_nesting_for`) attached via the existing `_active_alloy_executor` seam; nested
+      `delegation_*` events pass through the outer re-wrap unchanged and nest client-side by
+      `parent_delegation_id` (zero client work). Members in-chain still get **no** delegation
+      tool. **v1 deviation (deliberate): nested runs are blocking-only** — no `delegate_start`
+      below the top level. Guarded collision fixes: tool-loop metric capture keys on
+      `tool_call_id`; nested completes own their exhibits (outer set deduped).
+- [x] **Upward escalation** — top-level member chats get the `up_lead`-scoped tool automatically
+      (falls out of the enum gate — same tool, same SSE, same cards). Mid-run escalation is the
+      `[NEEDS ESCALATION]` structured-result convention (coached in `CHAIN_ROSTER_HEADER` +
+      handled in the manager charter); a distinct `escalate` verb stays an open question.
+- [x] **Docs**: Decisions.md **INV-9/INV-10/INV-11** (derivability / dual enforcement /
+      ambassador apex-outside-the-chain); delegation tests extended
+      (`AdhocRosterPromptTest`, `AdhocDelegationTest`, `NestedLeadDelegationTest`).
 
 ### Slice 3 — Persistent delegation threads
 
@@ -180,6 +189,15 @@ directives.
 
 > Replaces `AlloyFactoryModal` outright — the "Factory Canvas — coming soon" banner finally pays
 > off, at org scope. Needs Slice 1 only.
+
+> **Commonwealth-readiness (decided 2026-07-20):** this surface is the seed of the Pillar-8
+> **Commonwealth** view ([cognitive-os.md](cognitive-os.md) — the governed whole: orgs +
+> unaffiliated agents + the ambassador apex). It already renders the entire governed space, so
+> when governance lands (vitals, missions) it gains those panels and adopts the name as a
+> **strings-only rename** (alloy→Teams precedent; naming rollout stays cognitive-os open Q7 —
+> docs first, UI when governance makes the name mean something). NOT an adjacent page: the
+> profile editor stays the *identity* surface; this canvas is the *structure/governance* surface
+> with quick-edit deep-links. No new `PageId`s.
 
 - [ ] **Org layout store** — new `alloy/organization.py` (WorkflowManager-shaped load/save) owning
       `data/organization.yaml`: **layout only** (canvas node positions keyed `agent:{agent_id}` /
@@ -294,8 +312,9 @@ directives.
 5. **Org store growth** — does `organization.yaml` later own explicit edges (multi-manager teams,
    matrix reporting) or stay layout-only forever?
 6. **Nested fan-out budget** — global semaphore vs per-level caps.
-7. **Gate scope** — chain of command never constrains @-mentions or ambassador dispatch
-   (recommendation: no — human dual-entry stays unrestricted per §16.7).
+7. ~~**Gate scope**~~ — **RESOLVED `[v0.21.240]` as Decisions.md INV-11**: the chain never
+   constrains @-mentions or ambassador dispatch — human dual-entry stays unrestricted per §16.7;
+   the ambassador is apex-outside-the-chain.
 8. **Follow-ups to finished threads** — plain chat in the child, or a re-delegation that stamps
    results back to the parent card?
 9. **Executive semantics when unparked** — multi-manager delegation; the apex relationship to the
