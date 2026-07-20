@@ -10,6 +10,17 @@ import { getAuthToken, getActiveGatewayToken } from '../storage';
 
 export type AmbassadorStatus = 'streaming' | 'done' | 'error' | 'empty_provider' | 'cancelled';
 
+/** A confirmed-write proposal filed by the belt (rename/archive/delete a
+ *  conversation). The belt NEVER executes these — the client renders a confirm
+ *  strip and, on confirm, calls the conversation-meta endpoints itself. */
+export interface AmbassadorToolProposal {
+  proposal_id: string;
+  action: 'rename' | 'archive' | 'unarchive' | 'delete';
+  conversation_id: string;
+  /** The proposed title (rename only). */
+  title?: string;
+}
+
 /** One read-only tool the *ambassador* called while answering (its own tool belt —
  *  summarize/explore/read/list a conversation). Surfaced live as a chip so you can
  *  see it reading/surveying. Distinct from `AmbassadorToolArtifact` (the watched
@@ -19,6 +30,9 @@ export interface AmbassadorToolCall {
   args?: Record<string, unknown>;
   /** True once the tool returned (its `ambassador_tool_result` arrived). */
   done?: boolean;
+  /** Present on confirmed-write tools: the proposal awaiting the person's confirm
+   *  (persisted on the chip so a thread replay can rebuild the strip). */
+  proposal?: AmbassadorToolProposal;
 }
 
 /** One persisted per-turn briefing (sidecar record / live state). */
@@ -175,7 +189,7 @@ export interface SpeakRequest {
   model?: string;
 }
 
-export type VoiceCommandAction = 'answer' | 'relay';
+export type VoiceCommandAction = 'answer' | 'relay' | 'tool';
 
 export interface VoiceCommandRequest {
   conversation_id: string;
@@ -188,11 +202,14 @@ export interface VoiceCommandRequest {
 }
 
 export interface VoiceCommandResult {
-  /** `answer` = the ambassador answers you (spoken); `relay` = a draft to send to the agent. */
+  /** `answer` = the ambassador answers you (spoken); `relay` = a draft to send to
+   *  the agent; `tool` = a conversation-management proposal to confirm on screen. */
   action: VoiceCommandAction;
   text: string;
   /** Set when an `answer` was persisted to the Q&A sidecar. */
   qa_id?: string | null;
+  /** The filed proposal (`tool` action only) — confirm-first, nothing executed yet. */
+  tool?: AmbassadorToolProposal;
 }
 
 export interface TranscribeRequest {
@@ -216,6 +233,9 @@ export interface AmbassadorStreamCallbacks {
   onToolCall?: (tool: string, args?: Record<string, unknown>) => void;
   /** A tool returned. */
   onToolResult?: (tool: string) => void;
+  /** A confirmed-write tool filed a proposal (rename/archive/delete) — render the
+   *  confirm strip; nothing executes until the person confirms. */
+  onToolProposal?: (tool: string, proposal: AmbassadorToolProposal) => void;
   /** The run's event buffer expired — fall back to the persisted briefing. */
   onMissing?: () => void;
 }
@@ -260,6 +280,10 @@ async function pumpAmbassadorSse(
         break;
       case 'ambassador_tool_result':
         if (typeof data.tool === 'string') callbacks.onToolResult?.(data.tool);
+        break;
+      case 'ambassador_tool_proposal':
+        if (typeof data.tool === 'string' && data.proposal && typeof data.proposal === 'object')
+          callbacks.onToolProposal?.(data.tool, data.proposal as AmbassadorToolProposal);
         break;
       case 'run_missing':
         callbacks.onMissing?.();

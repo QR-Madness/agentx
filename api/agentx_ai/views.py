@@ -3448,6 +3448,7 @@ def ambassador_ask(request):
             agent_name=agent_name,
             artifacts=artifacts,
             active_conversation=active_conversation,
+            user_id=_bg_user_id(request),
         )
 
     run_id = start_chat_run(
@@ -3769,7 +3770,7 @@ async def ambassador_voice_command(request):
 
     result = await get_ambassador().route_voice_command(
         conversation_id, transcript, agent_name=agent_name, artifacts=artifacts,
-        active_conversation=active_conversation,
+        active_conversation=active_conversation, user_id=_bg_user_id(request),
     )
     return JsonResponse(result)
 
@@ -5512,11 +5513,14 @@ def memory_channels(request):
 
 def _conversation_summaries(
     cursor, *, channel: str | None = None, workspace_id: str | None = None,
-    limit: int = 50, offset: int = 0,
+    limit: int = 50, offset: int = 0, include_archived: bool = False,
 ) -> tuple[list[dict], int]:
     """Shared conversation-summary query: /api/conversations and the project-scoped
     listing (workspace_views). Rows carry ``workspace_id`` from the durable
-    conversation→project membership (null when unlinked)."""
+    conversation→project membership (null when unlinked). A ``conversation_meta``
+    row overlays the derived title and carries the archived flag; archived
+    conversations are excluded unless ``include_archived`` (the filter applies to
+    the COUNT too, so pagination totals stay honest)."""
     filters, params = [], []
     if channel:
         filters.append("cl.channel = %s")
@@ -5524,6 +5528,8 @@ def _conversation_summaries(
     if workspace_id:
         filters.append("wc.workspace_id = %s")
         params.append(workspace_id)
+    if not include_archived:
+        filters.append("COALESCE(cm.archived, FALSE) = FALSE")
     where = f"WHERE {' AND '.join(filters)}" if filters else ""
 
     cursor.execute(f"""
@@ -5540,9 +5546,12 @@ def _conversation_summaries(
              ORDER BY sub.turn_index ASC LIMIT 1) AS first_user_message,
             (SELECT content FROM conversation_logs sub
              WHERE sub.conversation_id = cl.conversation_id
-             ORDER BY sub.turn_index DESC LIMIT 1) AS last_message
+             ORDER BY sub.turn_index DESC LIMIT 1) AS last_message,
+            MAX(cm.title) AS custom_title,
+            BOOL_OR(COALESCE(cm.archived, FALSE)) AS archived
         FROM conversation_logs cl
         LEFT JOIN workspace_conversations wc ON wc.conversation_id = cl.conversation_id
+        LEFT JOIN conversation_meta cm ON cm.conversation_id = cl.conversation_id::text
         {where}
         GROUP BY cl.conversation_id
         ORDER BY MAX(cl.timestamp) DESC
@@ -5554,16 +5563,20 @@ def _conversation_summaries(
         SELECT COUNT(DISTINCT cl.conversation_id)
         FROM conversation_logs cl
         LEFT JOIN workspace_conversations wc ON wc.conversation_id = cl.conversation_id
+        LEFT JOIN conversation_meta cm ON cm.conversation_id = cl.conversation_id::text
         {where}
     """, params)
     total = cursor.fetchone()[0]
 
     conversations = []
     for row in rows:
-        conv_id, created_at, last_message_at, count, ch, ws_id, first_msg, last_msg = row
-        # Title from first user message (truncated)
+        (conv_id, created_at, last_message_at, count, ch, ws_id, first_msg, last_msg,
+         custom_title, archived) = row
+        # Custom title (conversation_meta) overlays the derived first-user title
         title = "New Conversation"
-        if first_msg:
+        if custom_title:
+            title = custom_title
+        elif first_msg:
             title = first_msg[:80].strip()
             if len(first_msg) > 80:
                 title += "…"
@@ -5581,6 +5594,7 @@ def _conversation_summaries(
             "message_count": count,
             "channel": ch or "_global",
             "workspace_id": ws_id,
+            "archived": bool(archived),
             "created_at": created_at.isoformat() if created_at else None,
             "last_message_at": last_message_at.isoformat() if last_message_at else None,
         })
@@ -5609,13 +5623,15 @@ def conversations_list(request):
     except (ValueError, TypeError):
         offset = 0
     channel = request.GET.get("channel")
+    include_archived = request.GET.get("include_archived") in ("1", "true", "yes")
 
     try:
         pg_conn: Any = PostgresConnection.get_engine().raw_connection()
         try:
             with pg_conn.cursor() as cursor:
                 conversations, total = _conversation_summaries(
-                    cursor, channel=channel, limit=limit, offset=offset
+                    cursor, channel=channel, limit=limit, offset=offset,
+                    include_archived=include_archived,
                 )
                 return JsonResponse({
                     "conversations": conversations,
@@ -5828,6 +5844,12 @@ def memory_conversation_delete(request, conversation_id):
         except Exception as e:
             logger.debug(f"Project membership cleanup skipped: {e}")
 
+        # Drop the user-set meta overlay (title/archived). NOTE: sidecar keys
+        # (conv_state:, conv_summary:, amb_thread:) are still left behind —
+        # pre-existing gap, tracked separately.
+        from .agent.conversation_meta import delete_meta
+        delete_meta(conversation_id)
+
         return JsonResponse({
             "message": f"Conversation '{conversation_id}' deleted successfully",
             "deleted": deleted_counts
@@ -5836,6 +5858,48 @@ def memory_conversation_delete(request, conversation_id):
     except Exception as e:
         logger.error(f"Error deleting conversation '{conversation_id}': {e}")
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_methods("PATCH")
+def memory_conversation_meta(request, conversation_id):
+    """
+    PATCH /api/memory/conversations/<id>/meta — user-set conversation metadata.
+
+    Body: ``{"title"?: string, "archived"?: boolean}`` (at least one). The
+    execution half of the Ambassador's confirmed-write belt (rename/archive
+    proposals land here only after the person confirms) and the client's manual
+    rename/restore actions. Never touches transcript turns (INV-2: meta-only).
+    """
+    from .agent.conversation_meta import MAX_TITLE_CHARS, set_archived, set_title
+
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        return json_error("Invalid JSON body")
+    if not isinstance(body, dict) or not ("title" in body or "archived" in body):
+        return json_error("Provide at least one of: title, archived")
+
+    title = body.get("title")
+    archived = body.get("archived")
+    if "title" in body:
+        if not isinstance(title, str) or not title.strip():
+            return json_error("title must be a non-empty string")
+        if len(title.strip()) > MAX_TITLE_CHARS:
+            return json_error(f"title must be at most {MAX_TITLE_CHARS} characters")
+    if "archived" in body and not isinstance(archived, bool):
+        return json_error("archived must be a boolean")
+
+    result: dict[str, Any] = {"conversation_id": conversation_id}
+    if "title" in body:
+        if not set_title(conversation_id, cast(str, title)):
+            return json_error("Failed to save the title", status=503)
+        result["title"] = cast(str, title).strip()[:MAX_TITLE_CHARS]
+    if "archived" in body:
+        if not set_archived(conversation_id, cast(bool, archived)):
+            return json_error("Failed to update the archived flag", status=503)
+        result["archived"] = archived
+    return JsonResponse(result)
 
 
 @csrf_exempt
@@ -6736,33 +6800,17 @@ def usage_metrics(request):
 
     try:
         from sqlalchemy import text
+        from .agent.usage_ledger import aggregate_usage
         from .kit.agent_memory.connections import get_postgres_session
 
-        # Foundation #5: usage now aggregates the unified `usage_events` ledger
-        # (chat + alloy + ambassador + voice), not just conversation_logs. Units
-        # are JSONB so token rows and audio rows coexist; audio rows contribute 0
-        # tokens. Latency isn't a spend metric (and the ledger has none), so it's
-        # still read from conversation_logs separately.
-        tokens_in = "COALESCE((units->>'tokens_in')::int, 0)"
-        tokens_out = "COALESCE((units->>'tokens_out')::int, 0)"
-        tokens_total = "COALESCE((units->>'tokens_total')::int, 0)"
-        cost = "COALESCE(cost_total, 0)"
-        window = "ts >= NOW() - (:days || ' days')::interval"
+        # Foundation #5: usage aggregates the unified `usage_events` ledger
+        # (chat + alloy + ambassador + voice) via the shared aggregate_usage
+        # helper (also behind the Ambassador's usage_report belt tool). Latency
+        # isn't a spend metric (and the ledger has none), so it's still read
+        # from conversation_logs separately here.
+        report = aggregate_usage(days)
 
         with get_postgres_session() as session:
-            totals_row = session.execute(text(f"""
-                SELECT
-                    COUNT(*) AS turns,
-                    SUM({tokens_in}) AS tokens_input,
-                    SUM({tokens_out}) AS tokens_output,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total,
-                    MAX(currency) AS cost_currency
-                FROM usage_events
-                WHERE {window}
-            """), {"days": days}).mappings().first() or {}
-
-            # Latency lives with the transcript, not the spend ledger.
             avg_latency = session.execute(text("""
                 SELECT AVG((metadata->>'latency_ms')::float) AS avg_latency_ms
                 FROM conversation_logs
@@ -6770,94 +6818,8 @@ def usage_metrics(request):
                   AND timestamp >= NOW() - (:days || ' days')::interval
             """), {"days": days}).scalar()
 
-            by_model_rows = session.execute(text(f"""
-                SELECT
-                    COALESCE(model, 'unknown') AS model,
-                    COUNT(*) AS turns,
-                    SUM({tokens_in}) AS tokens_input,
-                    SUM({tokens_out}) AS tokens_output,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total
-                FROM usage_events
-                WHERE {window}
-                GROUP BY COALESCE(model, 'unknown')
-                ORDER BY cost_total DESC, tokens_total DESC
-            """), {"days": days}).mappings().all()
-
-            by_agent_rows = session.execute(text(f"""
-                SELECT
-                    COALESCE(agent_id, '_default') AS agent_id,
-                    COUNT(*) AS turns,
-                    SUM({tokens_in}) AS tokens_input,
-                    SUM({tokens_out}) AS tokens_output,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total
-                FROM usage_events
-                WHERE {window}
-                GROUP BY COALESCE(agent_id, '_default')
-                ORDER BY cost_total DESC, tokens_total DESC
-            """), {"days": days}).mappings().all()
-
-            by_source_rows = session.execute(text(f"""
-                SELECT
-                    source,
-                    COUNT(*) AS turns,
-                    SUM({tokens_in}) AS tokens_input,
-                    SUM({tokens_out}) AS tokens_output,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total
-                FROM usage_events
-                WHERE {window}
-                GROUP BY source
-                ORDER BY cost_total DESC, turns DESC
-            """), {"days": days}).mappings().all()
-
-            daily_rows = session.execute(text(f"""
-                SELECT
-                    to_char(date_trunc('day', ts), 'YYYY-MM-DD') AS date,
-                    COUNT(*) AS turns,
-                    SUM({tokens_total}) AS tokens_total,
-                    SUM({cost}) AS cost_total
-                FROM usage_events
-                WHERE {window}
-                GROUP BY date_trunc('day', ts)
-                ORDER BY date_trunc('day', ts)
-            """), {"days": days}).mappings().all()
-
-        def _tok_row(r, key):
-            return {
-                key: r[key],
-                "turns": int(r["turns"] or 0),
-                "tokens_input": int(r["tokens_input"] or 0),
-                "tokens_output": int(r["tokens_output"] or 0),
-                "tokens_total": int(r["tokens_total"] or 0),
-                "cost_total": round(float(r["cost_total"] or 0.0), 6),
-            }
-
-        return JsonResponse({
-            "totals": {
-                "turns": int(totals_row["turns"] or 0),
-                "tokens_input": int(totals_row["tokens_input"] or 0),
-                "tokens_output": int(totals_row["tokens_output"] or 0),
-                "tokens_total": int(totals_row["tokens_total"] or 0),
-                "cost_total": round(float(totals_row["cost_total"] or 0.0), 6),
-                "cost_currency": totals_row["cost_currency"] or "USD",
-                "avg_latency_ms": round(float(avg_latency or 0.0), 1),
-            },
-            "by_model": [_tok_row(r, "model") for r in by_model_rows],
-            "by_agent": [_tok_row(r, "agent_id") for r in by_agent_rows],
-            "by_source": [_tok_row(r, "source") for r in by_source_rows],
-            "daily": [
-                {
-                    "date": r["date"],
-                    "turns": int(r["turns"] or 0),
-                    "tokens_total": int(r["tokens_total"] or 0),
-                    "cost_total": round(float(r["cost_total"] or 0.0), 6),
-                }
-                for r in daily_rows
-            ],
-            "days": days,
-        })
+        report["totals"]["avg_latency_ms"] = round(float(avg_latency or 0.0), 1)
+        return JsonResponse(report)
 
     except Exception as e:
         logger.warning(f"Usage metrics unavailable (database may be offline): {e}")

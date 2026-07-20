@@ -72,6 +72,7 @@ export type {
   AmbassadorStreamCallbacks,
   AmbassadorThreadEntry,
   AmbassadorToolCall,
+  AmbassadorToolProposal,
   AmbassadorTurnArtifacts,
   AmbassadorToolArtifact,
   AmbassadorSource,

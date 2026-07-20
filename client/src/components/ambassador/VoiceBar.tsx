@@ -9,11 +9,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic, Loader2, Settings2, Send, RotateCcw, CornerUpRight, X } from 'lucide-react';
+import { Mic, Loader2, Settings2, Send, RotateCcw, CornerUpRight, X, Check } from 'lucide-react';
 import { useSpeech } from '../../hooks/useSpeech';
 import { useDictation } from '../../hooks/useDictation';
 import { api } from '../../lib/api';
-import type { AmbassadorActiveConversation } from '../../lib/api';
+import { proposalSentence } from '../../lib/ambassadorTools';
+import type { AmbassadorActiveConversation, AmbassadorToolProposal } from '../../lib/api';
 
 type PttMode = 'hold' | 'toggle';
 
@@ -43,6 +44,9 @@ interface VoiceBarProps {
   onRelay: (text: string) => { ok: boolean; note: string } | Promise<{ ok: boolean; note: string }>;
   /** Called after an answer is persisted, so the Inquiry stream refreshes it in. */
   onAnswerPersisted: () => void;
+  /** Execute a confirmed conversation-management proposal (rename/archive/delete) —
+   *  the panel owns the write + the destructive ConfirmDialog for deletes. */
+  onConfirmProposal: (p: AmbassadorToolProposal) => void | Promise<void>;
 }
 
 export function VoiceBar({
@@ -53,6 +57,7 @@ export function VoiceBar({
   activeConversation,
   onRelay,
   onAnswerPersisted,
+  onConfirmProposal,
 }: VoiceBarProps) {
   const speech = useSpeech({ agentProfileId });
   const [pttMode, setPttMode] = useState<PttMode>(() => readPref<PttMode>(PTT_KEY, 'hold'));
@@ -62,6 +67,8 @@ export function VoiceBar({
   // Whether an answer just landed (gates the "relay that instead" override).
   const [hasAnswer, setHasAnswer] = useState(false);
   const [relayDraft, setRelayDraft] = useState<string | null>(null);
+  // A spoken conversation-management command → a proposal to confirm (never auto-run).
+  const [toolProposal, setToolProposal] = useState<AmbassadorToolProposal | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Transient confirmation after a successful relay ("Sent to …") — so voice gets the
   // same closure the text composer's flash gives.
@@ -75,6 +82,7 @@ export function VoiceBar({
       lastTranscript.current = transcript;
       setError(null);
       setRelayDraft(null);
+      setToolProposal(null);
       setRouting(true);
       try {
         const res = await api.voiceCommand({
@@ -85,6 +93,10 @@ export function VoiceBar({
         });
         if (res.action === 'relay') {
           setRelayDraft(res.text);
+        } else if (res.action === 'tool' && res.tool) {
+          // Speak the say-back, show the confirm strip — nothing executes yet.
+          setToolProposal(res.tool);
+          if (res.text) void speech.speak(`vc:${Date.now()}`, res.text);
         } else if (res.text) {
           setHasAnswer(true);
           const speakId = res.qa_id ? `qa:${res.qa_id}` : `vc:${Date.now()}`;
@@ -109,6 +121,7 @@ export function VoiceBar({
     speech.stop();
     setHasAnswer(false); // a fresh turn — retire the prior answer's override affordance
     setSent(null); // and the prior relay confirmation
+    setToolProposal(null); // a fresh turn supersedes an unconfirmed proposal
     void startCapture();
   }, [speech, startCapture]);
 
@@ -133,6 +146,7 @@ export function VoiceBar({
   useEffect(() => {
     setHasAnswer(false);
     setRelayDraft(null);
+    setToolProposal(null);
     setError(null);
     setSent(null);
     lastTranscript.current = '';
@@ -188,9 +202,11 @@ export function VoiceBar({
           ? 'Speaking…'
           : relayDraft !== null
             ? 'Review & send to the agent'
-            : sent
-              ? sent
-              : 'Hold to talk';
+            : toolProposal !== null
+              ? 'Review & confirm the proposal'
+              : sent
+                ? sent
+                : 'Hold to talk';
 
   const sendRelay = async () => {
     const text = (relayDraft ?? '').trim();
@@ -207,7 +223,21 @@ export function VoiceBar({
   };
   const retake = () => {
     setRelayDraft(null);
+    setToolProposal(null);
     beginTalk();
+  };
+
+  const confirmTool = async () => {
+    const p = toolProposal;
+    if (!p) return;
+    setToolProposal(null);
+    await onConfirmProposal(p);
+    const note =
+      p.action === 'rename' ? 'Renamed' :
+      p.action === 'archive' ? 'Archived' :
+      p.action === 'unarchive' ? 'Restored' : 'Done';
+    setSent(note);
+    window.setTimeout(() => setSent((cur) => (cur === note ? null : cur)), 2500);
   };
 
   return (
@@ -252,7 +282,41 @@ export function VoiceBar({
 
       {error && <p className="text-xs text-error">{error}</p>}
 
-      {relayDraft !== null ? (
+      {toolProposal !== null ? (
+        <div className="flex flex-col gap-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-200">
+          <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-warning">
+            <Check size={13} /> Proposal — confirm to apply
+          </div>
+          <p className="rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-xs text-fg">
+            {proposalSentence(toolProposal)}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setToolProposal(null)}
+              className="inline-flex items-center gap-1 rounded-md border border-line bg-surface-overlay px-2 py-1.5 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
+              title="Discard"
+            >
+              <X size={13} /> discard
+            </button>
+            <button
+              type="button"
+              onClick={retake}
+              className="inline-flex items-center gap-1 rounded-md border border-line bg-surface-overlay px-2 py-1.5 text-xs text-fg-secondary transition-colors hover:border-line-strong hover:text-fg"
+              title="Re-record"
+            >
+              <RotateCcw size={13} /> retake
+            </button>
+            <button
+              type="button"
+              onClick={() => void confirmTool()}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-fg-inverse shadow-sm transition hover:brightness-110 active:brightness-95"
+            >
+              <Check size={13} /> {toolProposal.action === 'delete' ? 'Delete…' : 'Confirm'}
+            </button>
+          </div>
+        </div>
+      ) : relayDraft !== null ? (
         <div className="flex flex-col gap-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-200">
           <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-accent">
             <CornerUpRight size={13} /> Draft to {agentName || 'the agent'}

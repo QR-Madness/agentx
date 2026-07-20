@@ -26,6 +26,7 @@ import type {
   AmbassadorQA,
   AmbassadorStatus,
   AmbassadorToolCall,
+  AmbassadorToolProposal,
   AmbassadorTurnArtifacts,
 } from '../lib/api';
 import type { AssistantMessage } from '../lib/messages';
@@ -165,6 +166,23 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
     next[idx] = { ...next[idx], done: true };
     return next;
   };
+  /** Attach a confirmed-write proposal to its (newest un-proposed) chip, so the
+   *  panel can render the confirm strip live (replay gets it from the sidecar). */
+  const attachProposal = (
+    list: AmbassadorToolCall[] | undefined,
+    tool: string,
+    proposal: AmbassadorToolProposal,
+  ) => {
+    if (!list?.length) return list;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].tool === tool && !list[i].proposal) {
+        const next = list.slice();
+        next[i] = { ...next[i], proposal };
+        return next;
+      }
+    }
+    return list;
+  };
 
   const updateQaTools = useCallback(
     (conversationId: string, qaId: string, fn: (cur: AmbassadorToolCall[] | undefined) => AmbassadorToolCall[] | undefined) => {
@@ -292,6 +310,8 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
               updateBriefingTools(conversationId, messageId, (cur) => appendToolCall(cur, tool, args)),
             onToolResult: (tool) =>
               updateBriefingTools(conversationId, messageId, (cur) => settleToolCall(cur, tool)),
+            onToolProposal: (tool, proposal) =>
+              updateBriefingTools(conversationId, messageId, (cur) => attachProposal(cur, tool, proposal)),
             onDone: (summary, status) => {
               // onDone carries the authoritative full text — replace.
               setBriefing(conversationId, messageId, { summary, status });
@@ -382,6 +402,8 @@ export function AmbassadorProvider({ children }: { children: ReactNode }) {
               updateQaTools(conversationId, qaId, (cur) => appendToolCall(cur, tool, args)),
             onToolResult: (tool) =>
               updateQaTools(conversationId, qaId, (cur) => settleToolCall(cur, tool)),
+            onToolProposal: (tool, proposal) =>
+              updateQaTools(conversationId, qaId, (cur) => attachProposal(cur, tool, proposal)),
             onDone: (summary, status) => {
               setQa(conversationId, qaId, { answer: summary, status });
               delete controllers.current[qaCtrlKey(conversationId, qaId)];

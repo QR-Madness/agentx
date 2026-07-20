@@ -1279,10 +1279,13 @@ paths:
         The ambassador **infers intent** from a transcribed voice command: a
         question → it answers (spoken; also persisted to the `qa:` sidecar so the
         Text tab shows it); an instruction for the agent → it drafts a **relay** the
-        user reviews and sends. Returns `{action, text, qa_id?}`. Never fails the
-        call — degrades to a spoken notice. (`text` for `relay` is a first-person
-        message; the client relays it as a real user turn after review — never
-        auto-sent.)
+        user reviews and sends; a conversation-management command (rename / archive /
+        delete) → it files a **`tool` proposal** the user confirms on screen (the
+        write executes only via `PATCH /memory/conversations/{id}/meta` or the
+        conversation DELETE after confirmation — nothing runs here). Returns
+        `{action, text, qa_id?, tool?}`. Never fails the call — degrades to a spoken
+        notice. (`text` for `relay` is a first-person message; the client relays it
+        as a real user turn after review — never auto-sent.)
       requestBody:
         required: true
         content:
@@ -1311,12 +1314,28 @@ paths:
                 properties:
                   action:
                     type: string
-                    enum: [answer, relay]
+                    enum: [answer, relay, tool]
                   text:
                     type: string
                   qa_id:
                     type: string
                     nullable: true
+                  tool:
+                    type: object
+                    description: >-
+                      The filed proposal (`tool` action only) — confirm-first,
+                      nothing executed yet.
+                    properties:
+                      proposal_id:
+                        type: string
+                      action:
+                        type: string
+                        enum: [rename, archive, unarchive, delete]
+                      conversation_id:
+                        type: string
+                      title:
+                        type: string
+                        description: The proposed title (rename only)
         '400':
           description: Missing required fields
         '405':
@@ -1455,9 +1474,14 @@ paths:
         (`ambassador_start`, `ambassador_chunk`, `ambassador_done`,
         `ambassador_error`), plus `ambassador_tool_call` / `ambassador_tool_result`
         when the agentic answer core drives its read-only tool belt (rendered as
-        tool chips; persisted on the thread entry so they survive a reload). Emits
-        `run_missing` if the run buffer expired (client falls back to the persisted
-        thread from `/agent/ambassador/thread/{thread_id}`).
+        tool chips; persisted on the thread entry so they survive a reload). A
+        confirmed-write tool (rename/archive/delete a conversation) additionally
+        emits `ambassador_tool_proposal` (`{message_id, tool, proposal: {proposal_id,
+        action, conversation_id, title?}}`) between call and result — the belt only
+        FILES the proposal; the client renders a confirm strip and executes it via
+        `PATCH /memory/conversations/{id}/meta` (or the conversation DELETE) after
+        the person confirms. Emits `run_missing` if the run buffer expired (client
+        falls back to the persisted thread from `/agent/ambassador/thread/{thread_id}`).
       parameters:
         - name: run_id
           in: query
@@ -3765,6 +3789,16 @@ paths:
             type: integer
             default: 0
         - $ref: '#/components/parameters/ChannelQuery'
+        - name: include_archived
+          in: query
+          required: false
+          description: >-
+            Include archived conversations (excluded by default). Rows carry an
+            `archived` flag, and a `conversation_meta` custom title overrides the
+            derived one in `title`.
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Conversations
@@ -3921,6 +3955,10 @@ paths:
       tags: [Memory]
       operationId: memoryConversationDelete
       summary: Delete a conversation and its turns
+      description: >-
+        Removes the conversation across Neo4j (turns), PostgreSQL
+        (`conversation_logs`), Redis working memory, project membership, and its
+        `conversation_meta` row (custom title / archived flag).
       parameters:
         - $ref: '#/components/parameters/ConversationId'
       responses:
@@ -3931,6 +3969,55 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+
+  /memory/conversations/{conversation_id}/meta:
+    patch:
+      tags: [Memory]
+      operationId: memoryConversationMeta
+      summary: Set user-set conversation metadata (title / archived)
+      description: >-
+        Durable conversation-meta overlay (`conversation_meta`, Postgres): a custom
+        `title` that overrides the derived first-user-message title in listings, and
+        an `archived` flag that excludes the conversation from listings and the
+        Ambassador's survey/search by default (`include_archived` opts back in).
+        This is the **execution half of the Ambassador's confirmed-write
+        proposals** (rename/archive) and the client's manual rename/restore —
+        the tool belt itself never writes. Meta-only: transcript turns are never
+        touched.
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: At least one of `title` / `archived` is required.
+              properties:
+                title:
+                  type: string
+                  maxLength: 200
+                  description: Non-empty custom title
+                archived:
+                  type: boolean
+      responses:
+        '200':
+          description: Applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation_id:
+                    type: string
+                  title:
+                    type: string
+                  archived:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          description: The write could not be persisted (database unavailable)
 
   /memory/entities:
     get:
@@ -6082,6 +6169,13 @@ components:
       properties:
         conversation_id:
           type: string
+        title:
+          type: string
+          description: >-
+            Custom title (`conversation_meta`) when set, else derived from the
+            first user message (truncated).
+        preview:
+          type: string
         created_at:
           type: string
           format: date-time
@@ -6096,6 +6190,9 @@ components:
           type: string
           nullable: true
           description: The project (workspace) this conversation belongs to, if any.
+        archived:
+          type: boolean
+          description: Excluded from listings by default (see `include_archived`).
         first_user_message:
           type: string
         last_message:

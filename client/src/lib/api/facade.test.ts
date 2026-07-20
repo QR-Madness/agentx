@@ -167,6 +167,7 @@ describe('api facade', () => {
         "logArchiveUrl",
         "login",
         "logout",
+        "patchConversationMeta",
         "pruneAvatars",
         "reingestDocument",
         "relayAmbassador",

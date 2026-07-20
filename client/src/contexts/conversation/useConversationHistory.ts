@@ -53,7 +53,10 @@ export function useConversationHistory({
       await import('../../lib/projectSync')
         .then((m) => m.syncLocalProjectLinksOnce())
         .catch(() => undefined);
-      const response = await api.listConversations({ limit: 50 });
+      // includeArchived: server-archived conversations must stay fetchable so
+      // they land in the list's Archived section (restorable) instead of
+      // silently vanishing — the default listing excludes them.
+      const response = await api.listConversations({ limit: 50, includeArchived: true });
       setServerConversations(response.conversations);
     } catch {
       // Server might not have memory enabled — silently ignore

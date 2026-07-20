@@ -26,15 +26,22 @@ consolidation must not fail the chat turn. (Memory-Roadmap §0.1 formalizes this
 fallback via `resolve_with_fallback`. *Partial — the explicit L-level contract (§3.11) is not yet tested.*
 
 ### INV-2 — The Ambassador never writes to `conversation_logs` / `conv_summary:`
-It is a parallel operator on a Redis **sidecar** only; its tool belt is **SELECT-only**
+It is a parallel operator on a Redis **sidecar** only; its tool belt **never *executes* a write**
 (`execute_tool` never mutates). This is the feature's whole reason to exist — breaking it pollutes
 the main transcript. The **aide swarm** (16.7) upholds this: aides only *read* + call a model and
 return a string, and their digest cache lives under `amb_aide:` (the sidecar family), never
 `conv_summary:`/`conversation_logs`. The **dispatch** write-side (16.7) upholds it too: it enqueues a
 real **user** turn (you authored it) into the *worker's* brand-new conversation via
-`enqueue_background_chat` — the ambassador never writes a transcript as itself.
+`enqueue_background_chat` — the ambassador never writes a transcript as itself. The **v3
+conversation-meta writes** (rename/archive/delete) uphold it the same way: the belt tools are
+**proposal-only** (they file `{proposal_id, action, …}` and return an "awaiting confirmation" note);
+the write executes solely in the user-confirmed HTTP endpoints
+(`PATCH /memory/conversations/{id}/meta`, the conversation DELETE) and is **meta-only** — no
+`store_turn`, no `conv_summary:` authorship, transcript turns never touched.
 **Guard:** `AmbassadorStorageTest` (pollution regression, recovery-isolation; incl. aide-cache
-isolation); `AmbassadorDispatchEndpointTest` (dispatch routes only through the background-chat worker).
+isolation); `AmbassadorDispatchEndpointTest` (dispatch routes only through the background-chat worker);
+`test_tool_belt_write_surface_is_pinned` (the documented `confirmed_conversation_meta_writes` class) +
+`test_confirmed_write_tools_never_mutate` + the proposal-round no-pollution test.
 
 ### INV-3 — `agent_id` is the durable identity key; names are aliases
 Rename-safe: a profile rename propagates to the Agent entity's `aliases`; `dedupe_entities` **never

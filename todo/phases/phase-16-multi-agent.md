@@ -656,34 +656,38 @@
 > Slice-3 doctrine (**reads auto-run, writes confirm**) and every new tool must be classified
 > on purpose in `test_tool_belt_write_surface_is_pinned`.
 
-- [ ] **`read_conversation_state` (context state)** — SELECT over the Slice-1a structured
-      working memory (`conversation_state_storage.get_state`: goals / decisions / open_threads /
-      artifacts / narrative — already served by `GET /conversations/{id}/state`). The highest-
-      leverage add: it's the conversation's own pre-condensed dashboard (cheaper and sharper
-      than a transcript read for "where does this stand?"), making survey → state → transcript
-      a natural drill-down ladder. Follow-on: fold a one-line state hint (open-threads count /
-      freshest decision) into `survey_conversations` rows.
-- [ ] **`search_conversations`** — discovery beyond recency: full-text over PG
-      `conversation_logs` first (semantic later); returns id + hit snippets + agents, drill in
-      via `read_conversation`. Today "which conversation discussed X?" simply fails outside
-      the recent window.
-- [ ] **`list_active_runs`** — the parallel-operator gap: she can't answer "what are my agents
-      doing *right now*?". Read the detached-run registry + queued `chat_jobs` → conversation,
-      agent, phase, age. Pairs with dispatch (did it start? finish?) — the deck's live half.
-- [ ] **`usage_report`** — read-only over the usage ledger (rows already carry
-      `conversation_id` + `agent_id` + `source`): spend/tokens by conversation / agent /
-      source over a window. "What did this conversation cost?", "which agent burns the most?"
-      — the analysis half the deck exists for.
-- [ ] **`recall_memory`** — read-only `AgentMemory.remember(query)` (facts/entities — knowledge,
-      not logs): "what do my agents actually *know* about X?", distinct from transcript search.
-      Channel-scoped defaults; never-raise + Neo4j-degradable like the survey goals line.
-- [ ] **Conversation management (the confirmed-write belt)** — rename / archive / delete a
-      conversation: **meta-only writes** that never touch transcript turns (INV-2 intact — no
-      `store_turn`, no `conv_summary:` authorship; the pinned write-surface test grows a
-      documented "conversation-meta" class). Confirm-first in voice *and* text — this is what
-      finally re-opens the deferred Slice-3 `{action:'tool'}` voice confirm strip. Delete rides
-      the existing `/memory/conversations/{id}` DELETE; rename needs a conversation-meta home
-      (titles are derived from `first_user` today — sibling of the Inquiry-title decision).
+- [x] **`read_conversation_state` (context state)** — **shipped (`0.21.233`)**. SELECT over the
+      Slice-1a structured working memory (`render_state_block`); the deep survey gained the
+      one-line `state:` hint (open-threads count + freshest decision, `_conversation_state_line`,
+      goals-line doctrine).
+- [x] **`search_conversations`** — **shipped (`0.21.233`)**. Lexical FTS via Alembic **0008**
+      (expression GIN on `to_tsvector('simple', content)` — no table rewrite);
+      `conversation_history.search_conversation_logs` groups hits per conversation with
+      markdown-bold `ts_headline` snippets (`websearch_to_tsquery('simple')` — multi-word AND +
+      phrases, language-neutral; CJK degrades, pg_trgm is the additive later fix; semantic later).
+- [x] **`list_active_runs`** — **shipped (`0.21.233`)**. Merges `chat_run.store.list_runs` +
+      `list_background_chats` (each half degrades independently); agent via `latest_agent_name`;
+      needed `user_id` plumbed through the service → `execute_tool` (from `_bg_user_id`).
+      The ambassador's own runs are un-indexed so they never self-report.
+- [x] **`usage_report`** — **shipped (`0.21.233`)**. The `/metrics/usage` SQL extracted into
+      `usage_ledger.aggregate_usage(days, conversation_id=None)` (the view delegates — no
+      duplicated SQL); tool renders totals + top-3 by model/agent/source, `"this"` scopes to
+      the focused conversation.
+- [x] **`recall_memory`** — **shipped (`0.21.233`)**. `AgentMemory.remember` wrapped never-raise
+      (it embeds + can raise, unlike the other sources); default `_global` channel with an
+      explicit `channel` escape hatch.
+- [x] **Conversation management (the confirmed-write belt)** — **shipped (`0.21.233`)**.
+      `rename_conversation`/`archive_conversation`/`delete_conversation` are **proposal-only**
+      (`proposal_for`; delete requires an explicit id — never the focused default): the loop
+      emits `ambassador_tool_proposal` + stamps the chip, the client renders a warning-tone
+      confirm strip (latest-entry-only; delete rides `ConfirmDialog` with title + message
+      count) and executes via the new `PATCH /memory/conversations/{id}/meta` over the
+      Alembic **0007** `conversation_meta` table (durable custom title + archived flag,
+      read-through in both listing paths, archived default-excluded w/ `include_archived`)
+      or the existing DELETE (now also drops the meta row). Voice re-opened the deferred
+      Slice-3 `{action:'tool'}` strip (`VoiceBar`); the conversation list write-throughs
+      rename/auto-title/archive to the server store so the local meta and the durable overlay
+      stay in step. Pinned test grows the documented `confirmed_conversation_meta_writes` class.
 - [ ] **`read_conversation_results`** — the 16.7-deferred exhibits/sources read, folded in here.
 - [ ] **Client — promote the Command Deck (and Memory) to first-class desktop tabs**: TopBar
       `NAV_ITEMS` gains **Deck** after Agents (and **Memory** likewise), the pill rendering
