@@ -92,27 +92,17 @@ async def model_outputs_image(provider: Any, model_id: str, caps: Any = None) ->
     """True when the model can output images (``output_modalities`` includes ``image``).
 
     Neutral home (shared by the direct chat path and the delegation executor) so the
-    two never disagree on what counts as an image model. An uncached model reports the
-    default ``["text"]``, so — mirroring ``core._model_supports_tools`` — warm the
-    provider catalog once when caps look cold and re-check. ``caps`` may be passed in
-    when the caller already has it. Never raises: returns ``False`` on any probe error
-    (degrade to the normal text path rather than wrongly routing to image generation).
+    two never disagree on what counts as an image model. One-line predicate over the
+    shared warm-once probe (``providers.capabilities``). Never raises: ``False`` on
+    any probe error (degrade to the normal text path rather than wrongly routing to
+    image generation).
     """
-    try:
-        if caps is None:
-            caps = provider.get_capabilities(model_id)
-        mods = [str(m).lower() for m in (getattr(caps, "output_modalities", None) or [])]
-        if "image" in mods:
-            return True
-        warm = getattr(provider, "fetch_models", None)
-        if warm is not None:
-            await warm()
-            caps = provider.get_capabilities(model_id)
-            mods = [str(m).lower() for m in (getattr(caps, "output_modalities", None) or [])]
-        return "image" in mods
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[image-detect] capability probe failed, treating as non-image: {e}")
-        return False
+    from ..providers.capabilities import has_output_modality, probe_model_capability
+
+    return await probe_model_capability(
+        provider, model_id, lambda c: has_output_modality(c, "image"),
+        caps, tag="image-detect",
+    )
 
 
 async def generate_image_exhibit(

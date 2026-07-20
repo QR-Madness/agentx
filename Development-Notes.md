@@ -383,6 +383,27 @@ to stack) — all ADDITIVE, `schema_version` stays 1. **Hardening (retrofits ima
 point at an external URL. Tests: `tests.MultiModalContentTest` + `PresentExhibitToolTest` additions +
 `ImageConversationTest` renames; client `exhibits.test.ts` + facade snapshot.
 
+**Multi-modal follow-ups (v0.21.238, ADR-11).** The seam-hygiene pass behind the slice above.
+**Neutral speech seam (`kit/speech.py`):** TTS/STT resolution, hygiene (`sanitize_speakable_text`),
+strictness (`SpeechUnavailable`, re-exported from `agent/ambassador` for back-compat), and metering
+moved out of the Ambassador — which keeps only its *profile-precedence* thin wrappers (+ its own
+registry, injectable for tests). Chat consumers (`agent/audio_gen.py`, `views._transcribe_ref`,
+`generate_speech`) call the seam directly; usage sources `chat_tts`/`chat_stt` vs
+`ambassador_tts`/`ambassador_stt`. Config keys stay `ambassador.*` until the `speech.*` migration
+(todo/backlog/multimodal.md). **ADR-11 enforcement:** `tests.CapabilitySeamBoundaryTest` — core
+packages (`streaming/ providers/ kit/ mcp/ alloy/ drafting/ reasoning/ prompts/ logging_kit/` + non-
+ambassador `agent/*`) must not import the Ambassador family; the api-side twin of the client's
+`importBoundary.test.ts`. **Capability probe (`providers/capabilities.py`):** the "check caps → warm
+catalog once → re-check" idiom collapsed to `probe_model_capability(provider, model, predicate)`
+(+`has_input_modality`/`has_output_modality`); `model_outputs_image`/`_model_accepts_vision`/
+`_model_accepts_audio` are now one-line predicates over it (`core._model_supports_tools` deliberately
+stays apart — sync + fails OPEN). **Media-aware budgeting (`tokens.py`):** `estimate_messages` adds
+`estimate_media_tokens` — attached refs count as conservative modality tokens (image flat 1100;
+audio ≈ blob-bytes/500 clamped 200–8000, sizes memoized) so the ledger stops budgeting a media turn
+as its text alone (media used to materialize as base64 only at provider-conversion, *after* the
+budget fit). **Client blob cache:** `resolveMediaBlob` is LRU-capped (64) with `revokeObjectURL` on
+eviction — object URLs pin their Blobs, and the old cache never released anything.
+
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
 > **Index card (ex-CLAUDE.md):** two backends via `dispatch.py` (per-workspace `shell_backend`):

@@ -66,6 +66,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.232** (pro
 | [genome-advisor.md](todo/backlog/genome-advisor.md) | Agent Genome & Settings Advisor — the meta-layer |
 | [open-platform.md](todo/backlog/open-platform.md) | De-walling the garden — import/export, MCP server, egress |
 | [exhibits.md](todo/backlog/exhibits.md) | Rich agent-authored content (declarative protocol) |
+| [multimodal.md](todo/backlog/multimodal.md) | Multi-modal fluency — media delegation routing, video input/streaming, speech namespace |
 | [research.md](todo/backlog/research.md) | Research Mode follow-ups (form intake, delegated deep-research, Brave backends, spend ceiling) |
 | [translation-web-search.md](todo/backlog/translation-web-search.md) | Translation backend · Web Search & Delegation |
 | [logging.md](todo/backlog/logging.md) | Logging & Observability Overhaul (`logging_kit`) |

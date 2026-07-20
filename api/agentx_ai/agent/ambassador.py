@@ -31,12 +31,15 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import uuid
 from typing import Any
 from collections.abc import AsyncGenerator
 
 from ..config import get_config_manager
+from ..kit import speech as _speech
+# Re-export: SpeechUnavailable moved to the neutral speech seam (ADR-11) —
+# existing `from agent.ambassador import SpeechUnavailable` callers keep working.
+from ..kit.speech import SpeechUnavailable  # noqa: F401  (re-export)
 from ..providers.base import Message, MessageRole, SpeechResult
 from ..providers.registry import ProviderRegistry, get_registry
 from . import ambassador_storage as store
@@ -44,15 +47,6 @@ from .conversation_history import load_recent_turns
 
 logger = logging.getLogger(__name__)
 
-
-class SpeechUnavailable(Exception):
-    """Raised when spoken briefings can't be produced (no provider/model
-    configured, or the resolved model doesn't support speech). Carries a stable
-    ``code`` so the view can return a structured 422 the client can act on."""
-
-    def __init__(self, message: str, *, code: str = "voice_unconfigured") -> None:
-        super().__init__(message)
-        self.code = code
 
 # Rough token budget per grounding turn (mirrors conversation_history estimates).
 _TOKENS_PER_TURN = 400
@@ -69,19 +63,13 @@ _MAX_TOOL_ROUNDS = 4
 # never blind), then reads the conversation via tools for any real depth/breadth.
 _LEAN_GROUNDING_TURNS = 2
 
-# Voice (TTS) defaults. The shipped speech model is OpenRouter-only, so spoken
-# briefings need an OpenRouter key — the speak endpoint degrades gracefully when
-# it's absent. MAI-Voice-2 voices use the Azure locale format.
-_DEFAULT_SPEECH_MODEL = "openrouter:microsoft/mai-voice-2"
-_DEFAULT_SPEECH_VOICE = "en-US-Harper:MAI-Voice-2"
-# Speech-to-text (the user-speaks half). OpenRouter-only, like TTS — the
-# transcribe endpoint degrades gracefully when no key is configured.
-_DEFAULT_TRANSCRIPTION_MODEL = "openrouter:openai/whisper-1"
-# Guard against pathological uploads (short push-to-talk clips are tiny).
-_MAX_AUDIO_BYTES = 25 * 1024 * 1024
-# Hard ceiling on synthesized text (TTS bills per character; briefings/Q&A are
-# short + markdown-free by persona rules, so this only guards pathological input).
-_MAX_SPEECH_CHARS = 4000
+# Voice defaults now live in the neutral speech seam (kit/speech.py — ADR-11);
+# aliases kept for existing importers (tests reference the underscore names).
+_DEFAULT_SPEECH_MODEL = _speech.DEFAULT_SPEECH_MODEL
+_DEFAULT_SPEECH_VOICE = _speech.DEFAULT_SPEECH_VOICE
+_DEFAULT_TRANSCRIPTION_MODEL = _speech.DEFAULT_TRANSCRIPTION_MODEL
+_MAX_AUDIO_BYTES = _speech.MAX_AUDIO_BYTES
+_MAX_SPEECH_CHARS = _speech.MAX_SPEECH_CHARS
 
 def _default_persona(agent_name: str = "") -> str:
     """The Ambassador's core voice. ``agent_name`` (the *briefed* agent's display
@@ -1477,82 +1465,23 @@ class AmbassadorService:
 
         Resolution precedence — explicit arg → the resolved ambassador profile's
         ``ambassador.voice`` block → global ``ambassador.*`` config → shipped
-        default (``microsoft/mai-voice-2``). The speech model is resolved
-        **strictly** (no chat fallback — TTS must never degrade to a text model);
-        an unconfigured/unsupported model raises :class:`SpeechUnavailable` so the
-        caller can return a clean "add an OpenRouter key for voice" message.
+        default (``microsoft/mai-voice-2``). Thin wrapper over the neutral speech
+        seam (:mod:`agentx_ai.kit.speech`, ADR-11): this method contributes ONLY
+        the profile-level precedence + this ambassador's registry; resolution,
+        hygiene, strictness, and metering live in the seam.
         """
-        from ..streaming.thinking_exec import strip_think_blocks
-
-        # Speech hygiene: never speak reasoning (belt-and-braces over the stream
-        # strip — old persisted records may still carry think blocks), and flatten
-        # markdown glyphs that read as noise aloud.
-        text = strip_think_blocks((text or "").strip())
-        text = re.sub(r"[*#_`]+", "", text).strip()
-        if not text:
-            raise SpeechUnavailable("Nothing to speak.", code="empty_text")
-        if len(text) > _MAX_SPEECH_CHARS:
-            text = text[:_MAX_SPEECH_CHARS].rstrip()
-
-        config = get_config_manager()
         profile = self._resolve_profile(profile_id)
         amb = getattr(profile, "ambassador", None) if profile else None
 
-        speech_model = (
-            model
-            or getattr(amb, "speech_model", None)
-            or config.get("ambassador.speech_model")
-            or _DEFAULT_SPEECH_MODEL
+        return await _speech.synthesize_speech(
+            text,
+            model=model or getattr(amb, "speech_model", None),
+            voice=voice or getattr(amb, "voice", None),
+            speed=getattr(amb, "speech_speed", None) if amb else None,
+            usage_source=usage_source,
+            agent_id=getattr(profile, "agent_id", None),
+            registry=self.registry,
         )
-        speech_voice = (
-            voice
-            or getattr(amb, "voice", None)
-            or config.get("ambassador.voice")
-            or _DEFAULT_SPEECH_VOICE
-        )
-        speed = getattr(amb, "speech_speed", None) if amb else None
-
-        try:
-            provider, model_id = self.registry.get_provider_for_model(speech_model)
-        except Exception as e:  # noqa: BLE001 — unconfigured provider → clean 422
-            raise SpeechUnavailable(
-                f"No speech provider is configured for '{speech_model}'. "
-                "Add an OpenRouter API key to enable voice.",
-                code="voice_unconfigured",
-            ) from e
-
-        try:
-            result = await provider.synthesize_speech(
-                text,
-                model=model_id,
-                voice=speech_voice,
-                response_format="mp3",
-                speed=speed,
-            )
-            # Usage ledger (Foundation #5): TTS is billed per input character.
-            try:
-                from .usage_ledger import record_usage
-                from ..providers.pricing import estimate_audio_cost
-                record_usage(
-                    source=usage_source,
-                    model=speech_model,
-                    provider=getattr(provider, "name", None),
-                    agent_id=getattr(profile, "agent_id", None),
-                    units={"chars": len(text)},
-                    cost=estimate_audio_cost(model=speech_model, chars=len(text)),
-                )
-            except Exception as _uerr:  # noqa: BLE001 — metering never breaks voice
-                logger.debug(f"TTS usage record skipped: {_uerr}")
-            return result
-        except NotImplementedError as e:
-            raise SpeechUnavailable(
-                f"'{speech_model}' does not support speech synthesis. "
-                "Choose a text-to-speech model in the ambassador's voice settings.",
-                code="model_unsupported",
-            ) from e
-        except Exception as e:  # noqa: BLE001 — surface a clean failure
-            logger.warning(f"Ambassador speech synthesis failed: {e}")
-            raise SpeechUnavailable(str(e)[:300], code="synth_failed") from e
 
     async def transcribe(
         self,
@@ -1568,75 +1497,22 @@ class AmbassadorService:
         Mirrors :meth:`synthesize`: the STT model resolves **strictly** with
         precedence explicit arg → the ambassador profile's ``transcription_model``
         → global ``ambassador.transcription_model`` → shipped default
-        (``openai/whisper-1``). An unconfigured/unsupported model raises
-        :class:`SpeechUnavailable` so the caller returns a clean ``422``. Returns the
-        transcript text (the client routes it into the reviewable input — never
-        auto-sent)."""
-        if not audio:
-            raise SpeechUnavailable("No audio to transcribe.", code="empty_audio")
-        if len(audio) > _MAX_AUDIO_BYTES:
-            raise SpeechUnavailable("Audio recording is too large.", code="audio_too_large")
-
-        config = get_config_manager()
+        (``openai/whisper-1``). Thin wrapper over the neutral speech seam
+        (ADR-11) — profile precedence + registry here, everything else in the
+        seam. Returns the transcript text (the client routes it into the
+        reviewable input — never auto-sent)."""
         profile = self._resolve_profile(profile_id)
         amb = getattr(profile, "ambassador", None) if profile else None
 
-        stt_model = (
-            model
-            or getattr(amb, "transcription_model", None)
-            or config.get("ambassador.transcription_model")
-            or _DEFAULT_TRANSCRIPTION_MODEL
+        result = await _speech.transcribe_audio(
+            audio,
+            audio_format=audio_format,
+            model=model or getattr(amb, "transcription_model", None),
+            language=language,
+            usage_source="ambassador_stt",
+            agent_id=getattr(profile, "agent_id", None),
+            registry=self.registry,
         )
-
-        try:
-            provider, model_id = self.registry.get_provider_for_model(stt_model)
-        except Exception as e:  # noqa: BLE001 — unconfigured provider → clean 422
-            raise SpeechUnavailable(
-                f"No transcription provider is configured for '{stt_model}'. "
-                "Add an OpenRouter API key to enable voice input.",
-                code="transcription_unconfigured",
-            ) from e
-
-        try:
-            result = await provider.transcribe_speech(
-                audio, model=model_id, audio_format=audio_format, language=language
-            )
-        except NotImplementedError as e:
-            raise SpeechUnavailable(
-                f"'{stt_model}' does not support transcription. "
-                "Choose a speech-to-text model in the ambassador's voice settings.",
-                code="transcription_model_unsupported",
-            ) from e
-        except Exception as e:  # noqa: BLE001 — surface a clean failure
-            logger.warning(f"Ambassador transcription failed: {e}")
-            raise SpeechUnavailable(str(e)[:300], code="transcription_failed") from e
-
-        # Usage ledger (Foundation #5): STT is billed per minute of audio. The
-        # provider may or may not report duration — probe the usage block under a
-        # few likely key names; when absent we still record the byte size (cost
-        # stays null rather than fabricated).
-        try:
-            from .usage_ledger import record_usage
-            from ..providers.pricing import estimate_audio_cost
-            seconds = None
-            usage = (result.raw_response or {}).get("usage") if result.raw_response else None
-            if isinstance(usage, dict):
-                for k in ("audio_seconds", "seconds", "duration", "duration_seconds"):
-                    v = usage.get(k)
-                    if isinstance(v, (int, float)):
-                        seconds = float(v)
-                        break
-            record_usage(
-                source="ambassador_stt",
-                model=stt_model,
-                provider=getattr(provider, "name", None),
-                agent_id=getattr(profile, "agent_id", None),
-                units={"audio_seconds": seconds, "bytes": len(audio)},
-                cost=estimate_audio_cost(model=stt_model, seconds=seconds),
-            )
-        except Exception as _uerr:  # noqa: BLE001 — metering never breaks voice
-            logger.debug(f"STT usage record skipped: {_uerr}")
-
         return result.text
 
     def _record_llm_usage(

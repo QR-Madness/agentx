@@ -73,10 +73,73 @@ def estimate_tokens(text: str) -> int:
     return len(text) // FALLBACK_CHARS_PER_TOKEN
 
 
+# Media attachments materialize as modality tokens at provider-conversion time —
+# AFTER budget fitting — so the ledger must weigh the refs, not the (absent) bytes.
+# Conservative flat/derived estimates: providers charge images as ~85–1600 modality
+# tokens depending on detail tiling, audio at roughly tens of tokens per second.
+IMAGE_TOKEN_ESTIMATE = 1100
+# Audio: derive seconds from blob size (~16KB/s for mp3-ish encodings — WAV
+# overestimates, which is the safe direction) at ~32 tokens/sec ⇒ bytes/500.
+_AUDIO_BYTES_PER_TOKEN = 500
+AUDIO_TOKEN_MIN, AUDIO_TOKEN_MAX = 200, 8000
+
+
+def estimate_media_tokens(message) -> int:
+    """Conservative modality-token estimate for a message's attached media refs.
+
+    Without this, a message carrying images/audio was budgeted as its text only
+    and ballooned at the provider boundary — the ledger literally couldn't see
+    media weight. Blob sizes are read best-effort (a missing doc counts the
+    floor estimate; estimation must never touch the turn's failure modes).
+    """
+    images = getattr(message, "images", None) or []
+    audio = getattr(message, "audio", None) or []
+    if not images and not audio:
+        return 0
+
+    total = len(images) * IMAGE_TOKEN_ESTIMATE
+    for ref in audio:
+        size = _audio_blob_size(getattr(ref, "doc_id", None))
+        est = size // _AUDIO_BYTES_PER_TOKEN if size else AUDIO_TOKEN_MIN
+        total += max(AUDIO_TOKEN_MIN, min(est, AUDIO_TOKEN_MAX))
+    return total
+
+
+# doc_id → size_bytes memo. Blobs are content-addressed/immutable, and hot callers
+# (tool loop, trajectory compression) re-estimate the same message list every
+# round — without this each round would re-hit PG per audio ref.
+_audio_size_cache: dict[str, int] = {}
+_AUDIO_SIZE_CACHE_MAX = 256
+
+
+def _audio_blob_size(doc_id) -> int:
+    if not doc_id:
+        return 0
+    cached = _audio_size_cache.get(doc_id)
+    if cached is not None:
+        return cached
+    size = 0
+    try:
+        from .kit.workspaces import repository
+
+        doc = repository.get_document(doc_id)
+        size = int((doc or {}).get("size_bytes") or 0)
+    except Exception:  # noqa: BLE001 — estimation is best-effort
+        return 0  # uncached: a transient DB hiccup shouldn't pin 0 forever
+    if len(_audio_size_cache) >= _AUDIO_SIZE_CACHE_MAX:
+        _audio_size_cache.clear()
+    _audio_size_cache[doc_id] = size
+    return size
+
+
 def estimate_messages(messages) -> int:
     """Estimate the token count of a list of messages, including per-message overhead.
 
     Each message contributes ``estimate_tokens(content) + _PER_MESSAGE_OVERHEAD`` to
-    cover the role marker and formatting.
+    cover the role marker and formatting, plus a conservative modality-token
+    estimate for any attached media refs (see :func:`estimate_media_tokens`).
     """
-    return sum(estimate_tokens(m.content or "") + _PER_MESSAGE_OVERHEAD for m in messages)
+    return sum(
+        estimate_tokens(m.content or "") + _PER_MESSAGE_OVERHEAD + estimate_media_tokens(m)
+        for m in messages
+    )

@@ -462,7 +462,7 @@ Conversational interaction with session management.
 | `model` | string | no | from config | Model to use |
 | `profile_id` | string | no | `"default"` | Prompt profile ID |
 | `temperature` | float | no | `0.7` | Sampling temperature |
-| `use_memory` | bool | no | `true` | Enable memory recall/storage |
+| `use_memory` | bool | no | `true` | Enable memory recall/storage. `false` makes the conversation **ephemeral** — turns aren't persisted to the durable transcript at all (no reload survival, no extraction) |
 
 **Response:**
 ```json
