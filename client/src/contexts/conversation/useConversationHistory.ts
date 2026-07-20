@@ -94,10 +94,11 @@ export function useConversationHistory({
     const messages = mapServerMessages(response.messages);
 
     // A still-running turn's user message exists nowhere server-side (turns
-    // persist only at turn END) — seed it from the run's stored label so the
-    // reopened tab shows what was asked instead of a blank while the attach
-    // replay streams the assistant side in.
-    const seed = opts?.activeRun ? opts?.seedUserMessage : undefined;
+    // persist only at turn END) — seed it from the caller's label so the
+    // reopened tab shows what was asked instead of a blank. Two callers: run
+    // recovery (the attach replay streams the assistant side in) and dispatch
+    // (the task echoes at once; the worker's headless reply lands on reopen).
+    const seed = opts?.seedUserMessage;
     if (seed && !messages.some(m => m.type === 'user' && m.content.startsWith(seed))) {
       messages.push({
         id: createMessageId(),

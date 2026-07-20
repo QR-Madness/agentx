@@ -190,8 +190,9 @@ def _answer_persona(agent_name: str = "") -> str:
 # the ambassador knows the concrete moves behind "what you can do". Mirrors
 # ``ambassador_tools.TOOL_SCHEMAS``.
 _TOOLS_NOTE = (
-    "YOUR TOOLS (read-only over the conversation world — you look, you never change a "
-    "conversation). Use them before you answer; you may call several:\n"
+    "YOUR TOOLS. The reads run freely (you look, you never change a conversation); the "
+    "manage/dispatch tools only FILE A PROPOSAL the person confirms on screen — nothing "
+    "happens until they confirm. Use tools before you answer; you may call several:\n"
     "- summarize_conversation — read the conversation you're watching, to summarize it.\n"
     "- explore_conversation — read it and dig deeper (optionally on a topic).\n"
     "- list_conversations — list the person's recent sessions (a quick index).\n"
@@ -200,6 +201,8 @@ _TOOLS_NOTE = (
     "- read_conversation — read one specific conversation by id (after listing/surveying).\n"
     "- read_conversation_state — a conversation's structured state (goals, decisions, open "
     "threads, artifacts) — the fastest 'where does this stand?' read.\n"
+    "- read_conversation_results — what a conversation PRODUCED: its tables, images, "
+    "diagrams, and cited sources (with links) — outcomes, not dialogue.\n"
     "- search_conversations — keyword-search ALL conversations ('which one discussed X?'), "
     "beyond the recent window.\n"
     "- list_active_runs — what the agents are doing right now (live runs + queued jobs).\n"
@@ -208,7 +211,13 @@ _TOOLS_NOTE = (
     "transcripts).\n"
     "- list_agents — the agent roster and what each agent's model can do.\n"
     "- rename_inquiry — give THIS Inquiry a short, descriptive title once you know its "
-    "focus (titles your own Inquiry only; never the conversation).\n\n"
+    "focus (titles your own Inquiry only; never the conversation).\n"
+    "- rename_conversation / archive_conversation / delete_conversation — PROPOSE "
+    "renaming, archiving/restoring, or permanently deleting a conversation; the person "
+    "confirms on screen.\n"
+    "- dispatch_task — PROPOSE handing a self-contained task to one of the worker agents "
+    "(pick it with list_agents), in a NEW conversation or an existing one; the person "
+    "confirms on screen. Use when they want work started, not just discussed.\n\n"
     "When you have what you need, answer the person directly in your own spoken voice — "
     "never read tool output back verbatim, never mention the tools."
 )
@@ -251,19 +260,22 @@ def _voice_command_persona(agent_name: str = "") -> str:
         f'- "relay" — they are giving an instruction meant for {agent_ref}: something they want it '
         'to DO, or a message to pass along ("tell it to…", "ask the agent to…", "have it use X"). '
         "You turn it into a clear first-person message FROM the person TO the agent, ready to send.\n"
-        '- "tool" — they are asking you to MANAGE a conversation itself: rename it, archive or '
-        "restore it, or delete it. You file a proposal they confirm on screen; nothing happens "
-        "until they confirm.\n\n"
+        '- "tool" — they are asking you to MANAGE a conversation itself (rename it, archive or '
+        "restore it, or delete it) or to HAND A TASK to one of their OTHER agents to run on its "
+        'own ("have the researcher dig into…", "get Atlas to…"). You file a proposal they '
+        "confirm on screen; nothing happens until they confirm.\n\n"
 
         'Respond with exactly: {"action": "answer" | "relay" | "tool", "text": "..."}\n'
         '- For "answer": "text" is your spoken reply — plain, conversational, no markdown, no lists.\n'
         '- For "relay": "text" is the first-person message to the agent — direct, ready to send, no '
         "preamble or quotation marks.\n"
         '- For "tool": add "tool": "rename_conversation" | "archive_conversation" | '
-        '"delete_conversation" and "args": {"title": "..."} for a rename (add '
-        '"conversation_id" only if they named another conversation; "unarchive": true to '
-        'restore). "text" is your short spoken say-back, e.g. "Proposing the rename — confirm '
-        'it on screen."\n'
+        '"delete_conversation" | "dispatch_task" and "args": {"title": "..."} for a rename '
+        '(add "conversation_id" only if they named another conversation; "unarchive": true to '
+        'restore); for a dispatch, "args": {"agent_name": "...", "task": "..."} with the task '
+        "written self-contained (the worker starts cold; it runs in a NEW conversation unless "
+        'they said to use an existing one — then add its "conversation_id"). "text" is your '
+        'short spoken say-back, e.g. "Proposing the rename — confirm it on screen."\n'
         f"You CAN relay messages to {agent_ref} — any instruction or request directed at it (even an "
         'implicit one) is a "relay"; never refuse it or answer that you "can\'t talk to the agent". '
         'Only choose "answer" when they are genuinely asking YOU about the conversation. When truly '

@@ -3508,13 +3508,15 @@ def ambassador_relay(request):
 @csrf_exempt
 def ambassador_dispatch(request):
     """
-    POST /api/agent/ambassador/dispatch  {agent_id, text}
+    POST /api/agent/ambassador/dispatch  {agent_id, text, conversation_id?}
 
-    The Ambassador write-side (Phase 16.7): hand a task to a chosen **worker** agent by
-    minting a **brand-new conversation** and running that worker headless on the task as
-    its first **user** turn (you authored it — the ambassador never speaks into the
-    transcript as itself, so INV-2 holds). Returns the new ``conversation_id`` so the
-    client can open + watch it. v1 is confirm-first: the user picks the worker and sends.
+    The Ambassador write-side (Phase 16.7): hand a task to a chosen **worker** agent and
+    run it headless on the task as a **user** turn (you authored it — the ambassador never
+    speaks into the transcript as itself, so INV-2 holds). By default a **brand-new
+    conversation** is minted; pass ``conversation_id`` to run the task inside an existing
+    conversation instead (unknown id → 404, like relay — never spawn turns into a phantom
+    id). Returns the ``conversation_id`` so the client can open + watch it. Confirm-first:
+    the user picks (or confirms) the worker and sends.
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -3542,9 +3544,18 @@ def ambassador_dispatch(request):
     if profile is None:
         return JsonResponse({"ok": False, "error": "no such worker agent"}, status=400)
 
-    import uuid
+    conversation_id = (data.get("conversation_id") or "").strip()
+    if conversation_id:
+        # Dispatch into an existing conversation — same guard as relay: only a real
+        # conversation, never spawn turns into a phantom id.
+        from .agent.conversation_history import load_recent_labeled_turns
 
-    conversation_id = str(uuid.uuid4())
+        if not load_recent_labeled_turns(conversation_id, token_budget=1):
+            return JsonResponse({"ok": False, "error": "no such conversation"}, status=404)
+    else:
+        import uuid
+
+        conversation_id = str(uuid.uuid4())
     job_id = enqueue_background_chat(
         user_id=_bg_user_id(request),
         message=text,
@@ -5777,7 +5788,7 @@ def memory_conversation_delete(request, conversation_id):
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
     try:
-        deleted_counts = {
+        deleted_counts: dict[str, Any] = {
             "turns": 0,
             "conversation": 0,
             "postgres_rows": 0,
@@ -5844,11 +5855,32 @@ def memory_conversation_delete(request, conversation_id):
         except Exception as e:
             logger.debug(f"Project membership cleanup skipped: {e}")
 
-        # Drop the user-set meta overlay (title/archived). NOTE: sidecar keys
-        # (conv_state:, conv_summary:, amb_thread:) are still left behind —
-        # pre-existing gap, tracked separately.
+        # Drop the user-set meta overlay (title/archived) and the conversation's
+        # sidecar families — structured state (conv_state:), rolling summary
+        # (conv_summary:), and the ambassador's Inquiry thread (amb_thread:/qa:).
+        # Each is best-effort: a down store never blocks the delete.
         from .agent.conversation_meta import delete_meta
         delete_meta(conversation_id)
+        sidecars: list[str] = []
+        try:
+            from .agent.conversation_state_storage import clear_state
+            clear_state(conversation_id)
+            sidecars.append("state")
+        except Exception as e:
+            logger.debug(f"State sidecar cleanup skipped: {e}")
+        try:
+            from .agent.conversation_summary_storage import clear_summary
+            clear_summary(conversation_id)
+            sidecars.append("summary")
+        except Exception as e:
+            logger.debug(f"Summary sidecar cleanup skipped: {e}")
+        try:
+            from .agent.ambassador_storage import clear as clear_ambassador_thread
+            clear_ambassador_thread(conversation_id)
+            sidecars.append("ambassador_thread")
+        except Exception as e:
+            logger.debug(f"Ambassador sidecar cleanup skipped: {e}")
+        deleted_counts["sidecars"] = sidecars
 
         return JsonResponse({
             "message": f"Conversation '{conversation_id}' deleted successfully",

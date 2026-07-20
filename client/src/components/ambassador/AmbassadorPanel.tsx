@@ -55,6 +55,7 @@ import {
   toolChipLabel,
 } from '../../lib/ambassadorTools';
 import { useNotify } from '../../contexts/NotificationContext';
+import { createMessageId, type UserMessage } from '../../lib/messages';
 import { planRelay, type RelayOutcome } from '../../lib/ambassadorRelay';
 import { DECK_STARTERS, type DeckInquiry } from '../../lib/ambassadorDeck';
 import { AmbassadorInquirySwitcher } from './AmbassadorInquirySwitcher';
@@ -264,7 +265,8 @@ function ProposalStrips({
             <span key={p.proposal_id} className="inline-flex items-center gap-1 text-[11px] text-success">
               <Check size={11} /> {p.action === 'rename' ? `Renamed to "${p.title ?? ''}"` :
                 p.action === 'archive' ? 'Archived' :
-                p.action === 'unarchive' ? 'Restored' : 'Deleted'}
+                p.action === 'unarchive' ? 'Restored' :
+                p.action === 'dispatch' ? `Dispatched to ${p.agent_name ?? 'the worker'}` : 'Deleted'}
             </span>
           );
         }
@@ -291,7 +293,7 @@ function ProposalStrips({
             <span className="text-xs text-fg">{proposalSentence(p)}</span>
             <div className="ml-auto flex items-center gap-1.5">
               <Button size="sm" variant={danger ? 'danger' : 'primary'} onClick={() => onConfirm(p)}>
-                {danger ? 'Delete…' : 'Confirm'}
+                {danger ? 'Delete…' : p.action === 'dispatch' ? 'Dispatch' : 'Confirm'}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => onDismiss(p)}>
                 Dismiss
@@ -484,7 +486,10 @@ export function AmbassadorPanel({
   deckThreadId, deckHomeId, deckInquiries, onSelectInquiry, onNewInquiry, onClose,
 }: AmbassadorPanelProps = {}) {
   const isDeck = !!deckThreadId;
-  const { activeTab, tabs, relayToConversation, restoreConversation, refreshHistory } = useConversation();
+  const {
+    activeTab, tabs, relayToConversation, restoreConversation, refreshHistory,
+    addTab, updateTab, switchTab,
+  } = useConversation();
   const {
     briefingsFor, refresh, cancel, qaFor,
     threadFor, titleFor, renameThread, clearThread, ask, cancelQa, listInquiries,
@@ -502,14 +507,70 @@ export function AmbassadorPanel({
     setProposalResolution(p.proposal_id, 'dismissed');
     setResolutionVersion((v) => v + 1);
   }, []);
+
+  // Open a dispatched task's conversation with the task visible AT ONCE (instant
+  // echo) instead of a blank poll-wait. Three shapes: the target tab is already
+  // open (append the echo bubble), the conversation exists server-side (restore
+  // it, seeded), or it's brand-new with nothing persisted yet (404 → a fresh tab
+  // bound to the minted id — the useResumeRun fallback pattern). The worker runs
+  // headless; its reply lands when the conversation reloads. Returns a note for
+  // the caller's own closure surface (flash/toast).
+  const openDispatchedTab = useCallback(async (cid: string, task: string): Promise<string> => {
+    const echo: UserMessage = {
+      id: createMessageId(),
+      type: 'user',
+      content: task,
+      timestamp: new Date().toISOString(),
+    };
+    const existing = tabs.find((t) => t.sessionId === cid);
+    if (existing) {
+      updateTab(existing.id, { messages: [...existing.messages, echo] });
+      switchTab(existing.id);
+      return 'running here in the background';
+    }
+    try {
+      await restoreConversation(cid, { seedUserMessage: task });
+      return 'its conversation is open';
+    } catch {
+      const tab = addTab();
+      updateTab(tab.id, {
+        sessionId: cid,
+        title: task.slice(0, 40) || 'Dispatched task',
+        messages: [echo],
+      });
+      return 'the reply lands there when done';
+    }
+  }, [tabs, updateTab, switchTab, restoreConversation, addTab]);
+
   const confirmProposal = useCallback(async (p: AmbassadorToolProposal) => {
     try {
+      if (p.action === 'dispatch') {
+        // The dispatch executes ONLY here, on your confirm — it lands as YOUR
+        // user turn (new conversation unless the proposal targeted an existing
+        // one), and the task echoes into its tab immediately.
+        const res = await api.dispatchAmbassador({
+          agent_id: p.agent_id ?? '',
+          text: p.task ?? '',
+          conversation_id: p.conversation_id || undefined,
+        });
+        if (!res.ok || !res.conversation_id) throw new Error('Dispatch was rejected');
+        setProposalResolution(p.proposal_id, 'confirmed');
+        setResolutionVersion((v) => v + 1);
+        notifySuccess(`Dispatched to ${p.agent_name ?? 'the worker'}`);
+        void openDispatchedTab(res.conversation_id, p.task ?? '').then(
+          () => refreshHistory().catch(() => undefined),
+        );
+        return;
+      }
+      // The meta actions always carry their target (the server validates it in).
+      const cid = p.conversation_id;
+      if (!cid) throw new Error('The proposal is missing its conversation');
       if (p.action === 'delete') {
         // Destructive → the repo's ConfirmDialog, showing WHAT dies, not an id.
-        let detail = `Conversation ${p.conversation_id}`;
+        let detail = `Conversation ${cid}`;
         try {
           const res = await api.listConversations({ limit: 100, includeArchived: true });
-          const row = res.conversations.find((c) => c.conversation_id === p.conversation_id);
+          const row = res.conversations.find((c) => c.conversation_id === cid);
           if (row) detail = `"${row.title}" (${row.message_count} messages)`;
         } catch { /* fall back to the id */ }
         const ok = await confirm({
@@ -518,11 +579,11 @@ export function AmbassadorPanel({
           confirmLabel: 'Delete', danger: true,
         });
         if (!ok) return;
-        await api.deleteConversation(p.conversation_id);
+        await api.deleteConversation(cid);
       } else if (p.action === 'rename') {
-        await api.patchConversationMeta(p.conversation_id, { title: p.title ?? '' });
+        await api.patchConversationMeta(cid, { title: p.title ?? '' });
       } else {
-        await api.patchConversationMeta(p.conversation_id, { archived: p.action === 'archive' });
+        await api.patchConversationMeta(cid, { archived: p.action === 'archive' });
       }
       setProposalResolution(p.proposal_id, 'confirmed');
       setResolutionVersion((v) => v + 1);
@@ -535,7 +596,7 @@ export function AmbassadorPanel({
     } catch (err) {
       notifyError(err, 'Could not apply the proposal');
     }
-  }, [confirm, notifySuccess, notifyError, refreshHistory]);
+  }, [confirm, notifySuccess, notifyError, refreshHistory, openDispatchedTab]);
 
   // Conversations the ambassador can be pointed at — the open tabs that have a saved
   // session (id + title). (Server-history conversations are a follow-up for the full
@@ -835,22 +896,6 @@ export function AmbassadorPanel({
     }
   };
 
-  // Open the dispatched worker's NEW conversation once it exists. The worker runs in
-  // the background, so the conversation has no turns (and 404s) until it replies —
-  // poll-then-open, tolerating the empty window; give up gracefully after ~15s.
-  const openWhenReady = async (cid: string, worker: string) => {
-    for (let i = 0; i < 15; i++) {
-      try {
-        await restoreConversation(cid);  // throws (404) until the first turn lands
-        showFlash(`Opened ${worker}'s conversation.`);
-        return;
-      } catch {
-        await new Promise((r) => window.setTimeout(r, 1000));
-      }
-    }
-    showFlash(`Dispatched to ${worker} — it'll appear in your conversations once it replies.`);
-  };
-
   const submitDispatch = async () => {
     const text = input.trim();
     if (!text || !dispatchTarget || dispatching) return;
@@ -860,8 +905,10 @@ export function AmbassadorPanel({
       const res = await api.dispatchAmbassador({ agent_id: dispatchTarget.agentId, text });
       if (res.ok && res.conversation_id) {
         setInput('');
-        showFlash(`Dispatched to ${dispatchTarget.name} — opening when ready…`);
-        void openWhenReady(res.conversation_id, dispatchTarget.name);
+        // Instant echo: the task shows as your user bubble at once (no poll-blank).
+        const note = await openDispatchedTab(res.conversation_id, text);
+        showFlash(`Dispatched to ${dispatchTarget.name} — ${note}.`);
+        void refreshHistory().catch(() => undefined);
       } else {
         showFlash('Could not dispatch — try again.');
       }

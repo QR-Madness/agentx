@@ -18,6 +18,9 @@ The tools map to the user's intents:
   * ``read_conversation_state`` — the structured working state (goals/decisions/open threads/
                                 artifacts + digest): the pre-condensed "where does this stand?"
                                 dashboard; survey → state → transcript is the drill-down ladder
+  * ``read_conversation_results`` — what a conversation *produced*: its exhibits
+                                (tables, images, diagrams, cited sources with URLs) —
+                                outcomes, not dialogue
   * ``search_conversations``  — lexical full-text search across ALL conversations
                                 ("which conversation discussed X?" beyond the recent window)
   * ``list_active_runs``      — the live half: streaming runs + queued/running background
@@ -32,12 +35,19 @@ The tools map to the user's intents:
   * ``rename_inquiry``        — set the CURRENT Inquiry's own title (the sole self-scoped
                                 **write**: it touches only the ambassador's thread meta,
                                 never a conversation)
+  * ``rename_conversation`` / ``archive_conversation`` / ``delete_conversation`` —
+                                conversation-meta management, **proposal-only** (see below)
+  * ``dispatch_task``         — hand a self-contained task to a worker agent (new or
+                                existing conversation), **proposal-only** (see below)
 
 ``execute_tool`` dispatches by name and **never raises** — a failure returns a short
 human string the model can read, so a tool hiccup never breaks the ambassador's turn.
-Every tool is read-only over the conversation world; the lone exception is
-``rename_inquiry``, which writes only the ambassador's *own* Inquiry title (its Redis
-sidecar meta), so the no-pollution guarantee is intact.
+Every read is SELECT-only over the conversation world; ``rename_inquiry`` writes only
+the ambassador's *own* Inquiry title (its Redis sidecar meta). The
+:data:`CONFIRMED_WRITE_TOOLS` class never *executes* here — a call files a proposal
+the person confirms on screen, and the write (or dispatch, landing as the person's
+own user turn) happens solely in the user-confirmed HTTP endpoints — so the
+no-pollution guarantee is intact.
 """
 
 from __future__ import annotations
@@ -237,6 +247,28 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "read_conversation_results",
+            "description": (
+                "Read what a conversation has PRODUCED — its exhibits: tables, images, "
+                "diagrams, and cited sources (with their links). Outcomes rather than "
+                "dialogue: use for 'what did that conversation actually produce?', "
+                "'what sources did it cite?', 'did it make the table/image?'. Omit "
+                "conversation_id for the active one."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "A specific conversation; omit for the active one.",
+                    }
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "search_conversations",
             "description": (
                 "Search ALL of the person's conversations by keywords — 'which conversation "
@@ -387,6 +419,44 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "dispatch_task",
+            "description": (
+                "PROPOSE handing a task to one of the person's worker agents to run on "
+                "its own. Write the task SELF-CONTAINED — the worker starts cold with no "
+                "other context. Pick the worker with list_agents and pass its agent_id "
+                "(or its exact name). By default this starts a NEW conversation; pass "
+                "conversation_id to run the task inside an existing one instead. This "
+                "only files a proposal: nothing runs until the person confirms it on "
+                "screen. Use it when they want work STARTED ('have the researcher dig "
+                "into X'), not just discussed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "The self-contained task for the worker (it has no other context).",
+                    },
+                    "agent_id": {
+                        "type": "string",
+                        "description": "The worker's agent_id (from list_agents).",
+                    },
+                    "agent_name": {
+                        "type": "string",
+                        "description": "The worker's exact name — when you don't have its id.",
+                    },
+                    "conversation_id": {
+                        "type": "string",
+                        "description": "Run the task in this existing conversation instead of a new one.",
+                    },
+                },
+                "required": ["task"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "recall_memory",
             "description": (
                 "Ask the agents' long-term memory what they actually KNOW about something — "
@@ -418,13 +488,36 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 TOOL_NAMES = {t["function"]["name"] for t in TOOL_SCHEMAS}
 
-# The confirmed-write class: conversation-meta writes (rename/archive/delete).
-# The belt NEVER executes these — a call only files a *proposal* (see
-# ``proposal_for``); the write happens solely in the user-confirmed HTTP
-# endpoints (PATCH /memory/conversations/<id>/meta, DELETE /memory/conversations/<id>)
-# after the person clicks Confirm. INV-2 stays intact: no store_turn, no
-# conv_summary: authorship, nothing mutated from the loop.
-CONFIRMED_WRITE_TOOLS = {"rename_conversation", "archive_conversation", "delete_conversation"}
+# The confirmed-write class: conversation-meta writes (rename/archive/delete)
+# plus dispatch (hand a task to a worker agent). The belt NEVER executes these —
+# a call only files a *proposal* (see ``proposal_for``); the write happens solely
+# in the user-confirmed HTTP endpoints (PATCH /memory/conversations/<id>/meta,
+# DELETE /memory/conversations/<id>, POST /agent/ambassador/dispatch) after the
+# person clicks Confirm — and a confirmed dispatch lands as the *person's own*
+# user turn. INV-2 stays intact: no store_turn, no conv_summary: authorship,
+# nothing mutated from the loop.
+CONFIRMED_WRITE_TOOLS = {
+    "rename_conversation", "archive_conversation", "delete_conversation",
+    "dispatch_task",
+}
+
+
+def _resolve_worker(agent_id: str, agent_name: str):
+    """Resolve a dispatch worker profile by ``agent_id``, else by exact
+    (case-insensitive) name — **agents only** (``get_profile_by_agent_id``
+    already filters ``kind=='agent'``; the name path searches that kind), so an
+    ambassador can never be dispatched to. ``None`` when unresolvable."""
+    from .profiles import get_profile_manager
+
+    pm = get_profile_manager()
+    if agent_id:
+        return pm.get_profile_by_agent_id(agent_id)
+    if agent_name:
+        wanted = agent_name.strip().lower()
+        for p in pm.list_profiles_by_kind("agent"):
+            if (p.name or "").strip().lower() == wanted:
+                return p
+    return None
 
 
 def proposal_for(
@@ -432,14 +525,38 @@ def proposal_for(
 ) -> dict[str, Any] | None:
     """Validate a confirmed-write tool call into a proposal payload the client
     can render as a confirm strip — or ``None`` when the call is invalid
-    (missing id/title). Pure: builds a dict, touches nothing.
+    (missing id/title/task, or an unresolvable dispatch worker). Reads only the
+    profile roster (for dispatch worker resolution); mutates nothing.
 
     Payload: ``{proposal_id, action, conversation_id, title?}`` with
-    ``action ∈ rename|archive|unarchive|delete``.
+    ``action ∈ rename|archive|unarchive|delete`` — or, for ``dispatch_task``,
+    ``{proposal_id, action: "dispatch", agent_id, agent_name, task,
+    conversation_id?}`` (``conversation_id`` present only when the task should
+    run inside an existing conversation; absent = mint a new one on confirm).
     """
     import uuid
 
     args = arguments if isinstance(arguments, dict) else {}
+    if name == "dispatch_task":
+        task = (args.get("task") or "").strip()
+        if not task:
+            return None
+        worker = _resolve_worker(
+            (args.get("agent_id") or "").strip(), (args.get("agent_name") or "").strip()
+        )
+        if worker is None:
+            return None
+        payload: dict[str, Any] = {
+            "proposal_id": f"prop_{uuid.uuid4().hex[:12]}",
+            "action": "dispatch",
+            "agent_id": worker.agent_id,
+            "agent_name": worker.name,
+            "task": task[:4000],
+        }
+        cid = (args.get("conversation_id") or "").strip()
+        if cid:
+            payload["conversation_id"] = cid
+        return payload
     if name == "rename_conversation":
         title = (args.get("title") or "").strip()
         cid = (args.get("conversation_id") or "").strip() or focused_conversation_id
@@ -695,6 +812,67 @@ def _render_state(conversation_id: str) -> str:
             "it builds up as the conversation grows.)"
         )
     return block
+
+
+# Sources listed per citation element before eliding — many-source captures
+# (web-search auto-citations) stay readable without blowing the tool output.
+_MAX_RESULT_SOURCES = 12
+
+
+def _render_results(conversation_id: str) -> str:
+    """What the conversation *produced* — its exhibit gallery, latest revision per
+    exhibit id (re-presenting an id revises in place, so only the last call per id
+    is current). Tables/images/diagrams render as titled mentions, never payloads;
+    citation sources list label + URL — the 'what did it cite?' payoff."""
+    from ..streaming.exhibits import exhibit_from_present_call
+    from .conversation_history import load_exhibit_calls
+
+    calls = load_exhibit_calls(conversation_id)
+    if not calls:
+        return (
+            "(That conversation hasn't produced any exhibits yet — no tables, "
+            "images, diagrams, or cited sources.)"
+        )
+    by_id: dict[str, Any] = {}
+    for args in calls:
+        try:
+            ex = exhibit_from_present_call(args)
+        except Exception:  # noqa: BLE001 — one malformed call never sinks the read
+            continue
+        by_id[ex.id] = ex  # chronological iteration → the latest revision wins
+    if not by_id:
+        return "(That conversation's exhibits couldn't be read back.)"
+
+    lines = [
+        f"What this conversation has produced ({len(by_id)} exhibit(s), "
+        "latest revision of each):"
+    ]
+    for ex in by_id.values():
+        lines.append(f"- {ex.title or '(untitled exhibit)'}")
+        for el in ex.elements:
+            if el.type == "table":
+                label = el.title or el.caption or "table"
+                lines.append(f"    · table: {label} — {len(el.columns)} columns × {len(el.rows)} rows")
+            elif el.type == "mermaid":
+                lines.append("    · diagram" + (f": {el.title}" if el.title else ""))
+            elif el.type == "image":
+                label = el.title or el.alt or ""
+                lines.append("    · image" + (f": {label}" if label else ""))
+            elif el.type == "choice":
+                head = f"    · choice ({len(el.options)} options)"
+                lines.append(head + (f": {el.prompt}" if el.prompt else ""))
+            elif el.type == "citation":
+                total = len(el.sources)
+                lines.append(f"    · {total} cited source(s):")
+                for s in el.sources[:_MAX_RESULT_SOURCES]:
+                    lines.append(f"      - {s.label}" + (f" — {s.url}" if s.url else ""))
+                if total > _MAX_RESULT_SOURCES:
+                    lines.append(f"      … and {total - _MAX_RESULT_SOURCES} more")
+    text = "\n".join(lines)
+    # Character-level clip aligned with the transcript read budget.
+    if len(text) > _READ_TOKEN_BUDGET * 4:
+        text = text[: _READ_TOKEN_BUDGET * 4].rstrip() + "…"
+    return text
 
 
 def _render_search(query: str, limit: int) -> str:
@@ -1039,6 +1217,11 @@ def execute_tool(
             if not cid:
                 return "(There's no conversation open to read state from.)"
             return _render_state(cid)
+        if name == "read_conversation_results":
+            cid = (args.get("conversation_id") or "").strip() or focused_conversation_id
+            if not cid:
+                return "(There's no conversation open to read results from.)"
+            return _render_results(cid)
         if name == "search_conversations":
             query = (args.get("query") or "").strip()
             if not query:
@@ -1086,17 +1269,32 @@ def execute_tool(
                         "(delete_conversation needs an explicit conversation_id — "
                         "never guess one; list or read first.)"
                     )
+                if name == "dispatch_task":
+                    return (
+                        "(dispatch_task couldn't be filed — it needs a task plus a "
+                        "worker that exists: check the roster with list_agents and "
+                        "pass its agent_id or exact name.)"
+                    )
                 return (
                     f"({name} is missing what it needs — a conversation to act on"
                     " (and a title, for a rename).)"
                 )
             action = proposal["action"]
-            cid = proposal["conversation_id"]
-            if action == "rename":
+            if action == "dispatch":
+                where = (
+                    f"inside conversation {proposal['conversation_id']}"
+                    if proposal.get("conversation_id")
+                    else "in a new conversation"
+                )
+                summary = f"dispatching a task to {proposal['agent_name']} {where}"
+            elif action == "rename":
+                cid = proposal["conversation_id"]
                 summary = f"renaming conversation {cid} to \"{proposal['title']}\""
             elif action == "delete":
+                cid = proposal["conversation_id"]
                 summary = f"permanently deleting conversation {cid}"
             else:
+                cid = proposal["conversation_id"]
                 summary = f"{action[:-1]}ing conversation {cid}"  # archiv/unarchiv+ing
             return (
                 f"(Proposed {summary} — awaiting the person's confirmation on screen. "

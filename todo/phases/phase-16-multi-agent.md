@@ -446,8 +446,9 @@
       - `list_conversations(limit?)` — the cross-conversation survey primitive
         (`conversation_history.list_recent_conversations`, new read-only enumerator).
       Backed by `load_recent_turns` (read-only). Test: `test_ambassador_tools_are_read_only_and_degrade`.
-      *Deferred:* `read_conversation_results` (exhibits/sources) — needs bibliography
-      extraction plumbing; `explore_turn` by message-id — needs turn-id plumbing.
+      *Deferred:* `read_conversation_results` (exhibits/sources) — **shipped `0.21.235`** in the
+      v3 close-out (no bibliography plumbing needed — the persisted `present_exhibit` turns are
+      the record); `explore_turn` by message-id — needs turn-id plumbing.
 - [x] **Agentic turn loop** (`AmbassadorService._answer_with_tools`): bounded
       (`ambassador.max_tool_rounds`, default 4) provider tool-calling loop; emits
       `ambassador_tool_call`/`ambassador_tool_result` SSE; **never-raise** wraps the loop
@@ -643,10 +644,11 @@
       drafts a self-contained task (`draft_relay_message(fresh=True)`), then sends; the client opens
       the new conversation on-ready (polls past the async-worker 404 window). Gated by
       `ambassador.dispatch.enabled` (default on, Settings opt-out). The `{agent_id}` seam is
-      target-extensible. **Deferred:** **autonomous** dispatch — the ambassador choosing the worker +
-      starting/steering a run itself via `AlloyExecutor.delegate` (`delegation_*` events, depth/
-      parallel guards); ambassador-*proposed* targeting; dispatch into an **existing** conversation;
-      instant task echo. The survey/aide-swarm is the read-side of that same world.
+      target-extensible. **Deferred → resolved in the `0.21.235` close-out (see the v3 list):**
+      ambassador-*proposed* targeting, dispatch into an **existing** conversation, and the
+      instant task echo all shipped; fully **autonomous** (confirm-less) dispatch and
+      `AlloyExecutor.delegate` start/steer stay parked on purpose (doctrine — a future per-user
+      policy setting). The survey/aide-swarm is the read-side of that same world.
 
 **Ambassador v3 — context state, conversation management & analysis (proposed 2026-07-16)**
 
@@ -688,7 +690,26 @@
       Slice-3 `{action:'tool'}` strip (`VoiceBar`); the conversation list write-throughs
       rename/auto-title/archive to the server store so the local meta and the durable overlay
       stay in step. Pinned test grows the documented `confirmed_conversation_meta_writes` class.
-- [ ] **`read_conversation_results`** — the 16.7-deferred exhibits/sources read, folded in here.
+- [x] **`read_conversation_results`** — **shipped (`0.21.235`, close-out)**. The 16.7-deferred
+      exhibits/sources read: SELECT-only over the persisted synthetic `present_exhibit` tool
+      turns (`conversation_history.load_exhibit_calls` — no bibliography plumbing needed; the
+      turns ARE the record). `_render_results` parses via `exhibit_from_present_call`, keeps
+      the latest call per exhibit id (revise-in-place), lists citation sources label + URL;
+      tables/images/diagrams as titled mentions. Classified `read_only` in the pinned test.
+- [x] **Dispatch orchestration (confirm-first `dispatch_task`)** — **shipped (`0.21.235`,
+      close-out)**. The 16.7-deferred *ambassador-proposed targeting*, *dispatch into an
+      existing conversation*, and *instant task echo*, all in one slice: `dispatch_task`
+      joins `CONFIRMED_WRITE_TOOLS` (proposal-only — loop stamping/SSE/voice ride the set for
+      free); `proposal_for` resolves the worker (`_resolve_worker`: agent_id else exact name,
+      agents-only) into `{action: dispatch, agent_id, agent_name, task, conversation_id?}`;
+      the endpoint takes optional `conversation_id` (unknown → 404, relay guard); the client
+      confirm strip executes via `POST /dispatch` and the open-on-ready poll became an
+      **instant echo** (`openDispatchedTab`: open-tab append / seeded restore / fresh seeded
+      tab). Conversation DELETE now clears the state/summary/ambassador sidecar families
+      (`deleted.sidecars`). **Parked on purpose** (the close-out's non-goals): fully
+      unconfirmed autonomous dispatch (breaches reads-auto/writes-confirm — a future per-user
+      policy setting), `AlloyExecutor.delegate` start/steer from the ambassador, Inquiry-thread
+      durability + Deck scope (still open questions below), Factory UI.
 - [x] **Client — promote the Command Deck (and Memory) to first-class desktop tabs** —
       **shipped (`0.21.234`)**. TopBar gains a **surface-pill group** after Agents (Deck +
       Memory — no new `PageId`s; selected state *derives* from `useModal().isOpen`, the Dock
