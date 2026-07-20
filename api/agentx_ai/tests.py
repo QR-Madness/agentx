@@ -8763,6 +8763,164 @@ class ManagerTemplateTest(TestCase):
             self.assertIn(t, demoted.blocked_tools)
 
 
+class OrgChartTest(TestCase):
+    """Agentic Orgs Slice 2: the pure chain-of-command derivation module.
+
+    Fixture: manager M owns T1 (lead L1; members A, B) and T2 (lead L2;
+    members C + one ambassador + one dangling id); manager-less T3 (lead L3;
+    member D); unaffiliated agent U. `in_org` is manager-anchored — L3/D/U
+    stay OUT (the back-compat linchpin: org-free installs keep the flat
+    roster byte-identical)."""
+
+    AGENTS = {
+        "m-aa": ("Mable", "manager"), "l1-aa": ("Lead One", "lead"),
+        "l2-aa": ("Lead Two", "lead"), "l3-aa": ("Lead Three", "lead"),
+        "a-aa": ("Aria", "agent"), "b-aa": ("Bram", "agent"),
+        "c-aa": ("Cleo", "agent"), "d-aa": ("Dara", "agent"),
+        "u-aa": ("Uma", "agent"),
+    }
+
+    def _pm(self):
+        from types import SimpleNamespace
+        profiles = {
+            aid: SimpleNamespace(
+                agent_id=aid, name=name, kind="agent", org_level=level,
+                delegation_hint=f"{name} specialty" if aid == "a-aa" else None,
+                description=f"{name} description",
+                # Chain edges must IGNORE this flag (deliberate asymmetry).
+                available_for_delegation=False,
+            )
+            for aid, (name, level) in self.AGENTS.items()
+        }
+        # Ambassador: get_profile_by_agent_id filters kind!='agent' → None.
+        return SimpleNamespace(
+            get_profile_by_agent_id=lambda aid: profiles.get(aid),
+            list_profiles=lambda: list(profiles.values()),
+        )
+
+    def _wfs(self):
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        def team(tid, name, lead, members, manager=None, member_hints=None):
+            hints = member_hints or {}
+            return Workflow(
+                id=tid, name=name, supervisor_agent_id=lead,
+                manager_agent_id=manager,
+                members=[WorkflowMember(agent_id=lead, role=MemberRole.SUPERVISOR)] + [
+                    WorkflowMember(agent_id=m, role=MemberRole.SPECIALIST,
+                                   delegation_hint=hints.get(m))
+                    for m in members
+                ],
+            )
+        return [
+            team("t1", "Team One", "l1-aa", ["a-aa", "b-aa"], manager="m-aa",
+                 member_hints={"a-aa": "pattern synthesis (team hat)"}),
+            # amb-zz (not an agent profile) + ghost-zz (dangling) must be skipped.
+            team("t2", "Team Two", "l2-aa", ["c-aa", "amb-zz", "ghost-zz"], manager="m-aa"),
+            team("t3", "Team Three", "l3-aa", ["d-aa"]),  # org-free
+        ]
+
+    def _patched(self, knob=True):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from contextlib import ExitStack
+        stack = ExitStack()
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_profile_manager", return_value=self._pm()))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_workflow_manager",
+            return_value=SimpleNamespace(list=self._wfs)))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_config_manager",
+            return_value=SimpleNamespace(
+                get=lambda key, default=None: knob
+                if key == "alloy.chain_of_command" else default)))
+        return stack
+
+    def test_team_derivations(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            self.assertEqual([w.id for w in oc.teams_managed_by("m-aa")], ["t1", "t2"])
+            self.assertEqual([w.id for w in oc.teams_led_by("l1-aa")], ["t1"])
+            self.assertEqual([w.id for w in oc.teams_of_member("a-aa")], ["t1"])
+            self.assertEqual(oc.teams_managed_by(""), [])
+
+    def test_in_org_is_manager_anchored(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            for aid in ("m-aa", "l1-aa", "l2-aa", "a-aa", "b-aa", "c-aa"):
+                self.assertTrue(oc.in_org(aid), aid)
+            # The linchpin: a manager-less team's lead/member and an
+            # unaffiliated agent are NOT in the org.
+            for aid in ("l3-aa", "d-aa", "u-aa", ""):
+                self.assertFalse(oc.in_org(aid), aid)
+
+    def test_chain_targets_manager_reaches_leads_only(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            targets = oc.chain_targets("m-aa")
+        self.assertEqual([t.agent_id for t in targets], ["l1-aa", "l2-aa"])
+        self.assertTrue(all(t.relation == "down_lead" for t in targets))
+
+    def test_chain_targets_lead_reaches_own_members(self):
+        """Members only — flag ignored (B has available_for_delegation=False),
+        member-hint precedence (A's team hat beats its profile hint),
+        ambassador + dangling ids skipped (L2's team)."""
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            t1 = oc.chain_targets("l1-aa")
+            t2 = oc.chain_targets("l2-aa")
+        self.assertEqual([t.agent_id for t in t1], ["a-aa", "b-aa"])
+        self.assertTrue(all(t.relation == "down_member" for t in t1))
+        self.assertEqual(t1[0].hint, "pattern synthesis (team hat)")  # member hint wins
+        self.assertEqual(t1[1].hint, "Bram description")  # description fallback
+        self.assertEqual([t.agent_id for t in t2], ["c-aa"])  # amb-zz/ghost-zz skipped
+
+    def test_chain_targets_member_escalates_to_own_lead(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            targets = oc.chain_targets("a-aa")
+        self.assertEqual([(t.agent_id, t.relation) for t in targets],
+                         [("l1-aa", "up_lead")])
+
+    def test_chain_targets_dedup_first_relation_wins(self):
+        """An agent that both leads a team and members another under the same
+        peer appears once (down beats up by derivation order)."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.alloy import org_chart as oc
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        # X leads TA (member Y); X is also a member of TB led by Y.
+        wfs = [
+            Workflow(id="ta", name="TA", supervisor_agent_id="x-aa", manager_agent_id="m-aa",
+                     members=[WorkflowMember(agent_id="x-aa", role=MemberRole.SUPERVISOR),
+                              WorkflowMember(agent_id="y-aa", role=MemberRole.SPECIALIST)]),
+            Workflow(id="tb", name="TB", supervisor_agent_id="y-aa", manager_agent_id="m-aa",
+                     members=[WorkflowMember(agent_id="y-aa", role=MemberRole.SUPERVISOR),
+                              WorkflowMember(agent_id="x-aa", role=MemberRole.SPECIALIST)]),
+        ]
+        profiles = {
+            aid: SimpleNamespace(agent_id=aid, name=aid, kind="agent", org_level="agent",
+                                 delegation_hint=None, description="",
+                                 available_for_delegation=False)
+            for aid in ("x-aa", "y-aa", "m-aa")
+        }
+        with patch("agentx_ai.alloy.org_chart.get_profile_manager",
+                   return_value=SimpleNamespace(
+                       get_profile_by_agent_id=lambda aid: profiles.get(aid))), \
+             patch("agentx_ai.alloy.org_chart.get_workflow_manager",
+                   return_value=SimpleNamespace(list=lambda: wfs)):
+            targets = oc.chain_targets("x-aa")
+        self.assertEqual([(t.agent_id, t.relation) for t in targets],
+                         [("y-aa", "down_member")])
+
+    def test_knob_read(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched(knob=True):
+            self.assertTrue(oc.chain_of_command_enabled())
+        with self._patched(knob=False):
+            self.assertFalse(oc.chain_of_command_enabled())
+
+
 class AdhocRosterPromptTest(TestCase):
     """Ad-hoc delegation roster block: the system-prompt nudge that makes
     conversational delegation actually happen (workflows had a supervisor

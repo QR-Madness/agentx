@@ -288,6 +288,14 @@ DEFAULT_CONFIG = {
         # folds in automatically later in the same turn. Default ON
         # (ship-experimental-on).
         "non_blocking_delegations": True,
+        # Agentic Organizations: strict adjacency-only delegation for org
+        # participants (manager → lead of an owned team, lead → own member,
+        # member ↑ own lead). Enforced at BOTH the delegate_to tool enum and
+        # the executor (INV: dual enforcement). Structural: only agents whose
+        # teams carry a manager_agent_id are "in the org" — org-free installs
+        # keep the flat opt-in roster byte-identical. Default ON
+        # (ship-experimental-on).
+        "chain_of_command": True,
     },
     "search": {
         "backend": "tavily",          # "tavily" | "brave"
