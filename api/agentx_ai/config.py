@@ -55,6 +55,15 @@ RULES — exactly one subject; no text, letters, numbers, logos, watermarks, fra
 UI elements; no photorealistic human faces; the dark background must reach every edge.
 """
 
+# Style prompts shipped before the template era. A persisted copy of one of
+# these in config.json is a stale default, not a user choice — avatar
+# generation remaps it to the current template (a genuinely custom prompt
+# still wins).
+LEGACY_AVATAR_STYLE_PROMPTS = (
+    "A photorealistic headshot portrait, centered, clean studio lighting, "
+    "subtle depth of field, with a softly rounded border.",
+)
+
 # Default configuration structure
 DEFAULT_CONFIG = {
     "providers": {

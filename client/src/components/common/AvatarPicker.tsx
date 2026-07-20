@@ -9,7 +9,7 @@
 
 import { useMemo, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Pencil, Sparkles, Search, Loader2, Wand2 } from 'lucide-react';
+import { Pencil, Sparkles, Search, Loader2, Wand2, Dices } from 'lucide-react';
 import {
   AVATAR_CATEGORIES,
   AVATAR_OPTIONS,
@@ -50,9 +50,12 @@ interface AvatarPickerProps {
   onOpenChange?: (open: boolean) => void;
   /** Hide the built-in trigger button (for controlled use). */
   hideTrigger?: boolean;
+  /** Profile-derived subject suggestion shown as the Generate placeholder
+   *  (e.g. "Hazel — orchestration"). Purely a hint — empty still generates. */
+  subjectSeed?: string;
 }
 
-export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, open: openProp, onOpenChange, hideTrigger }: AvatarPickerProps) {
+export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, open: openProp, onOpenChange, hideTrigger, subjectSeed }: AvatarPickerProps) {
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp ?? openInternal;
   const setOpen = (o: boolean) => { onOpenChange?.(o); if (openProp === undefined) setOpenInternal(o); };
@@ -62,11 +65,13 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
   const [recents, setRecents] = useState<string[]>(loadRecents);
   const reduce = useReducedMotion();
 
-  // Generate tab state.
+  // Generate tab state. Results are a candidate deck (media:{ws}/{doc} refs);
+  // clicking a candidate applies it. `busy` distinguishes a single generation
+  // from a 4-deal (sequential — the grid fills as images land).
   const [subject, setSubject] = useState('');
-  const [generating, setGenerating] = useState(false);
+  const [busy, setBusy] = useState<'one' | 'deal' | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
-  const [genRef, setGenRef] = useState<string | null>(null); // media:{ws}/{doc} of the last result
+  const [candidates, setCandidates] = useState<string[]>([]);
 
   const triggerPx = size === 'lg' ? 28 : size === 'sm' ? 16 : 20;
   const results = useMemo(() => searchAvatars(query), [query]);
@@ -88,24 +93,28 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
     setOpen(false);
   };
 
-  const generate = async () => {
-    const prompt = subject.trim();
-    if (!prompt || generating) return;
-    setGenerating(true);
+  const generateBatch = async (count: 1 | 4) => {
+    if (busy) return;
+    setBusy(count === 1 ? 'one' : 'deal');
     setGenError(null);
-    try {
-      const res = await api.generateAvatar({ subject_prompt: prompt });
-      setGenRef(`media:${res.workspace_id}/${res.doc_id}`);
-    } catch (err) {
-      setGenError(apiErrorMessage(err));
-    } finally {
-      setGenerating(false);
+    setCandidates([]);
+    // Sequential on purpose — respects provider rate limits; the grid fills
+    // progressively. An empty subject is valid: the server template invents a
+    // synthetic face (and varies it between generations).
+    for (let i = 0; i < count; i++) {
+      try {
+        const res = await api.generateAvatar({ subject_prompt: subject.trim() });
+        setCandidates(prev => [...prev, `media:${res.workspace_id}/${res.doc_id}`]);
+      } catch (err) {
+        setGenError(apiErrorMessage(err));
+        break;
+      }
     }
+    setBusy(null);
   };
 
-  const useGenerated = () => {
-    if (!genRef) return;
-    onChange(genRef); // a media: ref — not an icon id, so it skips the recents row
+  const applyCandidate = (ref: string) => {
+    onChange(ref); // a media: ref — not an icon id, so it skips the recents row
     setOpen(false);
   };
 
@@ -227,44 +236,67 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
               </div>
             ) : (
               <div className="avatar-pick__generate">
-                <div className="avatar-pick__generate-inner" style={{ gap: 12, width: '100%', maxWidth: 420 }}>
-                  {genRef ? (
-                    <AgentAvatar avatar={genRef} size={120} />
-                  ) : (
-                    <Sparkles size={28} />
-                  )}
+                <div className="avatar-pick__generate-inner" style={{ gap: 12, width: '100%', maxWidth: 460 }}>
+                  {candidates.length === 0 && !busy && <Sparkles size={28} />}
                   <div className="avatar-pick__generate-title">Generate an avatar</div>
                   <div className="avatar-pick__generate-sub">
-                    Describe the agent — the app-wide style is set in Settings → Images. Uses
-                    OpenRouter.
+                    Describe the agent — or leave it empty and the style template invents a
+                    synthetic face. The template lives in Settings → Images.
                   </div>
                   <textarea
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
                     rows={2}
-                    placeholder="e.g. a gray-haired strategist with glasses"
+                    placeholder={subjectSeed ? `e.g. ${subjectSeed}` : 'e.g. a gray-haired strategist with glasses'}
                     className="ax-field ax-field--sm w-full resize-none"
                   />
+
+                  {(candidates.length > 0 || busy) && (
+                    <div className="avatar-pick__cands">
+                      {candidates.map(ref => (
+                        <button
+                          key={ref}
+                          type="button"
+                          className="avatar-pick__cand"
+                          onClick={() => applyCandidate(ref)}
+                          title="Use this avatar"
+                        >
+                          <AgentAvatar avatar={ref} size={104} />
+                        </button>
+                      ))}
+                      {busy &&
+                        Array.from({ length: (busy === 'deal' ? 4 : 1) - candidates.length }).map((_, i) => (
+                          <div key={`pending-${i}`} className="avatar-pick__cand avatar-pick__cand--pending">
+                            <Loader2 size={18} className="animate-spin" />
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
                   {genError && <div className="text-xs text-error">{genError}</div>}
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={generate}
-                      disabled={!subject.trim() || generating}
+                      onClick={() => void generateBatch(1)}
+                      disabled={busy !== null}
                       className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-sm text-fg-inverse shadow-sm transition hover:brightness-110 disabled:opacity-40"
                     >
-                      {generating ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
-                      {genRef ? 'Regenerate' : 'Generate'}
+                      {busy === 'one' ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+                      {candidates.length > 0 ? 'Regenerate' : 'Generate'}
                     </button>
-                    {genRef && (
-                      <button
-                        type="button"
-                        onClick={useGenerated}
-                        className="inline-flex h-8 items-center rounded-md border border-line bg-surface-overlay px-3 text-sm text-fg transition-colors hover:border-line-strong"
-                      >
-                        Use this avatar
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => void generateBatch(4)}
+                      disabled={busy !== null}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface-overlay px-3 text-sm text-fg transition-colors hover:border-line-strong disabled:opacity-40"
+                    >
+                      {busy === 'deal' ? <Loader2 size={14} className="animate-spin" /> : <Dices size={14} />}
+                      Deal 4
+                    </button>
+                  </div>
+                  <div className="avatar-pick__generate-sub">
+                    Click a result to use it. Each image is billed to your image provider —
+                    the cost lands in the usage ledger.
                   </div>
                 </div>
               </div>

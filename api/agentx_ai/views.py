@@ -3690,6 +3690,7 @@ async def avatar_generate(request):
         DEFAULT_AVATAR_MODEL,
         DEFAULT_AVATAR_STYLE_PROMPT,
         DEFAULT_IMAGE_MODEL,
+        LEGACY_AVATAR_STYLE_PROMPTS,
         get_config_manager,
     )
 
@@ -3707,7 +3708,11 @@ async def avatar_generate(request):
         or cfg.get("images.default_model", DEFAULT_IMAGE_MODEL)
         or ""
     ).strip()
-    style = (data.get("style_prompt") or cfg.get("images.avatar_style_prompt", DEFAULT_AVATAR_STYLE_PROMPT) or "").strip()
+    # Blank and legacy-shipped-default styles both fall through to the current
+    # template — only a genuinely custom prompt overrides it.
+    style = (data.get("style_prompt") or cfg.get("images.avatar_style_prompt") or "").strip()
+    if not style or style in LEGACY_AVATAR_STYLE_PROMPTS:
+        style = DEFAULT_AVATAR_STYLE_PROMPT
     prompt = _render_avatar_prompt(style, subject)
 
     from .providers.registry import get_registry

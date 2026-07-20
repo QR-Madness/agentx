@@ -370,7 +370,19 @@ export function ProfileContent({
               style={{ ['--agent-accent' as string]: accent.accent, ['--agent-soft' as string]: accent.soft }}
             >
               <span className="profile-hero__aura" />
-              <AvatarPicker value={avatar} onChange={setAvatar} size="lg" accent={accent} ariaLabel="Choose agent avatar" />
+              <AvatarPicker
+                value={avatar}
+                onChange={setAvatar}
+                size="lg"
+                accent={accent}
+                ariaLabel="Choose agent avatar"
+                subjectSeed={(() => {
+                  const n = name.trim();
+                  if (!n) return undefined;
+                  const detail = (tags[0] || description.split(/[.!?]/)[0] || '').trim();
+                  return detail ? `${n} — ${detail}`.slice(0, 80) : n;
+                })()}
+              />
               <div className="profile-hero__main">
                 <div className="profile-hero__name-row">
                   <input

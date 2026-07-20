@@ -15942,6 +15942,29 @@ class AvatarGenerateEndpointTest(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(reg.resolve_with_fallback.call_args.args[0], DEFAULT_IMAGE_MODEL)
 
+    def test_stale_persisted_defaults_remap_to_current_template(self):
+        """A config.json carrying a pre-template shipped default (or a blank)
+        is a stale default, not a user choice — the current template wins."""
+        from agentx_ai.config import LEGACY_AVATAR_STYLE_PROMPTS
+
+        for stale in [*LEGACY_AVATAR_STYLE_PROMPTS, ""]:
+            res, provider, _ = self._generate(
+                {"subject_prompt": "x"},
+                cfg_overrides={"images.avatar_style_prompt": stale},
+            )
+            self.assertEqual(res.status_code, 200)
+            prompt = provider.generate_image.call_args.args[0]
+            self.assertIn("circular safe zone", prompt)  # the current template
+            self.assertIn("x", prompt)
+
+    def test_custom_style_prompt_survives(self):
+        res, provider, _ = self._generate(
+            {"subject_prompt": "x"},
+            cfg_overrides={"images.avatar_style_prompt": "my house style: <SUBJECT>"},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(provider.generate_image.call_args.args[0], "my house style: x")
+
     def test_generates_stores_in_home_and_returns_url(self):
         from agentx_ai.providers.base import ImageResult
 
