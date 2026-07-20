@@ -38,19 +38,32 @@ async def generate_and_store_image(
     user_id: str = "default",
     conversation_id: str | None = None,
     agent_id: str | None = None,
+    input_refs: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Generate an image, store it as workspace media, and record usage.
 
     ``provider.generate_image`` is awaited (it parses the base64 image off the
-    completion). The bytes are stored under the conversation's attached workspace if
-    given, else the user's **Home** workspace, behind the ``generated/`` prefix. Cost
-    metering is best-effort. Returns ``{url, doc_id, workspace_id, content_type, prompt}``;
+    completion). ``input_refs`` (MediaRefs of source images) make it
+    **image-to-image** — resolved to base64 via the shared ``resolve_media_data``
+    (stale refs drop silently; the prompt still runs as text-to-image). The bytes
+    are stored under the conversation's attached workspace if given, else the
+    user's **Home** workspace, behind the ``generated/`` prefix. Cost metering is
+    best-effort. Returns ``{url, doc_id, workspace_id, content_type, prompt}``;
     raises on a provider/store failure (callers decide how to surface it).
     """
     from ..kit.workspaces import repository
     from ..kit.workspaces.service import store_media
+    from ..providers.base import resolve_media_data
 
-    result = await provider.generate_image(prompt, model=model)
+    input_images: list[tuple[str, str]] = []
+    for ref in input_refs or []:
+        resolved = resolve_media_data(ref)
+        if resolved is not None:
+            input_images.append(resolved)
+
+    result = await provider.generate_image(
+        prompt, model=model, input_images=input_images or None,
+    )
 
     ws_id = workspace_id or repository.ensure_home_workspace(user_id)["id"]
     ext = IMAGE_EXT.get(result.content_type, "png")
@@ -115,13 +128,15 @@ async def generate_image_exhibit(
     user_id: str = "default",
     conversation_id: str | None = None,
     agent_id: str | None = None,
+    input_refs: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Generate an image and build the displayable seam shared by every image path.
 
     Runs ``generate_and_store_image`` then wraps the stored blob in an ``image``
-    exhibit. This is the ONE place the direct chat turn (``views``) and a delegated
-    image-only specialist (``AlloyExecutor``) both call, so a change to how a generated
-    image surfaces updates both. Never raises — a failure comes back as an error note.
+    exhibit. ``input_refs`` (source-image MediaRefs) make it image-to-image. This is
+    the ONE place the direct chat turn (``views``) and a delegated image-only
+    specialist (``AlloyExecutor``) both call, so a change to how a generated image
+    surfaces updates both. Never raises — a failure comes back as an error note.
 
     Returns ``{ok, exhibit_wire | None, note, workspace_id | None, doc_id | None}``.
     """
@@ -131,6 +146,7 @@ async def generate_image_exhibit(
         info = await generate_and_store_image(
             prompt, provider=provider, model=model, workspace_id=workspace_id,
             user_id=user_id, conversation_id=conversation_id, agent_id=agent_id,
+            input_refs=input_refs,
         )
     except Exception as e:  # noqa: BLE001 — never break the calling turn
         logger.warning(f"Image generation failed: {e}")

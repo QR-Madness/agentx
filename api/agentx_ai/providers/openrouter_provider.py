@@ -376,18 +376,32 @@ class OpenRouterProvider(ModelProvider):
         prompt: str,
         *,
         model: str,
+        input_images: list[tuple[str, str]] | None = None,
         **kwargs: Any,
     ) -> ImageResult:
         """Generate an image via OpenRouter's chat-completions endpoint with
         ``modalities: ["image","text"]``. The image comes back as a base64 data URL on
         ``choices[0].message.images[0].image_url.url`` (per OpenRouter's image-gen API),
-        which we decode to raw bytes. Raises on a non-2xx or a response with no image."""
+        which we decode to raw bytes. Raises on a non-2xx or a response with no image.
+
+        ``input_images`` (``(media_type, base64)`` pairs) ride the user message as
+        ``image_url`` data-URI blocks — **image-to-image** on models that take image
+        input (gemini-flash-image); models that don't 4xx and the caller degrades."""
         # Request image output only. Image-only models (e.g. flux) reject ["image","text"]
         # ("no endpoints support the requested output modalities"), and we never use the
         # text part anyway — ["image"] is accepted by image-capable models either way.
+        content: Any = prompt
+        if input_images:
+            content = [{"type": "text", "text": prompt}] + [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{media_type};base64,{b64}"},
+                }
+                for media_type, b64 in input_images
+            ]
         body: dict[str, Any] = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": [{"role": "user", "content": content}],
             "modalities": ["image"],
         }
         headers = {"Authorization": f"Bearer {self.config.api_key}"}

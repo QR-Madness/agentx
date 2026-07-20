@@ -67,175 +67,20 @@ async def _model_outputs_image(provider, model_id, caps) -> bool:
     return await model_outputs_image(provider, model_id, caps)
 
 
-async def _model_accepts_vision(provider, model_id, caps) -> bool:
-    """True when the model accepts image *input* (vision): ``supports_vision`` or
-    ``input_modalities`` includes ``image``. One-line predicate over the shared
-    warm-once probe (``providers.capabilities``); ``False`` on any probe error
-    (degrade to text-only rather than sending blocks a model would 400 on)."""
-    from .providers.capabilities import has_input_modality, probe_model_capability
-
-    return await probe_model_capability(
-        provider, model_id,
-        lambda c: getattr(c, "supports_vision", False) or has_input_modality(c, "image"),
-        caps, tag="vision-detect",
-    )
-
-
-def _parse_image_refs(raw_images):
-    """Validate wire vision-input refs into ImageRefs. Malformed / unsupported-type
-    entries are dropped (a bad attachment must never 500 the turn). Kept out of the
-    chat-stream generator so its loop+conditionals don't inflate pyright's path budget."""
-    from .providers.base import ImageRef
-    from .kit.workspaces.service import IMAGE_CONTENT_TYPES
-
-    refs = []
-    for item in raw_images or []:
-        if not isinstance(item, dict):
-            continue
-        ws, doc, mt = item.get("workspace_id"), item.get("doc_id"), item.get("media_type")
-        if ws and doc and mt in IMAGE_CONTENT_TYPES:
-            refs.append(ImageRef(workspace_id=ws, doc_id=doc, media_type=mt))
-    return refs
-
-
-def _gate_vision_images(user_images, accepts_vision, emit):
-    """Return the images to send the model: the full set when it can see them, else
-    empty (with a status notice). The user's images still persist + render regardless."""
-    if user_images and not accepts_vision:
-        emit("vision_unsupported", "the selected model can't see images — sent as text only")
-        return []
-    return user_images
-
-
-def _strip_message_images(messages, accepts_vision):
-    """Drop image blocks from every message when the model can't see them (a
-    mid-conversation switch to a non-vision model can leave images on history turns).
-    Non-mutating — copies so the warm session keeps its images for a later vision turn."""
-    if accepts_vision:
-        return messages
-    return [m.model_copy(update={"images": None}) if m.images else m for m in messages]
-
-
-def _parse_audio_refs(raw_audio):
-    """Validate wire audio-input refs into MediaRefs (mirror of ``_parse_image_refs``).
-    A wire ref may carry a cached ``transcript`` (from a prior turn's STT fallback) —
-    kept so a regenerate never re-transcribes."""
-    from .providers.base import MediaRef
-    from .kit.workspaces.service import AUDIO_CONTENT_TYPES
-
-    refs = []
-    for item in raw_audio or []:
-        if not isinstance(item, dict):
-            continue
-        ws, doc, mt = item.get("workspace_id"), item.get("doc_id"), item.get("media_type")
-        if ws and doc and mt in AUDIO_CONTENT_TYPES:
-            t = item.get("transcript")
-            refs.append(MediaRef(
-                workspace_id=ws, doc_id=doc, media_type=mt,
-                transcript=t if isinstance(t, str) and t.strip() else None,
-            ))
-    return refs
-
-
-async def _model_accepts_audio(provider, model_id, caps) -> bool:
-    """True when the model accepts audio *input* (``input_modalities`` includes
-    ``audio``). One-line predicate over the shared warm-once probe; ``False`` on
-    any probe error — degrade to the STT-transcript fallback rather than sending
-    audio blocks a model would 400 on."""
-    from .providers.capabilities import has_input_modality, probe_model_capability
-
-    return await probe_model_capability(
-        provider, model_id, lambda c: has_input_modality(c, "audio"),
-        caps, tag="audio-detect",
-    )
-
-
-# Native `input_audio` clips beyond this raw size fall back to STT (a base64
-# multi-MB clip per round trip melts context + latency; transcripts don't).
-_NATIVE_AUDIO_MAX_BYTES = 10 * 1024 * 1024
-
-
-async def _gate_audio_input(user_audio, accepts_audio, emit):
-    """Split attached audio into (native_refs, transcript_lines).
-
-    A clip rides **native** ``input_audio`` only when the model accepts audio AND
-    its container is in the OpenRouter-native set AND it's ≤ the native size cap.
-    Everything else is transcribed via the Ambassador's STT seam (one shared
-    model resolution) into a clearly-labeled transcript line; the transcript is
-    cached onto the ref so persistence/regeneration never re-bills. A clip that
-    can't transcribe (no STT configured / failure) degrades to a short notice
-    line — never a dead turn.
-    """
-    from .providers.base import INPUT_AUDIO_FORMATS
-
-    native, lines = [], []
-    if not user_audio:
-        return native, lines
-
-    for i, ref in enumerate(user_audio, start=1):
-        label = f"Audio attachment {i}"
-        try:
-            from .kit.workspaces import repository
-
-            doc = repository.get_document(ref.doc_id) or {}
-            fname = (doc.get("filename") or "").rsplit("/", 1)[-1]
-            if fname:
-                label = f'Audio attachment "{fname}"'
-            size_ok = (doc.get("size_bytes") or 0) <= _NATIVE_AUDIO_MAX_BYTES
-        except Exception:  # noqa: BLE001
-            size_ok = True
-
-        if accepts_audio and ref.media_type in INPUT_AUDIO_FORMATS and size_ok:
-            native.append(ref)
-            continue
-
-        if not ref.transcript:
-            emit("transcribing", f"Transcribing audio… ({label})")
-            ref.transcript = await _transcribe_ref(ref)
-        if ref.transcript:
-            lines.append(f"[{label} — transcript]: {ref.transcript}")
-        else:
-            lines.append(f"[{label}: attached, but it couldn't be transcribed "
-                         "and this model can't hear audio]")
-    if lines and not accepts_audio:
-        emit("audio_fallback", "the selected model can't hear audio — transcripts sent instead")
-    return native, lines
-
-
-async def _transcribe_ref(ref) -> str | None:
-    """Transcribe one stored clip via the neutral speech seam (shared model
-    resolution: ``ambassador.transcription_model`` config → whisper default;
-    ADR-11). Returns None on any failure (the caller degrades to a notice line)."""
-    try:
-        from .kit.speech import transcribe_audio
-        from .kit.workspaces import repository, storage
-
-        doc = repository.get_document(ref.doc_id)
-        if not doc or doc.get("workspace_id") != ref.workspace_id:
-            return None
-        raw = storage.read_blob(doc["storage_key"])
-        if not raw:
-            return None
-        fmt = {
-            "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav",
-            "audio/x-wav": "wav", "audio/ogg": "ogg", "audio/webm": "webm",
-            "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac",
-            "audio/flac": "flac",
-        }.get(ref.media_type, "webm")
-        result = await transcribe_audio(raw, audio_format=fmt, usage_source="chat_stt")
-        return (result.text or "").strip() or None
-    except Exception as e:  # noqa: BLE001 — fallback is best-effort
-        logger.warning(f"Chat audio transcription failed for doc {ref.doc_id}: {e}")
-        return None
-
-
-def _strip_message_audio(messages, accepts_audio):
-    """Audio twin of ``_strip_message_images`` — drop audio refs from history
-    when the current model can't hear them (transcript lines already ride the
-    turn text, so nothing is lost)."""
-    if accepts_audio:
-        return messages
-    return [m.model_copy(update={"audio": None}) if m.audio else m for m in messages]
+# Media-input parsing/gating moved to the neutral seam (agent/media_input.py,
+# ADR-11) so the delegation executor shares the exact same gates as the chat
+# turn. Aliased under the historical underscore names used by the (huge)
+# chat-stream generator below.
+from .agent.media_input import (  # noqa: E402
+    gate_audio_input as _gate_audio_input,
+    gate_vision_images as _gate_vision_images,
+    model_accepts_audio as _model_accepts_audio,
+    model_accepts_vision as _model_accepts_vision,
+    parse_audio_refs as _parse_audio_refs,
+    parse_image_refs as _parse_image_refs,
+    strip_message_audio as _strip_message_audio,
+    strip_message_images as _strip_message_images,
+)
 
 
 def _resolve_project_channel_workspace(workspace_id, session_id):
@@ -832,10 +677,13 @@ def _append_team_blocks(blocks: list, agent, active_workflow, session) -> None:
 
 
 async def _run_image_generation(
-    prompt, *, provider, model_id, task_id, workspace_id, user_id, conversation_id, agent_id
+    prompt, *, provider, model_id, task_id, workspace_id, user_id, conversation_id, agent_id,
+    input_refs=None,
 ):
     """Generate an image for a direct image-mode turn.
 
+    ``input_refs`` — the turn's attached image MediaRefs — make it image-to-image
+    (attach a picture, say "restyle this", talking straight to an image model).
     Returns ``(exhibit_wire | None, full_content, tool_turns_data)``. The exhibit is
     persisted as a synthetic ``present_exhibit`` tool turn so the existing reload path
     rebuilds it (exhibits have no persistence of their own). Never raises — a failure
@@ -847,7 +695,7 @@ async def _run_image_generation(
     res = await generate_image_exhibit(
         prompt, provider=provider, model=model_id, exhibit_id=f"exh_img_{task_id}",
         workspace_id=workspace_id, user_id=user_id, conversation_id=conversation_id,
-        agent_id=agent_id,
+        agent_id=agent_id, input_refs=input_refs,
     )
     wire = res["exhibit_wire"]
     if wire is None:
@@ -2517,6 +2365,14 @@ async def agent_chat_stream(request):
                 message_for_context = (
                     message_for_context + "\n\n" + "\n".join(audio_transcript_lines)
                 ).strip()
+            # Make attachment document_ids model-visible: the agent can then
+            # view_image them or hand them to a specialist via the delegation
+            # `media` param (a direct-input specialist has no tool loop to fetch
+            # anything — the id line is how media reaches it upfront).
+            from .agent.media_input import attachment_reference_line
+            _attach_line = attachment_reference_line(user_images, user_audio)
+            if _attach_line:
+                message_for_context = f"{message_for_context}\n\n{_attach_line}".strip()
 
             # Direct mode (bare turn): the model receives ONLY the user message — no
             # system prompt, no memory, no tools. Manual via the agent profile, and
@@ -3155,6 +3011,9 @@ async def agent_chat_stream(request):
                     message, provider=provider, model_id=model_id, task_id=task_id,
                     workspace_id=workspace_id, user_id=(agent.config.user_id or "default"),
                     conversation_id=conv_id, agent_id=getattr(agent_profile, "agent_id", None),
+                    # Attached images become image-to-image sources — a direct-input
+                    # image model has no tool loop; upfront is its only chance.
+                    input_refs=user_images or None,
                 )
                 if wire is not None:
                     yield _sse("exhibit", wire)

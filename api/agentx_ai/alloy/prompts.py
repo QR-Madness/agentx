@@ -98,13 +98,13 @@ def build_adhoc_roster_prompt(self_agent_id: str) -> str | None:
     Teammates come from ``list_adhoc_delegation_targets`` — the same source as
     the ``delegate_to`` tool enum, so the roster and the tool can never drift.
     """
-    from .delegation_tool import list_adhoc_delegation_targets
+    from .delegation_tool import list_adhoc_delegation_targets, modality_suffix
 
     targets = list_adhoc_delegation_targets(self_agent_id)
     if not targets:
         return None
     lines = "\n".join(
-        f"- {name} (id: {aid}) — {hint or 'no specialty provided'}"
+        f"- {name} (id: {aid}){modality_suffix(aid)} — {hint or 'no specialty provided'}"
         for aid, name, hint in targets
     )
     return f"{ADHOC_ROSTER_HEADER}Your teammates:\n{lines}"
