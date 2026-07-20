@@ -262,6 +262,26 @@ through the gateway/tunnel.
 **Source:** deployment overhaul plan (this session); `manager/README` posture in
 `docs-site/.../deployment/manager.md`.
 
+### ADR-11 — Capabilities live in neutral modules; surfaces consume, never own
+**Decision:** a *capability* (speech, media storage, content blocks, recall, exhibits, …) lives in a
+neutral module (`kit/`, `providers/`, `content_blocks.py`); a *surface* (a chat turn, an Ambassador
+Inquiry, the Deck, voice mode, a background job) **consumes** capabilities and never owns one. Two
+enforcement teeth: (1) **import direction is a tested invariant** — core packages must not import the
+Ambassador family (`tests.CapabilitySeamBoundaryTest`, the api-side twin of the client's
+`importBoundary.test.ts`); (2) **extract-then-consume** — when surface B needs what surface A grew,
+the capability moves to a neutral module *first* (`kit/speech.py` is the template: the Ambassador
+kept only its profile-precedence wrapper + registry, and chat TTS/STT consume the same seam).
+**Why:** capabilities were landing surface-first (speech grew inside the Ambassador because voice
+mode needed it; chat then had to fork-or-reach-in), and every such landing widens the parallel-stack
+fork between Inquiries and conversations. The long-term convergence — an Inquiry as a *conversation
+with a different policy* (read-only belt, sidecar privacy), not a different substrate — only stays
+reachable if the gap stops widening now (phased plan: `todo/backlog/foundation.md`).
+**Boundary note:** `views.py` endpoints may import the Ambassador (they ARE its surface); the
+Ambassador may import `kit/*` freely. Config keys for extracted capabilities keep their historical
+namespace until a deliberate migration (e.g. `ambassador.speech_model` pending a `speech.*` alias).
+**Source:** multi-modal follow-ups session (v0.21.238), user direction on the Inquiry/conversation
+seam.
+
 ### ADR-11 — Model roles are an implicit overlay tier; explicit values always win
 **Decision:** the scattered utility-model settings cluster into three roles
 (`models.roles.{fast_utility,deep_reasoning,summarizer}`, single source `agentx_ai/model_roles.py`).

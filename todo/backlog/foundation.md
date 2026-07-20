@@ -89,3 +89,17 @@
 > The **Settings Manifest** (keystone) is the bridge: foundational *and* the precondition for the
 > meta-layer — reasonable once the above land, since it directly cleans up settings + validation.
 
+
+7. **Inquiry ↔ conversation convergence (ADR-11 endgame)** — the Ambassador's Inquiry threads are a
+   *parallel substrate* (Redis sidecar, own digests, own context assembly) that re-implements
+   conversation machinery a feature at a time; left alone, the two stacks drift into "massive
+   adversaries." Direction: an Inquiry becomes **a conversation with a different policy** (read-only
+   tool belt, sidecar privacy, no memory extraction, never pollutes transcripts) — policies over ONE
+   substrate, not a second substrate. Phasing: (a) hold the line — ADR-11's import boundary
+   (`CapabilitySeamBoundaryTest`) + extract-then-consume keep new capabilities neutral (speech seam
+   `[v0.21.238]` was first); (b) define the shared thread primitive (turns + assembly + read tools)
+   both surfaces call; (c) migrate Inquiry storage behind that interface (whether rows land in
+   `conversation_logs` with a `kind` flag or stay Redis is an implementation detail once the
+   interface is one). Do (b)/(c) as their own slice AFTER the streaming golden corpus covers
+   ambassador replay — same "risky move behind goldens" rule as the views monolith
+   (engineering-hardening.md).

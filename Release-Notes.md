@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.237 -->
+<!-- release-version: 0.21.238 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -82,6 +82,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Exhibits went multi-modal**: new audio/video/markdown-text elements plus a side-by-side
   `grid` layout; media an external MCP tool returns (screenshots, clips) now renders as an
   exhibit instead of being silently dropped; and generated media survives reload.
+- **Under the hood, media got honest accounting**: speech became a neutral capability every surface
+  shares (one voice config, enforced by an architecture test), context budgeting now sees the true
+  weight of attached images and audio, and long sessions stop accumulating media memory in the app.
 
 - **Memory got a face**: a custom glowing-brain mark — pulsing glow, twinkling synapses — replaces
   the database stack in the command palette, the Memory explorer, and Settings.

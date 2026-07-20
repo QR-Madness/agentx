@@ -9803,6 +9803,183 @@ class PresentExhibitToolTest(TestCase):
         self.assertEqual(_emit_exhibit_event(tc), [])
 
 
+class CapabilitySeamBoundaryTest(TestCase):
+    """ADR-11 enforcement: capabilities live in neutral modules; surfaces consume,
+    never own. Core packages must NOT import the Ambassador family — when a core
+    path needs something the Ambassador has, the capability gets extracted to a
+    neutral module first (kit/speech.py is the template). The api-side twin of
+    the client's importBoundary.test.ts."""
+
+    # Packages that must stay ambassador-free (capability + infrastructure layers).
+    CORE_PACKAGES = (
+        "streaming", "providers", "kit", "mcp", "alloy", "drafting",
+        "reasoning", "prompts", "logging_kit",
+    )
+    # The ambassador family itself (surface-side; free to import its own modules).
+    AMBASSADOR_FAMILY = ("ambassador", "ambassador_storage", "ambassador_tools", "aide_swarm")
+
+    _IMPORT_RE = re.compile(
+        r"^\s*(?:from|import)\s+[\w.]*\b(?:" + "|".join(AMBASSADOR_FAMILY) + r")\b",
+        re.MULTILINE,
+    )
+
+    def _offenders(self, root) -> list[str]:
+        hits = []
+        for path in root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if self._IMPORT_RE.search(text):
+                hits.append(str(path.relative_to(root.parent)))
+        return hits
+
+    def test_core_packages_do_not_import_the_ambassador(self):
+        from pathlib import Path
+        base = Path(__file__).resolve().parent
+        offenders: list[str] = []
+        for pkg in self.CORE_PACKAGES:
+            pkg_dir = base / pkg
+            if pkg_dir.is_dir():
+                offenders += self._offenders(pkg_dir)
+        # agent/ core modules too — everything except the ambassador family.
+        for path in (base / "agent").glob("*.py"):
+            if path.stem in self.AMBASSADOR_FAMILY:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if self._IMPORT_RE.search(text):
+                offenders.append(f"agent/{path.name}")
+        self.assertEqual(
+            offenders, [],
+            "Core modules import the Ambassador — extract the capability to a "
+            f"neutral kit module instead (ADR-11). Offenders: {offenders}",
+        )
+
+
+class CapabilityProbeTest(TestCase):
+    """The shared warm-once capability probe (providers/capabilities.py) — the one
+    definition behind the image/vision/audio modality gates."""
+
+    def _provider(self, cold_caps, warm_caps=None):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        state = {"caps": cold_caps}
+
+        async def _warm():
+            if warm_caps is not None:
+                state["caps"] = warm_caps
+
+        return SimpleNamespace(
+            get_capabilities=lambda _mid: state["caps"],
+            fetch_models=AsyncMock(side_effect=_warm),
+        )
+
+    def test_predicate_true_skips_warm(self):
+        from asgiref.sync import async_to_sync
+        from types import SimpleNamespace
+        from agentx_ai.providers.capabilities import probe_model_capability
+
+        caps = SimpleNamespace(input_modalities=["text", "audio"])
+        provider = self._provider(caps)
+        ok = async_to_sync(probe_model_capability)(
+            provider, "m", lambda c: "audio" in c.input_modalities,
+        )
+        self.assertTrue(ok)
+        provider.fetch_models.assert_not_awaited()
+
+    def test_cold_caps_warm_once_then_recheck(self):
+        from asgiref.sync import async_to_sync
+        from types import SimpleNamespace
+        from agentx_ai.providers.capabilities import probe_model_capability
+
+        cold = SimpleNamespace(input_modalities=["text"])
+        warm = SimpleNamespace(input_modalities=["text", "audio"])
+        provider = self._provider(cold, warm)
+        ok = async_to_sync(probe_model_capability)(
+            provider, "m", lambda c: "audio" in c.input_modalities,
+        )
+        self.assertTrue(ok)
+        provider.fetch_models.assert_awaited_once()
+
+    def test_probe_failure_returns_false(self):
+        from asgiref.sync import async_to_sync
+        from types import SimpleNamespace
+        from agentx_ai.providers.capabilities import probe_model_capability
+
+        def _boom(_mid):
+            raise RuntimeError("catalog offline")
+
+        provider = SimpleNamespace(get_capabilities=_boom)
+        ok = async_to_sync(probe_model_capability)(provider, "m", lambda c: True)
+        self.assertFalse(ok)
+
+    def test_modality_helpers(self):
+        from types import SimpleNamespace
+        from agentx_ai.providers.capabilities import has_input_modality, has_output_modality
+
+        caps = SimpleNamespace(input_modalities=["Text", "AUDIO"], output_modalities=["image"])
+        self.assertTrue(has_input_modality(caps, "audio"))
+        self.assertFalse(has_input_modality(caps, "image"))
+        self.assertTrue(has_output_modality(caps, "image"))
+        self.assertFalse(has_output_modality(SimpleNamespace(), "image"))
+
+
+class MediaTokenEstimateTest(TestCase):
+    """Media-aware token budgeting: attached refs count as modality tokens so the
+    ledger stops budgeting a media turn as its text alone."""
+
+    def test_text_only_message_unchanged(self):
+        from agentx_ai.providers.base import Message, MessageRole
+        from agentx_ai.tokens import estimate_media_tokens
+
+        self.assertEqual(
+            estimate_media_tokens(Message(role=MessageRole.USER, content="hello")), 0,
+        )
+
+    def test_images_weigh_flat_estimate(self):
+        from agentx_ai.providers.base import MediaRef, Message, MessageRole
+        from agentx_ai.tokens import IMAGE_TOKEN_ESTIMATE, estimate_media_tokens
+
+        refs = [
+            MediaRef(workspace_id="w", doc_id=f"d{i}", media_type="image/png")
+            for i in range(2)
+        ]
+        msg = Message(role=MessageRole.USER, content="see these", images=refs)
+        self.assertEqual(estimate_media_tokens(msg), 2 * IMAGE_TOKEN_ESTIMATE)
+
+    def test_audio_weighs_by_blob_size_clamped(self):
+        from unittest.mock import patch
+        from agentx_ai.providers.base import MediaRef, Message, MessageRole
+        from agentx_ai import tokens as tokens_mod
+        from agentx_ai.tokens import AUDIO_TOKEN_MAX, AUDIO_TOKEN_MIN, estimate_media_tokens
+
+        msg = Message(
+            role=MessageRole.USER, content="",
+            audio=[MediaRef(workspace_id="w", doc_id="d1", media_type="audio/wav")],
+        )
+        # ~1MB clip → 1_000_000 / 500 = 2000 tokens (between the clamps).
+        with patch.object(tokens_mod, "_audio_blob_size", return_value=1_000_000):
+            self.assertEqual(estimate_media_tokens(msg), 2000)
+        # Tiny clip → floor; huge clip → ceiling.
+        with patch.object(tokens_mod, "_audio_blob_size", return_value=1_000):
+            self.assertEqual(estimate_media_tokens(msg), AUDIO_TOKEN_MIN)
+        with patch.object(tokens_mod, "_audio_blob_size", return_value=50_000_000):
+            self.assertEqual(estimate_media_tokens(msg), AUDIO_TOKEN_MAX)
+
+    def test_estimate_messages_includes_media(self):
+        from unittest.mock import patch
+        from agentx_ai.providers.base import MediaRef, Message, MessageRole
+        from agentx_ai import tokens as tokens_mod
+        from agentx_ai.tokens import IMAGE_TOKEN_ESTIMATE, estimate_messages
+
+        text_only = [Message(role=MessageRole.USER, content="hi")]
+        with_media = [Message(
+            role=MessageRole.USER, content="hi",
+            images=[MediaRef(workspace_id="w", doc_id="d", media_type="image/png")],
+        )]
+        with patch.object(tokens_mod, "_audio_blob_size", return_value=0):
+            delta = estimate_messages(with_media) - estimate_messages(text_only)
+        self.assertEqual(delta, IMAGE_TOKEN_ESTIMATE)
+
+
 class MultiModalContentTest(TestCase):
     """The multi-modal payload foundation: MCP/ACP content blocks, the MCP media
     passthrough flatten, audio-input provider conversion, and provider media capture."""

@@ -1305,7 +1305,7 @@ def generate_speech(text: str, voice: str | None = None) -> dict[str, Any]:
     ctx = current_context()
     user_id = ctx.user_id if ctx else "default"
 
-    from ..agent.ambassador import SpeechUnavailable
+    from ..kit.speech import SpeechUnavailable
 
     try:
         from ..agent.audio_gen import generate_and_store_speech

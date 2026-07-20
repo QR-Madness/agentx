@@ -69,30 +69,16 @@ async def _model_outputs_image(provider, model_id, caps) -> bool:
 
 async def _model_accepts_vision(provider, model_id, caps) -> bool:
     """True when the model accepts image *input* (vision): ``supports_vision`` or
-    ``input_modalities`` includes ``image``.
+    ``input_modalities`` includes ``image``. One-line predicate over the shared
+    warm-once probe (``providers.capabilities``); ``False`` on any probe error
+    (degrade to text-only rather than sending blocks a model would 400 on)."""
+    from .providers.capabilities import has_input_modality, probe_model_capability
 
-    Mirrors ``_model_outputs_image``: an uncached model reports defaults, so warm the
-    provider catalog once when caps look cold and re-check. Never raises — returns
-    ``False`` on any probe error (degrade to text-only rather than wrongly sending
-    image blocks to a model that would 400 on them).
-    """
-    def _vision(c) -> bool:
-        if getattr(c, "supports_vision", False):
-            return True
-        mods = [str(m).lower() for m in (getattr(c, "input_modalities", None) or [])]
-        return "image" in mods
-
-    try:
-        if _vision(caps):
-            return True
-        warm = getattr(provider, "fetch_models", None)
-        if warm is not None:
-            await warm()
-            caps = provider.get_capabilities(model_id)
-        return _vision(caps)
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[vision-detect] capability probe failed, treating as non-vision: {e}")
-        return False
+    return await probe_model_capability(
+        provider, model_id,
+        lambda c: getattr(c, "supports_vision", False) or has_input_modality(c, "image"),
+        caps, tag="vision-detect",
+    )
 
 
 def _parse_image_refs(raw_images):
@@ -153,24 +139,15 @@ def _parse_audio_refs(raw_audio):
 
 async def _model_accepts_audio(provider, model_id, caps) -> bool:
     """True when the model accepts audio *input* (``input_modalities`` includes
-    ``audio``). Mirrors ``_model_accepts_vision`` including the one-shot catalog
-    warm for cold caps. Never raises — degrade to the STT-transcript fallback
-    rather than sending audio blocks a model would 400 on."""
-    def _audio(c) -> bool:
-        mods = [str(m).lower() for m in (getattr(c, "input_modalities", None) or [])]
-        return "audio" in mods
+    ``audio``). One-line predicate over the shared warm-once probe; ``False`` on
+    any probe error — degrade to the STT-transcript fallback rather than sending
+    audio blocks a model would 400 on."""
+    from .providers.capabilities import has_input_modality, probe_model_capability
 
-    try:
-        if _audio(caps):
-            return True
-        warm = getattr(provider, "fetch_models", None)
-        if warm is not None:
-            await warm()
-            caps = provider.get_capabilities(model_id)
-        return _audio(caps)
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[audio-detect] capability probe failed, treating as non-audio: {e}")
-        return False
+    return await probe_model_capability(
+        provider, model_id, lambda c: has_input_modality(c, "audio"),
+        caps, tag="audio-detect",
+    )
 
 
 # Native `input_audio` clips beyond this raw size fall back to STT (a base64
@@ -226,11 +203,11 @@ async def _gate_audio_input(user_audio, accepts_audio, emit):
 
 
 async def _transcribe_ref(ref) -> str | None:
-    """Transcribe one stored clip via the Ambassador's STT seam (shared model
-    resolution: profile → ``ambassador.transcription_model`` → whisper default).
-    Returns None on any failure (the caller degrades to a notice line)."""
+    """Transcribe one stored clip via the neutral speech seam (shared model
+    resolution: ``ambassador.transcription_model`` config → whisper default;
+    ADR-11). Returns None on any failure (the caller degrades to a notice line)."""
     try:
-        from .agent.ambassador import get_ambassador
+        from .kit.speech import transcribe_audio
         from .kit.workspaces import repository, storage
 
         doc = repository.get_document(ref.doc_id)
@@ -245,8 +222,8 @@ async def _transcribe_ref(ref) -> str | None:
             "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "aac",
             "audio/flac": "flac",
         }.get(ref.media_type, "webm")
-        text = await get_ambassador().transcribe(raw, audio_format=fmt)
-        return (text or "").strip() or None
+        result = await transcribe_audio(raw, audio_format=fmt, usage_source="chat_stt")
+        return (result.text or "").strip() or None
     except Exception as e:  # noqa: BLE001 — fallback is best-effort
         logger.warning(f"Chat audio transcription failed for doc {ref.doc_id}: {e}")
         return None

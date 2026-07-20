@@ -355,7 +355,11 @@ class Agent:
 
     def _model_supports_tools(self) -> bool:
         """Whether the agent's chat model supports tool/function calling. Defaults to
-        True on any uncertainty (never strip tools from a capable model on a probe miss)."""
+        True on any uncertainty (never strip tools from a capable model on a probe miss).
+
+        Deliberately NOT on ``providers.capabilities.probe_model_capability``: this
+        gate is sync (bridged warm) and fails OPEN, the shared probe is async and
+        fails closed — opposite polarity, opposite failure cost."""
         try:
             provider, model_id, _ = self.registry.resolve_with_fallback(self.config.default_model)
             caps = provider.get_capabilities(model_id)

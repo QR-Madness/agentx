@@ -5800,6 +5800,10 @@ components:
         use_memory:
           type: boolean
           default: true
+          description: >-
+            False makes the conversation EPHEMERAL, not just recall-free — turns are
+            not persisted to the durable transcript (conversation_logs) at all, so the
+            conversation won't survive a reload and is never memory-extracted.
         workspace_id:
           type: string
           description: Optional attached document workspace (Document RAG).
