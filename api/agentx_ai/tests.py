@@ -9980,6 +9980,132 @@ class MediaTokenEstimateTest(TestCase):
         self.assertEqual(delta, IMAGE_TOKEN_ESTIMATE)
 
 
+class MediaDelegationTest(TestCase):
+    """Media rides delegation: document-id resolution, the delegation `media` arg,
+    image-to-image plumbing, and roster modality tags."""
+
+    def test_resolve_media_docs_types_scope_and_notes(self):
+        from unittest.mock import patch
+        from agentx_ai.agent.media_input import resolve_media_docs
+
+        docs = {
+            "img1": {"workspace_id": "ws_a", "content_type": "image/png"},
+            "aud1": {"workspace_id": "ws_home", "content_type": "audio/wav"},
+            "vid1": {"workspace_id": "ws_a", "content_type": "video/mp4"},
+            "far1": {"workspace_id": "ws_other", "content_type": "image/png"},
+        }
+        with patch("agentx_ai.kit.workspaces.repository.get_document", side_effect=docs.get), \
+             patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace",
+                   return_value={"id": "ws_home"}):
+            images, audio, notes = resolve_media_docs(
+                ["img1", "aud1", "vid1", "far1", "gone1", ""],
+                user_id="u", workspace_id="ws_a",
+            )
+        self.assertEqual([r.doc_id for r in images], ["img1"])
+        self.assertEqual([r.doc_id for r in audio], ["aud1"])
+        # video → note; out-of-scope → note; missing → note; blank → skipped.
+        self.assertEqual(len(notes), 3)
+        joined = " ".join(notes)
+        self.assertIn("vid1", joined)
+        self.assertIn("far1", joined)
+        self.assertIn("gone1", joined)
+
+    def test_delegation_media_arg_sanitizes(self):
+        from agentx_ai.streaming.tool_loop import _delegation_media_arg
+
+        self.assertIsNone(_delegation_media_arg({}))
+        self.assertIsNone(_delegation_media_arg({"media": []}))
+        self.assertIsNone(_delegation_media_arg({"media": 42}))
+        self.assertEqual(_delegation_media_arg({"media": "doc_1"}), ["doc_1"])
+        self.assertEqual(
+            _delegation_media_arg({"media": [" doc_1 ", None, "", "doc_2"]}),
+            ["doc_1", "doc_2"],
+        )
+
+    def test_delegation_tool_schema_offers_media(self):
+        from unittest.mock import patch
+        from agentx_ai.alloy.delegation_tool import build_adhoc_delegation_tool
+
+        with patch(
+            "agentx_ai.alloy.delegation_tool.list_adhoc_delegation_targets",
+            return_value=[("helper", "Helper", "does things")],
+        ):
+            desc = build_adhoc_delegation_tool("me")
+        media = desc["input_schema"]["properties"].get("media")
+        self.assertIsNotNone(media)
+        self.assertEqual(media["type"], "array")
+        self.assertNotIn("media", desc["input_schema"]["required"])
+
+    def test_generate_and_store_image_passes_input_images(self):
+        from asgiref.sync import async_to_sync
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+        from agentx_ai.agent.image_gen import generate_and_store_image
+        from agentx_ai.providers.base import MediaRef
+
+        provider = SimpleNamespace(
+            name="openrouter",
+            generate_image=AsyncMock(
+                return_value=SimpleNamespace(image=b"x", content_type="image/png")
+            ),
+        )
+        refs = [MediaRef(workspace_id="w", doc_id="d1", media_type="image/png")]
+        with patch("agentx_ai.providers.base.resolve_media_data",
+                   return_value=("image/png", "aGk=")), \
+             patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace",
+                   return_value={"id": "ws_home"}), \
+             patch("agentx_ai.kit.workspaces.service.store_media", return_value={"id": "doc_out"}), \
+             patch("agentx_ai.agent.usage_ledger.record_usage"):
+            async_to_sync(generate_and_store_image)(
+                "make it violet", provider=provider, model="m", user_id="u", input_refs=refs,
+            )
+        kwargs = provider.generate_image.call_args.kwargs
+        self.assertEqual(kwargs["input_images"], [("image/png", "aGk=")])
+
+    def test_attachment_reference_line(self):
+        from agentx_ai.agent.media_input import attachment_reference_line
+        from agentx_ai.providers.base import MediaRef
+
+        self.assertIsNone(attachment_reference_line([], []))
+        line = attachment_reference_line(
+            [MediaRef(workspace_id="w", doc_id="d_img", media_type="image/png")],
+            [MediaRef(workspace_id="w", doc_id="d_aud", media_type="audio/wav")],
+        )
+        assert line is not None
+        self.assertIn("d_img (image/png)", line)
+        self.assertIn("d_aud (audio/wav)", line)
+        self.assertIn("view_image", line)
+
+    def test_modality_suffix_reads_cached_caps(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.alloy.delegation_tool import modality_suffix
+
+        caps = SimpleNamespace(
+            supports_vision=True,
+            input_modalities=["text", "image", "audio"],
+            output_modalities=["text"],
+        )
+        provider = SimpleNamespace(get_capabilities=lambda _m: caps)
+        profile = SimpleNamespace(default_model="openrouter:x")
+        pm = SimpleNamespace(get_profile_by_agent_id=lambda _a: profile)
+        registry = SimpleNamespace(get_provider_for_model=lambda _m: (provider, "x"))
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.providers.registry.get_registry", return_value=registry):
+            suffix = modality_suffix("helper")
+        self.assertEqual(suffix, " [sees images · hears audio]")
+
+    def test_modality_suffix_never_raises(self):
+        from unittest.mock import patch
+        from agentx_ai.alloy.delegation_tool import modality_suffix
+
+        with patch(
+            "agentx_ai.agent.profiles.get_profile_manager",
+            side_effect=RuntimeError("cold start"),
+        ):
+            self.assertEqual(modality_suffix("whoever"), "")
+
+
 class MultiModalContentTest(TestCase):
     """The multi-modal payload foundation: MCP/ACP content blocks, the MCP media
     passthrough flatten, audio-input provider conversion, and provider media capture."""

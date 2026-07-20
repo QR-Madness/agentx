@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.238 -->
+<!-- release-version: 0.21.239 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -82,6 +82,15 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Exhibits went multi-modal**: new audio/video/markdown-text elements plus a side-by-side
   `grid` layout; media an external MCP tool returns (screenshots, clips) now renders as an
   exhibit instead of being silently dropped; and generated media survives reload.
+- **Agents can hand media to each other now**: delegations carry images and audio — a supervisor
+  passes the attachment's id and the specialist receives it inside its first message, matched to
+  what it can handle (vision models see it, audio models hear it, text models get a transcript).
+  The team roster now advertises who *sees images*, *hears audio*, or *makes images*, so routing
+  media work to the right agent is autonomous.
+- **Image editing works end-to-end**: attach a picture and say "restyle this" — to an image-model
+  agent directly, through the `generate_image` tool (new source-image support), or via delegation
+  to an image specialist. Previously every one of these paths silently dropped the source image.
+
 - **Under the hood, media got honest accounting**: speech became a neutral capability every surface
   shares (one voice config, enforced by an architecture test), context budgeting now sees the true
   weight of attached images and audio, and long sessions stop accumulating media memory in the app.

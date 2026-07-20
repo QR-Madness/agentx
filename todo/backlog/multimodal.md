@@ -11,16 +11,15 @@
 > see Development-Notes → "Multi-modal content protocol".
 
 Open:
-- [ ] **Media-capable delegation routing** (the autonomy piece) — `delegate_to`/`delegate_start`
-      carry a **text task only** today: attached images/audio can't ride a delegation at all, so a
-      supervisor physically can't hand media to a specialist. Slice: (1) `media` param on the
-      delegation tools (list of `MediaRef`s, validated like chat's `images[]`/`audio[]`, injected
-      into the specialist's first turn via the existing converters); (2) the delegation roster block
-      + tool descriptions annotate each member's modalities derived from its model's
-      `input_modalities` via the shared probe (`providers/capabilities.py`) — e.g.
-      `Analyst 👁 sees images · Scout 🎧 hears audio` — so the supervisor routes media
-      autonomously; (3) capability mismatch degrades honestly (STT transcript for audio → text-only
-      specialist, vision refs stripped with a note), reusing the chat gates.
+- [x] **Media-capable delegation routing** — **shipped `[v0.21.239]`**: `media` param on
+      `delegate_to`/`delegate_start` (document ids, view_image-style access checks via
+      `agent/media_input.py::resolve_media_docs`), injected into the specialist's FIRST message
+      capability-gated (vision strip + note; audio native-or-transcript) — direct-input
+      specialists get everything upfront; image-only specialists get **image-to-image**
+      (handed images become `generate_image` inputs). Roster + tool descriptions carry
+      modality tags (`[sees images · hears audio · makes images]`, cached caps). Chat turns
+      surface attachment document_ids in a model-visible line so supervisors can hand them over.
+      *Remainder: nothing — video joins via the item below.*
 - [ ] **Video input to models** — render-only today (deliberate). When wired: gate on
       `input_modalities` has `video` (Gemini-class via OpenRouter), same `MediaRef` seam, hard size
       caps, and *no* silent fallback (video has no cheap transcript analog — a can't-see model gets

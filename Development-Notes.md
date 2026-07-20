@@ -404,6 +404,30 @@ as its text alone (media used to materialize as base64 only at provider-conversi
 budget fit). **Client blob cache:** `resolveMediaBlob` is LRU-capped (64) with `revokeObjectURL` on
 eviction — object URLs pin their Blobs, and the old cache never released anything.
 
+**Media-capable delegation + image-to-image (v0.21.239).** The autonomy piece: media now *rides*
+delegation, and image workflows can edit. **`agent/media_input.py`** (ADR-11 extraction) is the
+neutral media-input capability — the chat turn's parse/gate/strip helpers moved out of views
+(aliased back under their underscore names), plus `resolve_media_docs(document_ids)` (ids → typed
+MediaRefs, view_image-style access rule: attached workspace or Home; unusable ids → notes, never
+raises) and `attachment_reference_line` (a model-visible line naming the turn's attachment
+document_ids so the agent can `view_image` them or hand them over). **Delegation:**
+`delegate_to`/`delegate_start` gain a `media` param (document ids; sanitized by
+`tool_loop._delegation_media_arg`, kwarg omitted when empty so simple test fakes keep working). The
+executor resolves + capability-gates the refs onto the specialist's **first** message using the
+exact chat gates (vision strip + note; audio native-or-transcript) — the load-bearing case is a
+**direct-input specialist** (no tool loop, no harness: upfront is its only chance). An image-only
+specialist routes handed images into **image-to-image**: `provider.generate_image(...,
+input_images=[(mime, b64)])` (OpenRouter sends them as `image_url` data-URI blocks alongside the
+prompt; edit-capable models like gemini-flash-image use them, others 4xx → degrade note).
+`generate_and_store_image`/`generate_image_exhibit` plumb `input_refs`; the `generate_image` tool
+gains `source_document_ids` (edit/restyle/variation from the catalog or attachments); the direct
+image-mode chat turn passes the turn's attached images (`views._run_image_generation(input_refs=…)`)
+— attach a picture to an image-model profile and say "restyle this". **Roster routing:** delegation
+tool bullets + the ad-hoc roster block append `modality_suffix(agent_id)` tags
+(`[sees images · hears audio · makes images]`, **cached** caps only — no catalog warm in sync
+builders; advisory) so a supervisor can route media to an agent that can actually handle it.
+Tests: `tests.MediaDelegationTest`.
+
 ### Agent Shells (`kit/shell/`, v0.21.108)
 
 > **Index card (ex-CLAUDE.md):** two backends via `dispatch.py` (per-workspace `shell_backend`):

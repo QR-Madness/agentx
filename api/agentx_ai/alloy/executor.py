@@ -103,6 +103,7 @@ class AlloyExecutor:
         mode: str = "await",
         parent_delegation_id: str | None = None,
         delegation_id: str | None = None,
+        media: list[str] | None = None,
     ) -> AsyncGenerator[tuple[str, str]]:
         """
         Run one specialist for one task.
@@ -120,6 +121,13 @@ class AlloyExecutor:
         delegation to its parent (null at the top level — reserved for the
         delegation tree). ``delegation_id`` may be pre-minted by the caller so a
         dispatch receipt can cite it before this generator first yields.
+
+        ``media`` is an optional list of **document_ids** the supervisor handed
+        over (images/audio). They resolve + access-check via the neutral seam
+        (``agent.media_input.resolve_media_docs``) and are delivered inside the
+        specialist's FIRST message, capability-gated — the load-bearing case is
+        a direct-input specialist (image model, direct mode) that has no tool
+        loop and can only receive context upfront.
         """
         # A caller-minted id lets the tool loop cite the work order in its
         # dispatch receipt before this generator first yields.
@@ -225,6 +233,18 @@ class AlloyExecutor:
         # specialist themselves) and routinely confuses smaller models into
         # emitting fake delegation JSON as their assistant text.
 
+        # ------- resolve handed-over media (document ids → typed refs) -------
+        # Same access rule as view_image: attached workspace or the user's Home.
+        # Unusable ids become notes appended to the task, never failures.
+        from ..agent.media_input import resolve_media_docs
+        from ..mcp.internal_context import current_context as _cur_ctx
+        _octx = _cur_ctx()
+        media_images, media_audio, media_notes = resolve_media_docs(
+            media,
+            user_id=_octx.user_id if _octx else (self.supervisor.config.user_id or "default"),
+            workspace_id=_octx.workspace_id if _octx else None,
+        )
+
         # ------- compose specialist messages -------
         messages = self._build_specialist_messages(profile, task, specialist)
 
@@ -232,6 +252,44 @@ class AlloyExecutor:
         provider, model_id, _ = specialist.registry.resolve_with_fallback(
             specialist.config.default_model
         )
+
+        # ------- capability-gate the media onto the specialist's first message ----
+        # The exact chat-turn gates (media_input): vision refs ride only a seeing
+        # model; audio rides natively or degrades to an inline transcript. The
+        # gated refs/lines land on the LAST message (the user-role task) so a
+        # direct-input specialist — no tools, no harness — still gets everything.
+        if media_images or media_audio or media_notes:
+            from ..agent.media_input import (
+                gate_audio_input, gate_vision_images, model_accepts_audio,
+                model_accepts_vision,
+            )
+
+            def _noop_emit(*_a, **_k) -> None:  # delegation has no status feed
+                return None
+
+            sees = await model_accepts_vision(provider, model_id)
+            gated_images = gate_vision_images(media_images, sees, _noop_emit)
+            hears = await model_accepts_audio(provider, model_id)
+            gated_audio, transcript_lines = await gate_audio_input(
+                media_audio, hears, _noop_emit,
+            )
+            extra_lines = list(transcript_lines)
+            if media_images and not sees:
+                extra_lines.append(
+                    f"[{len(media_images)} image(s) were handed over, but this "
+                    "model can't see images]"
+                )
+            extra_lines += [f"[{n}]" for n in media_notes]
+
+            last = messages[-1]
+            content = last.content
+            if extra_lines:
+                content = (content + "\n\n" + "\n".join(extra_lines)).strip()
+            messages[-1] = last.model_copy(update={
+                "content": content,
+                "images": gated_images or None,
+                "audio": gated_audio or None,
+            })
         # An image-OUTPUT-only specialist (e.g. gemini-flash-image, flux) makes a
         # picture, not text. Its chat completion carries the image in a field the tool
         # loop ignores (StreamChunk has no image field) → "empty completion" and no
@@ -276,13 +334,17 @@ class AlloyExecutor:
         t0 = time.perf_counter()
         try:
             if image_only:
-                # Image-generation delegation (no tool loop): the task is the prompt.
+                # Image-generation delegation (no tool loop): the task is the prompt,
+                # and any handed-over images become image-to-image inputs (edit/
+                # restyle/variation) — the case that made media-less delegation
+                # debilitating for image workflows.
                 from ..agent.image_gen import generate_image_exhibit
                 res = await generate_image_exhibit(
                     task, provider=provider, model=model_id,
                     exhibit_id=f"exh_img_{delegation_id}",
                     workspace_id=_ws, user_id=_uid,
                     conversation_id=_conv, agent_id=profile.agent_id,
+                    input_refs=media_images or None,
                 )
                 if res["exhibit_wire"] is not None:
                     forwarded_exhibits.append(res["exhibit_wire"])

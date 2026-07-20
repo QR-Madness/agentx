@@ -1209,18 +1209,26 @@ def view_image(document_id: str) -> dict[str, Any]:
     description=(
         "Generate an image from a text prompt and show it to the user in this conversation. "
         "Use when the user asks you to draw / create / generate an image, diagram, or picture. "
-        "The image is rendered for the user automatically — you don't get the pixels back, so "
+        "To EDIT / restyle / make a variation of an existing image (an attachment, a generated "
+        "image from the catalog, or a project image file), pass its document_id in "
+        "`source_document_ids` — the image model receives the pixels as its starting point. "
+        "The result is rendered for the user automatically — you don't get the pixels back, so "
         "just confirm what you made; don't try to describe it pixel-by-pixel."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "prompt": {"type": "string", "description": "What to depict — be specific and visual."},
+            "prompt": {"type": "string", "description": "What to depict — be specific and visual. For edits, describe the CHANGE."},
+            "source_document_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional document_ids of source images for image-to-image (edit/restyle/variation).",
+            },
         },
         "required": ["prompt"],
     },
 )
-def generate_image(prompt: str) -> dict[str, Any]:
+def generate_image(prompt: str, source_document_ids: list[str] | None = None) -> dict[str, Any]:
     from ..config import DEFAULT_IMAGE_MODEL, get_config_manager
     from .internal_context import current_context
 
@@ -1235,6 +1243,20 @@ def generate_image(prompt: str) -> dict[str, Any]:
     ctx = current_context()
     user_id = ctx.user_id if ctx else "default"
     model = (cfg.get("images.default_model", DEFAULT_IMAGE_MODEL) or "").strip()
+
+    # Source images for image-to-image: same access rule as view_image (attached
+    # workspace or Home); unusable ids surface as an error the model can act on.
+    input_refs = None
+    if source_document_ids:
+        from ..agent.media_input import resolve_media_docs
+
+        input_refs, _audio, notes = resolve_media_docs(
+            source_document_ids,
+            user_id=user_id,
+            workspace_id=(ctx.workspace_id if ctx else None),
+        )
+        if not input_refs and notes:
+            return {"error": "; ".join(notes)[:300], "success": False}
 
     try:
         from ..agent.image_gen import generate_and_store_image
@@ -1253,6 +1275,7 @@ def generate_image(prompt: str) -> dict[str, Any]:
                 user_id=user_id,
                 conversation_id=(ctx.conversation_id if ctx else None),
                 agent_id=(ctx.agent_id if ctx else None),
+                input_refs=input_refs,
             ),
             timeout=120.0,
         )

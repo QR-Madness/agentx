@@ -645,9 +645,15 @@ class ModelProvider(ABC):
         prompt: str,
         *,
         model: str,
+        input_images: list[tuple[str, str]] | None = None,
         **kwargs: Any,
     ) -> ImageResult:
         """Generate an image from ``prompt``.
+
+        ``input_images`` — optional source images as ``(media_type, base64)`` pairs —
+        turns the call into **image-to-image** (edit/restyle/variation) on models that
+        accept image input alongside image output (e.g. gemini-flash-image); models
+        that don't simply error and the caller degrades.
 
         Default raises — only providers exposing an image backend (currently OpenRouter,
         via the chat-completions endpoint with ``modalities: ["image"]``) override

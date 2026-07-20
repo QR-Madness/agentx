@@ -221,6 +221,19 @@ _DOC_WRITE_TOOLS: frozenset[str] = frozenset(
 )
 
 
+def _delegation_media_arg(args: dict) -> list[str] | None:
+    """Sanitize a delegation call's `media` argument into a list of document-id
+    strings (models sometimes emit a single string or junk entries). None when
+    absent/empty so simpler `delegate()` signatures stay compatible."""
+    raw = args.get("media")
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return None
+    ids = [str(x).strip() for x in raw if x is not None and str(x).strip()]
+    return ids or None
+
+
 def _is_doc_write_success(tm) -> bool:
     """Whether a doc-write tool message reports a genuine write.
 
@@ -480,14 +493,17 @@ async def _run_delegations(
         args = tc.arguments or {}
         target = args.get("agent_id", "")
         task = args.get("task", "")
+        media = _delegation_media_arg(args)
         accumulated = ""
         # Per-delegation wall-clock cap (`alloy.delegation_timeout_seconds`).
         # Applied to the consumption, not the semaphore wait, so queued
         # branches don't burn their budget waiting for a slot.
         timeout = getattr(alloy_executor, "delegation_timeout_seconds", 300) or None
-        # Top-level fan-out is always depth 0; delegate() defaults depth=0
-        # (omitted here so simpler delegate() signatures stay compatible).
-        gen = alloy_executor.delegate(target, task, tool_call_id=tc.id)
+        # Top-level fan-out is always depth 0; delegate() defaults depth=0.
+        # Optional kwargs (depth, media) are OMITTED when unused so simpler
+        # delegate() signatures (test fakes) stay compatible.
+        extra = {"media": media} if media else {}
+        gen = alloy_executor.delegate(target, task, tool_call_id=tc.id, **extra)
 
         async def _consume() -> None:
             nonlocal accumulated
@@ -670,16 +686,20 @@ def _dispatch_background_delegations(
         args = tc.arguments or {}
         target = args.get("agent_id", "")
         task_text = args.get("task", "")
+        media_arg = _delegation_media_arg(args)
         delegation_id = uuid4().hex[:8]
 
         async def _drive_background(
             tc=tc, target=target, task_text=task_text, delegation_id=delegation_id,
+            media_arg=media_arg,
         ) -> tuple[str, dict[str, Any]]:
             accumulated = ""
             metrics: dict[str, Any] = {}
+            extra = {"media": media_arg} if media_arg else {}
             gen = alloy_executor.delegate(
                 target, task_text, tool_call_id=tc.id,
                 mode="background", delegation_id=delegation_id,
+                **extra,
             )
 
             async def _consume() -> None:

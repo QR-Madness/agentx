@@ -15,6 +15,38 @@ DELEGATION_TOOL_NAME = "delegate_to"
 DELEGATION_START_TOOL_NAME = "delegate_start"
 
 
+def modality_suffix(agent_id: str) -> str:
+    """Media-capability tag for a roster/tool entry, e.g. `` [sees images · makes images]``.
+
+    Derived from the profile's default model via **cached** provider caps only
+    (no catalog warm — this renders per turn, inside sync builders; a cold
+    catalog just means no tags, which is advisory-only anyway). Empty string on
+    any failure or for a plain text model. This is what lets a supervisor route
+    media work to an agent that can actually handle the medium.
+    """
+    try:
+        from ..agent.profiles import get_profile_manager
+        from ..providers.capabilities import has_input_modality, has_output_modality
+        from ..providers.registry import get_registry
+
+        profile = get_profile_manager().get_profile_by_agent_id(agent_id)
+        model = getattr(profile, "default_model", None)
+        if not model:
+            return ""
+        provider, model_id = get_registry().get_provider_for_model(model)
+        caps = provider.get_capabilities(model_id)
+        tags = []
+        if getattr(caps, "supports_vision", False) or has_input_modality(caps, "image"):
+            tags.append("sees images")
+        if has_input_modality(caps, "audio"):
+            tags.append("hears audio")
+        if has_output_modality(caps, "image"):
+            tags.append("makes images")
+        return f" [{' · '.join(tags)}]" if tags else ""
+    except Exception:  # noqa: BLE001 — tags are advisory, never break a turn
+        return ""
+
+
 def _build_descriptor(
     entries: list[tuple[str, str, str]],
     *,
@@ -31,7 +63,7 @@ def _build_descriptor(
     if entries:
         enum_values = [aid for aid, _, _ in entries]
         bullet_lines = "\n".join(
-            f"  - {name} (id: {aid}): {hint or '(no hint provided)'}"
+            f"  - {name} (id: {aid}){modality_suffix(aid)}: {hint or '(no hint provided)'}"
             for aid, name, hint in entries
         )
     else:
@@ -77,6 +109,20 @@ def _build_descriptor(
                     "Self-contained task description. The target agent will not "
                     "see your conversation history; include all relevant "
                     "context here."
+                ),
+            },
+            "media": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional document_ids of images/audio the agent needs (from "
+                    "attachment lines, the image catalog, or file listings). "
+                    "ALWAYS pass the source image ids when delegating image "
+                    "edit/restyle/variation work — the target can't fetch media "
+                    "itself, and image models have no tools at all. Media is "
+                    "delivered inside the target's first message, capability-"
+                    "gated (a non-vision target gets a note; audio degrades to "
+                    "a transcript)."
                 ),
             },
         },
