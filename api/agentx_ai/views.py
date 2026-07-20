@@ -8102,6 +8102,7 @@ def agent_skill_detail(request, skill_id: str):
     return json_error("Method not allowed", status=405)
 
 
+@csrf_exempt
 def agent_profiles_list(request):
     """
     GET /api/agent/profiles - List all agent profiles.

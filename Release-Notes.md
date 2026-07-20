@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.240 -->
+<!-- release-version: 0.21.241 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -108,6 +108,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Creating agents works from every client again**: the create-profile endpoint rejected
+  cookie-less clients (web shell, curl) with a CSRF 403 — it now carries the same exemption as
+  every other API route, with a test sweep so no route can regress this way again.
 - **No more leaked thinking**: a reasoning model's `<think>` blocks are now stripped from the
   Ambassador's answers, replays, and speech — previously they could persist into the thread,
   render raw, and even be read aloud by TTS.
