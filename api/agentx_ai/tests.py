@@ -16908,7 +16908,7 @@ class VisionInputTest(TestCase):
         from agentx_ai.providers.base import ImageRef, convert_messages_to_openai_format
 
         ref = ImageRef(workspace_id="ws_home", doc_id="d1", media_type="image/png")
-        with patch.object(base, "resolve_image_data", return_value=("image/png", "QUJD")):
+        with patch.object(base, "resolve_media_data", return_value=("image/png", "QUJD")):
             out = convert_messages_to_openai_format([
                 Message(role=MessageRole.USER, content="look", images=[ref])
             ])
@@ -16924,14 +16924,14 @@ class VisionInputTest(TestCase):
         from agentx_ai.providers.base import ImageRef, convert_messages_to_openai_format
 
         ref = ImageRef(workspace_id="ws_home", doc_id="missing", media_type="image/png")
-        with patch.object(base, "resolve_image_data", return_value=None):
+        with patch.object(base, "resolve_media_data", return_value=None):
             out = convert_messages_to_openai_format([
                 Message(role=MessageRole.USER, content="look", images=[ref])
             ])
         # Only the text block survives (no image block).
         self.assertEqual(out[0]["content"], [{"type": "text", "text": "look"}])
 
-    def test_resolve_image_data_missing_blob_returns_none(self):
+    def test_resolve_media_data_missing_blob_returns_none(self):
         """A doc whose blob is gone resolves to None (logged, not raised)."""
         from agentx_ai.providers import base
         from agentx_ai.providers.base import ImageRef
@@ -16940,9 +16940,9 @@ class VisionInputTest(TestCase):
         with patch("agentx_ai.kit.workspaces.repository.get_document",
                    return_value={"workspace_id": "ws_home", "storage_key": "k", "content_type": "image/png"}), \
              patch("agentx_ai.kit.workspaces.storage.read_blob", return_value=None):
-            self.assertIsNone(base.resolve_image_data(ref))
+            self.assertIsNone(base.resolve_media_data(ref))
 
-    def test_resolve_image_data_happy_path(self):
+    def test_resolve_media_data_happy_path(self):
         from agentx_ai.providers import base
         from agentx_ai.providers.base import ImageRef
 
@@ -16950,11 +16950,11 @@ class VisionInputTest(TestCase):
         with patch("agentx_ai.kit.workspaces.repository.get_document",
                    return_value={"workspace_id": "ws_home", "storage_key": "k", "content_type": "image/jpeg"}), \
              patch("agentx_ai.kit.workspaces.storage.read_blob", return_value=b"ABC"):
-            mt, b64 = base.resolve_image_data(ref)  # pyright: ignore[reportGeneralTypeIssues]
+            mt, b64 = base.resolve_media_data(ref)  # pyright: ignore[reportGeneralTypeIssues]
         self.assertEqual(mt, "image/jpeg")  # doc content_type wins over the ref
         self.assertEqual(b64, "QUJD")
 
-    def test_resolve_image_data_workspace_mismatch(self):
+    def test_resolve_media_data_workspace_mismatch(self):
         """A ref claiming a workspace the doc doesn't belong to is rejected."""
         from agentx_ai.providers import base
         from agentx_ai.providers.base import ImageRef
@@ -16962,7 +16962,7 @@ class VisionInputTest(TestCase):
         ref = ImageRef(workspace_id="ws_other", doc_id="d1", media_type="image/png")
         with patch("agentx_ai.kit.workspaces.repository.get_document",
                    return_value={"workspace_id": "ws_home", "storage_key": "k"}):
-            self.assertIsNone(base.resolve_image_data(ref))
+            self.assertIsNone(base.resolve_media_data(ref))
 
     def test_anthropic_converter_builds_image_source(self):
         from agentx_ai.providers import base
@@ -16971,7 +16971,7 @@ class VisionInputTest(TestCase):
 
         ref = ImageRef(workspace_id="ws_home", doc_id="d1", media_type="image/png")
         prov = AnthropicProvider(ProviderConfig(api_key="x"))
-        with patch.object(base, "resolve_image_data", return_value=("image/png", "QUJD")):
+        with patch.object(base, "resolve_media_data", return_value=("image/png", "QUJD")):
             _system, msgs = prov._convert_messages([
                 Message(role=MessageRole.USER, content="look", images=[ref])
             ])
@@ -18022,10 +18022,15 @@ class ProjectPromptingTest(TestCase):
     def test_no_model_visible_workspace_wording(self):
         # The rename is finished: no advertised description/schema still says
         # "workspace" (the shell working-directory wording is allowed to; it
-        # refers to the temporary sandbox, not the project).
+        # refers to the temporary sandbox, not the project). The literal
+        # `/api/workspaces/` ROUTE is exempt — wire format keeps internal names
+        # (Workspaces→Projects strings-only rename), and present_exhibit's
+        # description must quote the exact served-media URL shape its pattern
+        # validator accepts.
         from agentx_ai.mcp.internal_tools import _INTERNAL_TOOLS
         for tool in _INTERNAL_TOOLS.values():
-            self.assertNotIn("workspace", tool.description.lower(),
+            desc = tool.description.lower().replace("/api/workspaces/", "")
+            self.assertNotIn("workspace", desc,
                              f"{tool.name} description still says 'workspace'")
 
     def test_document_write_tools_advertised_and_gated(self):

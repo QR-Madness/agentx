@@ -212,13 +212,13 @@ class AnthropicProvider(ModelProvider):
                     # block list (text + base64 image sources). Text-only stays a string.
                     # `msg.audio` is intentionally NOT converted — the Anthropic API has
                     # no audio input block; the STT-transcript fallback upstream covers it.
-                    from .base import resolve_image_data
+                    from .base import resolve_media_data
 
                     user_blocks: list[dict[str, Any]] = []
                     if msg.content:
                         user_blocks.append({"type": "text", "text": msg.content})
                     for ref in msg.images:
-                        resolved = resolve_image_data(ref)
+                        resolved = resolve_media_data(ref)
                         if resolved is None:
                             continue
                         media_type, b64 = resolved
