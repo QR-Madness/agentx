@@ -99,6 +99,75 @@
   letter-spacing: 0.5px;
   color: var(--text-tertiary);
 }
+.profile-nav-mode { margin-left: auto; }
+
+/* Search filter — Input primitive with the icon wrapper; only spacing here. */
+.profile-nav .profile-nav-search {
+  margin: 0 2px 10px;
+}
+
+.profile-nav-group { display: flex; flex-direction: column; gap: 4px; }
+.profile-nav-group + .profile-nav-group { margin-top: 12px; }
+.profile-nav-group-label {
+  padding: 0 14px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.profile-nav-line1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.profile-nav-line2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.profile-nav-model {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-nav-tag {
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.profile-nav-tier {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--accent-tint-strong);
+  color: var(--cosmic-violet);
+}
+.profile-nav-tier--lead {
+  border-color: var(--border-default);
+  color: var(--text-tertiary);
+}
+
+.profile-nav-empty {
+  padding: 18px 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
 
 .profile-nav-list {
   flex: 1;
