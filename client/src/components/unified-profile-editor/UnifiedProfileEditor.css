@@ -590,6 +590,85 @@
 }
 .profile-model-trigger-chev { color: var(--text-tertiary); }
 
+/* ── Chain strip — the agent's place in the org, drawn as clickable nodes ── */
+.chain-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.chain-strip__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chain-strip__node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+button.chain-strip__node { cursor: pointer; }
+@media (hover: hover) and (pointer: fine) {
+  button.chain-strip__node:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+    transform: translateY(-1px);
+  }
+}
+.chain-strip__node--self {
+  border-color: color-mix(in srgb, var(--agent-accent, var(--accent-primary)) 60%, var(--border-default));
+  color: var(--text-primary);
+  font-weight: 600;
+  /* --agent-soft is a transparent tint — flattens naturally on NO_GLOW themes. */
+  box-shadow: 0 0 12px var(--agent-soft, transparent);
+}
+.chain-strip__link {
+  flex: 0 0 16px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--agent-accent, var(--accent-primary)) 45%, transparent),
+    color-mix(in srgb, var(--agent-accent, var(--accent-primary)) 15%, transparent)
+  );
+}
+.chain-strip__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.chain-strip__caption {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.chain-strip__teams {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chain-strip__team {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
 /* ── Slider ── */
 .profile-slider {
   /* Unfilled track must be OPAQUE: accent tints are transparent (theme

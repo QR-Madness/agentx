@@ -37,6 +37,7 @@ import { PromptEditor } from '../common/PromptEditor';
 import { EffectivePromptPreview } from '../common/EffectivePromptPreview';
 import { OverridablePromptField } from '../common/OverridablePromptField';
 import { api } from '../../lib/api';
+import { ChainStrip } from './ChainStrip';
 import { NameDeck } from './NameDeck';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { ToolAccessSection } from './ToolAccessSection';
@@ -164,6 +165,8 @@ interface ProfileContentProps {
   /** Notifies the shell when the Prompt Library takes over the content area, so
    *  it can collapse the profile nav and give the library full width. */
   onLibraryOpenChange?: (open: boolean) => void;
+  /** Chain-strip hops: select another profile in the editor (ProfileNav's select). */
+  onSelectProfile?: (profileId: string) => void;
 }
 
 export function ProfileContent({
@@ -173,6 +176,7 @@ export function ProfileContent({
   onCancel,
   onBack,
   onLibraryOpenChange,
+  onSelectProfile,
 }: ProfileContentProps) {
   const isEditing = profile !== null;
 
@@ -558,6 +562,7 @@ export function ProfileContent({
                         the report-only tool template (manual-work tools blocked — editable in the
                         Tools tab).
                       </span>
+                      {profile && <ChainStrip profile={profile} onHop={onSelectProfile} />}
                     </div>
                     <label className="profile-toggle-row">
                       <span className="profile-toggle-label">
