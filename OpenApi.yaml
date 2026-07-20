@@ -1519,8 +1519,9 @@ paths:
       operationId: ambassadorPersonaDefaults
       summary: Shipped default persona text for an ambassador's functional voices
       description: >-
-        Returns the code-owned default text for the briefing, Q&A, and draft
-        personas so the ambassador profile editor can show and diff overrides.
+        Returns the code-owned default text for the briefing, Q&A, draft, and
+        voice-command-router personas so the ambassador profile editor can show
+        and diff overrides (`AmbassadorConfig.{briefing,qa,draft,voice}_persona`).
       responses:
         '200':
           description: Persona defaults
@@ -1532,6 +1533,7 @@ paths:
                   briefing: { type: string }
                   qa: { type: string }
                   draft: { type: string }
+                  voice: { type: string }
 
   /agent/avatar/generate:
     post:

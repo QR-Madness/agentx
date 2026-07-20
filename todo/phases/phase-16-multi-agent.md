@@ -710,6 +710,25 @@
       unconfirmed autonomous dispatch (breaches reads-auto/writes-confirm — a future per-user
       policy setting), `AlloyExecutor.delegate` start/steer from the ambassador, Inquiry-thread
       durability + Deck scope (still open questions below), Factory UI.
+- [x] **Polish close-out (grounded voice-agent prompts, think-strip, module seam)** —
+      **shipped (`0.21.236`)**. The final Ambassador slice before agent orgs. The
+      **grounded-fact doctrine** defeats the chain's sequential lossiness (conversation →
+      aide → ambassador → voice): aide digests end with a **verbatim `Facts:` tail**
+      (survey clip is facts-aware via `_clip_digest`); the answer persona gains GROUNDED
+      FACTS / THE-MAP-IS-NOT-THE-TERRITORY (drill down via the belt when a digest can't
+      answer; quote verbatim on "exactly") / natural PROVENANCE / lead-with-the-answer;
+      the voice answer leg adds `_SPOKEN_DELIVERY_NOTE`; the voice router was rewritten
+      (concrete say-backs) and became a first-class **overridable persona**
+      (`AmbassadorConfig.voice_persona`, persona-defaults `voice` key, fourth editor
+      field). **Think-strip**: `ThinkBlockStripper`/`strip_think_blocks` suppress
+      reasoning blocks at the stream, persist, TTS, and router-parse layers (+ the client
+      back-compat strip for pre-fix records) — the live-caught `<think>` leak is dead.
+      **Deck**: entry-module registry (`entryModules.tsx` — tool chips + proposal strips
+      are the first two; future aide-delegation/exhibit/form/report surfaces are one
+      registry entry each), five starter chips with icons, and the portal z-fix
+      (DropdownMenu — and Popover as convention — joined `z-[2400]`; Deck menus no longer
+      open behind the surface). Rolling-summary prompt deliberately untouched (main-agent
+      compaction territory; the drill-down doctrine covers it).
 - [x] **Client — promote the Command Deck (and Memory) to first-class desktop tabs** —
       **shipped (`0.21.234`)**. TopBar gains a **surface-pill group** after Agents (Deck +
       Memory — no new `PageId`s; selected state *derives* from `useModal().isOpen`, the Dock

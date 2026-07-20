@@ -597,6 +597,7 @@ export interface AmbassadorSection {
   briefingPersona?: string | null;
   qaPersona?: string | null;
   draftPersona?: string | null;
+  voicePersona?: string | null;
   // Voice (TTS) block — spoken briefings via OpenRouter. voiceMode opts into the
   // immersive two-way voice surface; speechModel/voice fall back to the shipped
   // default (microsoft/mai-voice-2) when null.
@@ -635,6 +636,7 @@ export interface AgentProfileCreate {
     briefing_persona?: string | null;
     qa_persona?: string | null;
     draft_persona?: string | null;
+    voice_persona?: string | null;
     voice_mode?: boolean;
     speech_model?: string | null;
     voice?: string | null;

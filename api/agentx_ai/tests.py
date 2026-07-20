@@ -13185,6 +13185,187 @@ class AmbassadorServiceTest(TestCase):
         self.assertEqual(payload["tool"], "dispatch_task")
         self.assertEqual(payload["args"]["task"], "survey the archive")
 
+    # --- polish close-out: the grounded-fact prompt chain (contract pins) ---------
+
+    def test_prompt_chain_carries_the_grounded_fact_doctrine(self):
+        # String-contract asserts — they pin the anti-lossiness doctrine the way
+        # the pinned belt test pins the write surface: a rewrite that drops a
+        # load-bearing section fails here before it ships a vaguer ambassador.
+        from agentx_ai.agent.aide_swarm import _AIDE_SYSTEM
+        from agentx_ai.agent.ambassador import (
+            _SPOKEN_DELIVERY_NOTE,
+            _TOOLS_NOTE,
+            _answer_persona,
+            _default_persona,
+            _voice_command_persona,
+        )
+
+        # The aide's fact-preservation contract: a verbatim Facts tail.
+        self.assertIn("Facts: ", _AIDE_SYSTEM)
+        self.assertIn("VERBATIM", _AIDE_SYSTEM)
+        # The answer persona: facts, drill-down, provenance, answer-first.
+        qa = _answer_persona("")
+        for marker in ("GROUNDED FACTS", "THE MAP IS NOT THE TERRITORY",
+                       "PROVENANCE", "Lead with the answer"):
+            self.assertIn(marker, qa)
+        # The belt note tells it to carry facts through / drill deeper.
+        self.assertIn("CARRY THE FACTS THROUGH", _TOOLS_NOTE)
+        # Briefings name specifics instead of rounding them off.
+        self.assertIn("counts, the names, the decision", _default_persona(""))
+        # The router keeps its three actions, dispatch, and concrete say-backs.
+        voice = _voice_command_persona("")
+        for marker in ('"answer"', '"relay"', '"tool"', "dispatch_task", "SAY-BACKS"):
+            self.assertIn(marker, voice)
+        # The voice path's read-aloud coaching keeps specifics spoken.
+        self.assertIn("READ ALOUD", _SPOKEN_DELIVERY_NOTE)
+
+    def test_survey_clip_preserves_the_facts_tail(self):
+        # A naive tail clip would drop the Facts line first — the exact loss the
+        # aide contract exists to prevent. The prose absorbs the clip instead.
+        from agentx_ai.agent.ambassador_tools import _clip_digest
+
+        facts = "Facts: Atlas | 1,200 units | March 3 | decided to consolidate"
+        clipped = _clip_digest(("A long digest sentence. " * 40) + facts, 300)
+        self.assertTrue(clipped.endswith(facts))
+        self.assertIn("…", clipped)
+        # No facts line → the plain tail clip.
+        plain = _clip_digest("x" * 400, 300)
+        self.assertTrue(plain.endswith("…"))
+        self.assertLessEqual(len(plain), 301)
+        # Under the limit → untouched.
+        self.assertEqual(_clip_digest("short. Facts: a | b", 300), "short. Facts: a | b")
+
+    def test_spoken_delivery_note_rides_only_the_voice_path(self):
+        from agentx_ai.agent.ambassador import _SPOKEN_DELIVERY_NOTE, AmbassadorService
+
+        svc = AmbassadorService()
+        with patch.object(svc, "_thread_history", return_value=[]), \
+                patch.object(svc, "_lean_grounding", return_value=""):
+            typed = svc._seed_answer_messages(
+                conversation_id="c1", question="q", exclude_id="x", agent_name="",
+                artifacts=None, profile=None, with_tools=True)
+            spoken = svc._seed_answer_messages(
+                conversation_id="c1", question="q", exclude_id="x", agent_name="",
+                artifacts=None, profile=None, with_tools=True, spoken=True)
+        self.assertNotIn(_SPOKEN_DELIVERY_NOTE, typed[0].content)
+        self.assertIn(_SPOKEN_DELIVERY_NOTE, spoken[0].content)
+
+    # --- polish close-out: think-block hygiene ------------------------------------
+
+    def test_think_block_stripper_suppresses_content_across_chunks(self):
+        from agentx_ai.streaming.thinking_exec import (
+            ThinkBlockStripper,
+            strip_think_blocks,
+        )
+
+        s = ThinkBlockStripper()
+        out = s.feed("Hello <thi")
+        out += s.feed("nk>hidden reasoning</th")
+        out += s.feed("ink> world")
+        out += s.flush()
+        self.assertEqual(out, "Hello  world")
+        # An unterminated block never leaks through flush.
+        s = ThinkBlockStripper()
+        out = s.feed("clean <think>secret")
+        out += s.flush()
+        self.assertEqual(out, "clean ")
+        # The non-streaming helper: closed, trailing-open, and the never-blank degrade.
+        self.assertEqual(strip_think_blocks("<think>x</think>answer"), "answer")
+        self.assertEqual(strip_think_blocks("answer<think>trailing"), "answer")
+        self.assertEqual(strip_think_blocks("<think>only reasoning</think>"), "only reasoning")
+        self.assertEqual(strip_think_blocks("no tags at all"), "no tags at all")
+
+    def test_answer_stream_suppresses_think_blocks(self):
+        # The live-caught leak: a reasoning model's <think> block must reach
+        # neither the SSE stream nor the persisted record (it would render AND
+        # be spoken). Braces inside the reasoning also must not corrupt anything.
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk
+
+        async def _stream(messages, model_id, **kwargs):
+            yield StreamChunk(content="<think>secret {plan} of ")
+            yield StreamChunk(content="attack</think>The gist: ")
+            yield StreamChunk(content="42 units.", finish_reason="stop")
+
+        provider, reg = self._streaming_provider(_stream)
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+                patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns",
+                      return_value=[]):
+            events = asyncio.run(_collect(svc.answer_question("conv", "qa12", "how many?")))
+            record = a.get_qa("conv", "qa12")
+
+        joined = "".join(events)
+        self.assertNotIn("<think>", joined)
+        self.assertNotIn("secret", joined)
+        self.assertIn("ambassador_done", joined)
+        self.assertEqual(record["status"], "done")
+        self.assertEqual(record["answer"], "The gist: 42 units.")
+
+    def test_parse_voice_command_survives_a_thinking_router(self):
+        # Reasoning may contain braces — it must not corrupt the JSON scan.
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        action, text, payload = AmbassadorService._parse_voice_command(
+            '<think>maybe {"action": "wrong"}? no…</think>\n'
+            '{"action": "relay", "text": "Check the second premise."}'
+        )
+        self.assertEqual(action, "relay")
+        self.assertEqual(text, "Check the second premise.")
+        self.assertIsNone(payload)
+
+    def test_synthesize_hygiene_runs_before_any_provider_work(self):
+        # Glyph-only input collapses to nothing under speech hygiene → the clean
+        # empty_text raise, BEFORE any config/provider resolution is attempted.
+        from agentx_ai.agent.ambassador import AmbassadorService, SpeechUnavailable
+
+        svc = AmbassadorService()
+        with self.assertRaises(SpeechUnavailable):
+            asyncio.run(svc.synthesize("**## __ ``"))
+
+    # --- polish close-out: the voice router is a first-class persona --------------
+
+    def test_voice_persona_override_is_honored(self):
+        from types import SimpleNamespace
+
+        from agentx_ai.agent.ambassador import AmbassadorService
+
+        svc = AmbassadorService()
+        profile = SimpleNamespace(
+            system_prompt="",
+            ambassador=SimpleNamespace(voice_persona="Route with care.", briefing_prompt=""),
+        )
+        built = svc._build_voice_command_persona(profile, "Atlas")
+        self.assertTrue(built.startswith("Route with care."))
+        self.assertNotIn("THE THREE ACTIONS", built)
+        # No override → the shipped default.
+        bare = SimpleNamespace(
+            system_prompt="", ambassador=SimpleNamespace(voice_persona=None, briefing_prompt="")
+        )
+        self.assertIn("THE THREE ACTIONS", svc._build_voice_command_persona(bare, "Atlas"))
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint test; don't gate on local .env auth
+class AmbassadorPersonaDefaultsEndpointTest(TestCase):
+    """GET /api/agent/ambassador/persona-defaults — the editor's diff baseline for
+    the ambassador's four functional voices (briefing / qa / draft / voice router)."""
+
+    def test_returns_all_four_persona_defaults(self):
+        res = self.client.get("/api/agent/ambassador/persona-defaults")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        for key in ("briefing", "qa", "draft", "voice"):
+            self.assertTrue((body.get(key) or "").strip(), f"missing persona default: {key}")
+
 
 class _FakeConfigManager:
     """In-memory ConfigManager stand-in (dot-notation get/set + no-op save)."""

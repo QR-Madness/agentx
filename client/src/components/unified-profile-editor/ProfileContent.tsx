@@ -198,6 +198,7 @@ export function ProfileContent({
     briefingPersona, setBriefingPersona,
     qaPersona, setQaPersona,
     draftPersona, setDraftPersona,
+    voicePersona, setVoicePersona,
     voiceMode, setVoiceMode,
     speechModel, setSpeechModel,
     voice, setVoice,
@@ -238,7 +239,7 @@ export function ProfileContent({
       .catch(() => { /* gate notice is best-effort — stay silent on failure */ });
     return () => { cancelled = true; };
   }, []);
-  const [personaDefaults, setPersonaDefaults] = useState<{ briefing: string; qa: string; draft: string } | null>(null);
+  const [personaDefaults, setPersonaDefaults] = useState<{ briefing: string; qa: string; draft: string; voice: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -252,7 +253,7 @@ export function ProfileContent({
     let cancelled = false;
     api.ambassadorPersonaDefaults()
       .then(d => { if (!cancelled) setPersonaDefaults(d); })
-      .catch(() => { if (!cancelled) setPersonaDefaults({ briefing: '', qa: '', draft: '' }); });
+      .catch(() => { if (!cancelled) setPersonaDefaults({ briefing: '', qa: '', draft: '', voice: '' }); });
     return () => { cancelled = true; };
   }, [isAmbassador, personaDefaults]);
 
@@ -625,6 +626,14 @@ export function ProfileContent({
                           override={draftPersona}
                           onChange={setDraftPersona}
                           onReset={() => setDraftPersona(null)}
+                        />
+                        <OverridablePromptField
+                          title="Voice-command routing"
+                          description="How it interprets spoken commands — answer, relay, or a confirm-first proposal."
+                          defaultText={personaDefaults.voice}
+                          override={voicePersona}
+                          onChange={setVoicePersona}
+                          onReset={() => setVoicePersona(null)}
                         />
                       </div>
                     )}

@@ -96,6 +96,10 @@ class AmbassadorConfig(BaseModel):
     draft_persona: str | None = Field(
         default=None, description="Override for the outbound-message draft persona (None = shipped default)"
     )
+    voice_persona: str | None = Field(
+        default=None,
+        description="Override for the voice-command router persona (None = shipped default)",
+    )
     # Voice (TTS) — spoken briefings via OpenRouter's /audio/speech. STT (the
     # user-speaks half of two-way voice mode) is a separate, later seam.
     voice_mode: bool = Field(

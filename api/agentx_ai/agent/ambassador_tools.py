@@ -685,6 +685,23 @@ def _conv_fingerprint(c: dict) -> str:
     return f"{c.get('message_count', 0)}:{c.get('last_at', '')}"
 
 
+def _clip_digest(text: str, limit: int) -> str:
+    """Clip a digest to ~``limit`` chars WITHOUT losing a trailing ``Facts:`` line —
+    the aide's fact-preservation contract. A naive tail clip would drop the facts
+    first (they ride at the end), reintroducing the exact lossiness the contract
+    exists to kill; here the prose absorbs the clip and the facts ride whole."""
+    if len(text) <= limit:
+        return text
+    marker = text.rfind("Facts:")
+    if marker <= 0:
+        return text[:limit].rstrip() + "…"
+    prose, facts = text[:marker].rstrip(), text[marker:]
+    room = max(40, limit - len(facts))
+    if len(prose) > room:
+        prose = prose[:room].rstrip() + "…"
+    return f"{prose} {facts}"
+
+
 def _render_deep_survey(limit: int) -> str:
     """A digest-rich cross-conversation view: each recent conversation with its own
     rolling summary (``get_summary`` — already condensed) when it has one, else an
@@ -739,13 +756,9 @@ def _render_deep_survey(limit: int) -> str:
         summary = summaries.get(cid, "").replace("\n", " ")
         digest = aide_digests.get(cid, "").replace("\n", " ") if not summary else ""
         if summary:
-            if len(summary) > _SURVEY_SUMMARY:
-                summary = summary[:_SURVEY_SUMMARY].rstrip() + "…"
-            piece += f"\n    summary: {summary}"
+            piece += f"\n    summary: {_clip_digest(summary, _SURVEY_SUMMARY)}"
         elif digest:
-            if len(digest) > _SURVEY_SUMMARY:
-                digest = digest[:_SURVEY_SUMMARY].rstrip() + "…"
-            piece += f"\n    digest: {digest}"
+            piece += f"\n    digest: {_clip_digest(digest, _SURVEY_SUMMARY)}"
         else:
             # No rolling summary or aide digest — fall back to the opening + latest
             # snippet, like the quick index.

@@ -8298,12 +8298,18 @@ def ambassador_persona_defaults(request):
     GET /api/agent/ambassador/persona-defaults - The shipped default persona text
     for an ambassador's functional voices, so the editor can show + diff overrides.
     """
-    from .agent.ambassador import _default_persona, _answer_persona, _draft_persona
+    from .agent.ambassador import (
+        _answer_persona,
+        _default_persona,
+        _draft_persona,
+        _voice_command_persona,
+    )
 
     return JsonResponse({
         "briefing": _default_persona(""),
         "qa": _answer_persona(""),
         "draft": _draft_persona(""),
+        "voice": _voice_command_persona(""),
     })
 
 

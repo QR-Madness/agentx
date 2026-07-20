@@ -20,7 +20,10 @@ const PopoverContent = React.forwardRef<
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'z-50 w-72 rounded-xl p-4 outline-none',
+        // z-[2400]: clear the full-screen surfaces (Deck/Memory/Settings at
+        // z-2000) — the Select/DropdownMenu convention. At the old z-50 a
+        // popover opened from inside any surface would be trapped behind it.
+        'z-[2400] w-72 rounded-xl p-4 outline-none',
         'bg-[var(--surface-raised)] border border-[var(--border-default)]',
         'shadow-lg backdrop-blur-sm text-fg',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import AsyncGenerator
 
 from ..providers.base import Message, MessageRole
@@ -81,6 +82,76 @@ class ThinkTagSanitizer:
     def flush(self) -> str:
         out, self._buf = self._buf, ""
         return self._strip(out)
+
+
+class ThinkBlockStripper:
+    """Streaming filter that suppresses whole think BLOCKS — tag AND content.
+
+    Contrast with :class:`ThinkTagSanitizer`, which strips only the tags and lets
+    the content through (right for embedded pass output that should stay visible).
+    This one drops everything from an opening think tag to its close — for surfaces
+    where reasoning must never be seen, persisted, or spoken (the Ambassador's
+    answers/briefings). Stateful across chunks: partial tags at a chunk boundary
+    are held back until judged; ``flush()`` releases a held tail (verbatim outside
+    a block; an unterminated block stays suppressed — the reasoning never leaks).
+    """
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._in_block = False
+
+    def feed(self, chunk: str) -> str:
+        text = self._buf + chunk
+        out: list[str] = []
+        while True:
+            wanted = ("</think>", "</thinking>") if self._in_block else ("<think>", "<thinking>")
+            hits = [(text.find(t), t) for t in wanted if text.find(t) != -1]
+            if not hits:
+                break
+            idx, tag = min(hits)
+            if not self._in_block:
+                out.append(text[:idx])
+            text = text[idx + len(tag):]
+            self._in_block = not self._in_block
+        # Hold back the shortest tail that could still become a relevant tag.
+        keep = 0
+        limit = min(len(text), _MAX_TAG_LEN - 1)
+        wanted = ("</think>", "</thinking>") if self._in_block else ("<think>", "<thinking>")
+        for i in range(1, limit + 1):
+            tail = text[len(text) - i:]
+            if any(t.startswith(tail) for t in wanted):
+                keep = i
+        cut = len(text) - keep
+        if not self._in_block:
+            out.append(text[:cut])
+        self._buf = text[cut:]
+        return "".join(out)
+
+    def flush(self) -> str:
+        out, self._buf = self._buf, ""
+        return "" if self._in_block else out
+
+
+_THINK_BLOCK_RE = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>", re.DOTALL)
+_THINK_OPEN_RE = re.compile(r"<think(?:ing)?>.*\Z", re.DOTALL)
+
+
+def strip_think_blocks(text: str) -> str:
+    """Non-streaming counterpart of :class:`ThinkBlockStripper` for settled text
+    (TTS input, voice-command replies, persisted-record hygiene). Removes closed
+    think blocks, then any unterminated trailing block. If stripping would empty
+    the text entirely (a reply that was ALL reasoning), degrade to removing only
+    the tags — a visible answer beats a blank one."""
+    if "<think" not in text:
+        return text
+    stripped = _THINK_BLOCK_RE.sub("", text)
+    stripped = _THINK_OPEN_RE.sub("", stripped).strip()
+    if stripped:
+        return stripped
+    fallback = text
+    for tag in _TAGS:
+        fallback = fallback.replace(tag, "")
+    return fallback.strip()
 
 
 def _chunk(text: str) -> str:

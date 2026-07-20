@@ -42,12 +42,14 @@ const DropdownMenuSubContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   // Portal so the submenu escapes the parent Content's `overflow-hidden` (which
   // otherwise clips a side-opening submenu — it read as "overflowing underneath")
-  // and any ancestor stacking context; z-[1100] keeps it above drawers/modals.
+  // and any ancestor stacking context; z-[2400] clears the full-screen surfaces
+  // (Deck/Memory/Settings at z-2000) as well as drawers/modals — the Select
+  // convention.
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       className={cn(
-        'z-[1100] min-w-[8rem] overflow-hidden rounded-xl p-1.5',
+        'z-[2400] min-w-[8rem] overflow-hidden rounded-xl p-1.5',
         // Opaque surface, no backdrop-blur: the blur is a heavy WebKitGTK/Tauri
         // paint cost (felt as lag opening the conversation ⋯ menu + submenus)
         // and adds ~nothing over the already-opaque raised surface.
@@ -77,9 +79,11 @@ const DropdownMenuContent = React.forwardRef<
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        // Above the legacy app modals (z-1000/1001) so a dropdown opened from
-        // inside a full-screen modal (e.g. the profile editor) isn't trapped behind it.
-        'z-[1100] min-w-[12rem] overflow-hidden rounded-xl p-1.5',
+        // z-[2400]: clear the full-screen surfaces (Deck/Memory/Settings at
+        // z-2000) as well as the legacy modals (z-1000/1001) — a menu opened
+        // from inside ANY surface must never be trapped behind it (the Select
+        // convention; the Deck's Inquiry switcher/⋯ menu were invisible at 1100).
+        'z-[2400] min-w-[12rem] overflow-hidden rounded-xl p-1.5',
         // Opaque surface, no backdrop-blur — see SubContent note (WebKitGTK jank).
         'bg-[var(--surface-raised)] border border-[var(--border-default)]',
         'shadow-lg',
