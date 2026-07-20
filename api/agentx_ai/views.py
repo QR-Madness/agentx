@@ -3590,15 +3590,90 @@ _MEDIA_UPLOAD_EXT = {
 }
 
 
+def agent_names(request):
+    """
+    GET /api/agent/names?pool=random|preferred&count=10
+
+    Deal names for the profile editor's name deck. Deals are without
+    replacement and always exclude names already worn by an existing profile,
+    so the deck never offers a duplicate. ``count`` clamps to 1–20.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+    pool = (request.GET.get("pool") or "random").strip().lower()
+    if pool not in ("random", "preferred"):
+        return JsonResponse({"error": "pool must be 'random' or 'preferred'"}, status=400)
+    try:
+        count = int(request.GET.get("count", "10"))
+    except ValueError:
+        return JsonResponse({"error": "count must be an integer"}, status=400)
+
+    from .agent.name_pools import get_name_pools
+    from .agent.profiles import get_profile_manager
+
+    in_use = [p.name for p in get_profile_manager().list_profiles()]
+    names = get_name_pools().sample(pool=pool, count=count, exclude=in_use)
+    return JsonResponse({"pool": pool, "names": names})
+
+
+@csrf_exempt
+def agent_names_preferred(request):
+    """
+    GET/POST /api/agent/names/preferred — the starred name pool.
+
+    GET returns the pool (the client uses it to mark dealt chips as starred);
+    POST ``{add?, remove?}`` mutates and returns the updated pool
+    (``data/name_pools.json``).
+    """
+    from .agent.name_pools import get_name_pools
+
+    pools = get_name_pools()
+    if request.method == "GET":
+        return JsonResponse({"preferred": pools.preferred})
+    if request.method != "POST":
+        return JsonResponse({"error": "GET or POST required"}, status=405)
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except (ValueError, TypeError) as e:
+        return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
+    add = (data.get("add") or "").strip()
+    remove = (data.get("remove") or "").strip()
+    if not add and not remove:
+        return JsonResponse({"error": "Provide 'add' and/or 'remove'"}, status=400)
+    try:
+        if add:
+            pools.add_preferred(add)
+        if remove:
+            pools.remove_preferred(remove)
+    except ValueError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    return JsonResponse({"preferred": pools.preferred})
+
+
+# The avatar style prompt is a template: this marker is replaced with the
+# subject text (or the no-subject line, which routes the template into its
+# invent-a-synthetic-face branch). Custom style overrides that predate the
+# marker keep the old behavior — subject appended after a blank line.
+_AVATAR_SUBJECT_MARKER = "<SUBJECT>"
+_AVATAR_NO_SUBJECT = "(no subject given)"
+
+
+def _render_avatar_prompt(style: str, subject: str) -> str:
+    if _AVATAR_SUBJECT_MARKER in style:
+        return style.replace(_AVATAR_SUBJECT_MARKER, subject or _AVATAR_NO_SUBJECT)
+    return f"{style}\n\n{subject}".strip() if subject else style
+
+
 @csrf_exempt
 async def avatar_generate(request):
     """
-    POST /api/agent/avatar/generate  {subject_prompt, agent_profile_id?, style_prompt?, model?}
+    POST /api/agent/avatar/generate  {subject_prompt?, agent_profile_id?, style_prompt?, model?}
 
     Generate an agent avatar via OpenRouter (image model), store it in the user's reserved
     **Home** workspace (under ``avatars/``), and return the served blob URL. The final prompt
-    is the app-level **style** prompt (Settings → Images, or `style_prompt` override) + the
-    per-request **subject** prompt. Cost is recorded to the usage ledger (source ``image``).
+    is the app-level **style** template (Settings → Images, or `style_prompt` override) with
+    the per-request **subject** substituted; an empty subject routes the template into its
+    invent-a-synthetic-face branch. Cost is recorded to the usage ledger (source ``image``).
     Degrades to a structured 422 when images are disabled / OpenRouter is unconfigured / the
     model can't produce an image.
     """
@@ -3610,10 +3685,13 @@ async def avatar_generate(request):
         return JsonResponse({"error": f"Invalid JSON: {e}"}, status=400)
 
     subject = (data.get("subject_prompt") or "").strip()
-    if not subject:
-        return JsonResponse({"error": "subject_prompt is required"}, status=400)
 
-    from .config import DEFAULT_AVATAR_STYLE_PROMPT, DEFAULT_IMAGE_MODEL, get_config_manager
+    from .config import (
+        DEFAULT_AVATAR_MODEL,
+        DEFAULT_AVATAR_STYLE_PROMPT,
+        DEFAULT_IMAGE_MODEL,
+        get_config_manager,
+    )
 
     cfg = get_config_manager()
     if not cfg.get("images.enabled", True):
@@ -3621,9 +3699,16 @@ async def avatar_generate(request):
 
     # Fall back to module defaults — installs whose config.json predates the `images`
     # block won't have these keys (defaults aren't merged into an existing file).
-    model = (data.get("model") or cfg.get("images.default_model", DEFAULT_IMAGE_MODEL) or "").strip()
+    # Avatars prefer the dedicated avatar model; an explicitly blank setting falls
+    # through to the general image model.
+    model = (
+        data.get("model")
+        or cfg.get("images.avatar_model", DEFAULT_AVATAR_MODEL)
+        or cfg.get("images.default_model", DEFAULT_IMAGE_MODEL)
+        or ""
+    ).strip()
     style = (data.get("style_prompt") or cfg.get("images.avatar_style_prompt", DEFAULT_AVATAR_STYLE_PROMPT) or "").strip()
-    prompt = f"{style}\n\n{subject}".strip()
+    prompt = _render_avatar_prompt(style, subject)
 
     from .providers.registry import get_registry
 
@@ -7866,7 +7951,7 @@ def config_update(request):
     # Update image-generation + vision settings. (These sections existed in
     # DEFAULT_CONFIG but had no handler here — the Images settings UI silently
     # dropped every save while still toasting success.)
-    _IMAGES_KEYS = ("enabled", "default_model", "avatar_style_prompt")
+    _IMAGES_KEYS = ("enabled", "default_model", "avatar_model", "avatar_style_prompt")
     images_settings = data.get("images", {})
     for key, value in images_settings.items():
         if key not in _IMAGES_KEYS or value is None:

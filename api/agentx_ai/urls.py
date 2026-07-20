@@ -59,6 +59,8 @@ urlpatterns = [
     path("agent/ambassador/transcribe", views.ambassador_transcribe, name="ambassador-transcribe"),
     path("agent/ambassador/stream", views.ambassador_stream, name="ambassador-stream"),
     path("agent/ambassador/persona-defaults", views.ambassador_persona_defaults, name="ambassador-persona-defaults"),
+    path("agent/names", views.agent_names, name="agent-names"),
+    path("agent/names/preferred", views.agent_names_preferred, name="agent-names-preferred"),
     path("agent/avatar/generate", views.avatar_generate, name="avatar-generate"),
     path("agent/chat/images", views.chat_image_upload, name="chat-image-upload"),
     # Alias: the upload accepts image/audio/video since the multi-modal slice.
