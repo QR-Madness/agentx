@@ -12642,6 +12642,8 @@ class AmbassadorServiceTest(TestCase):
             # v3 reads — SELECT-only over state/logs/runs/ledger/memory:
             "read_conversation_state", "search_conversations", "list_active_runs",
             "usage_report", "recall_memory",
+            # close-out read — SELECT-only over the persisted present_exhibit turns:
+            "read_conversation_results",
         }
         self_scoped_writes = {"rename_inquiry"}
         # v3 conversation-meta writes: PROPOSAL-ONLY in the belt (execute_tool
@@ -12650,11 +12652,19 @@ class AmbassadorServiceTest(TestCase):
         confirmed_conversation_meta_writes = {
             "rename_conversation", "archive_conversation", "delete_conversation",
         }
+        # Close-out: dispatch orchestration is proposal-only too — the belt files
+        # it; execution is the user-confirmed dispatch endpoint, where the task
+        # lands as the person's OWN user turn (INV-2).
+        confirmed_dispatch_writes = {"dispatch_task"}
         self.assertEqual(
             t.TOOL_NAMES,
-            read_only | self_scoped_writes | confirmed_conversation_meta_writes,
+            read_only | self_scoped_writes | confirmed_conversation_meta_writes
+            | confirmed_dispatch_writes,
         )
-        self.assertEqual(t.CONFIRMED_WRITE_TOOLS, confirmed_conversation_meta_writes)
+        self.assertEqual(
+            t.CONFIRMED_WRITE_TOOLS,
+            confirmed_conversation_meta_writes | confirmed_dispatch_writes,
+        )
 
     def test_execute_tool_degrades_when_a_read_fails(self):
         # Never-raise at the belt boundary covers the read itself: a dead store
@@ -12982,6 +12992,199 @@ class AmbassadorServiceTest(TestCase):
         self.assertEqual(text, "Boom?")
         self.assertIsNone(payload)
 
+    # --- close-out: read_conversation_results ------------------------------------
+
+    def test_read_conversation_results_groups_latest_per_exhibit(self):
+        # Re-presenting an exhibit id revises in place — only the LAST call per id
+        # is current; citation sources list label + URL (the Sources payoff).
+        from agentx_ai.agent import ambassador_tools as t
+
+        calls = [
+            {"id": "exh1", "title": "Old Table",
+             "elements": [{"type": "table", "columns": ["a", "b"], "rows": [["1", "2"]]}]},
+            {"id": "exh2", "title": "Sources",
+             "elements": [{"type": "citation",
+                           "sources": [{"label": "Field Guide",
+                                        "url": "https://example.com/guide"}]}]},
+            {"id": "exh1", "title": "New Table",
+             "elements": [{"type": "table", "columns": ["a", "b", "c"],
+                           "rows": [["1", "2", "3"]]}]},
+        ]
+        with patch("agentx_ai.agent.conversation_history.load_exhibit_calls",
+                   return_value=calls):
+            out = t.execute_tool("read_conversation_results", {},
+                                 focused_conversation_id="c1")
+        self.assertIn("2 exhibit(s)", out)
+        self.assertIn("New Table", out)      # the exh1 revision superseded…
+        self.assertNotIn("Old Table", out)   # …the original
+        self.assertIn("3 columns × 1 rows", out)
+        self.assertIn("Field Guide — https://example.com/guide", out)
+
+    def test_read_conversation_results_warm_empty_and_degrade(self):
+        from agentx_ai.agent import ambassador_tools as t
+
+        with patch("agentx_ai.agent.conversation_history.load_exhibit_calls",
+                   return_value=[]):
+            out = t.execute_tool("read_conversation_results", {},
+                                 focused_conversation_id="c1")
+        self.assertIn("hasn't produced any exhibits", out)
+        with patch("agentx_ai.agent.conversation_history.load_exhibit_calls",
+                   side_effect=RuntimeError("pg down")):
+            out = t.execute_tool("read_conversation_results", {},
+                                 focused_conversation_id="c1")
+        self.assertIn("read_conversation_results tool couldn't complete", out)
+
+    # --- close-out: confirm-first dispatch orchestration --------------------------
+
+    def test_proposal_for_dispatch_shapes(self):
+        from types import SimpleNamespace
+
+        from agentx_ai.agent.ambassador_tools import proposal_for
+
+        atlas = SimpleNamespace(agent_id="bold-atlas", name="Atlas")
+        pm = MagicMock()
+        pm.get_profile_by_agent_id.return_value = atlas
+        pm.list_profiles_by_kind.return_value = [atlas]
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            # by agent_id — a new-conversation dispatch carries NO conversation_id
+            p = proposal_for("dispatch_task",
+                             {"task": "map the field", "agent_id": "bold-atlas"},
+                             focused_conversation_id="c1")
+            assert p is not None
+            self.assertEqual(
+                (p["action"], p["agent_id"], p["agent_name"], p["task"]),
+                ("dispatch", "bold-atlas", "Atlas", "map the field"))
+            self.assertNotIn("conversation_id", p)
+            self.assertTrue(p["proposal_id"].startswith("prop_"))
+            # by (case-insensitive) name, agents-only roster
+            p = proposal_for("dispatch_task", {"task": "map", "agent_name": "atlas"},
+                             focused_conversation_id="c1")
+            assert p is not None
+            self.assertEqual(p["agent_id"], "bold-atlas")
+            # existing-conversation passthrough
+            p = proposal_for(
+                "dispatch_task",
+                {"task": "continue", "agent_id": "bold-atlas", "conversation_id": "c7"},
+                focused_conversation_id="c1")
+            assert p is not None
+            self.assertEqual(p["conversation_id"], "c7")
+            # a task is required
+            self.assertIsNone(proposal_for("dispatch_task", {"agent_id": "bold-atlas"},
+                                           focused_conversation_id="c1"))
+        # an unresolvable worker files nothing
+        pm.get_profile_by_agent_id.return_value = None
+        pm.list_profiles_by_kind.return_value = []
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            self.assertIsNone(proposal_for("dispatch_task",
+                                           {"task": "x", "agent_name": "ghost"},
+                                           focused_conversation_id="c1"))
+
+    def test_dispatch_task_never_executes(self):
+        # The belt files the dispatch proposal; the enqueue happens ONLY in the
+        # user-confirmed dispatch endpoint. A tripwire on the background queue
+        # proves nothing runs from the loop.
+        from types import SimpleNamespace
+
+        from agentx_ai.agent import ambassador_tools as t
+
+        pm = MagicMock()
+        pm.get_profile_by_agent_id.return_value = SimpleNamespace(
+            agent_id="bold-atlas", name="Atlas")
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm), \
+                patch("agentx_ai.background.enqueue_background_chat") as enq:
+            out = t.execute_tool(
+                "dispatch_task", {"task": "map the field", "agent_id": "bold-atlas"},
+                focused_conversation_id="c1")
+        enq.assert_not_called()
+        self.assertIn("awaiting the person's confirmation", out)
+        self.assertIn("Atlas", out)
+        # An unresolvable worker returns a readable pointer at the roster.
+        pm.get_profile_by_agent_id.return_value = None
+        pm.list_profiles_by_kind.return_value = []
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm):
+            out = t.execute_tool("dispatch_task", {"task": "x", "agent_name": "ghost"},
+                                 focused_conversation_id="c1")
+        self.assertIn("list_agents", out)
+
+    def test_agentic_loop_emits_dispatch_proposal_and_stays_sidecar_clean(self):
+        # A dispatch round mirrors the meta-write rounds: the proposal event fires
+        # between call and result, the chip carries it for replay, nothing executes
+        # (enqueue tripwire), and every write stays in the sidecar (INV-2).
+        from types import SimpleNamespace
+
+        from agentx_ai.agent.ambassador import AmbassadorService
+        from agentx_ai.agent import ambassador_storage as a
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        calls = {"n": 0}
+
+        async def _stream(messages, model_id, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                yield StreamChunk(
+                    content="", finish_reason="tool_calls",
+                    tool_calls=[ToolCall(id="t1", name="dispatch_task",
+                                         arguments={"task": "survey the archive",
+                                                    "agent_id": "bold-atlas"})],
+                )
+            else:
+                yield StreamChunk(
+                    content="Proposed the dispatch — confirm it on screen.",
+                    finish_reason="stop",
+                )
+
+        provider, reg = self._streaming_provider(_stream)
+        svc = AmbassadorService()
+        svc._registry = reg
+        fake = _FakeKVRedis()
+        pm = MagicMock()
+        pm.get_profile_by_agent_id.return_value = SimpleNamespace(
+            agent_id="bold-atlas", name="Atlas")
+
+        async def _collect(agen):
+            return [e async for e in agen]
+
+        with patch.object(svc, "_resolve_profile", return_value=None), \
+                patch.object(a, "_redis", return_value=fake), \
+                patch("agentx_ai.agent.ambassador.load_recent_turns", return_value=[]), \
+                patch("agentx_ai.agent.ambassador_tools.load_recent_labeled_turns",
+                      return_value=[]), \
+                patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm), \
+                patch("agentx_ai.background.enqueue_background_chat") as enq:
+            events = asyncio.run(
+                _collect(svc.answer_question("conv", "qa11", "have atlas survey it")))
+            record = a.get_qa("conv", "qa11")
+
+        joined = "".join(events)
+        self.assertIn("ambassador_tool_proposal", joined)
+        self.assertIn('"action": "dispatch"', joined)
+        self.assertIn("survey the archive", joined)
+        enq.assert_not_called()
+        self.assertIn("ambassador_done", joined)
+        self.assertNotIn("ambassador_error", joined)
+        self.assertEqual(record["status"], "done")
+        written = set(fake.kv) | set(fake.sets)
+        self.assertTrue(written)
+        for key in written:
+            self.assertTrue(
+                key.startswith(self._SIDECAR_PREFIXES),
+                f"dispatch turn wrote outside the ambassador sidecar: {key}",
+            )
+
+    def test_voice_persona_and_parser_cover_dispatch(self):
+        from agentx_ai.agent.ambassador import AmbassadorService, _voice_command_persona
+
+        self.assertIn("dispatch_task", _voice_command_persona("Atlas"))
+        action, text, payload = AmbassadorService._parse_voice_command(
+            '{"action": "tool", "tool": "dispatch_task", '
+            '"args": {"agent_name": "Atlas", "task": "survey the archive"}, '
+            '"text": "Proposing the dispatch — confirm it on screen."}'
+        )
+        self.assertEqual(action, "tool")
+        assert payload is not None
+        self.assertEqual(payload["tool"], "dispatch_task")
+        self.assertEqual(payload["args"]["task"], "survey the archive")
+
 
 class _FakeConfigManager:
     """In-memory ConfigManager stand-in (dot-notation get/set + no-op save)."""
@@ -13120,6 +13323,40 @@ class AmbassadorDispatchEndpointTest(TestCase):
         self.assertEqual(kw["message"], "research metric adoption")
         self.assertEqual(kw["agent_profile_id"], "prof-atlas")
 
+    def test_dispatch_into_existing_conversation_reuses_it(self):
+        # Close-out: `conversation_id` in the body targets an existing conversation —
+        # no minting; the task runs as its next user turn.
+        from types import SimpleNamespace
+
+        pm = MagicMock()
+        pm.get_profile_by_agent_id.return_value = SimpleNamespace(
+            id="prof-atlas", agent_id="bold-atlas")
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.agent.conversation_history.load_recent_labeled_turns",
+                   return_value=[("user", "hi", "")]), \
+             patch("agentx_ai.background.enqueue_background_chat", return_value="job-3") as enq:
+            res = self._post({"agent_id": "bold-atlas", "text": "keep going",
+                              "conversation_id": "c77"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["conversation_id"], "c77")  # reused, not minted
+        self.assertEqual(enq.call_args.kwargs["session_id"], "c77")
+
+    def test_dispatch_into_unknown_conversation_is_404(self):
+        # The relay guard: never spawn turns into a phantom conversation id.
+        from types import SimpleNamespace
+
+        pm = MagicMock()
+        pm.get_profile_by_agent_id.return_value = SimpleNamespace(
+            id="prof-atlas", agent_id="bold-atlas")
+        with patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.agent.conversation_history.load_recent_labeled_turns",
+                   return_value=[]), \
+             patch("agentx_ai.background.enqueue_background_chat") as enq:
+            res = self._post({"agent_id": "bold-atlas", "text": "task",
+                              "conversation_id": "ghost"})
+        self.assertEqual(res.status_code, 404)
+        enq.assert_not_called()
+
     def test_draft_fresh_frames_a_self_contained_task(self):
         # The dispatch draft persona differs from a relay: a cold-start task for the worker.
         from agentx_ai.agent.ambassador import AmbassadorService
@@ -13181,6 +13418,23 @@ class ConversationMetaEndpointTest(TestCase):
             res = self.client.delete("/api/memory/conversations/c9")
         self.assertEqual(res.status_code, 200)
         delete_meta.assert_called_once_with("c9")
+
+    def test_conversation_delete_clears_the_sidecar_families(self):
+        # DELETE must strand nothing: structured state, rolling summary, and the
+        # ambassador's Inquiry thread all go with the conversation (close-out).
+        with patch("agentx_ai.agent.conversation_meta.delete_meta"), \
+                patch("agentx_ai.agent.conversation_state_storage.clear_state") as clear_state, \
+                patch("agentx_ai.agent.conversation_summary_storage.clear_summary") as clear_summary, \
+                patch("agentx_ai.agent.ambassador_storage.clear") as clear_thread:
+            res = self.client.delete("/api/memory/conversations/c9")
+        self.assertEqual(res.status_code, 200)
+        clear_state.assert_called_once_with("c9")
+        clear_summary.assert_called_once_with("c9")
+        clear_thread.assert_called_once_with("c9")
+        self.assertEqual(
+            res.json()["deleted"]["sidecars"],
+            ["state", "summary", "ambassador_thread"],
+        )
 
 
 class _FakeSummaryCursor:

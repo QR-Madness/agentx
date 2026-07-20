@@ -30,6 +30,8 @@ export function toolChipLabel(tool: string, args?: Record<string, unknown>): str
       return 'titling this Inquiry';
     case 'read_conversation_state':
       return "checking the conversation's state";
+    case 'read_conversation_results':
+      return 'checking what it produced';
     case 'search_conversations':
       return query ? `searching for "${query}"` : 'searching your conversations';
     case 'list_active_runs':
@@ -45,6 +47,8 @@ export function toolChipLabel(tool: string, args?: Record<string, unknown>): str
       return args?.unarchive ? 'proposing a restore' : 'proposing an archive';
     case 'delete_conversation':
       return 'proposing a deletion';
+    case 'dispatch_task':
+      return 'proposing a dispatch';
     default:
       return tool.replace(/_/g, ' ');
   }
@@ -52,8 +56,11 @@ export function toolChipLabel(tool: string, args?: Record<string, unknown>): str
 
 /** Human sentence for a confirmed-write proposal (panel strip + voice strip). */
 export function proposalSentence(p: {
-  action: 'rename' | 'archive' | 'unarchive' | 'delete';
+  action: 'rename' | 'archive' | 'unarchive' | 'delete' | 'dispatch';
   title?: string;
+  agent_name?: string;
+  task?: string;
+  conversation_id?: string;
 }): string {
   switch (p.action) {
     case 'rename':
@@ -64,6 +71,12 @@ export function proposalSentence(p: {
       return 'Restore this conversation from the archive?';
     case 'delete':
       return 'Permanently delete this conversation and its stored turns?';
+    case 'dispatch': {
+      const task = (p.task ?? '').trim();
+      const clipped = task.length > 120 ? task.slice(0, 120).trimEnd() + '…' : task;
+      const where = p.conversation_id ? ' (in an existing conversation)' : '';
+      return `Dispatch to ${p.agent_name ?? 'a worker'}${where}: "${clipped}"?`;
+    }
   }
 }
 

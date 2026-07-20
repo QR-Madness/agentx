@@ -312,7 +312,8 @@ export function VoiceBar({
               onClick={() => void confirmTool()}
               className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-fg-inverse shadow-sm transition hover:brightness-110 active:brightness-95"
             >
-              <Check size={13} /> {toolProposal.action === 'delete' ? 'Delete…' : 'Confirm'}
+              <Check size={13} /> {toolProposal.action === 'delete' ? 'Delete…'
+                : toolProposal.action === 'dispatch' ? 'Dispatch' : 'Confirm'}
             </button>
           </div>
         </div>

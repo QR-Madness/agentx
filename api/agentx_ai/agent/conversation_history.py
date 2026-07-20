@@ -290,6 +290,52 @@ def render_conversation_images_block(conversation_id: str) -> str:
     return "\n".join(lines)
 
 
+def load_exhibit_calls(conversation_id: str, *, limit: int = 40) -> list[dict]:
+    """The conversation's ``present_exhibit`` tool calls (each call's raw arguments),
+    chronological. Exhibits have no store of their own — every presentation persists
+    as a synthetic ``tool_call`` turn — so these rows ARE the durable record of what
+    a conversation *produced* (tables, images, diagrams, cited sources). A later call
+    re-using an exhibit id revises it in place, so callers keep the LAST call per id.
+    Newest ``limit`` calls, returned oldest-first. Read-only; empty on any error."""
+    from ..kit.agent_memory.connections import PostgresConnection
+
+    try:
+        conn: Any = PostgresConnection.get_engine().raw_connection()
+    except Exception as e:  # pragma: no cover - DB offline
+        logger.debug(f"exhibit-call scan connect failed for {conversation_id}: {e}")
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT content FROM conversation_logs
+                WHERE conversation_id = %s AND role = 'tool_call'
+                  AND metadata->>'tool' = 'present_exhibit'
+                ORDER BY turn_index DESC
+                LIMIT %s
+                """,
+                (conversation_id, limit),
+            )
+            rows = cur.fetchall()
+    except Exception as e:  # pragma: no cover - DB offline
+        logger.debug(f"exhibit-call scan failed for {conversation_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+    import json as _json
+
+    calls: list[dict] = []
+    for (content,) in reversed(rows):  # DESC window → chronological order
+        try:
+            data = _json.loads(content or "{}")
+        except (ValueError, TypeError):
+            continue
+        if isinstance(data, dict):
+            calls.append(data)
+    return calls
+
+
 def _default_conversation_lister(limit: int, *, include_archived: bool = False) -> list[dict]:
     """Read the most-recent conversations (newest first) from ``conversation_logs``.
 

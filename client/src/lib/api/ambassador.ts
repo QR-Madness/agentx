@@ -11,14 +11,21 @@ import { getAuthToken, getActiveGatewayToken } from '../storage';
 export type AmbassadorStatus = 'streaming' | 'done' | 'error' | 'empty_provider' | 'cancelled';
 
 /** A confirmed-write proposal filed by the belt (rename/archive/delete a
- *  conversation). The belt NEVER executes these — the client renders a confirm
- *  strip and, on confirm, calls the conversation-meta endpoints itself. */
+ *  conversation, or dispatch a task to a worker agent). The belt NEVER executes
+ *  these — the client renders a confirm strip and, on confirm, calls the
+ *  conversation-meta / dispatch endpoints itself. */
 export interface AmbassadorToolProposal {
   proposal_id: string;
-  action: 'rename' | 'archive' | 'unarchive' | 'delete';
-  conversation_id: string;
+  action: 'rename' | 'archive' | 'unarchive' | 'delete' | 'dispatch';
+  /** The target conversation. For `dispatch`, present only when the task should
+   *  run inside an existing conversation (absent = a new one mints on confirm). */
+  conversation_id?: string;
   /** The proposed title (rename only). */
   title?: string;
+  /** Dispatch only: the resolved worker + its self-contained task. */
+  agent_id?: string;
+  agent_name?: string;
+  task?: string;
 }
 
 /** One read-only tool the *ambassador* called while answering (its own tool belt —
@@ -157,13 +164,17 @@ export interface DraftRelayRequest {
 export interface DispatchRequest {
   /** The worker agent's durable id (agent_id) to hand the task to. */
   agent_id: string;
-  /** The (drafted) task — becomes the first user turn of a new conversation. */
+  /** The (drafted) task — lands as YOUR user turn (new conversation's first, or
+   *  the next turn of an existing one). */
   text: string;
+  /** Run the task inside this existing conversation instead of minting a new one
+   *  (unknown id → 404). */
+  conversation_id?: string;
 }
 
 export interface DispatchResult {
   ok: boolean;
-  /** The brand-new conversation minted for the dispatched task. */
+  /** The conversation the task runs in (freshly minted unless one was passed). */
   conversation_id?: string;
   job_id?: string;
 }
@@ -400,9 +411,10 @@ export const ambassadorApi = {
     });
   },
 
-  /** Dispatch a task to a chosen worker: mint a brand-new conversation and run that
-   *  worker headless on the task as its first user turn (you authored it). Returns the
-   *  new conversation_id so the client can open + watch it. The ambassador write-side. */
+  /** Dispatch a task to a chosen worker: run it headless on the task as YOUR user
+   *  turn — in a brand-new conversation (default) or an existing one when
+   *  `conversation_id` is passed. Returns the conversation_id so the client can
+   *  open + watch it. The ambassador write-side. */
   async dispatchAmbassador(req: DispatchRequest): Promise<DispatchResult> {
     return apiRequest('/api/agent/ambassador/dispatch', {
       method: 'POST',
