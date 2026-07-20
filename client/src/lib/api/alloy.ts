@@ -4,12 +4,14 @@ import { request as apiRequest } from './core';
 import type { AlloyWorkflow, AlloyWorkflowCreate, AlloyWorkflowUpdate, ServerWorkflow } from './types';
 
 // Map the server's snake_case workflow shape to/from the client camelCase model.
-function deserializeWorkflow(w: ServerWorkflow): AlloyWorkflow {
+// Exported for tests (round-trip pins on org fields).
+export function deserializeWorkflow(w: ServerWorkflow): AlloyWorkflow {
   return {
     id: w.id,
     name: w.name,
     description: w.description ?? undefined,
     supervisorAgentId: w.supervisor_agent_id,
+    managerAgentId: w.manager_agent_id ?? null,
     members: w.members.map((m) => ({
       agentId: m.agent_id,
       role: m.role,
@@ -27,7 +29,7 @@ function deserializeWorkflow(w: ServerWorkflow): AlloyWorkflow {
   };
 }
 
-function serializeWorkflow(
+export function serializeWorkflow(
   w: AlloyWorkflowCreate | AlloyWorkflowUpdate
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -35,6 +37,8 @@ function serializeWorkflow(
   if (w.name !== undefined) out.name = w.name;
   if (w.description !== undefined) out.description = w.description;
   if (w.supervisorAgentId !== undefined) out.supervisor_agent_id = w.supervisorAgentId;
+  // null passes through deliberately — PATCHing null clears the manager (org-free).
+  if (w.managerAgentId !== undefined) out.manager_agent_id = w.managerAgentId;
   if (w.members !== undefined) {
     out.members = w.members.map((m) => ({
       agent_id: m.agentId,

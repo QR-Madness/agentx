@@ -192,6 +192,7 @@ export function ProfileContent({
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,
     delegationHint, setDelegationHint,
+    orgLevel, setRole,
     kind,
     ambassadorBriefingPrompt, setAmbassadorBriefingPrompt,
     ambassadorVerbosity, setAmbassadorVerbosity,
@@ -516,7 +517,32 @@ export function ProfileContent({
 
                   {/* Team membership — agents only (ambassadors are never delegation targets) */}
                   {!isAmbassador && (
-                  <ControlCard icon={<Share2 size={14} />} title="Team membership" summary={availableForDelegation ? 'in roster' : 'not in roster'}>
+                  <ControlCard
+                    icon={<Share2 size={14} />}
+                    title="Team membership"
+                    summary={orgLevel !== 'agent' ? orgLevel : (availableForDelegation ? 'in roster' : 'not in roster')}
+                  >
+                    <div className="profile-form-group">
+                      <label>Role</label>
+                      <SegmentedControl
+                        size="sm"
+                        ariaLabel="Organization role"
+                        value={orgLevel === 'executive' ? 'agent' : orgLevel}
+                        onChange={(v) => setRole(v)}
+                        options={[
+                          { value: 'agent', label: 'Agent', title: 'A team member — works tasks handed down by its lead' },
+                          { value: 'lead', label: 'Lead', title: 'Runs a team hands-on: works its members, may do manual work' },
+                          { value: 'manager', label: 'Manager', title: 'Staffing director — reports and directives only, delegates to the leads of its teams' },
+                        ]}
+                      />
+                      <span className="profile-form-hint">
+                        Once this agent is part of an organization (a team with a manager), the
+                        chain of command decides who it may delegate to — the roster toggle below
+                        then only governs org-free agents. Choosing <strong>Manager</strong> applies
+                        the report-only tool template (manual-work tools blocked — editable in the
+                        Tools tab).
+                      </span>
+                    </div>
                     <label className="profile-toggle-row">
                       <span className="profile-toggle-label">
                         <Share2 size={15} />
@@ -866,8 +892,11 @@ export function ProfileContent({
 
       {/* Floating Delete — non-default profiles in edit mode. Anchored absolute
           within .profile-content-outer (position:relative), NOT fixed/portal,
-          so it's Tauri-safe and stays put while the form scrolls. */}
-      {!libraryOpen && isEditing && !profile?.isDefault && (
+          so it's Tauri-safe and stays put while the form scrolls. The default
+          ambassador is system-owned (org apex) — no delete affordance; the
+          server refuses the DELETE anyway. */}
+      {!libraryOpen && isEditing && !profile?.isDefault
+        && !(profile?.kind === 'ambassador' && profile?.isDefaultAmbassador) && (
         <button
           type="button"
           className="profile-btn-danger profile-delete-float"

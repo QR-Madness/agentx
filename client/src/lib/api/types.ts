@@ -589,6 +589,11 @@ export interface AgentProfile {
   // One-line specialty shown to teammates deciding whom to delegate to.
   // Falls back to `description` when unset.
   delegationHint?: string | null;
+  // Agentic Organizations: org tier, orthogonal to `kind`. 'executive' is
+  // reserved server-side and never offered in the UI. Once an agent is part of
+  // an org (a team with a manager), the chain of command supersedes
+  // availableForDelegation for it.
+  orgLevel?: 'executive' | 'manager' | 'lead' | 'agent';
   // Phase 16.6: optional ambassador section — present when this profile can act
   // as a parallel conversation interpreter.
   ambassador?: AmbassadorSection;
@@ -640,6 +645,7 @@ export interface AgentProfileCreate {
   blocked_tools?: string[];
   available_for_delegation?: boolean;
   delegation_hint?: string | null;
+  org_level?: 'executive' | 'manager' | 'lead' | 'agent';
   // Phase 16.6 — ambassador section (snake_case body). null clears it.
   ambassador?: {
     enabled: boolean;
@@ -679,6 +685,9 @@ export interface AlloyWorkflow {
   name: string;
   description?: string;
   supervisorAgentId: string;
+  // Agentic Organizations: the manager that owns this team (chain of command:
+  // manager → this team's lead). null/undefined = org-free team.
+  managerAgentId?: string | null;
   members: AlloyWorkflowMember[];
   routes: AlloyWorkflowRoute[];
   sharedChannel: string;
@@ -692,6 +701,7 @@ export interface AlloyWorkflowCreate {
   name: string;
   description?: string;
   supervisorAgentId: string;
+  managerAgentId?: string | null;
   members: AlloyWorkflowMember[];
   routes?: AlloyWorkflowRoute[];
   canvas?: Record<string, unknown>;
@@ -785,6 +795,7 @@ export interface ServerWorkflow {
   name: string;
   description: string | null;
   supervisor_agent_id: string;
+  manager_agent_id?: string | null;
   members: ServerWorkflowMember[];
   routes: ServerWorkflowRoute[];
   shared_channel: string;
@@ -925,6 +936,10 @@ export interface ConfigUpdate {
     allow_adhoc_delegation?: boolean;
     max_parallel_delegations?: number;
     max_delegation_depth?: number;
+    delegation_timeout_seconds?: number;
+    non_blocking_delegations?: boolean;
+    // Agentic Organizations: strict adjacency-only delegation for org participants.
+    chain_of_command?: boolean;
   };
   ambassador?: {
     enabled?: boolean;
