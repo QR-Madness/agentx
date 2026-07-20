@@ -633,11 +633,12 @@ def _effective_min_output(
     return max(present) if present else None
 
 
-def _append_team_blocks(blocks: list, agent, active_workflow, session) -> None:
+def _append_team_blocks(blocks: list, agent, agent_profile, active_workflow, session) -> None:
     """Append multi-agent framing ledger blocks: the workflow supervisor prompt OR
-    participant awareness, plus the ad-hoc delegation roster. Factored out of the
-    chat-stream generator (like `_append_corpus_awareness_blocks`) to keep its
-    conditional-path count within the type-checker's analysis budget.
+    participant awareness, the manager tier charter (Agentic Orgs), plus the
+    ad-hoc delegation roster. Factored out of the chat-stream generator (like
+    `_append_corpus_awareness_blocks`) to keep its conditional-path count within
+    the type-checker's analysis budget.
     """
     from .agent.context_ledger import LedgerBlock, shrink_tail
 
@@ -662,6 +663,18 @@ def _append_team_blocks(blocks: list, agent, active_workflow, session) -> None:
                 content=participants_block,
                 shrink_fn=shrink_tail,
             ))
+
+    # Manager report contract (Agentic Orgs): mandatory behavioral charter for
+    # manager-tier profiles in normal chats — additive to participant awareness;
+    # the structural half is the report-only tool template on the profile.
+    if active_workflow is None and getattr(agent_profile, "org_level", "agent") == "manager":
+        from .alloy.prompts import build_manager_charter_prompt
+        blocks.append(LedgerBlock(
+            key="manager_charter",
+            priority=92,
+            mandatory=True,
+            content=build_manager_charter_prompt(),
+        ))
 
     # Ad-hoc delegation roster (Phase 16.4): outside a workflow, when `delegate_to`
     # is on offer, tell the model who its teammates are. Non-mandatory — droppable
@@ -2442,10 +2455,11 @@ async def agent_chat_stream(request):
                 *_thinking_blocks(thinking_plan),
             ]
 
-            # Multi-agent framing: workflow supervisor OR participant awareness, plus
-            # the ad-hoc delegation roster. Extracted to a helper (see its docstring)
-            # to keep this generator under the type-checker's complexity budget.
-            _append_team_blocks(blocks, agent, active_workflow, session)
+            # Multi-agent framing: workflow supervisor OR participant awareness, the
+            # manager tier charter, plus the ad-hoc delegation roster. Extracted to a
+            # helper (see its docstring) to keep this generator under the
+            # type-checker's complexity budget.
+            _append_team_blocks(blocks, agent, agent_profile, active_workflow, session)
 
             # Skills index (progressive disclosure — bodies load via use_skill).
             blocks.extend(_skills_block(agent))
@@ -7808,7 +7822,7 @@ def config_update(request):
     _ALLOY_KEYS = (
         "allow_adhoc_delegation", "max_parallel_delegations",
         "max_delegation_depth", "delegation_timeout_seconds",
-        "non_blocking_delegations",
+        "non_blocking_delegations", "chain_of_command",
     )
     alloy_settings = data.get("alloy", {})
     for key, value in alloy_settings.items():
@@ -8124,6 +8138,7 @@ def agent_profiles_list(request):
                     "blocked_tools": list(p.blocked_tools) if p.blocked_tools else [],
                     "available_for_delegation": p.available_for_delegation,
                     "delegation_hint": p.delegation_hint,
+                    "org_level": p.org_level,
                     "ambassador": p.ambassador.model_dump() if p.ambassador else None,
                     "kind": p.kind,
                     "is_default": p.is_default,
@@ -8174,6 +8189,7 @@ def agent_profiles_list(request):
                     "blocked_tools": list(created.blocked_tools) if created.blocked_tools else [],
                     "available_for_delegation": created.available_for_delegation,
                     "delegation_hint": created.delegation_hint,
+                    "org_level": created.org_level,
                     "ambassador": created.ambassador.model_dump() if created.ambassador else None,
                     "kind": created.kind,
                     "is_default": created.is_default,
@@ -8228,6 +8244,7 @@ def agent_profile_detail(request, profile_id):
                 "blocked_tools": list(profile.blocked_tools) if profile.blocked_tools else [],
                 "available_for_delegation": profile.available_for_delegation,
                 "delegation_hint": profile.delegation_hint,
+                "org_level": profile.org_level,
                 "ambassador": profile.ambassador.model_dump() if profile.ambassador else None,
                 "kind": profile.kind,
                 "is_default": profile.is_default,
@@ -8267,6 +8284,7 @@ def agent_profile_detail(request, profile_id):
                 "blocked_tools": list(updated.blocked_tools) if updated.blocked_tools else [],
                 "available_for_delegation": updated.available_for_delegation,
                 "delegation_hint": updated.delegation_hint,
+                "org_level": updated.org_level,
                 "ambassador": updated.ambassador.model_dump() if updated.ambassador else None,
                 "kind": updated.kind,
                 "is_default": updated.is_default,
@@ -8409,6 +8427,7 @@ def _parse_workflow_payload(data: dict):
         name=data["name"],
         description=data.get("description"),
         supervisor_agent_id=data["supervisor_agent_id"],
+        manager_agent_id=data.get("manager_agent_id"),
         members=members,
         routes=routes,
         shared_channel=data.get("shared_channel") or "",

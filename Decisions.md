@@ -146,6 +146,35 @@ off, and no `center_turn` returns the *earliest* turns (the aged-out ones; recen
 already in view). **Guard:** `ConversationStateDurabilityTest` + `ReadThreadCurrentTest`
 (`tests.py`).
 
+### INV-9 — The org is derivable; there is no org-membership database
+Agentic Organizations derive entirely from the two existing stores: the profile declares its
+tier (`AgentProfile.org_level`), the workflow declares its owner (`Workflow.manager_agent_id`),
+and **everything else** (chain edges, roster grouping, `in_org`, the future canvas) derives via
+`alloy/org_chart.py` — the single derivation source. `org_level` plays **no** role in edge
+derivation (tier mismatches are warn-only at workflow save). A future layout store may hold
+canvas *positions* only — never membership or edges. **Guard:** `OrgChartTest`.
+
+### INV-10 — Chain of command is enforced at the tool enum AND the executor; adjacency only
+For org participants (with `alloy.chain_of_command` on), legal delegation targets are exactly
+`chain_targets()` adjacency — manager → lead of an owned team, lead → own member, member ↑ own
+lead; no level-skipping, no peer-to-peer. Both choke points read that one derivation:
+`list_adhoc_delegation_targets` (constrains the model's enum + roster prompt in lockstep) and
+`AlloyExecutor._validate_target` (constrains reality; plus the categorical `delegation_path`
+loop guard). Deliberate asymmetry: **chain edges ignore `available_for_delegation`** — adjacency
+implies delegability; the flag governs only the flat org-free roster. `in_org` is
+**manager-anchored** (a manager-less team's lead/members stay org-free) so existing installs'
+flat roster behavior is byte-identical. **Guard:** `AdhocRosterPromptTest` +
+`AdhocDelegationTest` chain tests + `OrgChartTest.test_in_org_is_manager_anchored`.
+
+### INV-11 — The ambassador is apex-outside-the-chain
+Ambassador dispatch is **not** a chain edge, and the chain never constrains @-mentions or
+ambassador dispatch — human dual-entry stays unrestricted (§16.7). Ambassadors remain excluded
+from chat/routing/delegation exactly as before (`kind` stays binary; `org_level` is orthogonal),
+and the default ambassador is system-owned (`delete_profile` refuses it; the boot reconciler
+stays as safety net). The governance constitution above this (the Agency/Regulator,
+cognitive-os.md Pillar 8) is deliberately NOT locked here — nothing in the org layer may
+preclude it. **Guard:** `AgentProfileKindTest` delete-guard + ambassador-exclusion tests.
+
 ---
 
 ## Decisions

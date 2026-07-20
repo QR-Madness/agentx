@@ -62,6 +62,11 @@ class Workflow:
     supervisor_agent_id: str
     members: list[WorkflowMember]
     description: str | None = None
+    # Agentic Organizations: the manager that OWNS this team (chain of command:
+    # manager → this team's lead). A manager owns teams, not agents; one team has
+    # ≤1 manager, one manager may own many teams. None = org-free team (flat
+    # ad-hoc roster behavior unchanged for its lead/members).
+    manager_agent_id: str | None = None
     routes: list[WorkflowRoute] = field(default_factory=list)
     shared_channel: str = ""  # auto-derived in __post_init__ when blank
     canvas: dict = field(default_factory=dict)
@@ -87,6 +92,7 @@ class Workflow:
             "name": self.name,
             "description": self.description,
             "supervisor_agent_id": self.supervisor_agent_id,
+            "manager_agent_id": self.manager_agent_id,
             "members": [m.to_dict() for m in self.members],
             "routes": [r.to_dict() for r in self.routes],
             "shared_channel": self.shared_channel,

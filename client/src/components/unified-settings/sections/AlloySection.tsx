@@ -20,6 +20,7 @@ interface AlloySettings extends Record<string, unknown> {
   max_parallel_delegations: number;
   max_delegation_depth: number;
   delegation_timeout_seconds: number;
+  chain_of_command: boolean;
 }
 
 export default function AlloySection() {
@@ -34,6 +35,7 @@ export default function AlloySection() {
         max_parallel_delegations: a.max_parallel_delegations ?? 3,
         max_delegation_depth: a.max_delegation_depth ?? 3,
         delegation_timeout_seconds: a.delegation_timeout_seconds ?? 300,
+        chain_of_command: a.chain_of_command ?? true,
       };
     },
     save: async changed => {
@@ -66,6 +68,19 @@ export default function AlloySection() {
               <>
                 Give every agent a `delegate_to` tool (plus a roster prompt) so it can
                 hand subtasks to any profile that joined the team roster.
+              </>
+            }
+          />
+
+          <ToggleField
+            checked={settings.chain_of_command}
+            onChange={chain_of_command => update({ chain_of_command })}
+            label="Chain of command"
+            hint={
+              <>
+                Agents inside an organization (a team with a manager) may delegate only
+                along the org chart — manager → lead, lead → member, member ↑ lead.
+                Agents outside any org keep the flat roster.
               </>
             }
           />

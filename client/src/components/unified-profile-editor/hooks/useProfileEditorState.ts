@@ -7,6 +7,9 @@ import {
   type PromptTemplate,
 } from '../../../lib/api';
 import { useAgentProfile } from '../../../contexts/AgentProfileContext';
+import { mergeManagerTemplate } from '../../../lib/managerTemplate';
+
+export type OrgLevel = NonNullable<AgentProfile['orgLevel']>;
 
 export const REASONING_OPTIONS: { value: ReasoningStrategy; label: string; description: string }[] = [
   { value: 'auto', label: 'Auto', description: 'Pick the best pattern per message' },
@@ -42,6 +45,11 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   // Team roster (ad-hoc delegation) is opt-in: fresh profiles start off it.
   const [availableForDelegation, setAvailableForDelegation] = useState(false);
   const [delegationHint, setDelegationHint] = useState('');
+  // Agentic Organizations — org tier ('executive' is server-reserved, never
+  // offered here). Setting Manager applies the report-only blocked-tools
+  // template locally too (see setRole): the form never rehydrates after an
+  // autosave, so a server-only merge would be wiped by the next PUT.
+  const [orgLevel, setOrgLevel] = useState<OrgLevel>('agent');
   // Phase 16.6 — ambassador section: when enabled, this profile can act as a
   // parallel conversation interpreter (briefs turns without entering the chat).
   const [ambassadorEnabled, setAmbassadorEnabled] = useState(false);
@@ -90,6 +98,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setBlockedTools(profile.blockedTools ?? []);
       setAvailableForDelegation(profile.availableForDelegation ?? false);
       setDelegationHint(profile.delegationHint ?? '');
+      setOrgLevel(profile.orgLevel ?? 'agent');
       setAmbassadorEnabled(profile.ambassador?.enabled ?? false);
       setAmbassadorBriefingPrompt(profile.ambassador?.briefingPrompt ?? '');
       setAmbassadorVerbosity(profile.ambassador?.verbosity ?? 'normal');
@@ -119,6 +128,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
       setBlockedTools([]);
       setAvailableForDelegation(false);
       setDelegationHint('');
+      setOrgLevel('agent');
       setAmbassadorEnabled(false);
       setAmbassadorBriefingPrompt('');
       setAmbassadorVerbosity('normal');
@@ -187,6 +197,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     blocked_tools: blockedTools,
     available_for_delegation: availableForDelegation,
     delegation_hint: delegationHint.trim() || null,
+    org_level: orgLevel,
     kind,
     // Ambassador config travels only on ambassador-kind profiles; null clears
     // any legacy section on a normal agent. Persona overrides: null rides the
@@ -243,7 +254,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
   }, [
     name, avatar, description, tags, defaultModel, temperature, reasoningStrategy,
     baseTemplateId, systemPrompt, enableMemory, memoryChannel, enableTools, directMode,
-    allowedTools, blockedTools, availableForDelegation, delegationHint, kind,
+    allowedTools, blockedTools, availableForDelegation, delegationHint, orgLevel, kind,
     ambassadorBriefingPrompt, ambassadorVerbosity, briefingPersona, qaPersona, draftPersona,
     voicePersona, voiceMode, speechModel, voice, transcriptionModel,
   ]);
@@ -281,6 +292,16 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     }
   };
 
+  // Role picker entry point: switching TO Manager merges the report-only
+  // template into the local blocked list (mirrors the server's one-time merge —
+  // union-of-unions, so applying both converges). Demotion strips nothing.
+  const setRole = (next: OrgLevel) => {
+    if (next === 'manager' && orgLevel !== 'manager') {
+      setBlockedTools((prev) => mergeManagerTemplate(prev));
+    }
+    setOrgLevel(next);
+  };
+
   const handleDelete = async (profileId: string, onSuccess: () => void) => {
     setDeleting(true);
     setError(null);
@@ -315,6 +336,7 @@ export function useProfileEditorState(profile: AgentProfile | null) {
     blockedTools, setBlockedTools,
     availableForDelegation, setAvailableForDelegation,
     delegationHint, setDelegationHint,
+    orgLevel, setRole,
     kind,
     ambassadorEnabled, setAmbassadorEnabled,
     ambassadorBriefingPrompt, setAmbassadorBriefingPrompt,

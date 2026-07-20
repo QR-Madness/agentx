@@ -248,6 +248,7 @@ export function AlloyFactoryModal({ onClose, editWorkflowId, isNew }: AlloyFacto
                       name: payload.name,
                       description: payload.description,
                       supervisorAgentId: payload.supervisorAgentId,
+                      managerAgentId: payload.managerAgentId,
                       members: payload.members,
                     });
                   } else {
@@ -256,6 +257,7 @@ export function AlloyFactoryModal({ onClose, editWorkflowId, isNew }: AlloyFacto
                       name: payload.name,
                       description: payload.description,
                       supervisorAgentId: payload.supervisorAgentId,
+                      managerAgentId: payload.managerAgentId,
                       members: payload.members,
                     });
                     setSelection({ kind: 'edit', id: created.id });
@@ -293,6 +295,7 @@ interface EditorPayload {
   name: string;
   description?: string;
   supervisorAgentId: string;
+  managerAgentId?: string | null;
   members: AlloyWorkflowMember[];
 }
 
@@ -312,6 +315,8 @@ function WorkflowEditorView({ initial, profiles, profilesByAgentId, existingIds,
   const [idDirty, setIdDirty] = useState(isEditing);
   const [description, setDescription] = useState(initial?.description ?? '');
   const [supervisorId, setSupervisorId] = useState<string>(initial?.supervisorAgentId ?? '');
+  // Agentic Organizations: the manager that owns this team ('' = org-free team).
+  const [managerAgentId, setManagerAgentId] = useState<string>(initial?.managerAgentId ?? '');
 
   // Ordered team members (specialists). Seed from the workflow, preserving order.
   const [members, setMembers] = useState<MemberDraft[]>(() =>
@@ -334,20 +339,38 @@ function WorkflowEditorView({ initial, profiles, profilesByAgentId, existingIds,
   }, [name, idDirty, isEditing]);
 
   // Agents eligible to be added: real agents (never ambassadors), not the lead,
-  // not already on the team.
+  // not the owning manager, not already on the team.
   const candidates = useMemo(
     () =>
       profiles.filter(
         p =>
           p.kind === 'agent' &&
           p.agentId !== supervisorId &&
+          p.agentId !== managerAgentId &&
           !members.some(m => m.agentId === p.agentId)
       ),
-    [profiles, supervisorId, members]
+    [profiles, supervisorId, managerAgentId, members]
   );
 
   // Leads must be real agents (ambassadors are never chat/delegation agents).
   const leadOptions = useMemo(() => profiles.filter(p => p.kind === 'agent'), [profiles]);
+
+  // Manager candidates: agents that aren't the lead or a member (server hard
+  // rules mirrored); manager-tier profiles listed first.
+  const managerOptions = useMemo(
+    () =>
+      profiles
+        .filter(
+          p =>
+            p.kind === 'agent' &&
+            p.agentId !== supervisorId &&
+            !members.some(m => m.agentId === p.agentId)
+        )
+        .sort((a, b) =>
+          Number(b.orgLevel === 'manager') - Number(a.orgLevel === 'manager')
+        ),
+    [profiles, supervisorId, members]
+  );
 
   const addMember = (agentId: string) => {
     setMembers(prev =>
@@ -364,10 +387,18 @@ function WorkflowEditorView({ initial, profiles, profilesByAgentId, existingIds,
   };
 
   // Picking a lead that's currently a member removes it from the roster — an
-  // agent can't be both the lead and one of its own members.
+  // agent can't be both the lead and one of its own members (and never the
+  // team's manager either).
   const handleLeadChange = (value: string) => {
     setSupervisorId(value);
     setMembers(prev => prev.filter(m => m.agentId !== value));
+    if (value && value === managerAgentId) setManagerAgentId('');
+  };
+
+  // Radix SelectItem can't carry value="" — sentinel for "no manager".
+  const NO_MANAGER = '__none__';
+  const handleManagerChange = (value: string) => {
+    setManagerAgentId(value === NO_MANAGER ? '' : value);
   };
 
   const handleSave = async () => {
@@ -413,6 +444,8 @@ function WorkflowEditorView({ initial, profiles, profilesByAgentId, existingIds,
           name: name.trim(),
           description: description.trim() || undefined,
           supervisorAgentId: supervisorId,
+          // null (not undefined) so a PATCH can clear the manager (org-free).
+          managerAgentId: managerAgentId || null,
           members: memberList,
         },
         isEditing
@@ -494,6 +527,28 @@ function WorkflowEditorView({ initial, profiles, profilesByAgentId, existingIds,
           The lead <strong>must</strong> be a high-quality model that's
           tested in multi-agent orchestration; actionable results aren't
           guaranteed otherwise.
+        </span>
+      </div>
+
+      <div className="alloy-form-row">
+        <label>Manager (optional)</label>
+        <Select value={managerAgentId || NO_MANAGER} onValueChange={handleManagerChange}>
+          <SelectTrigger aria-label="Owning manager">
+            <SelectValue placeholder="— No manager (org-free team) —" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_MANAGER}>No manager — org-free team</SelectItem>
+            {managerOptions.map(p => (
+              <SelectItem key={p.agentId} value={p.agentId}>
+                {p.name} ({p.agentId}){p.orgLevel === 'manager' ? ' · manager' : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="form-hint">
+          Setting a manager puts this team in the organization: the manager
+          delegates to the lead, the lead works the members, and the chain of
+          command replaces the flat roster for everyone on the team.
         </span>
       </div>
 

@@ -8506,6 +8506,39 @@ class DelegatableProfileTest(TestCase):
         p = AgentProfile(id="n", name="N", agent_id="new-one-two")  # type: ignore[call-arg]
         self.assertFalse(p.available_for_delegation)
 
+    def test_org_level_round_trips_save_reload(self):
+        """Agentic Orgs: org_level survives save→reload (hand-picked save dict —
+        the Phase-18.2 silent-drop regression class)."""
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.agent.models import AgentProfile
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "profiles.yaml"
+            mgr = self._manager(path)
+            mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+                id="ld", name="Lead", agent_id="org-lead-one", org_level="lead",
+            ))
+            reloaded = self._manager(path)
+            self.assertEqual(reloaded.get_profile("ld").org_level, "lead")
+
+    def test_org_level_defaults_agent_on_old_yaml(self):
+        """Boot-with-old-YAML: a profiles.yaml written before org_level existed
+        loads unchanged, defaulting every profile to the 'agent' tier."""
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "profiles.yaml"
+            path.write_text(
+                "profiles:\n"
+                "  - id: old\n"
+                "    name: Old Timer\n"
+                "    agent_id: old-time-r1\n"
+            )
+            mgr = self._manager(path)
+            self.assertEqual(mgr.get_profile("old").org_level, "agent")
+
     def test_adhoc_gate_predicate(self):
         """_adhoc_delegation_enabled: config default ON; per-conversation Solo
         flag short-circuits; an explicit persisted False stays off."""
@@ -8547,6 +8580,345 @@ class DelegatableProfileTest(TestCase):
         self.assertEqual(
             descs[0]["input_schema"]["properties"]["agent_id"]["enum"], ["spec-aa-bb"]
         )
+
+
+class OrgWorkflowFieldsTest(TestCase):
+    """Agentic Orgs Slice 1: Workflow.manager_agent_id — persistence round trip
+    (including the PATCH merge path), old-YAML back-compat, and validation."""
+
+    def _profiles(self):
+        from types import SimpleNamespace
+        return [
+            SimpleNamespace(agent_id="mgr-aa-bb", kind="agent", org_level="manager"),
+            SimpleNamespace(agent_id="lead-cc-dd", kind="agent", org_level="lead"),
+            SimpleNamespace(agent_id="spec-ee-ff", kind="agent", org_level="agent"),
+            SimpleNamespace(agent_id="amb-gg-hh", kind="ambassador", org_level="agent"),
+        ]
+
+    def _wf(self, **overrides):
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        base: dict = {
+            "id": "team-x", "name": "Team X",
+            "supervisor_agent_id": "lead-cc-dd",
+            "members": [
+                WorkflowMember(agent_id="lead-cc-dd", role=MemberRole.SUPERVISOR),
+                WorkflowMember(agent_id="spec-ee-ff", role=MemberRole.SPECIALIST),
+            ],
+            "manager_agent_id": "mgr-aa-bb",
+        }
+        base.update(overrides)
+        return Workflow(**base)
+
+    def _mgr_env(self):
+        """(context manager patching profile lookups, tmp workflows path)."""
+        import tempfile
+        from pathlib import Path
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        pm = SimpleNamespace(list_profiles=self._profiles)
+        ctx = patch("agentx_ai.alloy.manager.get_profile_manager", return_value=pm)
+        path = Path(tempfile.mkdtemp()) / "workflows.yaml"
+        return ctx, path
+
+    def test_manager_agent_id_round_trips_save_reload_and_patch(self):
+        from agentx_ai.alloy.manager import WorkflowManager
+        ctx, path = self._mgr_env()
+        with ctx:
+            mgr = WorkflowManager(config_path=path)
+            mgr.create(self._wf())
+            # Fresh manager reload → field survives disk.
+            reloaded = WorkflowManager(config_path=path)
+            self.assertEqual(reloaded.get("team-x").manager_agent_id, "mgr-aa-bb")
+            self.assertEqual(reloaded.get("team-x").to_dict()["manager_agent_id"], "mgr-aa-bb")
+            # PATCH merge path: an unrelated update must NOT drop the field
+            # (to_dict → merge → _parse_workflow round trip).
+            updated = reloaded.update("team-x", {"name": "Team X2"})
+            self.assertEqual(updated.manager_agent_id, "mgr-aa-bb")
+            # Explicit null clears it (org-free again).
+            cleared = reloaded.update("team-x", {"manager_agent_id": None})
+            self.assertIsNone(cleared.manager_agent_id)
+
+    def test_old_yaml_without_manager_loads_none(self):
+        """Boot-with-old-YAML: workflows.yaml written before the field loads
+        unchanged; manager_agent_id defaults to None (org-free team)."""
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.alloy.manager import WorkflowManager
+        path = Path(tempfile.mkdtemp()) / "workflows.yaml"
+        path.write_text(
+            "workflows:\n"
+            "  - id: legacy\n"
+            "    name: Legacy Team\n"
+            "    supervisor_agent_id: lead-cc-dd\n"
+            "    members:\n"
+            "      - agent_id: lead-cc-dd\n"
+            "        role: supervisor\n"
+        )
+        mgr = WorkflowManager(config_path=path)
+        self.assertIsNone(mgr.get("legacy").manager_agent_id)
+
+    def test_validate_manager_hard_rules(self):
+        from agentx_ai.alloy.manager import WorkflowManager
+        ctx, path = self._mgr_env()
+        with ctx:
+            mgr = WorkflowManager(config_path=path)
+            with self.assertRaises(ValueError):  # unknown id
+                mgr.create(self._wf(manager_agent_id="ghost-xx-yy"))
+            with self.assertRaises(ValueError):  # ambassador can't manage
+                mgr.create(self._wf(manager_agent_id="amb-gg-hh"))
+            with self.assertRaises(ValueError):  # manager ≠ the team's own lead
+                mgr.create(self._wf(manager_agent_id="lead-cc-dd"))
+            with self.assertRaises(ValueError):  # manager not a member
+                mgr.create(self._wf(manager_agent_id="spec-ee-ff"))
+
+    def test_validate_tier_mismatches_warn_only(self):
+        """Tier mismatches must never brick a save — log-warn like routes."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.alloy.manager import WorkflowManager
+        profiles = [
+            # Manager slot filled by an 'agent'-tier profile; lead slot by 'agent' too.
+            SimpleNamespace(agent_id="mgr-aa-bb", kind="agent", org_level="agent"),
+            SimpleNamespace(agent_id="lead-cc-dd", kind="agent", org_level="agent"),
+            SimpleNamespace(agent_id="spec-ee-ff", kind="agent", org_level="agent"),
+        ]
+        pm = SimpleNamespace(list_profiles=lambda: profiles)
+        import tempfile
+        from pathlib import Path
+        path = Path(tempfile.mkdtemp()) / "workflows.yaml"
+        with patch("agentx_ai.alloy.manager.get_profile_manager", return_value=pm):
+            mgr = WorkflowManager(config_path=path)
+            with self.assertLogs("agentx_ai.alloy.manager", level="WARNING") as logs:
+                created = mgr.create(self._wf())
+            self.assertIsNotNone(created)  # saved despite mismatches
+            joined = "\n".join(logs.output)
+            self.assertIn("expected 'manager'", joined)
+            self.assertIn("expected 'lead'", joined)
+
+
+class ManagerTemplateTest(TestCase):
+    """Agentic Orgs Slice 1: the manager report-only blocklist template —
+    merged ONCE on the tier transition; user-owned afterward."""
+
+    def _manager(self, tmp_path):
+        from agentx_ai.agent.profiles import ProfileManager
+        return ProfileManager(config_path=tmp_path)
+
+    def _tmp(self):
+        import tempfile
+        from pathlib import Path
+        return Path(tempfile.mkdtemp()) / "profiles.yaml"
+
+    def test_transition_to_manager_merges_template(self):
+        from agentx_ai.agent.models import MANAGER_REPORT_ONLY_BLOCKED_TOOLS, AgentProfile
+        mgr = self._manager(self._tmp())
+        mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+            id="m", name="M", agent_id="mgr-one-aa",
+            blocked_tools=["custom.tool"],
+        ))
+        updated = mgr.update_profile("m", {"org_level": "manager"})
+        # Pre-existing entries preserved (and first), template appended, no dupes.
+        self.assertEqual(updated.blocked_tools[0], "custom.tool")
+        for t in MANAGER_REPORT_ONLY_BLOCKED_TOOLS:
+            self.assertIn(t, updated.blocked_tools)
+        self.assertEqual(len(updated.blocked_tools), len(set(updated.blocked_tools)))
+
+    def test_already_manager_save_does_not_reapply(self):
+        """A template, not a live gate: entries removed after the transition
+        stay removed on later saves."""
+        from agentx_ai.agent.models import AgentProfile
+        mgr = self._manager(self._tmp())
+        mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+            id="m", name="M", agent_id="mgr-two-bb",
+        ))
+        mgr.update_profile("m", {"org_level": "manager"})
+        # User unblocks run_command for this manager.
+        trimmed = [
+            t for t in mgr.get_profile("m").blocked_tools
+            if t != "_internal.run_command"
+        ]
+        mgr.update_profile("m", {"blocked_tools": trimmed})
+        # An unrelated later edit must not re-add it.
+        after = mgr.update_profile("m", {"description": "staffing director"})
+        self.assertNotIn("_internal.run_command", after.blocked_tools)
+
+    def test_create_as_manager_applies_template(self):
+        from agentx_ai.agent.models import MANAGER_REPORT_ONLY_BLOCKED_TOOLS, AgentProfile
+        mgr = self._manager(self._tmp())
+        created = mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+            id="m", name="M", agent_id="mgr-three-cc", org_level="manager",
+        ))
+        for t in MANAGER_REPORT_ONLY_BLOCKED_TOOLS:
+            self.assertIn(t, created.blocked_tools)
+
+    def test_demotion_strips_nothing(self):
+        """The merged list is user-owned after templating — demotion keeps it."""
+        from agentx_ai.agent.models import MANAGER_REPORT_ONLY_BLOCKED_TOOLS, AgentProfile
+        mgr = self._manager(self._tmp())
+        mgr.create_profile(AgentProfile(  # type: ignore[call-arg]
+            id="m", name="M", agent_id="mgr-four-dd", org_level="manager",
+        ))
+        demoted = mgr.update_profile("m", {"org_level": "agent"})
+        for t in MANAGER_REPORT_ONLY_BLOCKED_TOOLS:
+            self.assertIn(t, demoted.blocked_tools)
+
+
+class OrgChartTest(TestCase):
+    """Agentic Orgs Slice 2: the pure chain-of-command derivation module.
+
+    Fixture: manager M owns T1 (lead L1; members A, B) and T2 (lead L2;
+    members C + one ambassador + one dangling id); manager-less T3 (lead L3;
+    member D); unaffiliated agent U. `in_org` is manager-anchored — L3/D/U
+    stay OUT (the back-compat linchpin: org-free installs keep the flat
+    roster byte-identical)."""
+
+    AGENTS = {
+        "m-aa": ("Mable", "manager"), "l1-aa": ("Lead One", "lead"),
+        "l2-aa": ("Lead Two", "lead"), "l3-aa": ("Lead Three", "lead"),
+        "a-aa": ("Aria", "agent"), "b-aa": ("Bram", "agent"),
+        "c-aa": ("Cleo", "agent"), "d-aa": ("Dara", "agent"),
+        "u-aa": ("Uma", "agent"),
+    }
+
+    def _pm(self):
+        from types import SimpleNamespace
+        profiles = {
+            aid: SimpleNamespace(
+                agent_id=aid, name=name, kind="agent", org_level=level,
+                delegation_hint=f"{name} specialty" if aid == "a-aa" else None,
+                description=f"{name} description",
+                # Chain edges must IGNORE this flag (deliberate asymmetry).
+                available_for_delegation=False,
+            )
+            for aid, (name, level) in self.AGENTS.items()
+        }
+        # Ambassador: get_profile_by_agent_id filters kind!='agent' → None.
+        return SimpleNamespace(
+            get_profile_by_agent_id=lambda aid: profiles.get(aid),
+            list_profiles=lambda: list(profiles.values()),
+        )
+
+    def _wfs(self):
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        def team(tid, name, lead, members, manager=None, member_hints=None):
+            hints = member_hints or {}
+            return Workflow(
+                id=tid, name=name, supervisor_agent_id=lead,
+                manager_agent_id=manager,
+                members=[WorkflowMember(agent_id=lead, role=MemberRole.SUPERVISOR)] + [
+                    WorkflowMember(agent_id=m, role=MemberRole.SPECIALIST,
+                                   delegation_hint=hints.get(m))
+                    for m in members
+                ],
+            )
+        return [
+            team("t1", "Team One", "l1-aa", ["a-aa", "b-aa"], manager="m-aa",
+                 member_hints={"a-aa": "pattern synthesis (team hat)"}),
+            # amb-zz (not an agent profile) + ghost-zz (dangling) must be skipped.
+            team("t2", "Team Two", "l2-aa", ["c-aa", "amb-zz", "ghost-zz"], manager="m-aa"),
+            team("t3", "Team Three", "l3-aa", ["d-aa"]),  # org-free
+        ]
+
+    def _patched(self, knob=True):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from contextlib import ExitStack
+        stack = ExitStack()
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_profile_manager", return_value=self._pm()))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_workflow_manager",
+            return_value=SimpleNamespace(list=self._wfs)))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_config_manager",
+            return_value=SimpleNamespace(
+                get=lambda key, default=None: knob
+                if key == "alloy.chain_of_command" else default)))
+        return stack
+
+    def test_team_derivations(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            self.assertEqual([w.id for w in oc.teams_managed_by("m-aa")], ["t1", "t2"])
+            self.assertEqual([w.id for w in oc.teams_led_by("l1-aa")], ["t1"])
+            self.assertEqual([w.id for w in oc.teams_of_member("a-aa")], ["t1"])
+            self.assertEqual(oc.teams_managed_by(""), [])
+
+    def test_in_org_is_manager_anchored(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            for aid in ("m-aa", "l1-aa", "l2-aa", "a-aa", "b-aa", "c-aa"):
+                self.assertTrue(oc.in_org(aid), aid)
+            # The linchpin: a manager-less team's lead/member and an
+            # unaffiliated agent are NOT in the org.
+            for aid in ("l3-aa", "d-aa", "u-aa", ""):
+                self.assertFalse(oc.in_org(aid), aid)
+
+    def test_chain_targets_manager_reaches_leads_only(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            targets = oc.chain_targets("m-aa")
+        self.assertEqual([t.agent_id for t in targets], ["l1-aa", "l2-aa"])
+        self.assertTrue(all(t.relation == "down_lead" for t in targets))
+
+    def test_chain_targets_lead_reaches_own_members(self):
+        """Members only — flag ignored (B has available_for_delegation=False),
+        member-hint precedence (A's team hat beats its profile hint),
+        ambassador + dangling ids skipped (L2's team)."""
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            t1 = oc.chain_targets("l1-aa")
+            t2 = oc.chain_targets("l2-aa")
+        self.assertEqual([t.agent_id for t in t1], ["a-aa", "b-aa"])
+        self.assertTrue(all(t.relation == "down_member" for t in t1))
+        self.assertEqual(t1[0].hint, "pattern synthesis (team hat)")  # member hint wins
+        self.assertEqual(t1[1].hint, "Bram description")  # description fallback
+        self.assertEqual([t.agent_id for t in t2], ["c-aa"])  # amb-zz/ghost-zz skipped
+
+    def test_chain_targets_member_escalates_to_own_lead(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched():
+            targets = oc.chain_targets("a-aa")
+        self.assertEqual([(t.agent_id, t.relation) for t in targets],
+                         [("l1-aa", "up_lead")])
+
+    def test_chain_targets_dedup_first_relation_wins(self):
+        """An agent that both leads a team and members another under the same
+        peer appears once (down beats up by derivation order)."""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.alloy import org_chart as oc
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        # X leads TA (member Y); X is also a member of TB led by Y.
+        wfs = [
+            Workflow(id="ta", name="TA", supervisor_agent_id="x-aa", manager_agent_id="m-aa",
+                     members=[WorkflowMember(agent_id="x-aa", role=MemberRole.SUPERVISOR),
+                              WorkflowMember(agent_id="y-aa", role=MemberRole.SPECIALIST)]),
+            Workflow(id="tb", name="TB", supervisor_agent_id="y-aa", manager_agent_id="m-aa",
+                     members=[WorkflowMember(agent_id="y-aa", role=MemberRole.SUPERVISOR),
+                              WorkflowMember(agent_id="x-aa", role=MemberRole.SPECIALIST)]),
+        ]
+        profiles = {
+            aid: SimpleNamespace(agent_id=aid, name=aid, kind="agent", org_level="agent",
+                                 delegation_hint=None, description="",
+                                 available_for_delegation=False)
+            for aid in ("x-aa", "y-aa", "m-aa")
+        }
+        with patch("agentx_ai.alloy.org_chart.get_profile_manager",
+                   return_value=SimpleNamespace(
+                       get_profile_by_agent_id=lambda aid: profiles.get(aid))), \
+             patch("agentx_ai.alloy.org_chart.get_workflow_manager",
+                   return_value=SimpleNamespace(list=lambda: wfs)):
+            targets = oc.chain_targets("x-aa")
+        self.assertEqual([(t.agent_id, t.relation) for t in targets],
+                         [("y-aa", "down_member")])
+
+    def test_knob_read(self):
+        from agentx_ai.alloy import org_chart as oc
+        with self._patched(knob=True):
+            self.assertTrue(oc.chain_of_command_enabled())
+        with self._patched(knob=False):
+            self.assertFalse(oc.chain_of_command_enabled())
 
 
 class AdhocRosterPromptTest(TestCase):
@@ -8625,6 +8997,83 @@ class AdhocRosterPromptTest(TestCase):
             targets = list_adhoc_delegation_targets("self-aa-bb")
         ids = [aid for aid, _, _ in targets]
         self.assertEqual(ids, ["logic-cc-dd"])
+
+    # ---- chain of command (Agentic Orgs) ----
+
+    def _patched_org(self, knob=True, org=True):
+        """Patch org_chart's accessors: one manager-owned team t1
+        (manager m-aa → lead l1-aa → member a-aa) when ``org``, else none."""
+        from contextlib import ExitStack
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        wfs = [Workflow(
+            id="t1", name="Team One", supervisor_agent_id="l1-aa",
+            manager_agent_id="m-aa",
+            members=[WorkflowMember(agent_id="l1-aa", role=MemberRole.SUPERVISOR),
+                     WorkflowMember(agent_id="a-aa", role=MemberRole.SPECIALIST,
+                                    delegation_hint="pattern analysis")],
+        )] if org else []
+        profiles = {
+            aid: SimpleNamespace(agent_id=aid, name=name, kind="agent",
+                                 org_level=level, delegation_hint=None,
+                                 description=f"{name} desc",
+                                 available_for_delegation=False)
+            for aid, name, level in (
+                ("m-aa", "Mable", "manager"), ("l1-aa", "Lena", "lead"),
+                ("a-aa", "Aria", "agent"),
+            )
+        }
+        stack = ExitStack()
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_profile_manager",
+            return_value=SimpleNamespace(
+                get_profile_by_agent_id=lambda aid: profiles.get(aid))))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_workflow_manager",
+            return_value=SimpleNamespace(list=lambda: wfs)))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_config_manager",
+            return_value=SimpleNamespace(
+                get=lambda key, default=None: knob
+                if key == "alloy.chain_of_command" else default)))
+        return stack
+
+    def test_in_org_roster_uses_chain_targets_and_relations(self):
+        """An org participant's roster IS its chain adjacency, relation-tagged,
+        under the chain-of-command header — enum and prompt share the source."""
+        from agentx_ai.alloy.prompts import build_adhoc_roster_prompt
+        with self._patched_org(), self._patched():
+            manager_roster = build_adhoc_roster_prompt("m-aa")
+            lead_roster = build_adhoc_roster_prompt("l1-aa")
+            member_roster = build_adhoc_roster_prompt("a-aa")
+        assert manager_roster and lead_roster and member_roster
+        self.assertIn("chain of command", manager_roster)
+        self.assertIn("[lead of your team 'Team One']", manager_roster)
+        self.assertNotIn("Logician", manager_roster)  # flat roster fully replaced
+        self.assertIn("[your team member — 'Team One']", lead_roster)
+        self.assertIn("pattern analysis", lead_roster)  # member hint rendered
+        self.assertIn("[your lead — escalation only]", member_roster)
+        self.assertIn("NEEDS ESCALATION", member_roster)  # convention documented
+
+    def test_org_free_roster_unchanged(self):
+        """No manager-owned teams → the flat opted-in roster, byte-identical."""
+        from agentx_ai.alloy.prompts import ADHOC_ROSTER_HEADER, build_adhoc_roster_prompt
+        with self._patched_org(org=False), self._patched():
+            roster = build_adhoc_roster_prompt("self-aa-bb")
+        assert roster is not None
+        self.assertIn(ADHOC_ROSTER_HEADER, roster)
+        self.assertIn("Logician", roster)
+
+    def test_knob_off_restores_flat_roster(self):
+        """chain_of_command=False → org participants fall back to the flat
+        roster (kill switch)."""
+        from agentx_ai.alloy.prompts import ADHOC_ROSTER_HEADER, build_adhoc_roster_prompt
+        with self._patched_org(knob=False), self._patched():
+            roster = build_adhoc_roster_prompt("m-aa")
+        assert roster is not None
+        self.assertIn(ADHOC_ROSTER_HEADER, roster)
+        self.assertIn("Logician", roster)
 
     def test_roster_block_helper_gating(self):
         """views helper: no roster inside a workflow or without an attached
@@ -8805,6 +9254,107 @@ class AdhocDelegationTest(TestCase):
                    return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
             done = self._parse_complete(asyncio.run(self._drain(
                 ex.delegate("beta-agent", "x", tool_call_id="t", depth=3))))
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("max delegation depth", done["error"])
+
+    # ---- chain of command (Agentic Orgs) ----
+
+    def _patched_org(self, knob=True, org=True):
+        """Patch org_chart: one manager-owned team (m-aa → l1-aa → a-aa)."""
+        from contextlib import ExitStack
+        from types import SimpleNamespace
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        wfs = [Workflow(
+            id="t1", name="Team One", supervisor_agent_id="l1-aa",
+            manager_agent_id="m-aa",
+            members=[WorkflowMember(agent_id="l1-aa", role=MemberRole.SUPERVISOR),
+                     WorkflowMember(agent_id="a-aa", role=MemberRole.SPECIALIST)],
+        )] if org else []
+        profiles = {
+            aid: SimpleNamespace(agent_id=aid, name=aid, kind="agent",
+                                 org_level="agent", delegation_hint=None,
+                                 description="", available_for_delegation=False)
+            for aid in ("m-aa", "l1-aa", "a-aa")
+        }
+        stack = ExitStack()
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_profile_manager",
+            return_value=SimpleNamespace(
+                get_profile_by_agent_id=lambda aid: profiles.get(aid))))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_workflow_manager",
+            return_value=SimpleNamespace(list=lambda: wfs)))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_config_manager",
+            return_value=SimpleNamespace(
+                get=lambda key, default=None: knob
+                if key == "alloy.chain_of_command" else default)))
+        return stack
+
+    def _make_org_executor(self, delegator, **kwargs):
+        from types import SimpleNamespace
+        from agentx_ai.alloy.executor import AlloyExecutor
+        supervisor = SimpleNamespace(
+            config=SimpleNamespace(user_id="u", default_model="m", max_tool_rounds=3),
+            memory=None,
+        )
+        return AlloyExecutor(
+            supervisor, SimpleNamespace(id="sess"),  # type: ignore[arg-type]
+            channel="_global", delegator_agent_id=delegator, **kwargs,
+        )
+
+    def test_chain_gate_blocks_non_adjacent_target(self):
+        """A manager may not skip a level: manager → member is rejected at the
+        executor even though the member's profile resolves (defense in depth —
+        the enum is the first gate, this is the reality check)."""
+        from types import SimpleNamespace
+        ex = self._make_org_executor("m-aa")
+        with self._patched_org(), \
+             patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            done = self._parse_complete(asyncio.run(self._drain(
+                ex.delegate("a-aa", "x", tool_call_id="t"))))
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("chain of command", done["error"])
+
+    def test_chain_gate_allows_adjacent_and_escalation(self):
+        from types import SimpleNamespace
+        with self._patched_org(), \
+             patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            # manager → its lead (down_lead)
+            self.assertIsNone(self._make_org_executor("m-aa")._validate_target("l1-aa"))
+            # member ↑ its lead (up_lead escalation)
+            self.assertIsNone(self._make_org_executor("a-aa")._validate_target("l1-aa"))
+
+    def test_chain_gate_inert_for_org_free_delegator(self):
+        """No manager-owned teams → the gate never fires (back-compat)."""
+        from types import SimpleNamespace
+        ex = self._make_org_executor("alpha-agent")
+        with self._patched_org(org=False), \
+             patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            self.assertIsNone(ex._validate_target("beta-agent"))
+
+    def test_delegation_loop_rejected(self):
+        """A target already on the delegation path is refused categorically —
+        kills manager→lead→member→lead cycles before any other check."""
+        ex = self._make_org_executor("l1-aa", delegation_path=("m-aa", "l1-aa"))
+        done = self._parse_complete(asyncio.run(self._drain(
+            ex.delegate("m-aa", "x", tool_call_id="t"))))
+        self.assertEqual(done["status"], "failed")
+        self.assertIn("delegation loop", done["error"])
+
+    def test_nested_executor_base_depth_used_when_depth_omitted(self):
+        """The tool loop calls delegate() without depth — a nested executor's
+        base_depth must apply (here: already at the ceiling → rejected)."""
+        from types import SimpleNamespace
+        ex = self._make_org_executor("alpha-agent", base_depth=3, max_delegation_depth=3)
+        with self._patched_org(org=False), \
+             patch("agentx_ai.alloy.executor.get_profile_manager",
+                   return_value=SimpleNamespace(get_profile_by_agent_id=lambda a: object())):
+            done = self._parse_complete(asyncio.run(self._drain(
+                ex.delegate("beta-agent", "x", tool_call_id="t"))))
         self.assertEqual(done["status"], "failed")
         self.assertIn("max delegation depth", done["error"])
 
@@ -9978,6 +10528,205 @@ class MediaTokenEstimateTest(TestCase):
         with patch.object(tokens_mod, "_audio_blob_size", return_value=0):
             delta = estimate_messages(with_media) - estimate_messages(text_only)
         self.assertEqual(delta, IMAGE_TOKEN_ESTIMATE)
+
+
+class NestedLeadDelegationTest(TestCase):
+    """Agentic Orgs Slice 2 — downward nesting: a delegated specialist that
+    LEADS a manager-owned team gets a members-scoped delegate_to + a nested
+    executor; nested delegation_* events pass through the outer re-wrap."""
+
+    def _patched_org(self, knob=True):
+        """Team t1: manager m-aa → lead l1-aa → members a-aa, b-aa."""
+        from contextlib import ExitStack
+        from types import SimpleNamespace
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        wfs = [Workflow(
+            id="t1", name="Team One", supervisor_agent_id="l1-aa",
+            manager_agent_id="m-aa",
+            members=[WorkflowMember(agent_id="l1-aa", role=MemberRole.SUPERVISOR),
+                     WorkflowMember(agent_id="a-aa", role=MemberRole.SPECIALIST),
+                     WorkflowMember(agent_id="b-aa", role=MemberRole.SPECIALIST)],
+        )]
+        profiles = {
+            aid: SimpleNamespace(agent_id=aid, name=aid, kind="agent",
+                                 org_level="agent", delegation_hint=None,
+                                 description="", available_for_delegation=False)
+            for aid in ("m-aa", "l1-aa", "a-aa", "b-aa")
+        }
+        stack = ExitStack()
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_profile_manager",
+            return_value=SimpleNamespace(
+                get_profile_by_agent_id=lambda aid: profiles.get(aid))))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_workflow_manager",
+            return_value=SimpleNamespace(list=lambda: wfs)))
+        stack.enter_context(patch(
+            "agentx_ai.alloy.org_chart.get_config_manager",
+            return_value=SimpleNamespace(
+                get=lambda key, default=None: knob
+                if key == "alloy.chain_of_command" else default)))
+        return stack
+
+    def _executor(self, delegator="m-aa", **kwargs):
+        from types import SimpleNamespace
+        from agentx_ai.alloy.executor import AlloyExecutor
+        supervisor = SimpleNamespace(
+            config=SimpleNamespace(user_id="u", default_model="m", max_tool_rounds=3),
+            memory=None,
+        )
+        return AlloyExecutor(
+            supervisor, SimpleNamespace(id="sess"),  # type: ignore[arg-type]
+            channel="_global", delegator_agent_id=delegator, **kwargs,
+        )
+
+    def test_nesting_for_lead_specialist(self):
+        from types import SimpleNamespace
+        ex = self._executor()
+        with self._patched_org():
+            desc, nested = ex._chain_nesting_for(
+                SimpleNamespace(), "l1-aa", depth=0, path=("m-aa",), delegation_id="d1")
+        assert desc is not None and nested is not None
+        self.assertEqual(desc["input_schema"]["properties"]["agent_id"]["enum"],
+                         ["a-aa", "b-aa"])
+        self.assertEqual(nested.base_depth, 1)
+        self.assertEqual(nested.delegation_path, ("m-aa", "l1-aa"))
+        self.assertEqual(nested.parent_delegation_id, "d1")
+        self.assertFalse(nested.non_blocking_enabled)  # v1: blocking-only below top
+        self.assertEqual(nested.delegator_agent_id, "l1-aa")
+
+    def test_nesting_excludes_path_members(self):
+        from types import SimpleNamespace
+        ex = self._executor()
+        with self._patched_org():
+            desc, _ = ex._chain_nesting_for(
+                SimpleNamespace(), "l1-aa", depth=0, path=("m-aa", "a-aa"),
+                delegation_id="d1")
+            assert desc is not None
+            self.assertEqual(desc["input_schema"]["properties"]["agent_id"]["enum"],
+                             ["b-aa"])
+            # Every member already on the path → no nesting at all.
+            desc2, nested2 = ex._chain_nesting_for(
+                SimpleNamespace(), "l1-aa", depth=0,
+                path=("m-aa", "a-aa", "b-aa"), delegation_id="d1")
+        self.assertIsNone(desc2)
+        self.assertIsNone(nested2)
+
+    def test_nesting_denied_cases(self):
+        """No nesting at the depth ceiling, with the knob off, for a non-lead
+        target, or for a lead whose team is org-free (manager-less)."""
+        from types import SimpleNamespace
+        ex = self._executor()
+        with self._patched_org():
+            # depth+1 == max_delegation_depth → ceiling.
+            self.assertEqual(
+                ex._chain_nesting_for(SimpleNamespace(), "l1-aa", depth=2,
+                                      path=(), delegation_id="d"),
+                (None, None))
+            # Non-lead target (a member) has no down_member edges.
+            self.assertEqual(
+                ex._chain_nesting_for(SimpleNamespace(), "a-aa", depth=0,
+                                      path=(), delegation_id="d"),
+                (None, None))
+        with self._patched_org(knob=False):
+            self.assertEqual(
+                ex._chain_nesting_for(SimpleNamespace(), "l1-aa", depth=0,
+                                      path=(), delegation_id="d"),
+                (None, None))
+        # Org-free lead (manager-less team) stays a leaf specialist.
+        from contextlib import ExitStack
+        from agentx_ai.alloy.models import MemberRole, Workflow, WorkflowMember
+        wfs = [Workflow(
+            id="t3", name="Free Team", supervisor_agent_id="l3-aa",
+            members=[WorkflowMember(agent_id="l3-aa", role=MemberRole.SUPERVISOR),
+                     WorkflowMember(agent_id="d-aa", role=MemberRole.SPECIALIST)],
+        )]
+        with ExitStack() as stack:
+            stack.enter_context(patch(
+                "agentx_ai.alloy.org_chart.get_workflow_manager",
+                return_value=SimpleNamespace(list=lambda: wfs)))
+            stack.enter_context(patch(
+                "agentx_ai.alloy.org_chart.get_config_manager",
+                return_value=SimpleNamespace(get=lambda key, default=None: True)))
+            self.assertEqual(
+                ex._chain_nesting_for(SimpleNamespace(), "l3-aa", depth=0,
+                                      path=(), delegation_id="d"),
+                (None, None))
+
+    def test_nested_events_pass_through_rewrap(self):
+        """Nested delegation_* events emitted inside the specialist's tool loop
+        surface top-level UNCHANGED (own delegation_id + parent id → the client
+        nests them), and a nested complete's exhibits are deduped from the
+        outer complete's persistence set."""
+        from types import SimpleNamespace
+        ex = self._executor(delegator="alpha-agent")
+        profile = SimpleNamespace(
+            name="Beta", default_model="m", agent_id="beta-agent", prompt_profile_id=None,
+            enable_memory=False, enable_tools=False, temperature=0.5, system_prompt=None,
+        )
+        fake_provider = SimpleNamespace(get_capabilities=lambda mid: object())
+        fake_specialist = SimpleNamespace(
+            config=SimpleNamespace(default_model="m", max_tool_rounds=3),
+            registry=SimpleNamespace(resolve_with_fallback=lambda m, **kw: (fake_provider, "m", None)),
+            _get_tools_for_provider=lambda: None,
+            memory=None,
+        )
+        wire = {"id": "exh_nested_1", "schema_version": 1, "elements": []}
+        nested_chunk = ('event: delegation_chunk\ndata: {"delegation_id": "n1", '
+                        '"target_agent_id": "a-aa", "content": "hi"}\n\n')
+        nested_complete = (
+            'event: delegation_complete\ndata: '
+            + json.dumps({"delegation_id": "n1", "tool_call_id": "inner-t",
+                          "status": "success", "exhibits": [wire]})
+            + "\n\n"
+        )
+
+        async def fake_stream(*args, **kwargs):
+            yield f"event: exhibit\ndata: {json.dumps(wire)}\n\n"
+            yield nested_chunk
+            yield nested_complete
+            kwargs["result"].content = "lead result"
+            yield 'event: chunk\ndata: {"content": "lead result"}\n\n'
+
+        pm = SimpleNamespace(
+            get_profile_by_agent_id=lambda a: profile if a == "beta-agent" else None,
+            list_profiles=lambda: [profile],
+        )
+        with patch("agentx_ai.alloy.executor.get_profile_manager", return_value=pm), \
+             patch("agentx_ai.agent.core.Agent", return_value=fake_specialist), \
+             patch("agentx_ai.streaming.tool_loop.streaming_tool_loop", fake_stream), \
+             patch("agentx_ai.prompts.get_prompt_manager",
+                   return_value=SimpleNamespace(get_system_prompt=lambda **k: "sys")), \
+             patch("agentx_ai.providers.pricing.estimate_cost", return_value=None):
+            events = asyncio.run(
+                AdhocDelegationTest._drain(ex.delegate("beta-agent", "go",
+                                                       tool_call_id="outer-t")))
+        sse = [e[0] for e in events]
+        self.assertIn(nested_chunk, sse)      # passed through unchanged
+        self.assertIn(nested_complete, sse)   # ditto
+        # The OUTER complete (tool_call_id=outer-t) must not carry the nested
+        # exhibit — the nested complete owns its persistence.
+        outer_done = next(
+            json.loads(s.split("data: ", 1)[1].rstrip()) for s in sse
+            if s.startswith("event: delegation_complete\n")
+            and '"tool_call_id": "outer-t"' in s
+        )
+        self.assertIsNone(outer_done.get("exhibits"))
+        self.assertEqual(outer_done["status"], "success")
+
+    def test_complete_metric_capture_keys_on_tool_call_id(self):
+        """_run_delegations must only capture metrics from ITS branch's
+        delegation_complete — a nested complete (foreign tool_call_id) passing
+        through the same generator is ignored."""
+        from agentx_ai.streaming.tool_loop import _complete_matches_tool_call
+        own = ('event: delegation_complete\ndata: '
+               '{"tool_call_id": "t-1", "status": "success"}\n\n')
+        foreign = ('event: delegation_complete\ndata: '
+                   '{"tool_call_id": "inner-9", "status": "success"}\n\n')
+        malformed = 'event: delegation_complete\ndata: {not json}\n\n'
+        self.assertTrue(_complete_matches_tool_call(own, "t-1"))
+        self.assertFalse(_complete_matches_tool_call(foreign, "t-1"))
+        self.assertFalse(_complete_matches_tool_call(malformed, "t-1"))
 
 
 class MediaDelegationTest(TestCase):
@@ -14665,6 +15414,23 @@ class AgentProfileKindTest(TestCase):
         amb = mgr.get_default_ambassador()
         self.assertIsNone(mgr.get_profile_by_agent_id(amb.agent_id))
         self.assertIsNone(mgr.get_profile_by_name(amb.name))
+
+    def test_default_ambassador_delete_refused(self):
+        """Agentic Orgs Slice 1: the default ambassador is system-owned — the
+        delete guard refuses outright instead of delete-then-resurrect."""
+        mgr = self._manager(self._tmp())
+        amb = mgr.get_default_ambassador()
+        with self.assertRaises(ValueError):
+            mgr.delete_profile(amb.id)
+        self.assertIsNotNone(mgr.get_profile(amb.id))  # still present
+
+    def test_non_default_ambassador_still_deletable(self):
+        from agentx_ai.agent.models import AgentProfile, AmbassadorConfig
+        mgr = self._manager(self._tmp())
+        mgr.create_profile(AgentProfile(id="amb2", name="Scribe", kind="ambassador",
+                                        ambassador=AmbassadorConfig(enabled=True)))
+        self.assertTrue(mgr.delete_profile("amb2"))
+        self.assertIsNone(mgr.get_profile("amb2"))
 
     def test_migration_converts_dedicated_not_default_agent(self):
         from agentx_ai.agent.models import AgentProfile, AmbassadorConfig

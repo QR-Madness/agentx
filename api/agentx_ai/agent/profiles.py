@@ -12,7 +12,12 @@ from typing import Any
 
 import yaml
 
-from .models import AgentProfile, AmbassadorConfig, ReasoningStrategy
+from .models import (
+    MANAGER_REPORT_ONLY_BLOCKED_TOOLS,
+    AgentProfile,
+    AmbassadorConfig,
+    ReasoningStrategy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -386,6 +391,7 @@ class ProfileManager:
                     "blocked_tools": p.blocked_tools,
                     "available_for_delegation": p.available_for_delegation,
                     "delegation_hint": p.delegation_hint,
+                    "org_level": p.org_level,
                     # Ambassador section (previously dropped here → lost on restart).
                     "ambassador": p.ambassador.model_dump() if p.ambassador else None,
                     "is_default": p.is_default,
@@ -486,10 +492,22 @@ class ProfileManager:
         self.save_config()
         return True
 
+    @staticmethod
+    def _merge_manager_template(blocked: list[str] | None) -> list[str]:
+        """Union ``blocked`` with the manager report-only template, order-preserving.
+
+        Applied ONCE on the transition to org_level="manager" (create or update) —
+        a template, not a live gate: entries removed afterward stay removed, and
+        demotion from manager strips nothing (the list is user-owned post-merge).
+        """
+        return list(dict.fromkeys([*(blocked or []), *MANAGER_REPORT_ONLY_BLOCKED_TOOLS]))
+
     def create_profile(self, profile: AgentProfile) -> AgentProfile:
         """Create a new profile."""
         profile.created_at = datetime.utcnow()
         profile.updated_at = datetime.utcnow()
+        if profile.org_level == "manager":
+            profile.blocked_tools = self._merge_manager_template(profile.blocked_tools)
         self._profiles[profile.id] = profile
         self.save_config()
         return profile
@@ -508,6 +526,14 @@ class ProfileManager:
         updated_data = current.model_dump()
         updated_data.update(updates)
         updated_data["updated_at"] = datetime.utcnow()
+        # Manager report-only template: merged once on the tier transition.
+        if (
+            updates.get("org_level") == "manager"
+            and getattr(current, "org_level", "agent") != "manager"
+        ):
+            updated_data["blocked_tools"] = self._merge_manager_template(
+                updated_data.get("blocked_tools")
+            )
 
         self._profiles[profile_id] = AgentProfile(**updated_data)
         self.save_config()
@@ -548,6 +574,13 @@ class ProfileManager:
         """Delete a profile by ID."""
         if profile_id not in self._profiles:
             return False
+
+        # The default ambassador is system-owned (the org apex): deletion is
+        # refused outright rather than "working" and being resurrected by the
+        # boot reconciler (_ensure_ambassador_defaults stays as the safety net).
+        candidate = self._profiles[profile_id]
+        if candidate.kind == "ambassador" and candidate.is_default_ambassador:
+            raise ValueError("The default ambassador is system-owned and cannot be deleted")
 
         # Prevent deleting the last profile
         if len(self._profiles) <= 1:

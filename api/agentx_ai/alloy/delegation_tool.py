@@ -176,16 +176,42 @@ def build_delegation_start_tool(workflow: Workflow) -> dict:
     )
 
 
+def _annotate_chain_hint(target) -> str:
+    """Prefix a ChainTarget's hint with its org relation, keeping the
+    ``(agent_id, name, hint)`` row shape unchanged for the descriptor/roster."""
+    if target.relation == "down_lead":
+        prefix = f"[lead of your team '{target.team_name}']"
+    elif target.relation == "down_member":
+        prefix = f"[your team member — '{target.team_name}']"
+    else:  # up_lead
+        prefix = "[your lead — escalation only]"
+    return f"{prefix} {target.hint}".strip()
+
+
 def list_adhoc_delegation_targets(self_agent_id: str) -> list[tuple[str, str, str]]:
     """List ``(agent_id, name, hint)`` rows for ad-hoc delegation targets.
 
     Single source of truth for who is delegable — shared by the ad-hoc tool
     descriptor and the roster system-prompt block so they can never disagree.
-    Filters: has an agent_id, not the delegator itself, opted into the roster
-    (``available_for_delegation``), and agent-kind (ambassadors are not chat
-    agents → never delegation targets).
+
+    Chain of command (Agentic Orgs): when the knob is on and the delegator is
+    an org participant, the row set IS its chain adjacency (manager → leads of
+    owned teams, lead → own members, member ↑ own lead), relation-annotated.
+    Chain edges deliberately ignore ``available_for_delegation`` — adjacency
+    implies delegability; the flag keeps governing only the flat roster below.
+
+    Flat roster (org-free) filters: has an agent_id, not the delegator itself,
+    opted into the roster (``available_for_delegation``), and agent-kind
+    (ambassadors are not chat agents → never delegation targets).
     """
     from ..agent.profiles import get_profile_manager
+    from . import org_chart
+
+    if org_chart.chain_of_command_enabled() and org_chart.in_org(self_agent_id):
+        return [
+            (t.agent_id, t.name, _annotate_chain_hint(t))
+            for t in org_chart.chain_targets(self_agent_id)
+        ]
 
     return [
         (p.agent_id, p.name, getattr(p, "delegation_hint", None) or p.description or "")

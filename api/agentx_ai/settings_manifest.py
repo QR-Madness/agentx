@@ -47,7 +47,7 @@ _CONFIG_WRITE_ROUTES: dict[str, Any] = {
                "cache_ttl_seconds", "tavily_api_key", "brave_api_key"),
     "alloy": ("allow_adhoc_delegation", "max_parallel_delegations",
               "max_delegation_depth", "delegation_timeout_seconds",
-              "non_blocking_delegations"),
+              "non_blocking_delegations", "chain_of_command"),
     "ambassador": True,
     "images": ("enabled", "default_model", "avatar_style_prompt"),
     "vision": ("enabled", "refeed_recent_turns"),

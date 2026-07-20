@@ -825,6 +825,7 @@ hidden from the chat agent selector, delegation, and `@`-mention routing.
   "blocked_tools": [],
   "available_for_delegation": false,
   "delegation_hint": null,
+  "org_level": "agent",
   "is_default": true,
   "created_at": "2026-04-01T12:00:00",
   "updated_at": "2026-04-01T12:00:00"
@@ -838,6 +839,14 @@ hidden from the chat agent selector, delegation, and `@`-mention routing.
 delegation roster ("Join the team roster" in the UI); `delegation_hint` is a one-line
 specialty shown to teammates deciding whom to delegate to (falls back to `description`;
 trimmed, max 200 chars).
+
+`org_level` (`"executive" | "manager" | "lead" | "agent"`, default `"agent"`) is the
+Agentic Organizations tier — orthogonal to `kind`, and structural only via workflows
+(`manager_agent_id`). Transitioning a profile to `manager` merges the report-only
+blocked-tools template once (manual-work tools: document writes, shell, media
+generation — editable afterward). `executive` is reserved: accepted, no semantics,
+never offered in the UI. The default ambassador is system-owned — `DELETE` on it
+returns `400`.
 
 ---
 
@@ -902,6 +911,7 @@ DELETE /api/alloy/workflows/{workflow_id}
   "name": "Research Team",
   "description": "Supervisor delegates lookups to a researcher",
   "supervisor_agent_id": "bold-cosmic-falcon",
+  "manager_agent_id": null,
   "members": [
     { "agent_id": "bold-cosmic-falcon", "role": "supervisor", "delegation_hint": null },
     { "agent_id": "calm-lunar-otter", "role": "specialist", "delegation_hint": "web research" }
@@ -917,6 +927,17 @@ DELETE /api/alloy/workflows/{workflow_id}
 `POST` validates the workflow (kebab-case `id`, exactly one supervisor, known `agent_id`s) and
 returns `201`; `400` on validation failure. To run a workflow, pass `workflow_id` to
 `POST /api/agent/chat/stream`. `DELETE` returns `{"deleted": true}`.
+
+`manager_agent_id` (nullable) is the **Agentic Organizations** edge: the manager that owns
+this team (chain of command: manager → this team's lead → its members, member ↑ lead for
+escalation). It must resolve to an agent-kind profile that is neither the lead nor a member
+(`400` otherwise); tier mismatches (`org_level` not `manager`/`lead`) are warn-only.
+Teams with a manager put their participants **in the org**: with `alloy.chain_of_command`
+on (config key, default `true`), their ad-hoc `delegate_to` targets become chain adjacency
+only (enforced at the tool enum AND the executor), and a delegated lead works its own
+members as nested `delegation_*` events (`parent_delegation_id` links them). PATCHing
+`manager_agent_id: null` makes the team org-free again — org-free installs keep the flat
+opt-in roster unchanged.
 
 ---
 

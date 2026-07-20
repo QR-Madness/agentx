@@ -183,6 +183,21 @@ def _parse_complete_metrics(event_str: str) -> dict[str, Any]:
     }
 
 
+def _complete_matches_tool_call(event_str: str, tool_call_id: str) -> bool:
+    """True when a `delegation_complete` SSE belongs to THIS branch's tool call.
+
+    Chain nesting (Agentic Orgs) passes a lead-specialist's own delegation_*
+    events through the same generator; they carry their own tool_call_id —
+    capturing their metrics would transiently clobber the branch's (and stick
+    if the outer delegation then errors)."""
+    _, _, payload = event_str.partition("\n")
+    data_line = payload.split("data: ", 1)[1].rstrip() if "data: " in payload else "{}"
+    try:
+        return json.loads(data_line).get("tool_call_id") == tool_call_id
+    except json.JSONDecodeError:
+        return False
+
+
 # Internal tool whose calls are surfaced as typed `exhibit` events (rendered
 # by the client's element registry) rather than generic tool_call/tool_result
 # cards. The tool body still runs so the model gets a tool_result.
@@ -510,7 +525,8 @@ async def _run_delegations(
             async for event_str, partial in gen:
                 await queue.put(event_str)
                 accumulated = partial
-                if event_str.startswith("event: delegation_complete"):
+                if event_str.startswith("event: delegation_complete") and \
+                        _complete_matches_tool_call(event_str, tc.id):
                     final_metrics[tc.id] = _parse_complete_metrics(event_str)
 
         try:
@@ -707,7 +723,8 @@ def _dispatch_background_delegations(
                 async for event_str, partial in gen:
                     _emit_background_event(run_id, event_str)
                     accumulated = partial
-                    if event_str.startswith("event: delegation_complete"):
+                    if event_str.startswith("event: delegation_complete") and \
+                            _complete_matches_tool_call(event_str, tc.id):
                         metrics = _parse_complete_metrics(event_str)
 
             def _fail(err: str) -> None:
