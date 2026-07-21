@@ -563,7 +563,10 @@ POST /api/agent/ambassador/voice-command
 POST /api/agent/ambassador/speak
 POST /api/agent/ambassador/transcribe
 GET  /api/agent/ambassador/stream?run_id=<id>
-POST /api/agent/avatar/generate                  # generate an agent avatar (OpenRouter) → Home workspace
+GET  /api/agent/names?pool=&count=               # deal names for the profile editor's name deck (pool: random|preferred; excludes in-use names)
+GET  /api/agent/names/preferred                  # the starred name pool
+POST /api/agent/names/preferred                  # {add?, remove?} — star/unstar a name; returns the updated pool
+POST /api/agent/avatar/generate                  # generate an agent avatar (OpenRouter) → Home workspace; subject optional (empty → synthetic face), uses images.avatar_model
 POST /api/agent/chat/images                       # upload chat media (multipart `file`: image for vision, audio for audio input, video render-only) → Home workspace; returns a media ref
 POST /api/agent/chat/media                        # alias of /agent/chat/images (the historical path predates audio/video)
 POST /api/agent/ambassador/relay

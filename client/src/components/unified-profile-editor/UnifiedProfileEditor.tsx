@@ -160,6 +160,7 @@ export function UnifiedProfileEditor({
                   onCancel={onClose}
                   onBack={isMobile ? handleBack : undefined}
                   onLibraryOpenChange={setLibraryOpen}
+                  onSelectProfile={handleSelectProfile}
                 />
               )}
             </div>

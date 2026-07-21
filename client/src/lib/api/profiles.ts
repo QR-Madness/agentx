@@ -153,4 +153,31 @@ export const profilesApi = {
       body: JSON.stringify({ order }),
     });
   },
+
+  // === Name deck ===
+
+  /** Deal names for the profile editor's name deck — without replacement,
+   *  never a name an existing profile already wears. `count` clamps to 1–20. */
+  async dealNames(
+    pool: 'random' | 'preferred' = 'random',
+    count = 10,
+  ): Promise<{ pool: string; names: string[] }> {
+    return apiRequest(`/api/agent/names?pool=${pool}&count=${count}`);
+  },
+
+  /** The starred name pool (used to mark dealt chips as starred). */
+  async listPreferredNames(): Promise<{ preferred: string[] }> {
+    return apiRequest('/api/agent/names/preferred');
+  },
+
+  /** Star (`add`) / unstar (`remove`) a name; returns the updated pool. */
+  async updatePreferredNames(req: {
+    add?: string;
+    remove?: string;
+  }): Promise<{ preferred: string[] }> {
+    return apiRequest('/api/agent/names/preferred', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    });
+  },
 };

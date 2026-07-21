@@ -965,6 +965,8 @@ export interface ConfigUpdate {
   images?: {
     enabled?: boolean;
     default_model?: string;
+    /** Dedicated avatar-generation model; blank falls through to default_model. */
+    avatar_model?: string;
     avatar_style_prompt?: string;
   };
   vision?: {
