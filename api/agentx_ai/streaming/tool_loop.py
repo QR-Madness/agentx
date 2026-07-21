@@ -16,7 +16,12 @@ from uuid import uuid4
 from collections.abc import AsyncGenerator, Callable
 
 from ..providers.base import Message, MessageRole
-from .constants import STATE_TOOL_SOLO_ROUND_CAP
+from .constants import (
+    RATE_LIMIT_WAIT_SCHEDULE,
+    SLOW_MODEL_FIRST_PING_SECONDS,
+    SLOW_MODEL_PING_INTERVAL_SECONDS,
+    STATE_TOOL_SOLO_ROUND_CAP,
+)
 from .helpers import estimate_tokens, truncate_tool_messages
 from .status import current_run_id, emit_status
 from .steering import drain_steer_messages
@@ -1148,6 +1153,68 @@ async def _execute_and_emit_tools(
 STATE_NARRATION_TOOL = "update_conversation_state"
 
 
+def _is_rate_limit_error(e: Exception) -> bool:
+    """Duck-typed 429 detection across SDK error shapes (OpenAI-style
+    RateLimitError carries status_code; OpenRouter also nests the code in the
+    error body; the message embeds it either way)."""
+    status = getattr(e, "status_code", None) or getattr(e, "status", None)
+    if status == 429:
+        return True
+    body = getattr(e, "body", None)
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict) and err.get("code") == 429:
+            return True
+    return "429" in str(e)[:200]
+
+
+def _retry_after_seconds(e: Exception) -> float | None:
+    """Honor a Retry-After header when the provider sent one (bounded)."""
+    headers = getattr(getattr(e, "response", None), "headers", None)
+    if headers is None:
+        return None
+    try:
+        raw = headers.get("retry-after") or headers.get("Retry-After")
+        value = float(raw)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return value if 0 < value <= 600 else None
+
+
+def _short_err(e: Exception) -> str:
+    """One-line, bounded error text for user-facing salvage notes."""
+    if _is_rate_limit_error(e):
+        return "the provider rate-limited the model"
+    text = " ".join(str(e).split())
+    return text[:140] + ("…" if len(text) > 140 else "")
+
+
+async def _slow_start_pinger(first_chunk: asyncio.Event) -> None:
+    """Status pings while a round's FIRST chunk hasn't arrived.
+
+    The SDK's internal timeout+retry cycles against a throttled route are
+    silent — observed as 4+ minutes of dead air indistinguishable from a
+    hang. Rides the status bus (ambient run context), so it replays on
+    re-attach. Cancelled (or released via the event) when streaming starts.
+    """
+    delay: float = SLOW_MODEL_FIRST_PING_SECONDS
+    waited = 0.0
+    while not first_chunk.is_set():
+        try:
+            await asyncio.wait_for(first_chunk.wait(), timeout=delay)
+            return
+        except TimeoutError:
+            waited += delay
+            emit_status(
+                "thinking",
+                label=(
+                    f"Still waiting on the model ({int(waited)}s) — "
+                    "the provider may be slow or rate-limited…"
+                ),
+            )
+            delay = SLOW_MODEL_PING_INTERVAL_SECONDS
+
+
 def _strip_tool_name_echo(text: str, tool_names: list[str]) -> str:
     """Strip leading tool-name echoes from a round's streamed text.
 
@@ -1400,34 +1467,119 @@ async def _run_tool_loop(
 
         # Stream completion from provider. Announce the wait so the client shows
         # "Thinking…" until the first token arrives (it clears `status` on `chunk`).
+        # The attempt loop waits out rate limits (visible + cancellable, unlike
+        # the SDK's silent internal retries) and salvages the turn on an
+        # unrecoverable failure instead of dying with an error event.
         emit_status("thinking")
-        async for chunk in provider.stream(
-            messages, model_id,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            tools=tools if tool_round < max_tool_rounds else None,
-            tool_choice="auto" if tools and tool_round < max_tool_rounds else None,
-        ):
-            if chunk.tool_calls:
-                round_tool_calls.extend(chunk.tool_calls)
-            if chunk.usage:
-                result.tokens_in += chunk.usage.get("prompt_tokens", 0)
-                result.tokens_out += chunk.usage.get("completion_tokens", 0)
-                result.provider_cost += float(chunk.usage.get("cost") or 0.0)
-                result.reasoning_tokens += int(chunk.usage.get("reasoning_tokens") or 0)
-            if chunk.finish_reason:
-                round_finish = chunk.finish_reason
-            if chunk.content:
-                result.content += chunk.content
-                round_content += chunk.content
-                yield _sse("chunk", {"content": chunk.content})
-            # Non-text payloads the completion itself carried (image/audio-output
-            # models) — stored + rendered as exhibits instead of silently dropped.
-            if chunk.media:
-                for event_str in _emit_model_media(
-                    chunk.media, result, capture_tool_turns, model_id,
+        rl_attempt = 0
+        while True:
+            attempt_streamed = False
+            first_chunk = asyncio.Event()
+            pinger = asyncio.create_task(_slow_start_pinger(first_chunk))
+            try:
+                async for chunk in provider.stream(
+                    messages, model_id,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    tools=tools if tool_round < max_tool_rounds else None,
+                    tool_choice="auto" if tools and tool_round < max_tool_rounds else None,
                 ):
-                    yield event_str
+                    if chunk.content or chunk.tool_calls or chunk.media:
+                        attempt_streamed = True
+                        first_chunk.set()
+                    if chunk.tool_calls:
+                        round_tool_calls.extend(chunk.tool_calls)
+                    if chunk.usage:
+                        result.tokens_in += chunk.usage.get("prompt_tokens", 0)
+                        result.tokens_out += chunk.usage.get("completion_tokens", 0)
+                        result.provider_cost += float(chunk.usage.get("cost") or 0.0)
+                        result.reasoning_tokens += int(chunk.usage.get("reasoning_tokens") or 0)
+                    if chunk.finish_reason:
+                        round_finish = chunk.finish_reason
+                    if chunk.content:
+                        result.content += chunk.content
+                        round_content += chunk.content
+                        yield _sse("chunk", {"content": chunk.content})
+                    # Non-text payloads the completion itself carried (image/audio-output
+                    # models) — stored + rendered as exhibits instead of silently dropped.
+                    if chunk.media:
+                        for event_str in _emit_model_media(
+                            chunk.media, result, capture_tool_turns, model_id,
+                        ):
+                            yield event_str
+                break
+            except Exception as e:  # noqa: BLE001 — classified below; GeneratorExit passes through
+                # Rate-limit wait-out: retry ONLY when this attempt streamed
+                # nothing yet (a retry after partial content would duplicate
+                # already-streamed text — that goes to salvage instead).
+                if (
+                    _is_rate_limit_error(e)
+                    and not attempt_streamed
+                    and rl_attempt < len(RATE_LIMIT_WAIT_SCHEDULE)
+                ):
+                    delay = _retry_after_seconds(e) or RATE_LIMIT_WAIT_SCHEDULE[rl_attempt]
+                    rl_attempt += 1
+                    logger.warning(
+                        "Rate-limited by provider (model=%s, round %d) — waiting %ss "
+                        "before retry %d/%d",
+                        model_id, tool_round + 1, delay, rl_attempt,
+                        len(RATE_LIMIT_WAIT_SCHEDULE),
+                    )
+                    emit_status(
+                        "thinking",
+                        label=(
+                            f"Rate-limited by the provider — retrying in {int(delay)}s "
+                            f"({rl_attempt}/{len(RATE_LIMIT_WAIT_SCHEDULE)})…"
+                        ),
+                    )
+                    # 1s steps so Stop lands during the wait (unlike a wedged await).
+                    waited = 0.0
+                    while waited < delay and not check_cancel():
+                        step = min(1.0, delay - waited)
+                        await asyncio.sleep(step)
+                        waited += step
+                    if check_cancel():
+                        logger.info("tool loop: cancellation observed during rate-limit wait")
+                        result.final_content = round_content
+                        return
+                    emit_status("thinking")
+                    continue
+                # Salvage: the turn has substance (prior rounds, streamed text,
+                # delegations, or work orders in flight) — end it CLEANLY with
+                # what exists instead of a turn-killing error event. Completed
+                # work-order reports fold in so they persist and render; the
+                # rest is cancelled by the outer finally. (Observed loss: a 429
+                # mid-fan-out destroyed three specialists' research.)
+                if (
+                    tool_round > 0
+                    or result.content.strip()
+                    or result.delegations
+                    or work_orders
+                ):
+                    logger.error(
+                        f"Round model call failed mid-turn; salvaging partial turn: {e}"
+                    )
+                    for event_str in _fold_completed_work_orders(
+                        work_orders, messages, agent,
+                        result=result, tool_round=tool_round, phase="would_end",
+                    ):
+                        yield event_str
+                    note = (
+                        f"\n\n[model call failed mid-turn: {_short_err(e)} — "
+                        "progress so far is preserved; send a message to continue]"
+                    )
+                    result.content += note
+                    result.final_content = (
+                        parse_output(result.content).content.strip() or note.strip()
+                    )
+                    result.finish_reason = "error"
+                    yield _sse("chunk", {"content": note})
+                    return
+                # Nothing at stake — preserve the existing error-event contract.
+                raise
+            finally:
+                first_chunk.set()
+                pinger.cancel()
 
         # Tool-name echo guard: some routes leak the called function's name
         # into the content stream ("use_skillGot it —…"). Strip it from the
@@ -1795,26 +1947,29 @@ async def _run_tool_loop(
         ))
         emit_status("finalizing", label="Finalizing…")
         synthesis_content = ""
-        async for chunk in provider.stream(
-            messages, model_id,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            tools=None,
-            tool_choice=None,
-        ):
-            # Text-only by construction: any tool calls here are ignored, never
-            # executed — this pass exists to produce the answer, nothing else.
-            if chunk.usage:
-                result.tokens_in += chunk.usage.get("prompt_tokens", 0)
-                result.tokens_out += chunk.usage.get("completion_tokens", 0)
-                result.provider_cost += float(chunk.usage.get("cost") or 0.0)
-                result.reasoning_tokens += int(chunk.usage.get("reasoning_tokens") or 0)
-            if chunk.finish_reason:
-                result.finish_reason = chunk.finish_reason
-            if chunk.content:
-                result.content += chunk.content
-                synthesis_content += chunk.content
-                yield _sse("chunk", {"content": chunk.content})
+        try:
+            async for chunk in provider.stream(
+                messages, model_id,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=None,
+                tool_choice=None,
+            ):
+                # Text-only by construction: any tool calls here are ignored, never
+                # executed — this pass exists to produce the answer, nothing else.
+                if chunk.usage:
+                    result.tokens_in += chunk.usage.get("prompt_tokens", 0)
+                    result.tokens_out += chunk.usage.get("completion_tokens", 0)
+                    result.provider_cost += float(chunk.usage.get("cost") or 0.0)
+                    result.reasoning_tokens += int(chunk.usage.get("reasoning_tokens") or 0)
+                if chunk.finish_reason:
+                    result.finish_reason = chunk.finish_reason
+                if chunk.content:
+                    result.content += chunk.content
+                    synthesis_content += chunk.content
+                    yield _sse("chunk", {"content": chunk.content})
+        except Exception as e:  # noqa: BLE001 — the empty-synthesis fallback below covers it
+            logger.error(f"Synthesis pass model call failed: {e} — using fallback")
         result.final_content = synthesis_content
         # Mirror the natural-stop empty-final fallback so downstream never
         # carries silently empty content (same shape as the in-loop guard).

@@ -5071,6 +5071,108 @@ class StreamingToolLoopTest(TestCase):
         )
         self.assertEqual(result.state_solo_rounds, 0)
 
+    class _RateLimited(Exception):
+        status_code = 429
+
+    def test_rate_limited_round_waits_and_retries(self) -> None:
+        """A 429 before anything streamed is waited out (visible status) and
+        the round retried — the turn completes instead of dying."""
+        from agentx_ai.providers.base import StreamChunk
+
+        outer = self
+
+        class _FlakyProvider:
+            def __init__(self):
+                self.attempts = 0
+
+            async def stream(self, messages, model_id, **kwargs):
+                self.attempts += 1
+                if self.attempts <= 2:
+                    raise outer._RateLimited("Error code: 429 - rate limited upstream")
+                yield StreamChunk(content="made it", finish_reason="stop")
+
+        provider = _FlakyProvider()
+        agent = self._FakeAgent()
+        with patch("agentx_ai.streaming.tool_loop.RATE_LIMIT_WAIT_SCHEDULE", (0, 0)), \
+             patch("agentx_ai.streaming.tool_loop.emit_status") as status:
+            events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(provider.attempts, 3)
+        self.assertEqual(result.final_content, "made it")
+        labels = [c.kwargs.get("label", "") for c in status.call_args_list]
+        self.assertTrue(any("Rate-limited" in (l or "") for l in labels))
+        self.assertTrue(any("made it" in e for e in self._events_of(events, "chunk")))
+
+    def test_rate_limit_exhausted_salvages_partial_turn(self) -> None:
+        """When retries are exhausted mid-turn, the turn ends CLEANLY with a
+        salvage note (persistable) instead of a turn-killing error event."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        outer = self
+
+        class _DiesOnSecond:
+            def __init__(self):
+                self.calls = 0
+
+            async def stream(self, messages, model_id, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    yield StreamChunk(tool_calls=[ToolCall(
+                        id="t1", name="search", arguments={"q": "x"},
+                    )])
+                else:
+                    raise outer._RateLimited("Error code: 429 - rate limited upstream")
+
+        provider = _DiesOnSecond()
+        agent = self._FakeAgent()
+        with patch("agentx_ai.streaming.tool_loop.RATE_LIMIT_WAIT_SCHEDULE", ()):
+            events, result = self._run(
+                provider, agent, [], [{"name": "search"}],
+            )
+
+        self.assertEqual(result.finish_reason, "error")
+        self.assertIn("failed mid-turn", result.content)
+        self.assertIn("rate-limited", result.final_content)
+        self.assertTrue(any("failed mid-turn" in e
+                            for e in self._events_of(events, "chunk")))
+        # The executed round survived intact.
+        self.assertEqual(result.tools_used, ["search"])
+
+    def test_round0_provider_error_still_propagates(self) -> None:
+        """A non-rate-limit failure with nothing at stake keeps the existing
+        error-event contract (exception propagates to the views handler)."""
+
+        class _Boom:
+            async def stream(self, messages, model_id, **kwargs):
+                raise ValueError("connection torched")
+                yield  # pragma: no cover — makes this an async generator
+
+        provider = _Boom()
+        agent = self._FakeAgent()
+        with self.assertRaises(ValueError):
+            self._run(provider, agent, [], None)
+
+    def test_slow_start_watchdog_pings_status(self) -> None:
+        """No first chunk within the threshold → periodic 'still waiting'
+        status pings until streaming starts."""
+        from agentx_ai.providers.base import StreamChunk
+
+        class _SlowProvider:
+            async def stream(self, messages, model_id, **kwargs):
+                await asyncio.sleep(0.08)
+                yield StreamChunk(content="slow hello", finish_reason="stop")
+
+        provider = _SlowProvider()
+        agent = self._FakeAgent()
+        with patch("agentx_ai.streaming.tool_loop.SLOW_MODEL_FIRST_PING_SECONDS", 0.01), \
+             patch("agentx_ai.streaming.tool_loop.SLOW_MODEL_PING_INTERVAL_SECONDS", 0.01), \
+             patch("agentx_ai.streaming.tool_loop.emit_status") as status:
+            _events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(result.final_content, "slow hello")
+        labels = [c.kwargs.get("label", "") for c in status.call_args_list]
+        self.assertTrue(any("Still waiting on the model" in (l or "") for l in labels))
+
 
 class AdaptiveMaxTokensTest(TestCase):
     """Output-budget computation, incl. the Research Mode floor (v1.1)."""

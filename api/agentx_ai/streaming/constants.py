@@ -38,6 +38,20 @@ TRUNCATION_MARKER = "\n[TRUNCATED]"  # Appended to truncated tool results
 DEFAULT_MAX_TOOL_ROUNDS = 10  # Max tool call -> result round-trips
 STREAM_CLOSE_DELAY = 0.05  # Seconds to wait before closing stream (flush buffer)
 
+# Rate-limit wait-out: when a round's model call fails with a 429 BEFORE
+# streaming anything, the tool loop waits these delays (seconds) between
+# retries — visible via status events and cancellable between 1s steps,
+# unlike the SDK's silent internal retries. A Retry-After header wins over
+# the schedule slot. OpenRouter upstream throttling is the common case.
+RATE_LIMIT_WAIT_SCHEDULE: tuple[int, ...] = (15, 30, 60, 120)
+
+# Slow-start watchdog: while a round's FIRST chunk hasn't arrived, ping a
+# status after this many seconds, then one every interval — the SDK's
+# internal timeout+retry cycles are otherwise dead air (observed: 4+ silent
+# minutes against a rate-limited route, indistinguishable from a hang).
+SLOW_MODEL_FIRST_PING_SECONDS = 20
+SLOW_MODEL_PING_INTERVAL_SECONDS = 30
+
 # Narration-spin guard: rounds whose ONLY tool calls are update_conversation_state
 # (a model narrating intentions into state instead of working — observed 9 solo
 # rounds in a row burning the whole tool budget). Solo rounds past this cap get

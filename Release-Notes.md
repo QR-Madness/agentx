@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.243 -->
+<!-- release-version: 0.21.244 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -112,6 +112,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   *name* instead of calling it, scrubs leaked tool-name echoes from transcripts, announces when the
   tool budget runs out (instead of ending mid-narration), and caps state-update spin — with managers
   now told plainly that writes must go through `delegate_to`.
+- **Rate limits are waited out, not fatal**: a provider 429 now retries with visible countdown
+  status (and Stop works mid-wait); if a turn still can't continue, completed delegation work is
+  preserved with an honest "progress saved" note instead of vanishing — and a slow model shows
+  "still waiting" pings instead of minutes of dead air.
 - **Auto-titling works with reasoning models again**: title generation suppresses hidden thinking,
   got real token headroom, and falls back to a derived title — a conversation can no longer end up
   with an empty name and a "Could not auto-title" toast.
