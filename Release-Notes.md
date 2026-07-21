@@ -44,6 +44,14 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   teams an owning manager; org delegation then follows the chart strictly — manager → lead →
   member, member ↑ lead to escalate — and a delegated lead works its *own* members as nested
   work orders. Managers are report-only by contract; org-free setups are untouched.
+- **The profile editor became a personnel dossier**: the agent list is now an org-grouped
+  roster (manager, teams, org-free, ambassador — with role chips, model, tags, and search), and
+  the Role card draws the agent's live **chain of command** — click a superior or subordinate
+  to hop straight to their profile.
+- **Name and face, dealt**: a dice button deals 10 agent names (random or your starred pool —
+  star keepers), and avatar generation got a real model + prompt upgrade — subject optional
+  (leave it empty for a surprise synthetic face), "Deal 4" candidate grid, and one consistent
+  cosmic-portrait style across your whole team.
 
 - **Agent-ready docs site**: the site now advertises itself to AI agents — RFC 8288 `Link` headers,
   an RFC 9727 API catalog at `/.well-known/api-catalog`, per-page Markdown twins (`<page>.md`) +
@@ -118,6 +126,9 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Creating agents works from every client again**: the create-profile endpoint rejected
   cookie-less clients (web shell, curl) with a CSRF 403 — it now carries the same exemption as
   every other API route, with a test sweep so no route can regress this way again.
+- **Profile-editor fixes**: the temperature slider's track no longer disappears against the card
+  (Firefox gets a styled slider too), and the Specialty field stays editable for org members who
+  sit off the flat roster — their team and chain rosters read it.
 - **No more leaked thinking**: a reasoning model's `<think>` blocks are now stripped from the
   Ambassador's answers, replays, and speech — previously they could persist into the thread,
   render raw, and even be read aloud by TTS.

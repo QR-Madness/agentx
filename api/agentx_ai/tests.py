@@ -16080,8 +16080,105 @@ class AvatarGenerateEndpointTest(TestCase):
             "/api/agent/avatar/generate", data=json.dumps(body), content_type="application/json"
         )
 
-    def test_requires_subject_prompt(self):
-        self.assertEqual(self._post({}).status_code, 400)
+    def _cfg(self, overrides: dict | None = None):
+        """Hermetic config mock — module defaults regardless of local config.json."""
+        from agentx_ai.config import (
+            DEFAULT_AVATAR_MODEL,
+            DEFAULT_AVATAR_STYLE_PROMPT,
+            DEFAULT_IMAGE_MODEL,
+        )
+
+        values = {
+            "images.enabled": True,
+            "images.default_model": DEFAULT_IMAGE_MODEL,
+            "images.avatar_model": DEFAULT_AVATAR_MODEL,
+            "images.avatar_style_prompt": DEFAULT_AVATAR_STYLE_PROMPT,
+        }
+        values.update(overrides or {})
+        cfg = MagicMock()
+        cfg.get.side_effect = lambda key, default=None: values.get(key, default)
+        return cfg
+
+    def _generate(self, body: dict, cfg_overrides: dict | None = None):
+        """POST with the full generation plumbing mocked; returns (response, provider, registry)."""
+        from agentx_ai.providers.base import ImageResult
+
+        img = ImageResult(image=b"PNG", content_type="image/png", model="m", generation_id="g")
+        provider = MagicMock()
+        provider.name = "openrouter"
+        provider.generate_image = AsyncMock(return_value=img)
+        reg = MagicMock()
+        reg.resolve_with_fallback.return_value = (provider, "resolved/model", None)
+
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg(cfg_overrides)), \
+             patch("agentx_ai.providers.registry.get_registry", return_value=reg), \
+             patch("agentx_ai.kit.workspaces.repository.ensure_home_workspace", return_value={"id": "ws_home"}), \
+             patch("agentx_ai.kit.workspaces.service.store_media", return_value={"id": "doc_av"}), \
+             patch("agentx_ai.agent.usage_ledger.record_usage"), \
+             patch("agentx_ai.providers.pricing.estimate_image_cost", return_value=None):
+            res = self._post(body)
+        return res, provider, reg
+
+    def test_empty_subject_routes_to_synthetic_branch(self):
+        """Subject is optional: the template's `<SUBJECT>` slot gets the no-subject
+        line, steering the model to invent a synthetic face."""
+        from agentx_ai.config import DEFAULT_AVATAR_MODEL
+
+        res, provider, reg = self._generate({})
+        self.assertEqual(res.status_code, 200)
+        prompt = provider.generate_image.call_args.args[0]
+        self.assertIn("(no subject given)", prompt)
+        self.assertIn("invent a friendly synthetic being", prompt)
+        self.assertNotIn("<SUBJECT>", prompt)
+        # Avatars use the dedicated avatar model, not the general image model.
+        self.assertEqual(reg.resolve_with_fallback.call_args.args[0], DEFAULT_AVATAR_MODEL)
+
+    def test_subject_substitutes_into_template(self):
+        res, provider, _ = self._generate({"subject_prompt": "a gray-haired strategist"})
+        self.assertEqual(res.status_code, 200)
+        prompt = provider.generate_image.call_args.args[0]
+        self.assertIn("a gray-haired strategist", prompt)
+        self.assertNotIn("<SUBJECT>", prompt)
+        self.assertNotIn("(no subject given)", prompt)
+
+    def test_markerless_style_override_appends_subject(self):
+        """Back-compat: a custom style prompt without the `<SUBJECT>` marker keeps
+        the old style-then-subject behavior."""
+        res, provider, _ = self._generate(
+            {"subject_prompt": "x", "style_prompt": "minimalist ink portrait"}
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(provider.generate_image.call_args.args[0], "minimalist ink portrait\n\nx")
+
+    def test_blank_avatar_model_falls_through_to_default_model(self):
+        from agentx_ai.config import DEFAULT_IMAGE_MODEL
+
+        res, _, reg = self._generate({}, cfg_overrides={"images.avatar_model": ""})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(reg.resolve_with_fallback.call_args.args[0], DEFAULT_IMAGE_MODEL)
+
+    def test_stale_persisted_defaults_remap_to_current_template(self):
+        """A config.json carrying a pre-template shipped default (or a blank)
+        is a stale default, not a user choice — the current template wins."""
+        from agentx_ai.config import LEGACY_AVATAR_STYLE_PROMPTS
+
+        for stale in [*LEGACY_AVATAR_STYLE_PROMPTS, ""]:
+            res, provider, _ = self._generate(
+                {"subject_prompt": "x"},
+                cfg_overrides={"images.avatar_style_prompt": stale},
+            )
+            self.assertEqual(res.status_code, 200)
+            prompt = provider.generate_image.call_args.args[0]
+            self.assertIn("circular safe zone", prompt)  # the current template
+            self.assertIn("x", prompt)
+
+    def test_custom_style_prompt_survives(self):
+        res, provider, _ = self._generate(
+            {"subject_prompt": "x"},
+            cfg_overrides={"images.avatar_style_prompt": "my house style: <SUBJECT>"},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(provider.generate_image.call_args.args[0], "my house style: x")
 
     def test_generates_stores_in_home_and_returns_url(self):
         from agentx_ai.providers.base import ImageResult
@@ -16131,6 +16228,142 @@ class AvatarGenerateEndpointTest(TestCase):
             cfg.set("images.enabled", True)
         self.assertEqual(res.status_code, 422)
         self.assertEqual(res.json()["code"], "disabled")
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class NamePoolTest(TestCase):
+    """agent/name_pools.py + /api/agent/names — the profile editor's name deck:
+    curated random pool, starred preferred pool, deal-time exclusion of names
+    already worn by a profile."""
+
+    def _pools(self, directory):
+        from pathlib import Path
+
+        from agentx_ai.agent.name_pools import NamePools
+
+        return NamePools(path=Path(directory) / "name_pools.json")
+
+    def test_random_pool_is_clean(self):
+        """No case-insensitive duplicates; every entry a usable short name."""
+        from agentx_ai.agent.name_pools import MAX_NAME_LENGTH, RANDOM_POOL
+
+        keys = [n.casefold() for n in RANDOM_POOL]
+        self.assertEqual(len(keys), len(set(keys)))
+        for name in RANDOM_POOL:
+            self.assertTrue(0 < len(name) <= MAX_NAME_LENGTH)
+            self.assertEqual(name, name.strip())
+
+    def test_seeds_then_round_trips_preferred(self):
+        import json as _json
+        import tempfile
+
+        from agentx_ai.agent.name_pools import PREFERRED_SEEDS
+
+        with tempfile.TemporaryDirectory() as d:
+            pools = self._pools(d)
+            self.assertEqual(pools.preferred, list(PREFERRED_SEEDS))
+            self.assertTrue(pools.path.exists())  # seeds hit disk on first load
+
+            pools.add_preferred("Juno")
+            pools.add_preferred("  juno  ")  # duplicate (case/space-insensitive)
+            pools.remove_preferred(PREFERRED_SEEDS[0])
+            reloaded = self._pools(d)
+            self.assertIn("Juno", reloaded.preferred)
+            self.assertEqual(reloaded.preferred.count("Juno"), 1)
+            self.assertNotIn(PREFERRED_SEEDS[0], reloaded.preferred)
+            # The store really is the cheap array file.
+            raw = _json.loads(pools.path.read_text())
+            self.assertIn("Juno", raw["preferred"])
+
+    def test_add_preferred_validates(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            pools = self._pools(d)
+            with self.assertRaises(ValueError):
+                pools.add_preferred("   ")
+            with self.assertRaises(ValueError):
+                pools.add_preferred("x" * 41)
+
+    def test_sample_excludes_dedupes_and_clamps(self):
+        import tempfile
+
+        from agentx_ai.agent.name_pools import RANDOM_POOL
+
+        with tempfile.TemporaryDirectory() as d:
+            pools = self._pools(d)
+            dealt = pools.sample(pool="random", count=999, exclude=["hazel", RANDOM_POOL[1].upper()])
+            self.assertLessEqual(len(dealt), 20)  # count clamps high…
+            self.assertEqual(len(pools.sample(count=-5)), 1)  # …and low
+            lowered = {n.casefold() for n in dealt}
+            self.assertNotIn("hazel", lowered)
+            self.assertNotIn(RANDOM_POOL[1].casefold(), lowered)
+            self.assertEqual(len(dealt), len(lowered))  # without replacement
+
+    def test_sample_short_pool_returns_all(self):
+        import tempfile
+
+        from agentx_ai.agent.name_pools import PREFERRED_SEEDS
+
+        with tempfile.TemporaryDirectory() as d:
+            pools = self._pools(d)
+            keep = PREFERRED_SEEDS[:3]
+            dealt = pools.sample(pool="preferred", count=10, exclude=PREFERRED_SEEDS[3:])
+            self.assertEqual(sorted(dealt), sorted(keep))
+
+    # ── endpoints ──────────────────────────────────────────────────────────
+
+    def _with_endpoint_mocks(self, directory):
+        from types import SimpleNamespace
+        from unittest.mock import patch as _patch
+
+        pm = MagicMock()
+        pm.list_profiles.return_value = [SimpleNamespace(name="Hazel")]
+        pools = self._pools(directory)
+        return (
+            _patch("agentx_ai.agent.name_pools.get_name_pools", return_value=pools),
+            _patch("agentx_ai.agent.profiles.get_profile_manager", return_value=pm),
+        )
+
+    def test_names_endpoint_deals_and_excludes_in_use(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            p1, p2 = self._with_endpoint_mocks(d)
+            with p1, p2:
+                res = self.client.get("/api/agent/names?pool=random&count=20")
+                bad = self.client.get("/api/agent/names?pool=bogus")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["pool"], "random")
+        self.assertEqual(len(body["names"]), 20)
+        self.assertNotIn("Hazel", body["names"])  # in use by a profile
+        self.assertEqual(bad.status_code, 400)
+
+    def test_preferred_endpoint_round_trip(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            p1, p2 = self._with_endpoint_mocks(d)
+            with p1, p2:
+                added = self.client.post(
+                    "/api/agent/names/preferred",
+                    data=json.dumps({"add": "Juno"}), content_type="application/json",
+                )
+                listed = self.client.get("/api/agent/names/preferred")
+                removed = self.client.post(
+                    "/api/agent/names/preferred",
+                    data=json.dumps({"remove": "Juno"}), content_type="application/json",
+                )
+                empty = self.client.post(
+                    "/api/agent/names/preferred",
+                    data=json.dumps({}), content_type="application/json",
+                )
+        self.assertEqual(added.status_code, 200)
+        self.assertIn("Juno", added.json()["preferred"])
+        self.assertIn("Juno", listed.json()["preferred"])
+        self.assertNotIn("Juno", removed.json()["preferred"])
+        self.assertEqual(empty.status_code, 400)
 
 
 class ReasoningDeltaTest(TestCase):

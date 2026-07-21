@@ -21,9 +21,47 @@ logger = logging.getLogger(__name__)
 # fall back to them on installs whose pre-existing config.json predates the `images` block —
 # `_load` does NOT merge new defaults into an existing file.
 DEFAULT_IMAGE_MODEL = "openrouter:black-forest-labs/flux.2-klein-4b"
-DEFAULT_AVATAR_STYLE_PROMPT = (
+# Avatars get a dedicated model (portrait quality matters more than speed here);
+# blank the setting to fall through to `images.default_model`.
+DEFAULT_AVATAR_MODEL = "openrouter:microsoft/mai-image-2.5"
+# Template, not a prefix: `<SUBJECT>` is substituted at generation time
+# (views._render_avatar_prompt); an empty subject routes into the
+# invent-a-synthetic-face branch. Overrides without the marker degrade to the
+# old append behavior.
+DEFAULT_AVATAR_STYLE_PROMPT = """\
+Create one square avatar portrait.
+
+COMPOSITION — a single subject, centered, head-and-shoulders framing with a slight
+three-quarter turn toward the viewer; the subject fills about 70% of the frame; keep
+everything important inside a centered circular safe zone — the image will be cropped
+to a circle, so nothing essential may sit near the corners or edges; corners and edges
+fade smoothly into the background.
+
+BACKGROUND — a deep dark-cosmos field: near-black space, faint desaturated nebula haze,
+sparse pinpoint stars; keep it low-contrast and neutral so it never competes with the
+subject; no planets, no lens flares, no light beams.
+
+SUBJECT — <SUBJECT>
+If no subject is given, invent a friendly synthetic being: a robot or android face with
+real character — vary the silhouette between generations (visor, antennae, plating,
+glowing eyes, sculpted chrome), never the same design twice.
+
+STYLE — polished digital illustration with soft 3D shading; rim light from the upper
+left in cool violet, one warm gold key accent; crisp focus on the face, shallow depth
+behind it; a consistent series look, as if all avatars in a team were drawn by the
+same artist.
+
+RULES — exactly one subject; no text, letters, numbers, logos, watermarks, frames, or
+UI elements; no photorealistic human faces; the dark background must reach every edge.
+"""
+
+# Style prompts shipped before the template era. A persisted copy of one of
+# these in config.json is a stale default, not a user choice — avatar
+# generation remaps it to the current template (a genuinely custom prompt
+# still wins).
+LEGACY_AVATAR_STYLE_PROMPTS = (
     "A photorealistic headshot portrait, centered, clean studio lighting, "
-    "subtle depth of field, with a softly rounded border."
+    "subtle depth of field, with a softly rounded border.",
 )
 
 # Default configuration structure
@@ -202,8 +240,11 @@ DEFAULT_CONFIG = {
         # today (chat-completions + modalities:["image","text"]).
         "enabled": True,
         "default_model": DEFAULT_IMAGE_MODEL,
-        # App-level avatar STYLE prompt; the per-profile SUBJECT prompt is appended at
-        # generation time (e.g. "mobius should be a gray-haired strategist").
+        # Dedicated avatar model; blank falls through to default_model.
+        "avatar_model": DEFAULT_AVATAR_MODEL,
+        # App-level avatar STYLE template; `<SUBJECT>` is substituted with the
+        # per-profile subject at generation time (empty subject → the template's
+        # synthetic-face branch).
         "avatar_style_prompt": DEFAULT_AVATAR_STYLE_PROMPT,
     },
     "vision": {
