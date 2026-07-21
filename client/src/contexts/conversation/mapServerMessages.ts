@@ -8,7 +8,7 @@
  */
 
 import type { ConversationMessage, PlanSubtask, PlanExecutionMessage } from '../../lib/messages';
-import { createMessageId } from '../../lib/messages';
+import { createMessageId, stripThinkingTags, extractThinking } from '../../lib/messages';
 import type { ChatAudioRef, ChatImageRef } from '../../lib/api/types';
 import {
   exhibitFromWire,
@@ -154,12 +154,22 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
       if (planMeta?.plan_id && !m.content?.trim()) {
         continue;
       }
+      // The server persists assistant text think-stripped, but rows stored
+      // before v0.21.245 (notably legacy delegation transcripts) can still
+      // carry raw <think> tags — rehype-raw turns them into unknown DOM tags
+      // (React error, observed live). Strip defensively; when the tags held
+      // the only copy of the thought, fold it into the thinking bubble.
+      const rawContent = m.content || '';
+      const cleanContent = stripThinkingTags(rawContent, true);
       out.push({
         ...base,
         type: 'assistant',
-        content: m.content || '',
+        content: cleanContent,
         model: m.metadata?.model as string | undefined,
-        thinking: m.metadata?.thinking as string | undefined,
+        thinking: (m.metadata?.thinking as string | undefined)
+          ?? (cleanContent !== rawContent
+            ? extractThinking(rawContent) ?? undefined
+            : undefined),
         tokensInput: m.metadata?.tokens_input as number | undefined,
         tokensOutput: m.metadata?.tokens_output as number | undefined,
         costEstimate: m.metadata?.cost_estimate as number | undefined,
@@ -250,9 +260,17 @@ export function mapServerMessages(messages: ServerMessage[]): ConversationMessag
           task,
           depth: 1,
           status,
-          content: delegationMeta.raw_content || result?.content || '',
+          // Older rows persisted the specialist's raw stream, thinking
+          // included — a surviving `<think>` reaches the markdown renderer as
+          // an unknown DOM tag (React error, observed live). Strip
+          // defensively; new rows are stripped at persistence.
+          content: stripThinkingTags(
+            delegationMeta.raw_content || result?.content || '', true,
+          ),
           error: delegationMeta.error,
-          resultPreview: result?.content,
+          resultPreview: result?.content
+            ? stripThinkingTags(result.content, true)
+            : undefined,
           mode: delegationMeta.mode,
           parentDelegationId: delegationMeta.parent_delegation_id ?? null,
           reportDelivered: delegationMeta.mode === 'background' && status === 'completed',

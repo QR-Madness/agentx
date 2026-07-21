@@ -15,6 +15,7 @@ from typing import Any
 from uuid import uuid4
 from collections.abc import AsyncGenerator, Callable
 
+from ..agent.output_parser import strip_thinking
 from ..providers.base import Message, MessageRole
 from .constants import (
     RATE_LIMIT_WAIT_SCHEDULE,
@@ -603,7 +604,11 @@ async def _run_delegations(
         if accumulated:
             result.delegations.append(accumulated)
         delegation_raw[tc.id] = {
-            "raw_content": accumulated,
+            # Persisted card text: reasoning specialists interleave <think>
+            # blocks into the stream; stored verbatim they leak raw tags into
+            # the client's markdown on restore (client strips defensively for
+            # rows persisted before this).
+            "raw_content": strip_thinking(accumulated),
             "target_agent_id": target,
             "task": task,
             **final_metrics.get(tc.id, {}),
@@ -818,7 +823,7 @@ def _settle_work_order_entry(
             exhibits = metrics.pop("exhibits", None) or []
             dr.update(metrics)
             dr["status"] = status
-            dr["raw_content"] = wo.final_partial
+            dr["raw_content"] = strip_thinking(wo.final_partial)
             # Synthetic present_exhibit turns for exhibits produced inside the
             # work order — mirror of the blocking-path strip in
             # `_execute_and_emit_tools` so reload rebuilds the cards.
@@ -1221,9 +1226,10 @@ def _strip_tool_name_echo(text: str, tool_names: list[str]) -> str:
     Some routes leak the function name of a structured tool call into the
     content stream, gluing it onto the visible reply ("use_skillGot it —…").
     Persisted verbatim, that text teaches the model to "call" tools by writing
-    their names as prose. Only names actually called this round are stripped,
-    only at position 0, and only when the remainder is empty or starts
-    non-whitespace — "use_skill returned…" (talking ABOUT a tool) survives.
+    their names as prose. Names are stripped only at position 0, and only when
+    the remainder is empty or starts non-whitespace — "use_skill returned…"
+    (talking ABOUT a tool) survives. Callers pass the round's own calls plus
+    every offered tool: the echo can land a round later than its call.
     """
     stripped = text.lstrip()
     leading_ws = text[: len(text) - len(stripped)]
@@ -1581,21 +1587,38 @@ async def _run_tool_loop(
                 first_chunk.set()
                 pinger.cancel()
 
-        # Tool-name echo guard: some routes leak the called function's name
-        # into the content stream ("use_skillGot it —…"). Strip it from the
+        # Tool-name echo guard: some routes leak a function name into the
+        # content stream ("use_skillGot it —…"). Strip it from the
         # accumulation before it can reach folding or turn storage — polluted
-        # transcripts teach the model to "call" tools as plain text. (The live
-        # chunks already streamed; the client applies the same strip at its
-        # tool_call flush seam.)
-        if round_tool_calls and round_content:
-            _cleaned = _strip_tool_name_echo(
-                round_content, [tc.name for tc in round_tool_calls]
+        # transcripts teach the model to "call" tools as plain text. Checked
+        # against the round's OWN calls plus every offered tool: the echo can
+        # land a round later than its structured call (observed live:
+        # "read_threadPicking up" where read_thread ran the previous round).
+        # (The live chunks already streamed; the client applies the same
+        # strip at its tool_call flush seam.)
+        if round_content and (round_tool_calls or tools):
+            _offered = sorted(_offered_tool_names(tools))
+            # Precedence: a no-call round whose ENTIRE reply is a bare tool
+            # name is the poisoned-transcript imitation — leave it intact for
+            # the recovery nudge below (stripping it here would end the turn
+            # as an empty reply with no recovery). Once the one-shot nudge is
+            # spent, a repeat IS stripped: the neutral empty-reply fallback
+            # beats persisting the poison again.
+            _bare = parse_output(round_content).content.strip()
+            _is_bare_name_reply = not round_tool_calls and not bare_name_nudge_used and (
+                _bare in _offered
+                or (_bare.endswith("()") and _bare[:-2] in _offered)
             )
-            if _cleaned != round_content:
-                result.content = (
-                    result.content[: len(result.content) - len(round_content)] + _cleaned
+            if not _is_bare_name_reply:
+                _cleaned = _strip_tool_name_echo(
+                    round_content,
+                    [tc.name for tc in round_tool_calls] + _offered,
                 )
-                round_content = _cleaned
+                if _cleaned != round_content:
+                    result.content = (
+                        result.content[: len(result.content) - len(round_content)] + _cleaned
+                    )
+                    round_content = _cleaned
 
         result.finish_reason = round_finish
         if round_finish == "length":

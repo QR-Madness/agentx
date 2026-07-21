@@ -4950,6 +4950,25 @@ class StreamingToolLoopTest(TestCase):
         )
         self.assertEqual(result.content, "use_skill is what I'll call. done")
 
+    def test_tool_name_echo_cross_round_offered_not_called(self) -> None:
+        """The echo can land a round LATER than its structured call (observed
+        live: "read_threadPicking up…" in the round after read_thread ran) —
+        offered-but-not-called names are stripped too."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="On it. "),
+             StreamChunk(tool_calls=[ToolCall(id="t1", name="read_thread", arguments={})])],
+            [StreamChunk(content="read_threadPicking up where we left off",
+                         finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        _events, result = self._run(
+            provider, agent, [],
+            [{"type": "function", "function": {"name": "read_thread"}}],
+        )
+        self.assertEqual(result.content, "On it. Picking up where we left off")
+
     def test_bare_tool_name_reply_recovers(self) -> None:
         """A reply that is ONLY an offered tool's name (no structured call) is a
         poisoned-transcript imitation — dropped from the accumulation, nudged
@@ -5100,7 +5119,7 @@ class StreamingToolLoopTest(TestCase):
         self.assertEqual(provider.attempts, 3)
         self.assertEqual(result.final_content, "made it")
         labels = [c.kwargs.get("label", "") for c in status.call_args_list]
-        self.assertTrue(any("Rate-limited" in (l or "") for l in labels))
+        self.assertTrue(any("Rate-limited" in (lbl or "") for lbl in labels))
         self.assertTrue(any("made it" in e for e in self._events_of(events, "chunk")))
 
     def test_rate_limit_exhausted_salvages_partial_turn(self) -> None:
@@ -5171,7 +5190,7 @@ class StreamingToolLoopTest(TestCase):
 
         self.assertEqual(result.final_content, "slow hello")
         labels = [c.kwargs.get("label", "") for c in status.call_args_list]
-        self.assertTrue(any("Still waiting on the model" in (l or "") for l in labels))
+        self.assertTrue(any("Still waiting on the model" in (lbl or "") for lbl in labels))
 
 
 class AdaptiveMaxTokensTest(TestCase):
@@ -19178,6 +19197,24 @@ class ThinkTagSanitizerTest(TestCase):
         r.content = "final"
         _prepend_think(r, "draft + critique")
         self.assertEqual(r.content, "<think>draft + critique</think>final")
+
+    def test_strip_thinking_for_persistence(self):
+        """`strip_thinking` (delegation raw_content) removes closed blocks AND
+        an unclosed trailing block, with no answer-extraction heuristics."""
+        from agentx_ai.agent.output_parser import strip_thinking
+
+        self.assertEqual(
+            strip_thinking("<think>plan the report</think>Report ready."),
+            "Report ready.",
+        )
+        # Unclosed opener mid-text: the stream finished — everything after is
+        # reasoning, not answer.
+        self.assertEqual(
+            strip_thinking("Section one done.\n<think>now for section two"),
+            "Section one done.",
+        )
+        self.assertEqual(strip_thinking("plain answer"), "plain answer")
+        self.assertEqual(strip_thinking(""), "")
 
 
 class OrchestratorSelectionDelegationTest(TestCase):

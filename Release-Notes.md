@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.244 -->
+<!-- release-version: 0.21.245 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -117,9 +117,15 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 ### Fixes
 
 - **Agent turns no longer die silently**: the chat loop now recovers when a model writes a tool's
-  *name* instead of calling it, scrubs leaked tool-name echoes from transcripts, announces when the
-  tool budget runs out (instead of ending mid-narration), and caps state-update spin — with managers
-  now told plainly that writes must go through `delegate_to`.
+  *name* instead of calling it, scrubs leaked tool-name echoes from transcripts (even when the echo
+  lands a round after its call), announces when the tool budget runs out (instead of ending
+  mid-narration), and caps state-update spin — with managers now told plainly that writes must go
+  through `delegate_to`.
+- **Resuming a running conversation works again**: leaving and revisiting a tab mid-run re-attaches
+  to the live stream (it used to stay blank until the run finished), replayed messages no longer
+  collide on ids (React silently dropped turns mid-replay), stale cached tabs reconcile against
+  server history on revisit, and `<think>` blocks can no longer reach the markdown renderer as raw
+  DOM tags (stripped at persistence, restore, and render).
 - **Rate limits are waited out, not fatal**: a provider 429 now retries with visible countdown
   status (and Stop works mid-wait); if a turn still can't continue, completed delegation work is
   preserved with an honest "progress saved" note instead of vanishing — and a slow model shows
