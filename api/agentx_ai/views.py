@@ -5403,10 +5403,25 @@ async def prompts_title(request):
             Message(role=MessageRole.SYSTEM, content=system_prompt),
             Message(role=MessageRole.USER, content=user_content),
         ]
+        # Reasoning routes burn a tiny budget on hidden thinking and return
+        # empty content — suppress reasoning AND leave headroom (belt+braces:
+        # some routes can't fully disable thinking).
+        from .providers.base import NO_REASONING
         result = await registry.complete_with_fallback(
-            model, messages, temperature=0.3, max_tokens=24,
+            model, messages, temperature=0.3, max_tokens=256,
+            extra_body=NO_REASONING,
         )
-        return JsonResponse({"title": _clean_title(result.content), "model": result.model or model})
+        title = _clean_title(result.content)
+        if not title:
+            # Never return an empty title: derive one deterministically from
+            # the conversation inputs (same helper the Ambassador threads use).
+            from .agent.ambassador_storage import derive_title
+            title = derive_title(first or last or state, limit=60)
+            logger.warning(
+                "Title generation returned empty content (model=%s) — "
+                "using derived fallback %r", result.model or model, title,
+            )
+        return JsonResponse({"title": title, "model": result.model or model})
 
     except AgentXError as e:
         logger.warning(f"Title generation provider error: {e}")

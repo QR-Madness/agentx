@@ -3977,6 +3977,65 @@ class ResearchPromptTest(TestCase):
         self.assertTrue(nudge.strip())
         self.assertIn("create_document", nudge)
 
+    def test_chat_recovery_templates_render(self):
+        """The tool-loop recovery nudges exist and carry their trigger phrases
+        (the loop's defaults and the YAML must agree on these anchors)."""
+        from agentx_ai.prompts import get_prompt
+
+        recovery = get_prompt("chat.tool_name_recovery_nudge")
+        self.assertIn("only a tool name", recovery)
+        wrapup = get_prompt("chat.tool_budget_wrapup")
+        self.assertIn("all available tool calls", wrapup)
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint tests don't auth; stay green regardless of local .env
+class PromptsTitleTest(APITestBase):
+    """The auto-title endpoint: reasoning-suppressed LLM call + derived fallback."""
+
+    def _mock_registry(self, content: str):
+        from agentx_ai.providers.base import CompletionResult
+        registry = MagicMock()
+        registry.complete_with_fallback = AsyncMock(return_value=CompletionResult(
+            content=content, finish_reason="stop", model="mock/utility-model",
+        ))
+        return registry
+
+    def test_title_generated_with_reasoning_suppressed(self):
+        registry = self._mock_registry(' "Vanguard Requisition Planning." ')
+        with patch("agentx_ai.providers.registry.get_registry", return_value=registry):
+            resp = self.client.post(
+                "/api/prompts/title", data=json.dumps({"first": "plan the org"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 200)  # type: ignore[union-attr]
+        self.assertEqual(resp.json()["title"], "Vanguard Requisition Planning")  # type: ignore[union-attr]
+        kwargs = registry.complete_with_fallback.await_args.kwargs
+        # Reasoning routes burn tiny budgets on hidden thinking — the call must
+        # suppress reasoning AND carry headroom (regression: max_tokens=24
+        # returned empty titles when a -latest alias drifted onto a thinker).
+        self.assertEqual(kwargs.get("extra_body"), {"reasoning": {"enabled": False}})
+        self.assertGreaterEqual(kwargs.get("max_tokens", 0), 128)
+
+    def test_empty_llm_content_falls_back_to_derived_title(self):
+        registry = self._mock_registry("")
+        with patch("agentx_ai.providers.registry.get_registry", return_value=registry):
+            resp = self.client.post(
+                "/api/prompts/title",
+                data=json.dumps({"first": "Help me consolidate the requisition documents"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 200)  # type: ignore[union-attr]
+        title = resp.json()["title"]  # type: ignore[union-attr]
+        self.assertTrue(title)  # never empty
+        self.assertIn("consolidate", title.lower())
+
+    def test_requires_at_least_one_input(self):
+        resp = self.client.post(
+            "/api/prompts/title", data=json.dumps({}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)  # type: ignore[union-attr]
+
 
 class IntentAwareRetrievalTest(TestCase):
     """Tests for Phase 14.3 intent-aware retrieval internal tools."""
@@ -4855,6 +4914,162 @@ class StreamingToolLoopTest(TestCase):
         self.assertIn("[empty response from model]", result.content)
         self.assertTrue(any("[empty response from model]" in e
                             for e in self._events_of(events, "chunk")))
+
+    def test_tool_name_echo_stripped_from_accumulation(self) -> None:
+        """A round that leaks the called tool's NAME into content ("use_skillGot
+        it") gets the echo stripped from the accumulation — but not from the
+        already-streamed chunk events."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="use_skillGot it — "),
+             StreamChunk(tool_calls=[ToolCall(id="t1", name="use_skill", arguments={})])],
+            [StreamChunk(content="done", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        events, result = self._run(
+            provider, agent, [], [{"name": "use_skill"}],
+        )
+
+        self.assertEqual(result.content, "Got it — done")
+        # Live chunks are already on the wire — unchanged by the strip.
+        self.assertTrue(any("use_skillGot" in e for e in self._events_of(events, "chunk")))
+
+    def test_tool_name_echo_space_boundary_not_stripped(self) -> None:
+        """Talking ABOUT a called tool ("use_skill returned…") is not an echo."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="use_skill is what I'll call. "),
+             StreamChunk(tool_calls=[ToolCall(id="t1", name="use_skill", arguments={})])],
+            [StreamChunk(content="done", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        _events, result = self._run(
+            provider, agent, [], [{"name": "use_skill"}],
+        )
+        self.assertEqual(result.content, "use_skill is what I'll call. done")
+
+    def test_bare_tool_name_reply_recovers(self) -> None:
+        """A reply that is ONLY an offered tool's name (no structured call) is a
+        poisoned-transcript imitation — dropped from the accumulation, nudged
+        once, and the recovery round's answer becomes the turn."""
+        from agentx_ai.providers.base import StreamChunk, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="list_files", finish_reason="stop")],
+            [StreamChunk(content="real answer", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        _events, result = self._run(
+            provider, agent, messages,
+            [{"type": "function", "function": {"name": "list_files"}}],
+        )
+
+        self.assertEqual(provider._call, 2)
+        nudges = [m for m in messages
+                  if m.role == MessageRole.USER and "only a tool name" in m.content]
+        self.assertEqual(len(nudges), 1)
+        self.assertEqual(result.content, "real answer")   # bare name dropped
+        self.assertEqual(result.final_content, "real answer")
+
+    def test_bare_tool_name_nudge_fires_once(self) -> None:
+        """A model that repeats the bare name after the nudge ends the turn —
+        the guard never loops."""
+        from agentx_ai.providers.base import StreamChunk, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="list_files", finish_reason="stop")],
+            [StreamChunk(content="list_files", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        _events, _result = self._run(
+            provider, agent, messages,
+            [{"type": "function", "function": {"name": "list_files"}}],
+        )
+
+        self.assertEqual(provider._call, 2)  # no third call
+        nudges = [m for m in messages
+                  if m.role == MessageRole.USER and "only a tool name" in m.content]
+        self.assertEqual(len(nudges), 1)
+
+    def test_tool_budget_wrapup_injected_on_final_round(self) -> None:
+        """The forced tools-withheld final round is announced: wrap-up USER
+        message in context + a tool_budget_exhausted info event."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={})])],
+            [StreamChunk(content="honest wrap-up", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        events, result = self._run(
+            provider, agent, messages, [{"name": "search"}], max_tool_rounds=1,
+        )
+
+        wrapups = [m for m in messages
+                   if m.role == MessageRole.USER
+                   and "all available tool calls" in m.content]
+        self.assertEqual(len(wrapups), 1)
+        self.assertTrue(any("tool_budget_exhausted" in e
+                            for e in self._events_of(events, "info")))
+        self.assertEqual(result.final_content, "honest wrap-up")
+
+    def test_state_tool_solo_round_cap(self) -> None:
+        """Solo update_conversation_state rounds past the cap are
+        short-circuited with an error result — never executed, but every call
+        id still gets a TOOL message (provider contract)."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
+
+        solo = lambda i: [StreamChunk(tool_calls=[ToolCall(  # noqa: E731
+            id=f"s{i}", name="update_conversation_state",
+            arguments={"entries": ["x"]},
+        )])]
+        provider = self._FakeProvider([
+            solo(1), solo(2), solo(3), solo(4),
+            [StreamChunk(content="acting now", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        events, result = self._run(
+            provider, agent, messages, [{"name": "update_conversation_state"}],
+        )
+
+        self.assertEqual(result.state_solo_rounds, 4)
+        # Rounds 1-3 executed; round 4 short-circuited.
+        executed = [tc.name for batch in agent.executed for tc in batch]
+        self.assertEqual(len(executed), 3)
+        # The capped call still produced a (failed) tool_result + TOOL message.
+        self.assertEqual(len(self._events_of(events, "tool_result")), 4)
+        self.assertTrue(any('"success": false' in e
+                            for e in self._events_of(events, "tool_result")))
+        tool_msgs = [m for m in messages if m.role == MessageRole.TOOL]
+        self.assertEqual(len(tool_msgs), 4)
+        self.assertTrue(tool_msgs[-1].content.startswith('{"error"'))
+        self.assertEqual(result.final_content, "acting now")
+
+    def test_state_tool_mixed_round_not_counted(self) -> None:
+        """A round mixing a state write with real work is healthy — it never
+        counts toward the solo-round cap."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[
+                ToolCall(id="t1", name="update_conversation_state",
+                         arguments={"entries": ["x"]}),
+                ToolCall(id="t2", name="search", arguments={"q": "y"}),
+            ])],
+            [StreamChunk(content="done", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        _events, result = self._run(
+            provider, agent, [],
+            [{"name": "update_conversation_state"}, {"name": "search"}],
+        )
+        self.assertEqual(result.state_solo_rounds, 0)
 
 
 class AdaptiveMaxTokensTest(TestCase):

@@ -170,6 +170,20 @@ class OpenRouterProvider(ModelProvider):
         if choice.message.tool_calls:
             tool_calls = parse_openai_tool_calls(choice.message.tool_calls)
 
+        # Empty content + reasoning present = a thinking route burned the whole
+        # output budget on hidden reasoning. Alias drift onto a reasoning model
+        # silently breaks small-budget utility calls without this breadcrumb.
+        if not (choice.message.content or "").strip() and (
+            getattr(choice.message, "reasoning", None)
+            or getattr(choice.message, "reasoning_details", None)
+        ):
+            logger.warning(
+                "OpenRouter completion returned empty content but carried reasoning "
+                "(model=%s, max_tokens=%s) — hidden thinking likely burned the output "
+                "budget; pass extra_body=NO_REASONING or raise max_tokens",
+                response.model or model, max_tokens,
+            )
+
         usage = None
         if response.usage:
             usage = {

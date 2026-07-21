@@ -16,6 +16,7 @@ from uuid import uuid4
 from collections.abc import AsyncGenerator, Callable
 
 from ..providers.base import Message, MessageRole
+from .constants import STATE_TOOL_SOLO_ROUND_CAP
 from .helpers import estimate_tokens, truncate_tool_messages
 from .status import current_run_id, emit_status
 from .steering import drain_steer_messages
@@ -79,6 +80,10 @@ class ToolLoopResult:
     # Successful document-write tool calls this turn (create/update/append/edit
     # _document). Drives the research finalize nudge: no writes ⇒ nudge fires.
     docs_written: int = 0
+    # Rounds whose ONLY calls were update_conversation_state (narration-spin
+    # signature). Past STATE_TOOL_SOLO_ROUND_CAP, further state calls are
+    # short-circuited with an error result instead of executing.
+    state_solo_rounds: int = 0
 
 
 def _prepare_round_context(
@@ -997,10 +1002,40 @@ async def _execute_and_emit_tools(
     """
     suppress_result_ids = suppress_result_ids or set()
     tool_start_time = time.perf_counter()
+    # State-tool narration cap: past STATE_TOOL_SOLO_ROUND_CAP solo-narration
+    # rounds this turn, further update_conversation_state calls short-circuit
+    # with an error result instead of executing. Invariant: every tool_call id
+    # in the round's assistant message still gets a TOOL message below.
+    exec_calls = regular_calls
+    capped_calls: list = []
+    if result.state_solo_rounds > STATE_TOOL_SOLO_ROUND_CAP:
+        exec_calls = [tc for tc in regular_calls if tc.name != STATE_NARRATION_TOOL]
+        capped_calls = [tc for tc in regular_calls if tc.name == STATE_NARRATION_TOOL]
     tool_messages = (
-        agent._execute_tool_calls(regular_calls, task_context=task_context)
-        if regular_calls else []
+        agent._execute_tool_calls(exec_calls, task_context=task_context)
+        if exec_calls else []
     )
+    for tc in capped_calls:
+        tool_messages.append(Message(
+            role=MessageRole.TOOL,
+            content=json.dumps({
+                "error": (
+                    "State already recorded this turn — further "
+                    "update_conversation_state calls are disabled. Stop "
+                    "narrating; do the actual work, delegate it, or give "
+                    "your final answer."
+                ),
+                "success": False,
+            }),
+            tool_call_id=tc.id,
+            name=tc.name,
+        ))
+    if capped_calls:
+        logger.info(
+            "state-tool narration cap: short-circuited %d update_conversation_state "
+            "call(s) after %d solo rounds",
+            len(capped_calls), result.state_solo_rounds,
+        )
     tool_messages = delegation_messages + tool_messages
     tool_total_time = (time.perf_counter() - tool_start_time) * 1000
     tool_avg_time = tool_total_time / len(tool_messages) if tool_messages else 0
@@ -1106,6 +1141,51 @@ async def _execute_and_emit_tools(
             continue
         for msg in _view_image_messages(tm, vision_capable=vision_capable):
             messages.append(msg)
+
+
+# The narration-spin tool: solo rounds of it are counted against
+# STATE_TOOL_SOLO_ROUND_CAP (see ToolLoopResult.state_solo_rounds).
+STATE_NARRATION_TOOL = "update_conversation_state"
+
+
+def _strip_tool_name_echo(text: str, tool_names: list[str]) -> str:
+    """Strip leading tool-name echoes from a round's streamed text.
+
+    Some routes leak the function name of a structured tool call into the
+    content stream, gluing it onto the visible reply ("use_skillGot it —…").
+    Persisted verbatim, that text teaches the model to "call" tools by writing
+    their names as prose. Only names actually called this round are stripped,
+    only at position 0, and only when the remainder is empty or starts
+    non-whitespace — "use_skill returned…" (talking ABOUT a tool) survives.
+    """
+    stripped = text.lstrip()
+    leading_ws = text[: len(text) - len(stripped)]
+    changed = True
+    while changed and stripped:
+        changed = False
+        for name in tool_names:
+            if not name or not stripped.startswith(name):
+                continue
+            rest = stripped[len(name):]
+            if rest == "" or not rest[:1].isspace():
+                stripped = rest
+                changed = True
+                break
+    return (leading_ws + stripped) if stripped else ""
+
+
+def _offered_tool_names(tools: list[dict[str, Any]] | None) -> set[str]:
+    """Names of the tools offered to the provider this turn (OpenAI format)."""
+    names: set[str] = set()
+    for t in tools or ():
+        if not isinstance(t, dict):
+            continue
+        fn = t.get("function")
+        if isinstance(fn, dict) and fn.get("name"):
+            names.add(str(fn["name"]))
+        elif t.get("name"):
+            names.add(str(t["name"]))
+    return names
 
 
 async def streaming_tool_loop(
@@ -1257,6 +1337,10 @@ async def _run_tool_loop(
     # the turn is close to ending with no document written — proactively near
     # round exhaustion, or reactively at a natural stop.
     nudge_used = False
+    # Bare-tool-name recovery: one-shot corrective nudge when the model's whole
+    # reply is a tool NAME as plain text (poisoned-transcript imitation) with no
+    # structured call behind it.
+    bare_name_nudge_used = False
     # Lazy semaphore bounding concurrent background work orders (its own pool —
     # a same-round blocking batch has its own, so worst-case 2× max_parallel
     # briefly; accepted).
@@ -1288,6 +1372,32 @@ async def _run_tool_loop(
         ) and emit_trajectory_info:
             yield _sse("info", {"type": "trajectory_compressed"})
 
+        # Final round runs with tools withheld (the `tools if tool_round <
+        # max_tool_rounds` guard below). Say so: without this the model
+        # narrates mid-task text as its "final" and the turn just ends.
+        # Surfaced to the client as an info event (unknown types are ignored
+        # by older clients).
+        if tools and tool_round == max_tool_rounds:
+            from ..prompts import get_prompt
+            messages.append(Message(
+                role=MessageRole.USER,
+                content=get_prompt(
+                    "chat.tool_budget_wrapup",
+                    default=(
+                        "You have used all available tool calls for this turn. "
+                        "Do not attempt more tool calls. Deliver your complete "
+                        "final response now based on everything gathered. If "
+                        "work remains unfinished, state exactly what remains "
+                        "and how you would continue."
+                    ),
+                ),
+            ))
+            logger.info(
+                "tool budget exhausted after %d rounds — forcing informed wrap-up",
+                max_tool_rounds,
+            )
+            yield _sse("info", {"type": "tool_budget_exhausted"})
+
         # Stream completion from provider. Announce the wait so the client shows
         # "Thinking…" until the first token arrives (it clears `status` on `chunk`).
         emit_status("thinking")
@@ -1318,6 +1428,22 @@ async def _run_tool_loop(
                     chunk.media, result, capture_tool_turns, model_id,
                 ):
                     yield event_str
+
+        # Tool-name echo guard: some routes leak the called function's name
+        # into the content stream ("use_skillGot it —…"). Strip it from the
+        # accumulation before it can reach folding or turn storage — polluted
+        # transcripts teach the model to "call" tools as plain text. (The live
+        # chunks already streamed; the client applies the same strip at its
+        # tool_call flush seam.)
+        if round_tool_calls and round_content:
+            _cleaned = _strip_tool_name_echo(
+                round_content, [tc.name for tc in round_tool_calls]
+            )
+            if _cleaned != round_content:
+                result.content = (
+                    result.content[: len(result.content) - len(round_content)] + _cleaned
+                )
+                round_content = _cleaned
 
         result.finish_reason = round_finish
         if round_finish == "length":
@@ -1405,6 +1531,51 @@ async def _run_tool_loop(
                 emit_status("thinking")
                 continue
 
+            # Bare-tool-name reply guard: the entire visible reply is one of
+            # the offered tools' names written as prose — never a legitimate
+            # answer; the model is imitating a polluted transcript instead of
+            # emitting a structured call. Drop the poison from the
+            # accumulation (so it can't persist and re-teach the pattern) and
+            # nudge once toward a real call or a real answer. Runs BEFORE the
+            # research finalize nudge — a malfunction must not be answered
+            # with a delivery-guard prompt.
+            if tools and not bare_name_nudge_used and round_content:
+                bare = parse_output(round_content).content.strip()
+                offered = _offered_tool_names(tools)
+                if bare and (
+                    bare in offered
+                    or (bare.endswith("()") and bare[:-2] in offered)
+                ):
+                    bare_name_nudge_used = True
+                    result.content = (
+                        result.content[: len(result.content) - len(round_content)]
+                    )
+                    from ..prompts import get_prompt
+                    messages.append(Message(
+                        role=MessageRole.USER,
+                        content=get_prompt(
+                            "chat.tool_name_recovery_nudge",
+                            default=(
+                                "Your last reply was only a tool name written as "
+                                "plain text — that does not invoke anything. If you "
+                                "meant to use that tool, invoke it now through the "
+                                "tool-calling interface with proper arguments. "
+                                "Otherwise, give your complete final answer in "
+                                "normal prose."
+                            ),
+                        ),
+                    ))
+                    logger.info(
+                        "bare-tool-name recovery nudge fired (round %d, name=%r)",
+                        tool_round + 1, bare,
+                    )
+                    # The bare name already streamed to the live bubble;
+                    # separate it from the recovery answer visually. Chunk
+                    # events don't feed result.content, so storage stays clean.
+                    yield _sse("chunk", {"content": "\n\n"})
+                    emit_status("thinking")
+                    continue
+
             # Delivery guard, reactive trigger: the model is stopping without
             # having written the deliverable document. Fold the partial in
             # (thinking stripped — same shape as steer folding) and nudge once.
@@ -1445,6 +1616,14 @@ async def _run_tool_loop(
                 result.final_content = fallback
                 yield _sse("chunk", {"content": fallback})
             break
+
+        # Narration-spin accounting: a round whose ONLY calls are
+        # update_conversation_state is the spin signature — the model is
+        # journaling intentions instead of working (healthy rounds mix state
+        # writes with real work; a legit multi-slot round is a single round).
+        # Past the cap, _execute_and_emit_tools short-circuits the calls.
+        if {tc.name for tc in round_tool_calls} == {STATE_NARRATION_TOOL}:
+            result.state_solo_rounds += 1
 
         # Split off Agent Alloy delegation calls (blocking `delegate_to` +
         # background `delegate_start`) from regular tool calls.

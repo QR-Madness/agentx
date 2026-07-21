@@ -906,7 +906,7 @@ class RecallLayer:
                           or settings.recall_hyde_model)
             provider, model_id, _ = registry.resolve_with_fallback(model_pref)
 
-            from ....providers.base import Message, MessageRole
+            from ....providers.base import NO_REASONING, Message, MessageRole
 
             messages = [
                 Message(
@@ -924,12 +924,15 @@ class RecallLayer:
                 ),
             ]
 
+            # NO_REASONING: thinking routes burn the small HyDE budget on
+            # hidden reasoning and return empty content.
             result = _run_coro_sync(
                 provider.complete(
                     messages,
                     model_id,
                     temperature=settings.recall_hyde_temperature,
                     max_tokens=settings.recall_hyde_max_tokens,
+                    extra_body=NO_REASONING,
                 )
             )
 
@@ -1022,7 +1025,7 @@ class RecallLayer:
                 or settings.recall_self_query_model)
             provider, model_id, _ = registry.resolve_with_fallback(model_pref)
 
-            from ....providers.base import Message, MessageRole
+            from ....providers.base import NO_REASONING, Message, MessageRole
 
             messages = [
                 Message(
@@ -1044,12 +1047,15 @@ class RecallLayer:
                 ),
             ]
 
+            # NO_REASONING: thinking routes burn the small self-query budget
+            # on hidden reasoning and return empty content.
             result = _run_coro_sync(
                 provider.complete(
                     messages,
                     model_id,
                     temperature=settings.recall_self_query_temperature,
                     max_tokens=settings.recall_self_query_max_tokens,
+                    extra_body=NO_REASONING,
                 )
             )
 

@@ -37,3 +37,10 @@ TRUNCATION_MARKER = "\n[TRUNCATED]"  # Appended to truncated tool results
 # Streaming control
 DEFAULT_MAX_TOOL_ROUNDS = 10  # Max tool call -> result round-trips
 STREAM_CLOSE_DELAY = 0.05  # Seconds to wait before closing stream (flush buffer)
+
+# Narration-spin guard: rounds whose ONLY tool calls are update_conversation_state
+# (a model narrating intentions into state instead of working — observed 9 solo
+# rounds in a row burning the whole tool budget). Solo rounds past this cap get
+# their state calls short-circuited with an error result. Mixed rounds (state
+# write alongside real work) and multi-slot single rounds never count.
+STATE_TOOL_SOLO_ROUND_CAP = 3

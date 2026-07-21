@@ -34,6 +34,7 @@ import {
   createMessageId,
   extractThinking,
   stripThinkingTags,
+  stripToolNameEcho,
 } from '../../lib/messages';
 import { exhibitFromWire } from '../../lib/exhibits';
 import type { PlanRecord } from '../../contexts/PlansContext';
@@ -244,6 +245,11 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
       },
 
       onToolCall: (data) => {
+        // Tool-name echo guard (cosmetic twin of the server-side strip): some
+        // routes leak the called function's name into the text stream right
+        // before the structured call — scrub it from the live buffer before
+        // the flush materializes it as a bubble.
+        liveContentRef.current = stripToolNameEcho(liveContentRef.current, data.tool);
         flushLiveContent();
         const messageId = createMessageId();
         activeToolCallsRef.current.set(data.tool_call_id, {

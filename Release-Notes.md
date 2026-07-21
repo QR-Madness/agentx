@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.241 -->
+<!-- release-version: 0.21.243 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -108,6 +108,13 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Agent turns no longer die silently**: the chat loop now recovers when a model writes a tool's
+  *name* instead of calling it, scrubs leaked tool-name echoes from transcripts, announces when the
+  tool budget runs out (instead of ending mid-narration), and caps state-update spin — with managers
+  now told plainly that writes must go through `delegate_to`.
+- **Auto-titling works with reasoning models again**: title generation suppresses hidden thinking,
+  got real token headroom, and falls back to a derived title — a conversation can no longer end up
+  with an empty name and a "Could not auto-title" toast.
 - **Creating agents works from every client again**: the create-profile endpoint rejected
   cookie-less clients (web shell, curl) with a CSRF 403 — it now carries the same exemption as
   every other API route, with a test sweep so no route can regress this way again.
