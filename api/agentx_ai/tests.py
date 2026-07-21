@@ -4969,6 +4969,52 @@ class StreamingToolLoopTest(TestCase):
         )
         self.assertEqual(result.content, "On it. Picking up where we left off")
 
+    def test_tool_name_echo_stripped_behind_think_block(self) -> None:
+        """Reasoning routes emit the think block BEFORE the leaked name — the
+        strip anchors at the VISIBLE start, preserving the thinking prefix
+        (live miss: names hid behind inkling's think block)."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="<think>plan it</think>read_threadOn it. "),
+             StreamChunk(tool_calls=[ToolCall(id="t1", name="read_thread", arguments={})])],
+            [StreamChunk(content="done", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        _events, result = self._run(
+            provider, agent, [],
+            [{"type": "function", "function": {"name": "read_thread"}}],
+        )
+        self.assertEqual(result.content, "<think>plan it</think>On it. done")
+
+    def test_glued_bare_names_reply_recovers(self) -> None:
+        """A reply that is SEVERAL offered names glued together (behind a
+        think block) is the same poisoned-transcript imitation as a single
+        bare name — dropped and nudged (live miss: inkling replied
+        'scratchpad_noteupdate_conversation_statelist_project_files')."""
+        from agentx_ai.providers.base import StreamChunk, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(
+                content="<think>hm</think>scratchpad_noteupdate_conversation_statelist_project_files",
+                finish_reason="stop")],
+            [StreamChunk(content="real answer", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        _events, result = self._run(
+            provider, agent, messages,
+            [{"type": "function", "function": {"name": n}}
+             for n in ("scratchpad_note", "update_conversation_state", "list_project_files")],
+        )
+
+        self.assertEqual(provider._call, 2)
+        nudges = [m for m in messages
+                  if m.role == MessageRole.USER and "only a tool name" in m.content]
+        self.assertEqual(len(nudges), 1)
+        self.assertEqual(result.final_content, "real answer")
+        self.assertNotIn("scratchpad_note", result.content)
+
     def test_bare_tool_name_reply_recovers(self) -> None:
         """A reply that is ONLY an offered tool's name (no structured call) is a
         poisoned-transcript imitation — dropped from the accumulation, nudged
@@ -7935,6 +7981,77 @@ class AlloyDelegationMetricsTest(TestCase):
         self.assertEqual(raw["cost_currency"], "USD")
         self.assertEqual(raw["pricing_snapshot"], {"x": 1})
 
+    def test_effort_forwarded_to_executor_and_persisted(self):
+        """A dispatch's `effort` tier reaches delegate() as a kwarg and rides
+        the persisted delegation card; absent effort is OMITTED entirely
+        (simple test-fake signatures stay compatible)."""
+        from agentx_ai.streaming.tool_loop import _run_delegations, ToolLoopResult
+
+        captured: dict = {}
+
+        class FakeExec:
+            async def delegate(self, target, task, *, tool_call_id, **kwargs):
+                captured.update(kwargs)
+                payload = {
+                    "target_agent_id": target, "tool_call_id": tool_call_id,
+                    "status": "success", "error": None, "result_preview": "ok",
+                }
+                yield f"event: delegation_complete\ndata: {json.dumps(payload)}\n\n", "ok"
+
+        tc = MagicMock()
+        tc.id = "tc1"
+        tc.name = "delegate_to"
+        tc.arguments = {"agent_id": "spec", "task": "big job", "effort": "deep"}
+
+        result = ToolLoopResult()
+        delegation_raw: dict = {}
+        asyncio.run(self._drain(_run_delegations(
+            [tc], FakeExec(), object(),
+            result=result, delegation_messages=[], delegation_raw=delegation_raw,
+        )))
+
+        self.assertEqual(captured.get("effort"), "deep")
+        self.assertEqual(delegation_raw["tc1"]["effort"], "deep")
+
+        # No effort in the arguments ⇒ kwarg omitted, card key absent.
+        captured.clear()
+        tc2 = MagicMock()
+        tc2.id = "tc2"
+        tc2.name = "delegate_to"
+        tc2.arguments = {"agent_id": "spec", "task": "small job"}
+        delegation_raw2: dict = {}
+        asyncio.run(self._drain(_run_delegations(
+            [tc2], FakeExec(), object(),
+            result=ToolLoopResult(), delegation_messages=[],
+            delegation_raw=delegation_raw2,
+        )))
+        self.assertNotIn("effort", captured)
+        self.assertNotIn("effort", delegation_raw2["tc2"])
+
+    def test_effort_rounds_resolution(self):
+        """`_effort_rounds`: tier name → config budget (case-insensitive);
+        unknown/absent/non-positive tiers and config hiccups fall back; a
+        config.json predating the key uses the constant default map."""
+        from agentx_ai.alloy.executor import _effort_rounds
+
+        cfg = MagicMock()
+        cfg.get.return_value = {"quick": 8, "deep": 60, "weird": 0}
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            self.assertEqual(_effort_rounds("quick", 30), 8)
+            self.assertEqual(_effort_rounds("DEEP", 30), 60)     # case-insensitive
+            self.assertEqual(_effort_rounds("unknown", 30), 30)  # not a tier
+            self.assertEqual(_effort_rounds("weird", 30), 30)    # non-positive value
+            self.assertEqual(_effort_rounds(None, 30), 30)
+            self.assertEqual(_effort_rounds("", 30), 30)
+
+        # Pre-existing config.json without the key (no-merge gotcha) → the
+        # module-constant defaults still resolve.
+        cfg_missing = MagicMock()
+        cfg_missing.get.return_value = None
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg_missing):
+            self.assertEqual(_effort_rounds("quick", 30), 8)
+            self.assertEqual(_effort_rounds("marathon", 30), 100)
+
     def _make_executor(self):
         from types import SimpleNamespace
         from agentx_ai.alloy.executor import AlloyExecutor
@@ -8707,6 +8824,16 @@ class BackgroundDelegationTest(TestCase):
         )
         self.assertIn("dispatch receipt", start["description"])
         self.assertIn("delegate_to", start["description"])
+
+        # Effort tiers ride BOTH variants: optional enum, canonical order, and
+        # names that stay in lockstep with the config default map.
+        from agentx_ai.alloy.delegation_tool import EFFORT_TIERS
+        from agentx_ai.config import DEFAULT_EFFORT_TIERS
+        for tool in (start, blocking):
+            effort = tool["input_schema"]["properties"]["effort"]
+            self.assertEqual(effort["enum"], list(EFFORT_TIERS))
+            self.assertNotIn("effort", tool["input_schema"]["required"])
+        self.assertEqual(set(EFFORT_TIERS), set(DEFAULT_EFFORT_TIERS))
 
 
 class WorkOrderPersistenceTest(TestCase):

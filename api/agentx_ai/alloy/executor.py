@@ -32,6 +32,30 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+def _effort_rounds(effort: str | None, fallback: int) -> int:
+    """Resolve a dispatch's `effort` tier to a tool-round budget.
+
+    The dispatching model only ever names a tier; the numbers come from
+    `alloy.effort_tiers` config (operator-owned — never raw integers from
+    prompt space). Unknown tier, missing map, or a non-positive value all
+    fall back to the specialist's own default, so a bad dispatch can never
+    zero out an agent's budget.
+    """
+    if not effort:
+        return fallback
+    try:
+        from ..config import DEFAULT_EFFORT_TIERS, get_config_manager
+
+        # Constant fallback: a pre-existing config.json predating the
+        # `effort_tiers` key won't carry it (`_load` does NOT merge new
+        # defaults) — the feature must not silently die on existing installs.
+        tiers = get_config_manager().get("alloy.effort_tiers", None) or DEFAULT_EFFORT_TIERS
+        rounds = int(tiers.get(str(effort).strip().lower(), 0))
+        return rounds if rounds > 0 else fallback
+    except Exception:  # noqa: BLE001 — a config hiccup must never break a dispatch
+        return fallback
+
+
 class AlloyExecutor:
     """Owns one in-flight workflow execution for a single supervising agent."""
 
@@ -215,6 +239,7 @@ class AlloyExecutor:
         delegation_id: str | None = None,
         media: list[str] | None = None,
         delegation_path: list[str] | None = None,
+        effort: str | None = None,
     ) -> AsyncGenerator[tuple[str, str]]:
         """
         Run one specialist for one task.
@@ -239,6 +264,11 @@ class AlloyExecutor:
         specialist's FIRST message, capability-gated — the load-bearing case is
         a direct-input specialist (image model, direct mode) that has no tool
         loop and can only receive context upfront.
+
+        ``effort`` is the dispatcher-chosen tier name sizing this task's
+        tool-round budget (``alloy.effort_tiers`` config resolves it
+        server-side via ``_effort_rounds``; None/unknown ⇒ the specialist's
+        own default).
         """
         # A caller-minted id lets the tool loop cite the work order in its
         # dispatch receipt before this generator first yields.
@@ -511,7 +541,11 @@ class AlloyExecutor:
                 provider, model_id, messages, tools, specialist,
                 temperature=profile.temperature,
                 max_tokens=4096,
-                max_tool_rounds=specialist.config.max_tool_rounds,
+                # Per-dispatch effort tier sizes this task's budget; the
+                # specialist's own default is the floor state (no tier given).
+                max_tool_rounds=_effort_rounds(
+                    effort, specialist.config.max_tool_rounds,
+                ),
                 task_context=task,
                 emit_trajectory_info=False,
                 result=loop_result,

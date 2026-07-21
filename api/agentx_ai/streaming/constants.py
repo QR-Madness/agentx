@@ -35,7 +35,12 @@ MIN_TOOL_CONTENT_SIZE = 500  # Don't truncate tool results below this length
 TRUNCATION_MARKER = "\n[TRUNCATED]"  # Appended to truncated tool results
 
 # Streaming control
-DEFAULT_MAX_TOOL_ROUNDS = 10  # Max tool call -> result round-trips
+# Max tool call -> result round-trips. Raised 10 -> 30 (v0.21.247): a
+# specialist doing real document work (read/edit/append, one call per round)
+# burned 10 rounds mid-job and got force-wrapped — the informed wrap-up +
+# narration cap + trajectory compression now bound runaway, so the cap can
+# afford to be generous. Chat-path override: `chat.max_tool_rounds` config.
+DEFAULT_MAX_TOOL_ROUNDS = 30
 STREAM_CLOSE_DELAY = 0.05  # Seconds to wait before closing stream (flush buffer)
 
 # Rate-limit wait-out: when a round's model call fails with a 429 BEFORE

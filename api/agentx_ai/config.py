@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 # fall back to them on installs whose pre-existing config.json predates the `images` block —
 # `_load` does NOT merge new defaults into an existing file.
 DEFAULT_IMAGE_MODEL = "openrouter:black-forest-labs/flux.2-klein-4b"
+
+# Delegation effort tiers — module constant for the same no-merge reason (a
+# pre-existing config.json won't carry `alloy.effort_tiers`). Tier NAMES are
+# fixed in the delegate_to schema (alloy/delegation_tool.py EFFORT_TIERS);
+# these are the tool-round budgets each name resolves to.
+DEFAULT_EFFORT_TIERS = {
+    "quick": 8,      # small errand: a fast edit, short summary, a couple of lookups
+    "standard": 30,  # normal single-deliverable work (= the loop default)
+    "deep": 60,      # long-form: build/revise documents, multi-source synthesis
+    "marathon": 100, # exceptionally large sustained jobs — use sparingly
+}
 # Avatars get a dedicated model (portrait quality matters more than speed here);
 # blank the setting to fall through to `images.default_model`.
 DEFAULT_AVATAR_MODEL = "openrouter:microsoft/mai-image-2.5"
@@ -337,6 +348,15 @@ DEFAULT_CONFIG = {
         # keep the flat opt-in roster byte-identical. Default ON
         # (ship-experimental-on).
         "chain_of_command": True,
+        # Per-dispatch effort tiers: delegate_to/delegate_start take an
+        # optional `effort` level that sets the SPECIALIST's tool-round budget
+        # for that one task. The dispatching model only ever picks a tier
+        # NAME (semantic judgment it's good at); the numbers live here,
+        # operator-owned (systems judgment it's bad at) — never raw integers
+        # from prompt space. Unknown/absent tier ⇒ the specialist's own
+        # default (AgentConfig.max_tool_rounds). Tier names are fixed in the
+        # tool schema (delegation_tool.py) — tune values here, add tiers there.
+        "effort_tiers": dict(DEFAULT_EFFORT_TIERS),
     },
     "search": {
         "backend": "tavily",          # "tavily" | "brave"

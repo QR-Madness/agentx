@@ -14,6 +14,26 @@ from .prompts import resolve_specialist_names
 DELEGATION_TOOL_NAME = "delegate_to"
 DELEGATION_START_TOOL_NAME = "delegate_start"
 
+# Canonical effort tiers, in ascending order. The dispatcher picks a NAME —
+# the tool-round numbers each name maps to live in config
+# (`alloy.effort_tiers`), operator-owned. Adding a tier means adding it here
+# (schema + description) AND in the config default map.
+EFFORT_TIERS = ("quick", "standard", "deep", "marathon")
+
+_EFFORT_DESCRIPTION = (
+    "How much working room the task needs — sets the agent's tool-call "
+    "budget for this one dispatch. "
+    "'quick': a small errand — a fast edit, a short summary, a couple of "
+    "lookups. "
+    "'standard' (default): normal single-deliverable work. "
+    "'deep': long-form work — building or revising documents, multi-source "
+    "synthesis. "
+    "'marathon': an exceptionally large job needing sustained tool work; use "
+    "sparingly. "
+    "Size it to the task: too small forces a mid-job wrap-up, too large "
+    "invites drift."
+)
+
 
 def modality_suffix(agent_id: str) -> str:
     """Media-capability tag for a roster/tool entry, e.g. `` [sees images · makes images]``.
@@ -110,6 +130,11 @@ def _build_descriptor(
                     "see your conversation history; include all relevant "
                     "context here."
                 ),
+            },
+            "effort": {
+                "type": "string",
+                "enum": list(EFFORT_TIERS),
+                "description": _EFFORT_DESCRIPTION,
             },
             "media": {
                 "type": "array",

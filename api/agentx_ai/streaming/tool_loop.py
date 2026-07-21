@@ -9,6 +9,7 @@ and yielding SSE-formatted events for each chunk, tool call, and tool result.
 import asyncio
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -526,9 +527,11 @@ async def _run_delegations(
         # branches don't burn their budget waiting for a slot.
         timeout = getattr(alloy_executor, "delegation_timeout_seconds", 300) or None
         # Top-level fan-out is always depth 0; delegate() defaults depth=0.
-        # Optional kwargs (depth, media) are OMITTED when unused so simpler
-        # delegate() signatures (test fakes) stay compatible.
-        extra = {"media": media} if media else {}
+        # Optional kwargs (depth, media, effort) are OMITTED when unused so
+        # simpler delegate() signatures (test fakes) stay compatible.
+        extra: dict[str, Any] = {"media": media} if media else {}
+        if args.get("effort"):
+            extra["effort"] = args["effort"]
         gen = alloy_executor.delegate(target, task, tool_call_id=tc.id, **extra)
 
         async def _consume() -> None:
@@ -611,6 +614,9 @@ async def _run_delegations(
             "raw_content": strip_thinking(accumulated),
             "target_agent_id": target,
             "task": task,
+            # Dispatcher-chosen effort tier (advisory metadata for the card;
+            # absent on tier-less dispatches — client ignores unknown keys).
+            **({"effort": args["effort"]} if args.get("effort") else {}),
             **final_metrics.get(tc.id, {}),
         }
         # Route delegation output through the same oversize handling as a regular
@@ -726,7 +732,9 @@ def _dispatch_background_delegations(
         ) -> tuple[str, dict[str, Any]]:
             accumulated = ""
             metrics: dict[str, Any] = {}
-            extra = {"media": media_arg} if media_arg else {}
+            extra: dict[str, Any] = {"media": media_arg} if media_arg else {}
+            if (tc.arguments or {}).get("effort"):
+                extra["effort"] = tc.arguments["effort"]
             gen = alloy_executor.delegate(
                 target, task_text, tool_call_id=tc.id,
                 mode="background", delegation_id=delegation_id,
@@ -806,6 +814,7 @@ def _dispatch_background_delegations(
             "status": "dispatched",
             "delegation_id": delegation_id,
             "parent_delegation_id": None,
+            **({"effort": args["effort"]} if args.get("effort") else {}),
         }
 
 
@@ -1247,6 +1256,43 @@ def _strip_tool_name_echo(text: str, tool_names: list[str]) -> str:
     return (leading_ws + stripped) if stripped else ""
 
 
+# Leading closed thinking block(s) — reasoning routes emit their think block
+# BEFORE the leaked names ("<think>…</think>scratchpad_note…"), so echo checks
+# must anchor at the VISIBLE start, not raw position 0 (live miss: inkling's
+# glued three-name reply sailed past the strip behind its think block).
+_LEADING_THINK_RE = re.compile(
+    r'\s*(?:<think(?:ing)?>.*?</think(?:ing)?>'
+    r'|\[think(?:ing)?\].*?\[/think(?:ing)?\])',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _split_leading_thinking(text: str) -> tuple[str, str]:
+    """Split text into (thinking prefix, visible remainder) so tool-name echo
+    checks operate on what the user actually sees. The prefix (whitespace +
+    closed think blocks) is preserved verbatim by callers."""
+    pos = 0
+    while True:
+        m = _LEADING_THINK_RE.match(text, pos)
+        if not m:
+            break
+        pos = m.end()
+    return text[:pos], text[pos:]
+
+
+def _is_pure_tool_name_reply(visible: str, offered: list[str]) -> bool:
+    """True when a reply's visible text is NOTHING but offered tool names —
+    one bare name, name(), or several names glued together (observed live:
+    "scratchpad_noteupdate_conversation_statelist_project_files"). Never a
+    legitimate answer; the model is imitating a polluted transcript."""
+    visible = visible.strip()
+    if not visible:
+        return False
+    if visible.endswith("()") and visible[:-2] in offered:
+        return True
+    return _strip_tool_name_echo(visible, offered) == ""
+
+
 def _offered_tool_names(tools: list[dict[str, Any]] | None) -> set[str]:
     """Names of the tools offered to the provider this turn (OpenAI format)."""
     names: set[str] = set()
@@ -1598,23 +1644,30 @@ async def _run_tool_loop(
         # strip at its tool_call flush seam.)
         if round_content and (round_tool_calls or tools):
             _offered = sorted(_offered_tool_names(tools))
-            # Precedence: a no-call round whose ENTIRE reply is a bare tool
-            # name is the poisoned-transcript imitation — leave it intact for
-            # the recovery nudge below (stripping it here would end the turn
-            # as an empty reply with no recovery). Once the one-shot nudge is
-            # spent, a repeat IS stripped: the neutral empty-reply fallback
-            # beats persisting the poison again.
-            _bare = parse_output(round_content).content.strip()
-            _is_bare_name_reply = not round_tool_calls and not bare_name_nudge_used and (
-                _bare in _offered
-                or (_bare.endswith("()") and _bare[:-2] in _offered)
+            # Precedence: a no-call round whose ENTIRE visible reply is tool
+            # names (one bare name or several glued) is the poisoned-transcript
+            # imitation — leave it intact for the recovery nudge below
+            # (stripping it here would end the turn as an empty reply with no
+            # recovery). Once the one-shot nudge is spent, a repeat IS
+            # stripped: the neutral empty-reply fallback beats persisting the
+            # poison again.
+            _prefix, _visible = _split_leading_thinking(round_content)
+            _is_bare_name_reply = (
+                not round_tool_calls
+                and not bare_name_nudge_used
+                and _is_pure_tool_name_reply(_visible, _offered)
             )
             if not _is_bare_name_reply:
-                _cleaned = _strip_tool_name_echo(
-                    round_content,
+                _cleaned_visible = _strip_tool_name_echo(
+                    _visible,
                     [tc.name for tc in round_tool_calls] + _offered,
                 )
-                if _cleaned != round_content:
+                if _cleaned_visible != _visible:
+                    logger.info(
+                        "tool-name echo stripped (round %d): %r -> %r",
+                        tool_round + 1, _visible[:80], _cleaned_visible[:80],
+                    )
+                    _cleaned = _prefix + _cleaned_visible
                     result.content = (
                         result.content[: len(result.content) - len(round_content)] + _cleaned
                     )
@@ -1706,21 +1759,19 @@ async def _run_tool_loop(
                 emit_status("thinking")
                 continue
 
-            # Bare-tool-name reply guard: the entire visible reply is one of
-            # the offered tools' names written as prose — never a legitimate
-            # answer; the model is imitating a polluted transcript instead of
-            # emitting a structured call. Drop the poison from the
-            # accumulation (so it can't persist and re-teach the pattern) and
-            # nudge once toward a real call or a real answer. Runs BEFORE the
-            # research finalize nudge — a malfunction must not be answered
-            # with a delivery-guard prompt.
+            # Bare-tool-name reply guard: the entire visible reply is offered
+            # tools' names written as prose — one bare name or several glued
+            # ("scratchpad_noteupdate_conversation_statelist_project_files",
+            # observed live) — never a legitimate answer; the model is
+            # imitating a polluted transcript instead of emitting a structured
+            # call. Drop the poison from the accumulation (so it can't persist
+            # and re-teach the pattern) and nudge once toward a real call or a
+            # real answer. Runs BEFORE the research finalize nudge — a
+            # malfunction must not be answered with a delivery-guard prompt.
             if tools and not bare_name_nudge_used and round_content:
                 bare = parse_output(round_content).content.strip()
-                offered = _offered_tool_names(tools)
-                if bare and (
-                    bare in offered
-                    or (bare.endswith("()") and bare[:-2] in offered)
-                ):
+                offered = sorted(_offered_tool_names(tools))
+                if _is_pure_tool_name_reply(bare, offered):
                     bare_name_nudge_used = True
                     result.content = (
                         result.content[: len(result.content) - len(round_content)]
