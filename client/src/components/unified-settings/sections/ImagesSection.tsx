@@ -21,6 +21,7 @@ import { PromptField, SaveStatusChip, ToggleField } from '../../settings/fields'
 interface ImageSettings extends Record<string, unknown> {
   enabled: boolean;
   default_model: string;
+  avatar_model: string;
   avatar_style_prompt: string;
   // Vision input (image *input* — the user attaches a picture a model can see).
   visionEnabled: boolean;
@@ -30,11 +31,39 @@ interface ImageSettings extends Record<string, unknown> {
   speechEnabled: boolean;
 }
 
+// Mirrors the server template (config.DEFAULT_AVATAR_STYLE_PROMPT) — the
+// display fallback + reset target when the config file lacks the key.
+const DEFAULT_AVATAR_TEMPLATE = `Create one square avatar portrait.
+
+COMPOSITION — a single subject, centered, head-and-shoulders framing with a slight
+three-quarter turn toward the viewer; the subject fills about 70% of the frame; keep
+everything important inside a centered circular safe zone — the image will be cropped
+to a circle, so nothing essential may sit near the corners or edges; corners and edges
+fade smoothly into the background.
+
+BACKGROUND — a deep dark-cosmos field: near-black space, faint desaturated nebula haze,
+sparse pinpoint stars; keep it low-contrast and neutral so it never competes with the
+subject; no planets, no lens flares, no light beams.
+
+SUBJECT — <SUBJECT>
+If no subject is given, invent a friendly synthetic being: a robot or android face with
+real character — vary the silhouette between generations (visor, antennae, plating,
+glowing eyes, sculpted chrome), never the same design twice.
+
+STYLE — polished digital illustration with soft 3D shading; rim light from the upper
+left in cool violet, one warm gold key accent; crisp focus on the face, shallow depth
+behind it; a consistent series look, as if all avatars in a team were drawn by the
+same artist.
+
+RULES — exactly one subject; no text, letters, numbers, logos, watermarks, frames, or
+UI elements; no photorealistic human faces; the dark background must reach every edge.
+`;
+
 const FALLBACK: ImageSettings = {
   enabled: true,
   default_model: 'openrouter:black-forest-labs/flux.2-klein-4b',
-  avatar_style_prompt:
-    'A photorealistic headshot portrait, centered, clean studio lighting, subtle depth of field, with a softly rounded border.',
+  avatar_model: 'openrouter:microsoft/mai-image-2.5',
+  avatar_style_prompt: DEFAULT_AVATAR_TEMPLATE,
   visionEnabled: true,
   audioInputEnabled: true,
   speechEnabled: true,
@@ -52,6 +81,7 @@ export default function ImagesSection() {
       return {
         enabled: im.enabled ?? FALLBACK.enabled,
         default_model: im.default_model || FALLBACK.default_model,
+        avatar_model: im.avatar_model || FALLBACK.avatar_model,
         avatar_style_prompt: im.avatar_style_prompt || FALLBACK.avatar_style_prompt,
         visionEnabled: vi.enabled ?? FALLBACK.visionEnabled,
         audioInputEnabled: au.input_enabled ?? FALLBACK.audioInputEnabled,
@@ -139,18 +169,31 @@ export default function ImagesSection() {
             />
           </div>
 
+          <div className="setting-row">
+            <ModelPickerField
+              label="Avatar model"
+              value={settings.avatar_model}
+              onChange={avatar_model => update({ avatar_model })}
+            />
+          </div>
+          <span className="setting-hint">
+            Used by the avatar "Generate" tab — portrait quality matters more than speed
+            there. Clear it to fall back to the image model above.
+          </span>
+
           <PromptField
-            label="Avatar style prompt"
+            label="Avatar style template"
             value={settings.avatar_style_prompt}
             onChange={avatar_style_prompt => update({ avatar_style_prompt })}
             onReset={() => update({ avatar_style_prompt: FALLBACK.avatar_style_prompt })}
             placeholder={FALLBACK.avatar_style_prompt}
-            rows={3}
+            rows={8}
             defaultText={FALLBACK.avatar_style_prompt}
           />
           <span className="setting-hint">
-            The app-wide look. The per-agent subject ("a gray-haired strategist…") is added
-            when you generate.
+            The app-wide look, shared by every avatar. <code>{'<SUBJECT>'}</code> is replaced
+            with the per-agent subject when you generate — leave the subject empty and the
+            template invents a synthetic face instead.
           </span>
         </div>
       )}

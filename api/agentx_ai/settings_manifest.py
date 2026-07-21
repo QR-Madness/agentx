@@ -49,7 +49,7 @@ _CONFIG_WRITE_ROUTES: dict[str, Any] = {
               "max_delegation_depth", "delegation_timeout_seconds",
               "non_blocking_delegations", "chain_of_command"),
     "ambassador": True,
-    "images": ("enabled", "default_model", "avatar_style_prompt"),
+    "images": ("enabled", "default_model", "avatar_model", "avatar_style_prompt"),
     "vision": ("enabled", "refeed_recent_turns"),
     "models": ("roles.fast_utility", "roles.deep_reasoning", "roles.summarizer"),
     # The Conversation Context settings section (one home for the in-conversation

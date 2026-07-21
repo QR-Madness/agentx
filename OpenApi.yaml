@@ -1535,16 +1535,93 @@ paths:
                   draft: { type: string }
                   voice: { type: string }
 
+  /agent/names:
+    get:
+      tags: [Agent]
+      operationId: agentNamesDeal
+      summary: Deal names for the profile editor's name deck
+      description: >-
+        Samples names without replacement from a pool, always excluding names an existing
+        profile already wears. Pools: `random` (curated constant + custom additions) and
+        `preferred` (the user-starred pool at `data/name_pools.json`).
+      parameters:
+        - name: pool
+          in: query
+          schema: { type: string, enum: [random, preferred], default: random }
+        - name: count
+          in: query
+          schema: { type: integer, default: 10, minimum: 1, maximum: 20 }
+          description: Clamped to 1–20; short pools return everything, shuffled.
+      responses:
+        '200':
+          description: Dealt names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pool: { type: string }
+                  names:
+                    type: array
+                    items: { type: string }
+        '400':
+          description: Unknown pool or non-integer count
+  /agent/names/preferred:
+    get:
+      tags: [Agent]
+      operationId: agentNamesPreferredList
+      summary: List the starred (preferred) name pool
+      responses:
+        '200':
+          description: The pool
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preferred:
+                    type: array
+                    items: { type: string }
+    post:
+      tags: [Agent]
+      operationId: agentNamesPreferredUpdate
+      summary: Star or unstar a name in the preferred pool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                add: { type: string, description: "Name to star (deduped case-insensitively, max 40 chars)." }
+                remove: { type: string, description: "Name to unstar." }
+      responses:
+        '200':
+          description: Updated pool
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preferred:
+                    type: array
+                    items: { type: string }
+        '400':
+          description: Neither add nor remove given, or an invalid name
   /agent/avatar/generate:
     post:
       tags: [Agent]
       operationId: avatarGenerate
       summary: Generate an agent avatar (OpenRouter image model)
       description: >-
-        Generates an avatar from the app-level style prompt (Settings → Images, or a
-        `style_prompt` override) + the per-request subject prompt, stores it in the user's
-        reserved "Home" workspace under `avatars/`, records cost (usage source `image`), and
-        returns the served blob URL. Degrades to 422 when images are disabled / OpenRouter is
+        Generates an avatar from the app-level style template (Settings → Images, or a
+        `style_prompt` override) with the per-request subject substituted into its
+        `<SUBJECT>` slot — an empty subject routes to the template's synthetic-face branch,
+        and blank or legacy-shipped-default persisted templates fall through to the current
+        default. Uses the dedicated `images.avatar_model` (falls back to
+        `images.default_model` when blank). Stores the image in the user's reserved "Home"
+        workspace under `avatars/`, records cost (usage source `image`), and returns the
+        served blob URL. Degrades to 422 when images are disabled / OpenRouter is
         unconfigured / the model can't produce an image.
       requestBody:
         required: true
@@ -1552,14 +1629,15 @@ paths:
           application/json:
             schema:
               type: object
-              required: [subject_prompt]
               properties:
                 subject_prompt:
                   type: string
-                  description: What the avatar should depict (combined with the app style prompt).
+                  description: >-
+                    What the avatar should depict (substituted into the style template).
+                    Optional — empty invents a synthetic face.
                 agent_profile_id: { type: string }
-                style_prompt: { type: string, description: Override the app-level style prompt. }
-                model: { type: string, description: Override the configured image model. }
+                style_prompt: { type: string, description: Override the app-level style template. }
+                model: { type: string, description: Override the configured avatar model. }
       responses:
         '200':
           description: Generated
@@ -1572,8 +1650,6 @@ paths:
                   doc_id: { type: string }
                   workspace_id: { type: string }
                   url: { type: string, description: Relative served-blob path for the avatar. }
-        '400':
-          description: subject_prompt is required
         '422':
           description: Disabled, unconfigured, or generation failed (carries an error code)
   /agent/chat/images:

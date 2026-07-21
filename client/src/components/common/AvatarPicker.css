@@ -186,3 +186,35 @@
 }
 .avatar-pick__generate-title { font-weight: 600; color: var(--text-secondary); }
 .avatar-pick__generate-sub { font-size: 0.8rem; }
+
+/* Candidate deck — generated results; click to apply. */
+.avatar-pick__cands {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  justify-items: center;
+}
+.avatar-pick__cand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 116px;
+  height: 116px;
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .avatar-pick__cand:hover {
+    border-color: var(--accent-primary);
+    transform: translateY(-1px);
+  }
+}
+.avatar-pick__cand--pending {
+  border-style: dashed;
+  cursor: default;
+}

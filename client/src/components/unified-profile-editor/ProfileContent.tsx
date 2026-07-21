@@ -37,6 +37,8 @@ import { PromptEditor } from '../common/PromptEditor';
 import { EffectivePromptPreview } from '../common/EffectivePromptPreview';
 import { OverridablePromptField } from '../common/OverridablePromptField';
 import { api } from '../../lib/api';
+import { ChainStrip } from './ChainStrip';
+import { NameDeck } from './NameDeck';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
 import { ToolAccessSection } from './ToolAccessSection';
 import { useProfileEditorState } from './hooks/useProfileEditorState';
@@ -163,6 +165,8 @@ interface ProfileContentProps {
   /** Notifies the shell when the Prompt Library takes over the content area, so
    *  it can collapse the profile nav and give the library full width. */
   onLibraryOpenChange?: (open: boolean) => void;
+  /** Chain-strip hops: select another profile in the editor (ProfileNav's select). */
+  onSelectProfile?: (profileId: string) => void;
 }
 
 export function ProfileContent({
@@ -172,6 +176,7 @@ export function ProfileContent({
   onCancel,
   onBack,
   onLibraryOpenChange,
+  onSelectProfile,
 }: ProfileContentProps) {
   const isEditing = profile !== null;
 
@@ -369,15 +374,30 @@ export function ProfileContent({
               style={{ ['--agent-accent' as string]: accent.accent, ['--agent-soft' as string]: accent.soft }}
             >
               <span className="profile-hero__aura" />
-              <AvatarPicker value={avatar} onChange={setAvatar} size="lg" accent={accent} ariaLabel="Choose agent avatar" />
+              <AvatarPicker
+                value={avatar}
+                onChange={setAvatar}
+                size="lg"
+                accent={accent}
+                ariaLabel="Choose agent avatar"
+                subjectSeed={(() => {
+                  const n = name.trim();
+                  if (!n) return undefined;
+                  const detail = (tags[0] || description.split(/[.!?]/)[0] || '').trim();
+                  return detail ? `${n} — ${detail}`.slice(0, 80) : n;
+                })()}
+              />
               <div className="profile-hero__main">
-                <input
-                  className="profile-hero__name"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="Name your agent…"
-                  aria-label="Agent name"
-                />
+                <div className="profile-hero__name-row">
+                  <input
+                    className="profile-hero__name"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Name your agent…"
+                    aria-label="Agent name"
+                  />
+                  <NameDeck onPick={setName} />
+                </div>
                 <div className="profile-hero__meta">
                   <Badge variant={isAmbassador ? 'accent' : 'neutral'} size="sm">
                     {isAmbassador ? 'Ambassador' : 'Agent'}
@@ -542,6 +562,7 @@ export function ProfileContent({
                         the report-only tool template (manual-work tools blocked — editable in the
                         Tools tab).
                       </span>
+                      {profile && <ChainStrip profile={profile} onHop={onSelectProfile} />}
                     </div>
                     <label className="profile-toggle-row">
                       <span className="profile-toggle-label">
@@ -562,7 +583,9 @@ export function ProfileContent({
                       When on, other agents see this profile as a teammate and can hand it
                       subtasks via the <code>delegate_to</code> tool.
                     </span>
-                    <div className="profile-form-field" style={{ marginTop: 12, opacity: availableForDelegation ? 1 : 0.55 }}>
+                    {/* Deliberately NOT gated on the roster toggle: team + chain rosters
+                        read the hint too, and org members are often flat-opted-out. */}
+                    <div className="profile-form-field" style={{ marginTop: 12 }}>
                       <label className="profile-form-label">Specialty</label>
                       <textarea
                         value={delegationHint}
@@ -570,12 +593,12 @@ export function ProfileContent({
                         placeholder="What this agent is best at — teammates read this when deciding whom to delegate to"
                         rows={2}
                         maxLength={200}
-                        disabled={!availableForDelegation}
                         className="profile-system-prompt"
                       />
                       <span className="profile-form-hint">
-                        One line, shown in teammates' rosters. Leave empty to fall back to the
-                        profile description.
+                        {availableForDelegation
+                          ? 'One line, shown in teammates’ rosters. Leave empty to fall back to the profile description.'
+                          : 'One line, shown wherever teammates pick delegates — team and chain-of-command rosters read it even while this profile is off the flat roster.'}
                       </span>
                     </div>
                     <span className="profile-form-hint" style={{ marginTop: 10 }}>
