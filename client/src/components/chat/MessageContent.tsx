@@ -6,6 +6,7 @@ import rehypeRaw from 'rehype-raw';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
 import { Copy, Check } from 'lucide-react';
+import { stripThinkingTags } from '../../lib/messages';
 import 'katex/dist/katex.min.css';
 import './MessageContent.css';
 
@@ -45,7 +46,14 @@ export function normalizeMathDelimiters(src: string): string {
 
 const MessageContentImpl: React.FC<MessageContentProps> = ({ content, className = '' }) => {
   const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
-  const normalized = React.useMemo(() => normalizeMathDelimiters(content), [content]);
+  // Think-tag strip is the render-level BACKSTOP: persistence, restore
+  // mapping, and the live buffer all strip upstream, but content mapped
+  // before those fixes survives in cached tabs — and rehype-raw turns a raw
+  // <think> into an unknown DOM element (React error, observed live).
+  const normalized = React.useMemo(
+    () => normalizeMathDelimiters(stripThinkingTags(content, true)),
+    [content],
+  );
 
   const handleCopyCode = async (code: string) => {
     await navigator.clipboard.writeText(code);

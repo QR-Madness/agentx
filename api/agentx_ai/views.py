@@ -380,6 +380,20 @@ def _skills_block(agent) -> list:
     ]
 
 
+def _chat_tool_rounds() -> int:
+    """Tool-round cap for a standard chat turn — `chat.max_tool_rounds`
+    config, defaulting to DEFAULT_MAX_TOOL_ROUNDS (same live-read pattern as
+    `chat.auto_continue_on_length`)."""
+    from .config import get_config_manager
+
+    try:
+        return int(get_config_manager().get(
+            "chat.max_tool_rounds", DEFAULT_MAX_TOOL_ROUNDS,
+        ) or DEFAULT_MAX_TOOL_ROUNDS)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_TOOL_ROUNDS
+
+
 def _research_tool_rounds(research_active: bool, default: int) -> int:
     """Elevated tool-round cap for a research turn, else the standard default."""
     if not research_active:
@@ -2763,7 +2777,7 @@ async def agent_chat_stream(request):
             persisted = False  # Guard so turns are stored exactly once
             # Research Mode gets a generous tool-round budget so the *search budget*
             # (credits), not tool-rounds, governs research depth.
-            max_tool_rounds = _research_tool_rounds(research_active, DEFAULT_MAX_TOOL_ROUNDS)
+            max_tool_rounds = _research_tool_rounds(research_active, _chat_tool_rounds())
             total_tokens_input = 0
             total_tokens_output = 0
             plan_summary = None  # Set on the plan-execution path; persisted on the assistant turn
@@ -5493,10 +5507,25 @@ async def prompts_title(request):
             Message(role=MessageRole.SYSTEM, content=system_prompt),
             Message(role=MessageRole.USER, content=user_content),
         ]
+        # Reasoning routes burn a tiny budget on hidden thinking and return
+        # empty content — suppress reasoning AND leave headroom (belt+braces:
+        # some routes can't fully disable thinking).
+        from .providers.base import NO_REASONING
         result = await registry.complete_with_fallback(
-            model, messages, temperature=0.3, max_tokens=24,
+            model, messages, temperature=0.3, max_tokens=256,
+            extra_body=NO_REASONING,
         )
-        return JsonResponse({"title": _clean_title(result.content), "model": result.model or model})
+        title = _clean_title(result.content)
+        if not title:
+            # Never return an empty title: derive one deterministically from
+            # the conversation inputs (same helper the Ambassador threads use).
+            from .agent.ambassador_storage import derive_title
+            title = derive_title(first or last or state, limit=60)
+            logger.warning(
+                "Title generation returned empty content (model=%s) — "
+                "using derived fallback %r", result.model or model, title,
+            )
+        return JsonResponse({"title": title, "model": result.model or model})
 
     except AgentXError as e:
         logger.warning(f"Title generation provider error: {e}")

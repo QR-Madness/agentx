@@ -44,6 +44,16 @@ def log_llm_request(provider_name: str, request_params: dict[str, Any]) -> None:
         pass
 
 
+# Reasoning-suppression knob for small-budget utility completions (titles,
+# classifiers, HyDE, self-query). Reasoning-enabled routes burn the whole
+# max_tokens budget on hidden thinking and return EMPTY content (observed:
+# gemini-flash-latest alias drifting onto a thinking model broke auto-titling
+# at max_tokens=24). Pass as `extra_body=NO_REASONING`: OpenAI-style providers
+# (openrouter/openai/vercel) forward it into the request (OpenRouter's unified
+# `reasoning` param); anthropic/lmstudio drop unmerged kwargs — safe everywhere.
+NO_REASONING: dict[str, Any] = {"reasoning": {"enabled": False}}
+
+
 class MessageRole(str, Enum):
     """Role of a message in a conversation."""
     SYSTEM = "system"

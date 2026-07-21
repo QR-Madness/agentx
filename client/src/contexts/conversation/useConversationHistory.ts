@@ -72,6 +72,54 @@ export function useConversationHistory({
     refreshHistory();
   }, [activeServer, refreshHistory]);
 
+  // Replace an open tab's cached transcript with the server's persisted
+  // copy. The cache can be WRONG two ways: stale (a detached run kept
+  // finishing turns after the copy was written — the blank-revisit bug's
+  // aftermath) or corrupted (a replay's duplicate ids made React drop
+  // children — holes in the MIDDLE while the tail looks current). Neither
+  // recency nor count checks can tell a bad cache from a good one (mapped
+  // counts legitimately differ from live-accumulated counts), so when no
+  // run owns the tab the server copy is simply authoritative; in-flight
+  // local sends (persisted only at turn END) are re-appended on top.
+  const reconcileTabWithServer = useCallback(async (
+    tabId: string,
+    conversationId: string,
+  ) => {
+    try {
+      const response = await api.getConversationMessages(conversationId);
+      const serverLast = response.messages[response.messages.length - 1]?.timestamp;
+      if (!serverLast) return;
+      const mapped = mapServerMessages(response.messages);
+      setTabs(prev => prev.map(t => {
+        if (t.id !== tabId || t.activeRun || t.isStreaming) return t;
+        const pending = t.messages.filter(
+          m => m.type === 'user' && new Date(m.timestamp) > new Date(serverLast),
+        );
+        // Idempotence: an already-converged tab (same shape, same tail)
+        // keeps its message identities so re-clicking the row doesn't
+        // rebuild the pane.
+        const localLast = t.messages[t.messages.length - 1];
+        const mappedLast = mapped[mapped.length - 1];
+        if (
+          !pending.length
+          && t.messages.length === mapped.length
+          && localLast?.timestamp === mappedLast?.timestamp
+          && localLast?.type === mappedLast?.type
+        ) return t;
+        return {
+          ...t,
+          messages: [...mapped, ...pending],
+          isStreaming: false,
+          lastMessageAt: pending.length
+            ? pending[pending.length - 1].timestamp
+            : serverLast,
+        };
+      }));
+    } catch {
+      // Offline or memory-less server — the cached copy stays.
+    }
+  }, [setTabs]);
+
   // Restore a conversation from the server into a new tab. Returns the tab id
   // (existing or newly created). `opts.activeRun` bakes a detached run onto the
   // tab so ChatPanel re-attaches on mount (used by run recovery).
@@ -85,6 +133,12 @@ export function useConversationHistory({
       if (opts?.activeRun) {
         setTabs(prev => prev.map(t =>
           t.id === existing.id ? { ...t, activeRun: opts.activeRun } : t));
+      } else {
+        // Already-open tabs used to short-circuit here without ever looking
+        // at the server — which silently no-op'd ChatPanel's onRunMissing
+        // heal (its restore call ALWAYS hits this branch) and left revisited
+        // tabs stale. Fire-and-forget: focusing must not wait on the network.
+        void reconcileTabWithServer(existing.id, conversationId);
       }
       setActiveTabId(existing.id);
       return existing.id;
@@ -149,7 +203,7 @@ export function useConversationHistory({
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
     return newTab.id;
-  }, [tabs, setTabs, setActiveTabId]);
+  }, [tabs, setTabs, setActiveTabId, reconcileTabWithServer]);
 
   // Delete an open tab and its server conversation
   const deleteConversation = useCallback(async (tabId: string) => {

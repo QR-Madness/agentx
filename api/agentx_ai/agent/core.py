@@ -103,7 +103,10 @@ class AgentConfig:
     # Tool settings
     allowed_tools: list[str] | None = None
     blocked_tools: list[str] | None = None
-    max_tool_rounds: int = 10  # Max tool-call ↔ result round-trips per request
+    # Max tool-call ↔ result round-trips per request. Raised 10 → 30 with
+    # DEFAULT_MAX_TOOL_ROUNDS (keep the two in step): delegated specialists
+    # run real multi-round document work and were force-wrapped mid-job at 10.
+    max_tool_rounds: int = 30
     max_tool_result_chars: int = 12000  # Threshold for storing oversized results in Redis
     store_oversized_results: bool = True  # Store large results in Redis instead of truncating
     tool_output_ttl_seconds: int = 3600  # TTL for stored tool outputs (1 hour default)

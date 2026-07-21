@@ -1022,6 +1022,28 @@ research:
     with a concise executive summary as normal output.
 
 # =============================================================================
+# CHAT TURN RECOVERY (streaming tool loop)
+# =============================================================================
+chat:
+  # One-shot recovery nudge, injected by the tool loop when the model's entire
+  # visible reply is a bare tool NAME with no structured call behind it — the
+  # poisoned-transcript imitation pattern. Loaded lazily in streaming/tool_loop.py.
+  tool_name_recovery_nudge: |
+    Your last reply was only a tool name written as plain text — that does not
+    invoke anything. If you meant to use that tool, invoke it now through the
+    tool-calling interface with proper arguments. Otherwise, give your complete
+    final answer in normal prose.
+
+  # Injected at the top of the forced-final round (tool budget exhausted; the
+  # round runs with tools withheld) so the model wraps up deliberately instead
+  # of narrating mid-task. Loaded lazily in streaming/tool_loop.py.
+  tool_budget_wrapup: |
+    You have used all available tool calls for this turn. Do not attempt more
+    tool calls. Deliver your complete final response now based on everything
+    gathered. If work remains unfinished, state exactly what remains and how
+    you would continue.
+
+# =============================================================================
 # FEW-SHOT EXAMPLES
 # =============================================================================
 examples:

@@ -361,6 +361,32 @@ export function extractThinking(content: string): string | null {
   return thoughts.length > 0 ? thoughts.join('\n\n') : null;
 }
 
+/**
+ * Strip a leading tool-name echo from the live stream buffer. Some routes
+ * leak the called function's name into the text stream right before the
+ * structured call ("use_skillGot it — …"). The server strips it from the
+ * STORED turn (`tool_loop._strip_tool_name_echo` — keep the boundary rule in
+ * sync); this twin scrubs the live buffer before a `tool_call` flush
+ * materializes it as a bubble. Only strips at position 0, and only when the
+ * remainder is empty or starts non-whitespace — "use_skill returned…" (the
+ * model talking ABOUT the tool) survives.
+ */
+export function stripToolNameEcho(content: string, toolName: string): string {
+  if (!toolName) return content;
+  let stripped = content.trimStart();
+  const leadingWs = content.slice(0, content.length - stripped.length);
+  let changed = false;
+  while (stripped.startsWith(toolName)) {
+    const rest = stripped.slice(toolName.length);
+    if (rest !== '' && /^\s/.test(rest)) break;
+    stripped = rest;
+    changed = true;
+    if (!stripped) break;
+  }
+  if (!changed) return content;
+  return stripped ? leadingWs + stripped : '';
+}
+
 /** Openers whose PARTIAL prefix at a streaming buffer's tail must not leak
  * into the DOM (a tag split across SSE chunk boundaries — e.g. a buffer
  * ending in "<thi" — survives the full-tag regexes above and flashes as

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.242 -->
+<!-- release-version: 0.21.248 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -44,6 +44,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   teams an owning manager; org delegation then follows the chart strictly — manager → lead →
   member, member ↑ lead to escalate — and a delegated lead works its *own* members as nested
   work orders. Managers are report-only by contract; org-free setups are untouched.
+- **Managers size the work — delegation effort tiers**: every dispatch can name an effort level
+  (`quick` / `standard` / `deep` / `marathon`) that sets that task's tool budget — the model picks
+  the tier, the numbers stay yours (`alloy.effort_tiers` config) — so a big document build gets
+  room to run while an errand stays an errand.
 - **The profile editor became a personnel dossier**: the agent list is now an org-grouped
   roster (manager, teams, org-free, ambassador — with role chips, model, tags, and search), and
   the Role card draws the agent's live **chain of command** — click a superior or subordinate
@@ -116,6 +120,24 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Agent turns no longer die silently**: the chat loop now recovers when a model writes tool
+  *names* instead of calling them — one bare name, several glued together, hidden behind a think
+  block, or echoed a round after the real call — announces when the tool budget runs out (instead
+  of ending mid-narration), and caps state-update spin — with managers now told plainly that
+  writes must go through `delegate_to`. The tool budget itself tripled (10 → 30 rounds, tunable
+  via `chat.max_tool_rounds`) — specialists doing real document work were getting cut off mid-job.
+- **Resuming a running conversation works again**: leaving and revisiting a tab mid-run re-attaches
+  to the live stream (it used to stay blank until the run finished), replayed messages no longer
+  collide on ids (React silently dropped turns mid-replay), stale cached tabs reconcile against
+  server history on revisit, and `<think>` blocks can no longer reach the markdown renderer as raw
+  DOM tags (stripped at persistence, restore, and render).
+- **Rate limits are waited out, not fatal**: a provider 429 now retries with visible countdown
+  status (and Stop works mid-wait); if a turn still can't continue, completed delegation work is
+  preserved with an honest "progress saved" note instead of vanishing — and a slow model shows
+  "still waiting" pings instead of minutes of dead air.
+- **Auto-titling works with reasoning models again**: title generation suppresses hidden thinking,
+  got real token headroom, and falls back to a derived title — a conversation can no longer end up
+  with an empty name and a "Could not auto-title" toast.
 - **Creating agents works from every client again**: the create-profile endpoint rejected
   cookie-less clients (web shell, curl) with a CSRF 403 — it now carries the same exemption as
   every other API route, with a test sweep so no route can regress this way again.

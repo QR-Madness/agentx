@@ -536,6 +536,12 @@ export function ChatPanel() {
   useEffect(() => {
     return () => {
       stream.detach();
+      // A revisit must RE-attach: this ref only exists to stop a double-attach
+      // while the current mount is attached/streaming. Left set, a switch-away
+      // + return mid-run hit the ref guard and never re-attached — the pane
+      // stayed blank until the run finished and history restored.
+      attachedRunRef.current = null;
+      pendingAttachTruncateRef.current = null;
     };
   }, [activeTab?.id, stream.detach]);
 

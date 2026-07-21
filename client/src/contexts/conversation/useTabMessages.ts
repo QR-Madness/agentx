@@ -29,10 +29,21 @@ export function useTabMessages({ activeTabId, setTabs, updateTab }: UseTabMessag
             ? message.content.slice(0, 40) + (message.content.length > 40 ? '...' : '')
             : t.title;
 
+        // Idempotent by id: some messages carry SERVER-minted ids (steer
+        // bubbles, exhibit wires), and a re-attach replay re-delivers them.
+        // Appending a second copy gives React duplicate keys — which it
+        // resolves by DROPPING children (observed: missing turns after a
+        // mid-run revisit). Replace in place instead.
+        const existingIdx = t.messages.findIndex(m => m.id === message.id);
+        const messages =
+          existingIdx >= 0
+            ? t.messages.map((m, i) => (i === existingIdx ? message : m))
+            : [...t.messages, message];
+
         return {
           ...t,
           title: newTitle,
-          messages: [...t.messages, message],
+          messages,
           lastMessageAt: new Date().toISOString(),
         };
       })

@@ -219,7 +219,7 @@ async def llm_tiebreak(
     from ..config import get_config_manager
     from ..model_roles import resolve_member_model
     from ..prompts.loader import get_prompt_loader
-    from ..providers.base import Message, MessageRole
+    from ..providers.base import NO_REASONING, Message, MessageRole
     from ..providers.registry import get_registry
 
     cfg = get_config_manager()
@@ -232,6 +232,8 @@ async def llm_tiebreak(
             message=message[:1500],
             native="yes" if supports_reasoning else "no",
         )
+        # NO_REASONING: a thinking route burns the 150-token budget on hidden
+        # reasoning and returns empty — the classifier must stay cheap + fast.
         result = await asyncio.wait_for(
             get_registry().complete_with_fallback(
                 model,
@@ -239,6 +241,7 @@ async def llm_tiebreak(
                 preferred_fallback=active_model,
                 temperature=0.0,
                 max_tokens=150,
+                extra_body=NO_REASONING,
             ),
             timeout=timeout_seconds,
         )

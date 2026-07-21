@@ -3977,6 +3977,65 @@ class ResearchPromptTest(TestCase):
         self.assertTrue(nudge.strip())
         self.assertIn("create_document", nudge)
 
+    def test_chat_recovery_templates_render(self):
+        """The tool-loop recovery nudges exist and carry their trigger phrases
+        (the loop's defaults and the YAML must agree on these anchors)."""
+        from agentx_ai.prompts import get_prompt
+
+        recovery = get_prompt("chat.tool_name_recovery_nudge")
+        self.assertIn("only a tool name", recovery)
+        wrapup = get_prompt("chat.tool_budget_wrapup")
+        self.assertIn("all available tool calls", wrapup)
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint tests don't auth; stay green regardless of local .env
+class PromptsTitleTest(APITestBase):
+    """The auto-title endpoint: reasoning-suppressed LLM call + derived fallback."""
+
+    def _mock_registry(self, content: str):
+        from agentx_ai.providers.base import CompletionResult
+        registry = MagicMock()
+        registry.complete_with_fallback = AsyncMock(return_value=CompletionResult(
+            content=content, finish_reason="stop", model="mock/utility-model",
+        ))
+        return registry
+
+    def test_title_generated_with_reasoning_suppressed(self):
+        registry = self._mock_registry(' "Vanguard Requisition Planning." ')
+        with patch("agentx_ai.providers.registry.get_registry", return_value=registry):
+            resp = self.client.post(
+                "/api/prompts/title", data=json.dumps({"first": "plan the org"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 200)  # type: ignore[union-attr]
+        self.assertEqual(resp.json()["title"], "Vanguard Requisition Planning")  # type: ignore[union-attr]
+        kwargs = registry.complete_with_fallback.await_args.kwargs
+        # Reasoning routes burn tiny budgets on hidden thinking — the call must
+        # suppress reasoning AND carry headroom (regression: max_tokens=24
+        # returned empty titles when a -latest alias drifted onto a thinker).
+        self.assertEqual(kwargs.get("extra_body"), {"reasoning": {"enabled": False}})
+        self.assertGreaterEqual(kwargs.get("max_tokens", 0), 128)
+
+    def test_empty_llm_content_falls_back_to_derived_title(self):
+        registry = self._mock_registry("")
+        with patch("agentx_ai.providers.registry.get_registry", return_value=registry):
+            resp = self.client.post(
+                "/api/prompts/title",
+                data=json.dumps({"first": "Help me consolidate the requisition documents"}),
+                content_type="application/json",
+            )
+        self.assertEqual(resp.status_code, 200)  # type: ignore[union-attr]
+        title = resp.json()["title"]  # type: ignore[union-attr]
+        self.assertTrue(title)  # never empty
+        self.assertIn("consolidate", title.lower())
+
+    def test_requires_at_least_one_input(self):
+        resp = self.client.post(
+            "/api/prompts/title", data=json.dumps({}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)  # type: ignore[union-attr]
+
 
 class IntentAwareRetrievalTest(TestCase):
     """Tests for Phase 14.3 intent-aware retrieval internal tools."""
@@ -4855,6 +4914,329 @@ class StreamingToolLoopTest(TestCase):
         self.assertIn("[empty response from model]", result.content)
         self.assertTrue(any("[empty response from model]" in e
                             for e in self._events_of(events, "chunk")))
+
+    def test_tool_name_echo_stripped_from_accumulation(self) -> None:
+        """A round that leaks the called tool's NAME into content ("use_skillGot
+        it") gets the echo stripped from the accumulation — but not from the
+        already-streamed chunk events."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="use_skillGot it — "),
+             StreamChunk(tool_calls=[ToolCall(id="t1", name="use_skill", arguments={})])],
+            [StreamChunk(content="done", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        events, result = self._run(
+            provider, agent, [], [{"name": "use_skill"}],
+        )
+
+        self.assertEqual(result.content, "Got it — done")
+        # Live chunks are already on the wire — unchanged by the strip.
+        self.assertTrue(any("use_skillGot" in e for e in self._events_of(events, "chunk")))
+
+    def test_tool_name_echo_space_boundary_not_stripped(self) -> None:
+        """Talking ABOUT a called tool ("use_skill returned…") is not an echo."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="use_skill is what I'll call. "),
+             StreamChunk(tool_calls=[ToolCall(id="t1", name="use_skill", arguments={})])],
+            [StreamChunk(content="done", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        _events, result = self._run(
+            provider, agent, [], [{"name": "use_skill"}],
+        )
+        self.assertEqual(result.content, "use_skill is what I'll call. done")
+
+    def test_tool_name_echo_cross_round_offered_not_called(self) -> None:
+        """The echo can land a round LATER than its structured call (observed
+        live: "read_threadPicking up…" in the round after read_thread ran) —
+        offered-but-not-called names are stripped too."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="On it. "),
+             StreamChunk(tool_calls=[ToolCall(id="t1", name="read_thread", arguments={})])],
+            [StreamChunk(content="read_threadPicking up where we left off",
+                         finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        _events, result = self._run(
+            provider, agent, [],
+            [{"type": "function", "function": {"name": "read_thread"}}],
+        )
+        self.assertEqual(result.content, "On it. Picking up where we left off")
+
+    def test_tool_name_echo_stripped_behind_think_block(self) -> None:
+        """Reasoning routes emit the think block BEFORE the leaked name — the
+        strip anchors at the VISIBLE start, preserving the thinking prefix
+        (live miss: names hid behind inkling's think block)."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="<think>plan it</think>read_threadOn it. "),
+             StreamChunk(tool_calls=[ToolCall(id="t1", name="read_thread", arguments={})])],
+            [StreamChunk(content="done", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        _events, result = self._run(
+            provider, agent, [],
+            [{"type": "function", "function": {"name": "read_thread"}}],
+        )
+        self.assertEqual(result.content, "<think>plan it</think>On it. done")
+
+    def test_glued_bare_names_reply_recovers(self) -> None:
+        """A reply that is SEVERAL offered names glued together (behind a
+        think block) is the same poisoned-transcript imitation as a single
+        bare name — dropped and nudged (live miss: inkling replied
+        'scratchpad_noteupdate_conversation_statelist_project_files')."""
+        from agentx_ai.providers.base import StreamChunk, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(
+                content="<think>hm</think>scratchpad_noteupdate_conversation_statelist_project_files",
+                finish_reason="stop")],
+            [StreamChunk(content="real answer", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        _events, result = self._run(
+            provider, agent, messages,
+            [{"type": "function", "function": {"name": n}}
+             for n in ("scratchpad_note", "update_conversation_state", "list_project_files")],
+        )
+
+        self.assertEqual(provider._call, 2)
+        nudges = [m for m in messages
+                  if m.role == MessageRole.USER and "only a tool name" in m.content]
+        self.assertEqual(len(nudges), 1)
+        self.assertEqual(result.final_content, "real answer")
+        self.assertNotIn("scratchpad_note", result.content)
+
+    def test_bare_tool_name_reply_recovers(self) -> None:
+        """A reply that is ONLY an offered tool's name (no structured call) is a
+        poisoned-transcript imitation — dropped from the accumulation, nudged
+        once, and the recovery round's answer becomes the turn."""
+        from agentx_ai.providers.base import StreamChunk, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="list_files", finish_reason="stop")],
+            [StreamChunk(content="real answer", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        _events, result = self._run(
+            provider, agent, messages,
+            [{"type": "function", "function": {"name": "list_files"}}],
+        )
+
+        self.assertEqual(provider._call, 2)
+        nudges = [m for m in messages
+                  if m.role == MessageRole.USER and "only a tool name" in m.content]
+        self.assertEqual(len(nudges), 1)
+        self.assertEqual(result.content, "real answer")   # bare name dropped
+        self.assertEqual(result.final_content, "real answer")
+
+    def test_bare_tool_name_nudge_fires_once(self) -> None:
+        """A model that repeats the bare name after the nudge ends the turn —
+        the guard never loops."""
+        from agentx_ai.providers.base import StreamChunk, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(content="list_files", finish_reason="stop")],
+            [StreamChunk(content="list_files", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        _events, _result = self._run(
+            provider, agent, messages,
+            [{"type": "function", "function": {"name": "list_files"}}],
+        )
+
+        self.assertEqual(provider._call, 2)  # no third call
+        nudges = [m for m in messages
+                  if m.role == MessageRole.USER and "only a tool name" in m.content]
+        self.assertEqual(len(nudges), 1)
+
+    def test_tool_budget_wrapup_injected_on_final_round(self) -> None:
+        """The forced tools-withheld final round is announced: wrap-up USER
+        message in context + a tool_budget_exhausted info event."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[ToolCall(id="t1", name="search", arguments={})])],
+            [StreamChunk(content="honest wrap-up", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        events, result = self._run(
+            provider, agent, messages, [{"name": "search"}], max_tool_rounds=1,
+        )
+
+        wrapups = [m for m in messages
+                   if m.role == MessageRole.USER
+                   and "all available tool calls" in m.content]
+        self.assertEqual(len(wrapups), 1)
+        self.assertTrue(any("tool_budget_exhausted" in e
+                            for e in self._events_of(events, "info")))
+        self.assertEqual(result.final_content, "honest wrap-up")
+
+    def test_state_tool_solo_round_cap(self) -> None:
+        """Solo update_conversation_state rounds past the cap are
+        short-circuited with an error result — never executed, but every call
+        id still gets a TOOL message (provider contract)."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall, MessageRole
+
+        solo = lambda i: [StreamChunk(tool_calls=[ToolCall(  # noqa: E731
+            id=f"s{i}", name="update_conversation_state",
+            arguments={"entries": ["x"]},
+        )])]
+        provider = self._FakeProvider([
+            solo(1), solo(2), solo(3), solo(4),
+            [StreamChunk(content="acting now", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        messages: list = []
+        events, result = self._run(
+            provider, agent, messages, [{"name": "update_conversation_state"}],
+        )
+
+        self.assertEqual(result.state_solo_rounds, 4)
+        # Rounds 1-3 executed; round 4 short-circuited.
+        executed = [tc.name for batch in agent.executed for tc in batch]
+        self.assertEqual(len(executed), 3)
+        # The capped call still produced a (failed) tool_result + TOOL message.
+        self.assertEqual(len(self._events_of(events, "tool_result")), 4)
+        self.assertTrue(any('"success": false' in e
+                            for e in self._events_of(events, "tool_result")))
+        tool_msgs = [m for m in messages if m.role == MessageRole.TOOL]
+        self.assertEqual(len(tool_msgs), 4)
+        self.assertTrue(tool_msgs[-1].content.startswith('{"error"'))
+        self.assertEqual(result.final_content, "acting now")
+
+    def test_state_tool_mixed_round_not_counted(self) -> None:
+        """A round mixing a state write with real work is healthy — it never
+        counts toward the solo-round cap."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        provider = self._FakeProvider([
+            [StreamChunk(tool_calls=[
+                ToolCall(id="t1", name="update_conversation_state",
+                         arguments={"entries": ["x"]}),
+                ToolCall(id="t2", name="search", arguments={"q": "y"}),
+            ])],
+            [StreamChunk(content="done", finish_reason="stop")],
+        ])
+        agent = self._FakeAgent()
+        _events, result = self._run(
+            provider, agent, [],
+            [{"name": "update_conversation_state"}, {"name": "search"}],
+        )
+        self.assertEqual(result.state_solo_rounds, 0)
+
+    class _RateLimited(Exception):
+        status_code = 429
+
+    def test_rate_limited_round_waits_and_retries(self) -> None:
+        """A 429 before anything streamed is waited out (visible status) and
+        the round retried — the turn completes instead of dying."""
+        from agentx_ai.providers.base import StreamChunk
+
+        outer = self
+
+        class _FlakyProvider:
+            def __init__(self):
+                self.attempts = 0
+
+            async def stream(self, messages, model_id, **kwargs):
+                self.attempts += 1
+                if self.attempts <= 2:
+                    raise outer._RateLimited("Error code: 429 - rate limited upstream")
+                yield StreamChunk(content="made it", finish_reason="stop")
+
+        provider = _FlakyProvider()
+        agent = self._FakeAgent()
+        with patch("agentx_ai.streaming.tool_loop.RATE_LIMIT_WAIT_SCHEDULE", (0, 0)), \
+             patch("agentx_ai.streaming.tool_loop.emit_status") as status:
+            events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(provider.attempts, 3)
+        self.assertEqual(result.final_content, "made it")
+        labels = [c.kwargs.get("label", "") for c in status.call_args_list]
+        self.assertTrue(any("Rate-limited" in (lbl or "") for lbl in labels))
+        self.assertTrue(any("made it" in e for e in self._events_of(events, "chunk")))
+
+    def test_rate_limit_exhausted_salvages_partial_turn(self) -> None:
+        """When retries are exhausted mid-turn, the turn ends CLEANLY with a
+        salvage note (persistable) instead of a turn-killing error event."""
+        from agentx_ai.providers.base import StreamChunk, ToolCall
+
+        outer = self
+
+        class _DiesOnSecond:
+            def __init__(self):
+                self.calls = 0
+
+            async def stream(self, messages, model_id, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    yield StreamChunk(tool_calls=[ToolCall(
+                        id="t1", name="search", arguments={"q": "x"},
+                    )])
+                else:
+                    raise outer._RateLimited("Error code: 429 - rate limited upstream")
+
+        provider = _DiesOnSecond()
+        agent = self._FakeAgent()
+        with patch("agentx_ai.streaming.tool_loop.RATE_LIMIT_WAIT_SCHEDULE", ()):
+            events, result = self._run(
+                provider, agent, [], [{"name": "search"}],
+            )
+
+        self.assertEqual(result.finish_reason, "error")
+        self.assertIn("failed mid-turn", result.content)
+        self.assertIn("rate-limited", result.final_content)
+        self.assertTrue(any("failed mid-turn" in e
+                            for e in self._events_of(events, "chunk")))
+        # The executed round survived intact.
+        self.assertEqual(result.tools_used, ["search"])
+
+    def test_round0_provider_error_still_propagates(self) -> None:
+        """A non-rate-limit failure with nothing at stake keeps the existing
+        error-event contract (exception propagates to the views handler)."""
+
+        class _Boom:
+            async def stream(self, messages, model_id, **kwargs):
+                raise ValueError("connection torched")
+                yield  # pragma: no cover — makes this an async generator
+
+        provider = _Boom()
+        agent = self._FakeAgent()
+        with self.assertRaises(ValueError):
+            self._run(provider, agent, [], None)
+
+    def test_slow_start_watchdog_pings_status(self) -> None:
+        """No first chunk within the threshold → periodic 'still waiting'
+        status pings until streaming starts."""
+        from agentx_ai.providers.base import StreamChunk
+
+        class _SlowProvider:
+            async def stream(self, messages, model_id, **kwargs):
+                await asyncio.sleep(0.08)
+                yield StreamChunk(content="slow hello", finish_reason="stop")
+
+        provider = _SlowProvider()
+        agent = self._FakeAgent()
+        with patch("agentx_ai.streaming.tool_loop.SLOW_MODEL_FIRST_PING_SECONDS", 0.01), \
+             patch("agentx_ai.streaming.tool_loop.SLOW_MODEL_PING_INTERVAL_SECONDS", 0.01), \
+             patch("agentx_ai.streaming.tool_loop.emit_status") as status:
+            _events, result = self._run(provider, agent, [], None)
+
+        self.assertEqual(result.final_content, "slow hello")
+        labels = [c.kwargs.get("label", "") for c in status.call_args_list]
+        self.assertTrue(any("Still waiting on the model" in (lbl or "") for lbl in labels))
 
 
 class AdaptiveMaxTokensTest(TestCase):
@@ -7599,6 +7981,77 @@ class AlloyDelegationMetricsTest(TestCase):
         self.assertEqual(raw["cost_currency"], "USD")
         self.assertEqual(raw["pricing_snapshot"], {"x": 1})
 
+    def test_effort_forwarded_to_executor_and_persisted(self):
+        """A dispatch's `effort` tier reaches delegate() as a kwarg and rides
+        the persisted delegation card; absent effort is OMITTED entirely
+        (simple test-fake signatures stay compatible)."""
+        from agentx_ai.streaming.tool_loop import _run_delegations, ToolLoopResult
+
+        captured: dict = {}
+
+        class FakeExec:
+            async def delegate(self, target, task, *, tool_call_id, **kwargs):
+                captured.update(kwargs)
+                payload = {
+                    "target_agent_id": target, "tool_call_id": tool_call_id,
+                    "status": "success", "error": None, "result_preview": "ok",
+                }
+                yield f"event: delegation_complete\ndata: {json.dumps(payload)}\n\n", "ok"
+
+        tc = MagicMock()
+        tc.id = "tc1"
+        tc.name = "delegate_to"
+        tc.arguments = {"agent_id": "spec", "task": "big job", "effort": "deep"}
+
+        result = ToolLoopResult()
+        delegation_raw: dict = {}
+        asyncio.run(self._drain(_run_delegations(
+            [tc], FakeExec(), object(),
+            result=result, delegation_messages=[], delegation_raw=delegation_raw,
+        )))
+
+        self.assertEqual(captured.get("effort"), "deep")
+        self.assertEqual(delegation_raw["tc1"]["effort"], "deep")
+
+        # No effort in the arguments ⇒ kwarg omitted, card key absent.
+        captured.clear()
+        tc2 = MagicMock()
+        tc2.id = "tc2"
+        tc2.name = "delegate_to"
+        tc2.arguments = {"agent_id": "spec", "task": "small job"}
+        delegation_raw2: dict = {}
+        asyncio.run(self._drain(_run_delegations(
+            [tc2], FakeExec(), object(),
+            result=ToolLoopResult(), delegation_messages=[],
+            delegation_raw=delegation_raw2,
+        )))
+        self.assertNotIn("effort", captured)
+        self.assertNotIn("effort", delegation_raw2["tc2"])
+
+    def test_effort_rounds_resolution(self):
+        """`_effort_rounds`: tier name → config budget (case-insensitive);
+        unknown/absent/non-positive tiers and config hiccups fall back; a
+        config.json predating the key uses the constant default map."""
+        from agentx_ai.alloy.executor import _effort_rounds
+
+        cfg = MagicMock()
+        cfg.get.return_value = {"quick": 8, "deep": 60, "weird": 0}
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            self.assertEqual(_effort_rounds("quick", 30), 8)
+            self.assertEqual(_effort_rounds("DEEP", 30), 60)     # case-insensitive
+            self.assertEqual(_effort_rounds("unknown", 30), 30)  # not a tier
+            self.assertEqual(_effort_rounds("weird", 30), 30)    # non-positive value
+            self.assertEqual(_effort_rounds(None, 30), 30)
+            self.assertEqual(_effort_rounds("", 30), 30)
+
+        # Pre-existing config.json without the key (no-merge gotcha) → the
+        # module-constant defaults still resolve.
+        cfg_missing = MagicMock()
+        cfg_missing.get.return_value = None
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg_missing):
+            self.assertEqual(_effort_rounds("quick", 30), 8)
+            self.assertEqual(_effort_rounds("marathon", 30), 100)
+
     def _make_executor(self):
         from types import SimpleNamespace
         from agentx_ai.alloy.executor import AlloyExecutor
@@ -8371,6 +8824,16 @@ class BackgroundDelegationTest(TestCase):
         )
         self.assertIn("dispatch receipt", start["description"])
         self.assertIn("delegate_to", start["description"])
+
+        # Effort tiers ride BOTH variants: optional enum, canonical order, and
+        # names that stay in lockstep with the config default map.
+        from agentx_ai.alloy.delegation_tool import EFFORT_TIERS
+        from agentx_ai.config import DEFAULT_EFFORT_TIERS
+        for tool in (start, blocking):
+            effort = tool["input_schema"]["properties"]["effort"]
+            self.assertEqual(effort["enum"], list(EFFORT_TIERS))
+            self.assertNotIn("effort", tool["input_schema"]["required"])
+        self.assertEqual(set(EFFORT_TIERS), set(DEFAULT_EFFORT_TIERS))
 
 
 class WorkOrderPersistenceTest(TestCase):
@@ -18861,6 +19324,24 @@ class ThinkTagSanitizerTest(TestCase):
         r.content = "final"
         _prepend_think(r, "draft + critique")
         self.assertEqual(r.content, "<think>draft + critique</think>final")
+
+    def test_strip_thinking_for_persistence(self):
+        """`strip_thinking` (delegation raw_content) removes closed blocks AND
+        an unclosed trailing block, with no answer-extraction heuristics."""
+        from agentx_ai.agent.output_parser import strip_thinking
+
+        self.assertEqual(
+            strip_thinking("<think>plan the report</think>Report ready."),
+            "Report ready.",
+        )
+        # Unclosed opener mid-text: the stream finished — everything after is
+        # reasoning, not answer.
+        self.assertEqual(
+            strip_thinking("Section one done.\n<think>now for section two"),
+            "Section one done.",
+        )
+        self.assertEqual(strip_thinking("plain answer"), "plain answer")
+        self.assertEqual(strip_thinking(""), "")
 
 
 class OrchestratorSelectionDelegationTest(TestCase):

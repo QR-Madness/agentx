@@ -198,6 +198,60 @@ describe('mapServerMessages', () => {
     expect(del.content).toBe('full content');
   });
 
+  it('strips think tags from restored assistant content, folding the thought into thinking', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'assistant',
+        content: '<think>legacy inline reasoning</think>The visible answer.',
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    const a = out[0] as AssistantMessage;
+    expect(a.content).toBe('The visible answer.');
+    expect(a.thinking).toBe('legacy inline reasoning');
+  });
+
+  it('prefers persisted metadata.thinking over tag-recovered thinking', () => {
+    const out = mapServerMessages([
+      msg({
+        role: 'assistant',
+        content: '<think>tag copy</think>Answer.',
+        metadata: { thinking: 'persisted copy' },
+      }),
+    ]);
+    expect((out[0] as AssistantMessage).thinking).toBe('persisted copy');
+  });
+
+  it('strips think tags from restored delegation content (pre-fix rows)', () => {
+    // Rows persisted before the server-side strip carry the specialist's raw
+    // stream, thinking included — a surviving <think> reached the markdown
+    // renderer as an unknown DOM tag (React error, observed live).
+    const out = mapServerMessages([
+      msg({
+        role: 'tool_call',
+        content: '{"agent_id":"beta","task":"t"}',
+        metadata: { tool: 'delegate_to', tool_call_id: 'd7' },
+      }),
+      msg({
+        role: 'tool_result',
+        content: '<think>preview reasoning</think>preview text',
+        metadata: {
+          tool_call_id: 'd7',
+          success: true,
+          delegation: {
+            raw_content: '<think>plan it out</think>Report ready.\n<think>unclosed trailing',
+            target_agent_id: 'beta',
+            task: 't',
+          },
+        },
+      }),
+    ]);
+
+    const del = out[0] as DelegationMessage;
+    expect(del.content).toBe('Report ready.');
+    expect(del.resultPreview).toBe('preview text');
+  });
+
   it('restores per-delegation metrics from the delegation metadata blob', () => {
     const out = mapServerMessages([
       msg({

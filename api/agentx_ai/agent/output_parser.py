@@ -166,6 +166,32 @@ def parse_output(raw_output: str) -> ParsedOutput:
     )
 
 
+# Unclosed opening tag ANYWHERE in the text (not just leading) — a finished
+# stream that still has an open think tag was cut mid-thought; everything
+# after the opener is reasoning, not answer.
+_UNCLOSED_THINKING_TAIL = re.compile(
+    r'(?:<think(?:ing)?>|\[think(?:ing)?\]|<internal_monologue>).*$',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def strip_thinking(text: str) -> str:
+    """
+    Remove thinking blocks (closed AND an unclosed trailing block) from a
+    finished stream, keeping the rest of the text verbatim.
+
+    Unlike `parse_output`, this applies no answer-extraction heuristics — it
+    is the persistence-side twin of the client's `stripThinkingTags(…, true)`
+    (client/src/lib/messages.ts); keep the two tag sets in sync.
+    """
+    if not text:
+        return text
+    for pattern in THINKING_PATTERNS:
+        text = pattern.sub('', text)
+    text = _UNCLOSED_THINKING_TAIL.sub('', text)
+    return re.sub(r'\n{3,}', '\n\n', text).strip()
+
+
 def extract_code_blocks(content: str) -> list[dict]:
     """
     Extract code blocks from markdown content.

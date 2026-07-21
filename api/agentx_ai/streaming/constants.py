@@ -35,5 +35,31 @@ MIN_TOOL_CONTENT_SIZE = 500  # Don't truncate tool results below this length
 TRUNCATION_MARKER = "\n[TRUNCATED]"  # Appended to truncated tool results
 
 # Streaming control
-DEFAULT_MAX_TOOL_ROUNDS = 10  # Max tool call -> result round-trips
+# Max tool call -> result round-trips. Raised 10 -> 30 (v0.21.247): a
+# specialist doing real document work (read/edit/append, one call per round)
+# burned 10 rounds mid-job and got force-wrapped — the informed wrap-up +
+# narration cap + trajectory compression now bound runaway, so the cap can
+# afford to be generous. Chat-path override: `chat.max_tool_rounds` config.
+DEFAULT_MAX_TOOL_ROUNDS = 30
 STREAM_CLOSE_DELAY = 0.05  # Seconds to wait before closing stream (flush buffer)
+
+# Rate-limit wait-out: when a round's model call fails with a 429 BEFORE
+# streaming anything, the tool loop waits these delays (seconds) between
+# retries — visible via status events and cancellable between 1s steps,
+# unlike the SDK's silent internal retries. A Retry-After header wins over
+# the schedule slot. OpenRouter upstream throttling is the common case.
+RATE_LIMIT_WAIT_SCHEDULE: tuple[int, ...] = (15, 30, 60, 120)
+
+# Slow-start watchdog: while a round's FIRST chunk hasn't arrived, ping a
+# status after this many seconds, then one every interval — the SDK's
+# internal timeout+retry cycles are otherwise dead air (observed: 4+ silent
+# minutes against a rate-limited route, indistinguishable from a hang).
+SLOW_MODEL_FIRST_PING_SECONDS = 20
+SLOW_MODEL_PING_INTERVAL_SECONDS = 30
+
+# Narration-spin guard: rounds whose ONLY tool calls are update_conversation_state
+# (a model narrating intentions into state instead of working — observed 9 solo
+# rounds in a row burning the whole tool budget). Solo rounds past this cap get
+# their state calls short-circuited with an error result. Mixed rounds (state
+# write alongside real work) and multi-slot single rounds never count.
+STATE_TOOL_SOLO_ROUND_CAP = 3
