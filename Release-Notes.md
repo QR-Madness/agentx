@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.249 -->
+<!-- release-version: 0.21.250 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -129,6 +129,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
+- **Avatar generation stops when you pick one**: "Deal 4" no longer keeps generating (and billing)
+  in the background after you've chosen a candidate or closed the picker — the sequential deal now
+  aborts the in-flight and remaining requests. The picker also gained a **Your avatars** tab to
+  reuse an image you already generated (unused faces first, in-use ones tagged by agent) instead of
+  paying to regenerate.
 - **Agent turns no longer die silently**: the chat loop now recovers when a model writes tool
   *names* instead of calling them — one bare name, several glued together, hidden behind a think
   block, or echoed a round after the real call — announces when the tool budget runs out (instead

@@ -435,10 +435,11 @@ export const ambassadorApi = {
     agent_profile_id?: string;
     style_prompt?: string;
     model?: string;
-  }): Promise<{ ok: boolean; url: string; doc_id: string; workspace_id: string }> {
+  }, signal?: AbortSignal): Promise<{ ok: boolean; url: string; doc_id: string; workspace_id: string }> {
     return apiRequest('/api/agent/avatar/generate', {
       method: 'POST',
       body: JSON.stringify(req),
+      signal,
     });
   },
 

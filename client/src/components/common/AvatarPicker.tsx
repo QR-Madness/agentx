@@ -7,7 +7,7 @@
  * focused icon. The Generate segment is a disabled seam for the future flow.
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Pencil, Sparkles, Search, Loader2, Wand2, Dices } from 'lucide-react';
 import {
@@ -18,12 +18,19 @@ import {
   type AvatarOption,
 } from '../../lib/avatars';
 import type { AgentAccent } from '../../lib/agentAccent';
+import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, SegmentedControl,
 } from '../ui';
 import { AgentAvatar } from './AgentAvatar';
-import { api, apiErrorMessage } from '../../lib/api';
+import { api, apiErrorMessage, type WorkspaceDocument } from '../../lib/api';
 import './AvatarPicker.css';
+
+const HOME_ID = 'ws_home';
+/** doc id behind a `media:{ws}/{doc}` avatar ref (else null). */
+function docIdOf(avatar?: string): string | null {
+  return avatar && avatar.startsWith('media:') ? (avatar.split('/').pop() ?? null) : null;
+}
 
 const RECENTS_KEY = 'agentx:avatar-recents';
 const RECENTS_MAX = 10;
@@ -58,8 +65,7 @@ interface AvatarPickerProps {
 export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, open: openProp, onOpenChange, hideTrigger, subjectSeed }: AvatarPickerProps) {
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp ?? openInternal;
-  const setOpen = (o: boolean) => { onOpenChange?.(o); if (openProp === undefined) setOpenInternal(o); };
-  const [tab, setTab] = useState<'browse' | 'generate'>('browse');
+  const [tab, setTab] = useState<'browse' | 'gallery' | 'generate'>('browse');
   const [query, setQuery] = useState('');
   const [hovered, setHovered] = useState<string | null>(null);
   const [recents, setRecents] = useState<string[]>(loadRecents);
@@ -72,6 +78,61 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
   const [busy, setBusy] = useState<'one' | 'deal' | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<string[]>([]);
+  // Cancels the in-flight + remaining sequential generations (each is billed) as
+  // soon as the user picks a candidate or closes the picker.
+  const abortRef = useRef<AbortController | null>(null);
+
+  // "Your avatars" gallery — reuse an image you already generated (esp. unused
+  // ones) instead of paying to regenerate. Lazy-loaded on first view, refetched
+  // each open so freshly generated faces appear.
+  const { profiles } = useAgentProfile();
+  const [gallery, setGallery] = useState<WorkspaceDocument[] | null>(null);
+  const [galleryLoading, setGalleryLoading] = useState(false);
+
+  const usageByDocId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of profiles) {
+      const id = docIdOf(p.avatar);
+      if (id) m.set(id, p.name);
+    }
+    return m;
+  }, [profiles]);
+
+  const cancelGeneration = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(null);
+  }, []);
+
+  const setOpen = (o: boolean) => {
+    if (!o) cancelGeneration(); // closing mid-deal must stop the billed loop
+    onOpenChange?.(o);
+    if (openProp === undefined) setOpenInternal(o);
+  };
+
+  const loadGallery = useCallback(async () => {
+    setGalleryLoading(true);
+    try {
+      const { documents } = await api.listDocuments(HOME_ID);
+      setGallery(documents.filter(d => d.filename.startsWith('avatars/')));
+    } catch {
+      setGallery([]);
+    } finally {
+      setGalleryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open && tab === 'gallery' && gallery === null && !galleryLoading) void loadGallery();
+  }, [open, tab, gallery, galleryLoading, loadGallery]);
+  // Drop the cache on close so the next open reflects any newly generated faces.
+  useEffect(() => { if (!open) setGallery(null); }, [open]);
+
+  const galleryOrdered = useMemo(() => {
+    if (!gallery) return [];
+    // Unused first — reusing an unassigned face is the point of this tab.
+    return [...gallery].sort((a, b) => (usageByDocId.has(a.id) ? 1 : 0) - (usageByDocId.has(b.id) ? 1 : 0));
+  }, [gallery, usageByDocId]);
 
   const triggerPx = size === 'lg' ? 28 : size === 'sm' ? 16 : 20;
   const results = useMemo(() => searchAvatars(query), [query]);
@@ -95,25 +156,37 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
 
   const generateBatch = async (count: 1 | 4) => {
     if (busy) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(count === 1 ? 'one' : 'deal');
     setGenError(null);
     setCandidates([]);
     // Sequential on purpose — respects provider rate limits; the grid fills
     // progressively. An empty subject is valid: the server template invents a
-    // synthetic face (and varies it between generations).
+    // synthetic face (and varies it between generations). A cancel (pick/close)
+    // breaks the loop *and* aborts the in-flight request, so we never bill for
+    // images the user will never see.
     for (let i = 0; i < count; i++) {
+      if (controller.signal.aborted) break;
       try {
-        const res = await api.generateAvatar({ subject_prompt: subject.trim() });
+        const res = await api.generateAvatar({ subject_prompt: subject.trim() }, controller.signal);
+        if (controller.signal.aborted) break;
         setCandidates(prev => [...prev, `media:${res.workspace_id}/${res.doc_id}`]);
       } catch (err) {
+        if (controller.signal.aborted) break; // user cancelled — not a real error
         setGenError(apiErrorMessage(err));
         break;
       }
     }
-    setBusy(null);
+    // Leave state alone if a cancel already reset it (abortRef swapped to null).
+    if (abortRef.current === controller) {
+      abortRef.current = null;
+      setBusy(null);
+    }
   };
 
   const applyCandidate = (ref: string) => {
+    cancelGeneration(); // stop any remaining sequential generations
     onChange(ref); // a media: ref — not an icon id, so it skips the recents row
     setOpen(false);
   };
@@ -157,16 +230,17 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Choose an icon</DialogTitle>
+            <DialogTitle>Choose an avatar</DialogTitle>
           </DialogHeader>
           <div className="avatar-pick">
             <SegmentedControl
               size="sm"
-              ariaLabel="Icon source"
+              ariaLabel="Avatar source"
               value={tab}
               onChange={(v) => setTab(v)}
               options={[
                 { value: 'browse', label: 'Browse' },
+                { value: 'gallery', label: 'Your avatars' },
                 { value: 'generate', label: '✨ Generate' },
               ]}
             />
@@ -233,6 +307,41 @@ export function AvatarPicker({ value, onChange, size = 'md', accent, ariaLabel, 
                     ))}
                   </div>
                 </div>
+              </div>
+            ) : tab === 'gallery' ? (
+              <div className="avatar-pick__gallery">
+                {galleryLoading && gallery === null ? (
+                  <div className="avatar-pick__empty">
+                    <Loader2 size={16} className="animate-spin" /> Loading your avatars…
+                  </div>
+                ) : galleryOrdered.length === 0 ? (
+                  <div className="avatar-pick__empty">
+                    No saved avatars yet — generate one and it’ll live here for reuse.
+                  </div>
+                ) : (
+                  <div className="avatar-pick__gallery-grid">
+                    {galleryOrdered.map(doc => {
+                      const ref = `media:${HOME_ID}/${doc.id}`;
+                      const usedBy = usageByDocId.get(doc.id);
+                      return (
+                        <button
+                          key={doc.id}
+                          type="button"
+                          className={`avatar-pick__gcell ${value === ref ? 'selected' : ''}`}
+                          onClick={() => applyCandidate(ref)}
+                          title={usedBy ? `In use by ${usedBy} — click to reuse` : 'Unused — click to use'}
+                        >
+                          <AgentAvatar avatar={ref} size={76} />
+                          {usedBy ? (
+                            <span className="avatar-pick__gcell-badge">{usedBy}</span>
+                          ) : (
+                            <span className="avatar-pick__gcell-badge avatar-pick__gcell-badge--free">unused</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="avatar-pick__generate">
