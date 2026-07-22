@@ -35,6 +35,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { groupRoster } from '../../lib/orgPlacement';
+import { modelShortLabel } from '../../lib/modelLabel';
 import type { AgentProfile } from '../../lib/api';
 import { AgentAvatar } from '../common/AgentAvatar';
 import { IconButton, Input } from '../ui';
@@ -49,14 +50,6 @@ interface ProfileNavProps {
   isCreatingNew: boolean;
   onSelectProfile: (id: string) => void;
   onCreateNew: () => void;
-}
-
-/** "openrouter:deepseek/deepseek-v4-flash" → "deepseek-v4-flash". */
-function modelShortLabel(model?: string): string | null {
-  if (!model) return null;
-  const bare = model.includes(':') ? model.slice(model.indexOf(':') + 1) : model;
-  const tail = bare.includes('/') ? bare.slice(bare.lastIndexOf('/') + 1) : bare;
-  return tail || null;
 }
 
 /** The two-line annotated row body, shared by both views. */

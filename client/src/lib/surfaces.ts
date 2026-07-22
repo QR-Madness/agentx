@@ -26,6 +26,7 @@ export type SurfaceKey =
   | 'conversationState'
   | 'workspaces'
   | 'teams'
+  | 'roster'
   | 'changePassword';
 
 export const SURFACES: Record<SurfaceKey, ModalConfig> = {
@@ -50,5 +51,8 @@ export const SURFACES: Record<SurfaceKey, ModalConfig> = {
   workspaces: { id: 'workspaces-drawer', type: 'drawer', component: 'workspaces', position: 'right', size: 'xxl' },
   // User-facing name: "Agent Teams" (internal: Alloy) — precedent: Workspaces→Projects.
   teams: { id: 'alloy-factory', type: 'modal', component: 'alloyFactory', size: 'full' },
+  // The full two-pane agent Roster — org chart + live dossier. Browse-and-pick
+  // sibling of the composer's compact AgentSelectorDropdown.
+  roster: { id: 'agent-roster', type: 'modal', component: 'agentRoster', size: 'full' },
   changePassword: { id: 'change-password', type: 'modal', component: 'changePassword', size: 'sm' },
 };

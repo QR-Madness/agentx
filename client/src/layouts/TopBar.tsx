@@ -18,6 +18,7 @@ import {
   EyeOff,
   Search,
   Radar,
+  FolderKanban,
 } from 'lucide-react';
 import { GalaxyIcon } from '../components/common/GalaxyIcon';
 import { MemoryIcon } from '../components/common/MemoryIcon';
@@ -62,12 +63,16 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
   // Palette-only on mobile — the entries in useCommands stay unconditional.
   const deckId = SURFACES.ambassadorDeck.id ?? 'ambassador-deck';
   const memoryId = SURFACES.memory.id ?? 'memory';
+  const projectsId = SURFACES.workspaces.id ?? 'workspaces-drawer';
   const deckOpen = isOpen(deckId);
   const memoryOpen = isOpen(memoryId);
+  const projectsOpen = isOpen(projectsId);
   const toggleDeck = () =>
     deckOpen ? closeModal(deckId) : openModal(SURFACES.ambassadorDeck);
   const toggleMemory = () =>
     memoryOpen ? closeModal(memoryId) : openModal(SURFACES.memory);
+  const toggleProjects = () =>
+    projectsOpen ? closeModal(projectsId) : openModal(SURFACES.workspaces);
 
   // Deck pill live-pulse: background runs in flight (precedent: the consolidation
   // lightning). Cheap 30s poll, desktop only, quiet once the Deck is open.
@@ -117,12 +122,13 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
             key={item.id}
             // Tab semantics: while a tab-surface (Deck/Memory) is open it holds the
             // selection — the underlying page pill goes quiet until it closes.
-            className={`nav-pill ${activePage === item.id && !deckOpen && !memoryOpen ? 'active' : ''}`}
+            className={`nav-pill ${activePage === item.id && !deckOpen && !memoryOpen && !projectsOpen ? 'active' : ''}`}
             onClick={() => {
               onPageChange(item.id);
               // Tab behavior: navigating to a page dismisses an open tab-surface.
               if (deckOpen) closeModal(deckId);
               if (memoryOpen) closeModal(memoryId);
+              if (projectsOpen) closeModal(projectsId);
             }}
           >
             {item.icon}
@@ -155,6 +161,15 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
             >
               <MemoryIcon size={16} />
               <span>Memory</span>
+            </button>
+            <button
+              className={`nav-pill ${projectsOpen ? 'active' : ''}`}
+              onClick={toggleProjects}
+              aria-pressed={projectsOpen}
+              title={projectsOpen ? 'Close Projects' : 'Open Projects'}
+            >
+              <FolderKanban size={16} />
+              <span>Projects</span>
             </button>
           </>
         )}

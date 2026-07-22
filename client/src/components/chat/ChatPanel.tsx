@@ -91,6 +91,7 @@ import { latestRun } from '../../lib/alloyTrace';
 import { useChatStream } from './useChatStream';
 import { attachWorkspaceOnce, getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { WorkspaceBadge } from './WorkspaceBadge';
+import { WelcomeProjectRow } from './WelcomeProjectRow';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import './ChatPanel.css';
@@ -164,7 +165,9 @@ export function ChatPanel() {
     [attachedWorkspaceId],
     { enabled: !!attachedWorkspaceId },
   );
-  const projectName = projectData?.workspace.name;
+  // Gate on the live attachment: useApi keeps its last value when disabled, so
+  // without this the name would linger for a beat after detaching.
+  const projectName = attachedWorkspaceId ? projectData?.workspace.name : undefined;
 
   // Stored media (a generated/uploaded image) falls back to the personal Home
   // workspace when the conversation has none — durably attach it, notifying once.
@@ -1398,6 +1401,13 @@ export function ChatPanel() {
                 );
               })}
             </div>
+            {activeTab && (
+              <WelcomeProjectRow
+                convKey={activeTab.sessionId ?? activeTab.id}
+                sessionId={activeTab.sessionId ?? undefined}
+                attachedWorkspaceId={attachedWorkspaceId}
+              />
+            )}
           </div>
         )}
 
@@ -1813,7 +1823,9 @@ export function ChatPanel() {
                   ? (isMobile
                       ? 'Draft freely — the send button submits'
                       : 'Draft freely — Enter for a new line, Ctrl+Enter to send')
-                  : (isMobile ? 'Type your message…' : 'Type your message... (Shift+Enter for new line)')
+                  : projectName
+                    ? (isMobile ? `Message in ${projectName}…` : `Message in ${projectName}… (Shift+Enter for new line)`)
+                    : (isMobile ? 'Type your message…' : 'Type your message... (Shift+Enter for new line)')
             }
             rows={1}
           />

@@ -4,8 +4,8 @@
 
 /* Positioning is owned by DropdownPortal; this rule covers visuals only. */
 .agent-selector-dropdown {
-  width: 300px;
-  max-height: min(460px, 70vh);
+  width: 344px;
+  max-height: min(480px, 72vh);
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -145,12 +145,16 @@
   font-size: 0.8125rem;
   font-weight: 500;
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   display: flex;
   align-items: center;
   gap: 0.375rem;
+  min-width: 0;
+}
+.agent-item-name-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .agent-item-badge {
@@ -194,11 +198,91 @@
 }
 
 .agent-item-model {
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.6875rem;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* One-line role (delegation hint / description) — the "what to hand them" line. */
+.agent-item-role {
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Org grouping */
+.agent-selector-group + .agent-selector-group {
+  margin-top: 0.25rem;
+}
+.agent-selector-group-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.6rem 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.agent-selector-group-label svg {
+  opacity: 0.8;
+}
+
+/* Tier badges — mirror the profile-editor nav (MGR = accent, LEAD = neutral). */
+.agent-item-tier {
+  flex-shrink: 0;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--accent-tint-strong);
+  color: var(--cosmic-violet);
+}
+.agent-item-tier--lead {
+  border-color: var(--border-color);
+  color: var(--text-tertiary);
+}
+
+/* Available-for-delegation dot — only shown for Independent agents (inside an
+   org the chain of command supersedes the flag, so the dot would mislead). */
+.agent-item-deleg {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--feedback-success, #34d399);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--feedback-success, #34d399) 22%, transparent);
+}
+
+/* Footer secondary action → opens the full Roster surface. */
+.agent-roster-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  margin-top: 0.375rem;
+  padding: 0.4rem;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.agent-roster-link:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .agent-item-tags {

@@ -1,0 +1,424 @@
+/**
+ * AgentRoster — full-screen two-pane agent browser (org chart + dossier).
+ * Backdrop 1999 / container 2000 mirror the profile editor so it covers the
+ * bottom-anchored TopBar.
+ */
+
+.roster-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1999;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  animation: roster-fade 0.2s ease-out;
+}
+
+.roster-container {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-base);
+  color: var(--text-primary);
+  animation: roster-rise 0.2s ease-out;
+}
+
+@keyframes roster-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes roster-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Header */
+.roster-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.1rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.roster-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.text-accent { color: var(--cosmic-violet); }
+.roster-title-count {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 0.25rem;
+}
+.roster-header-actions { display: flex; align-items: center; gap: 0.5rem; }
+.roster-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.roster-new:hover { border-color: var(--cosmic-violet); color: var(--text-primary); }
+.roster-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.roster-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* Body: two panes */
+.roster-body { display: flex; flex: 1; min-height: 0; }
+
+/* Left rail — the org chart */
+.roster-rail {
+  width: 340px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-color);
+  min-height: 0;
+}
+.roster-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-card);
+  color: var(--text-tertiary);
+}
+.roster-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+.roster-list { flex: 1; overflow-y: auto; padding: 0 0.5rem 0.75rem; }
+.roster-empty { padding: 1rem; text-align: center; color: var(--text-muted); font-size: 0.8rem; }
+
+.roster-group + .roster-group { margin-top: 0.4rem; }
+.roster-group-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.5rem 0.5rem 0.3rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.roster-group-label svg { opacity: 0.8; }
+
+.roster-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.roster-card:hover { background: var(--bg-hover); }
+.roster-card.active {
+  background: var(--accent-tint-soft);
+  border-color: var(--accent-tint-strong);
+}
+.roster-card-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gradient-aurora);
+  color: #fff;
+  flex-shrink: 0;
+}
+.roster-card-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 0.1rem; }
+.roster-card-name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.roster-card-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-card-model {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.roster-card-role {
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Tier + default badges (shared visual language with the picker + editor nav) */
+.roster-tier {
+  flex-shrink: 0;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--accent-tint-strong);
+  color: var(--cosmic-violet);
+}
+.roster-tier--lead { border-color: var(--border-color); color: var(--text-tertiary); }
+.roster-card-badge {
+  flex-shrink: 0;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cosmic-cyan);
+  background: var(--bg-elevated);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+/* Right — the dossier */
+.roster-dossier { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.roster-dossier-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.roster-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0.6rem 0.6rem 0;
+  padding: 0.3rem 0.4rem 0.3rem 0.2rem;
+  background: transparent;
+  border: none;
+  color: var(--cosmic-violet);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.roster-dossier-scroll { flex: 1; overflow-y: auto; padding: 1.25rem 1.5rem; max-width: 640px; }
+
+.roster-dossier-head { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem; }
+.roster-dossier-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gradient-aurora);
+  color: #fff;
+  flex-shrink: 0;
+}
+.roster-dossier-headinfo { min-width: 0; padding-top: 0.2rem; }
+.roster-dossier-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.roster-dossier-role {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.roster-section { padding: 0.9rem 0; border-top: 1px solid var(--border-color); }
+.roster-section-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 0.6rem;
+}
+
+/* Chain of command */
+.roster-chain { display: flex; flex-direction: column; gap: 0.5rem; }
+.roster-chain-row { display: flex; align-items: center; gap: 0.5rem; }
+.roster-chain-role {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border-color);
+  color: var(--text-tertiary);
+}
+.roster-chain-role--manager { border-color: var(--accent-tint-strong); color: var(--cosmic-violet); }
+.roster-chain-role--lead { border-color: var(--accent-tint-strong); color: var(--cosmic-violet); }
+.roster-chain-of { font-size: 0.85rem; color: var(--text-primary); font-weight: 500; }
+.roster-chain-line { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.roster-chain-dir {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  min-width: 66px;
+}
+.roster-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem 0.2rem 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.roster-chip:hover { border-color: var(--cosmic-violet); color: var(--text-primary); }
+.roster-chip img { width: 14px; height: 14px; border-radius: 999px; object-fit: cover; }
+.roster-independent { font-size: 0.85rem; color: var(--text-secondary); }
+
+/* Configuration */
+.roster-kv { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.75rem; }
+.roster-kv-key {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  min-width: 66px;
+  flex-shrink: 0;
+}
+.roster-kv-val {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+.roster-kv-code {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+.roster-pips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.roster-pip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+.roster-pip--on {
+  color: var(--feedback-success);
+  background: color-mix(in srgb, var(--feedback-success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--feedback-success) 28%, transparent);
+}
+.roster-pip--off {
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border-color: var(--border-color);
+}
+
+/* Tags */
+.roster-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.roster-tag {
+  font-size: 0.72rem;
+  color: var(--cosmic-cyan);
+  background: color-mix(in srgb, var(--cosmic-cyan) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cosmic-cyan) 26%, transparent);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+
+/* Sticky actions */
+.roster-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.roster-action-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: 9px;
+  border: none;
+  background: var(--gradient-aurora);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+}
+.roster-action-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: 9px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.roster-action-secondary:hover { border-color: var(--cosmic-violet); color: var(--text-primary); }
+
+/* Mobile: single column master-detail */
+@media (max-width: 600px) {
+  .roster-rail { width: 100%; border-right: none; }
+  .roster-dossier-scroll { max-width: none; padding: 1rem; }
+}

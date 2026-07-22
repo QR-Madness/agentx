@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.248 -->
+<!-- release-version: 0.21.249 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -52,6 +52,11 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
   roster (manager, teams, org-free, ambassador — with role chips, model, tags, and search), and
   the Role card draws the agent's live **chain of command** — click a superior or subordinate
   to hop straight to their profile.
+- **The agent picker learned the org chart**: the chat selector is no longer a flat list — it's
+  grouped by chain of command (crowned manager → team leads → independents) with role badges,
+  friendly model names, and a one-line role per agent. "Browse the full roster" opens a new
+  two-pane **Roster** — the org chart beside a live dossier (role, chain of command, model,
+  reasoning, capabilities, tags) you can hop through and pick from.
 - **Name and face, dealt**: a dice button deals 10 agent names (random or your starred pool —
   star keepers), and avatar generation got a real model + prompt upgrade — subject optional
   (leave it empty for a surprise synthetic face), "Deal 4" candidate grid, and one consistent
@@ -79,6 +84,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Deck and Memory became real tabs**: both now live in the top bar on desktop — the surface
   slides in under the bar, the lit pill closes it again, and the Deck pill pulses while your
   agents have runs in flight. On mobile they stay a command-palette reach away.
+- **Projects, out of the shadows**: a **Projects** tab joins Deck and Memory in the top bar, and
+  every new conversation can now start *inside* a project — pick one from the welcome starters and
+  its files + standing instructions ride from the first message (the composer even says where
+  you're writing). One click detaches.
 - **The Ambassador can show what a conversation *produced***: ask "what did that conversation
   actually make?" and she reads its exhibits — tables, images, diagrams, and cited sources with
   their links — outcomes, not just the chat.

@@ -37,6 +37,7 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   logs: lazy(() => import('./stubs').then(m => ({ default: m.LogsDrawerContent }))),
   toolOutputBrowser: lazy(() => import('./stubs').then(m => ({ default: m.ToolOutputBrowserContent }))),
   workspaces: lazy(() => import('./stubs').then(m => ({ default: m.WorkspacesDrawerContent }))),
+  agentRoster: lazy(() => import('../chat/AgentRoster').then(m => ({ default: m.AgentRoster as unknown as ComponentType<ModalComponentProps> }))),
 };
 
 /**
@@ -56,6 +57,7 @@ const SELF_CLOSING = new Set<string>([
   'alloyFactory',
   'alloyRunTrace',
   'workspaces',
+  'agentRoster',
   // NOTE: 'promptLibrary' intentionally omitted — its standalone modal has no
   // header close button of its own, so it relies on the shell close button.
 ]);
@@ -81,6 +83,7 @@ const FULLSCREEN_SURFACES = new Set<string>([
   'unifiedProfileEditor',
   'memory',
   'ambassadorDeck',
+  'agentRoster',
 ]);
 
 function ModalRenderer({ modal }: { modal: ModalInstance }) {
