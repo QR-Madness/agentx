@@ -64,7 +64,8 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.250** (pro
 | [engineering-hardening.md](todo/backlog/engineering-hardening.md) | Grounded tech-debt / consistency items |
 | [misc.md](todo/backlog/misc.md) | Uncategorized backlog (defaults, scheduler, sharing, themes, packaging…) |
 | [genome-advisor.md](todo/backlog/genome-advisor.md) | Agent Genome & Settings Advisor — the meta-layer |
-| [open-platform.md](todo/backlog/open-platform.md) | De-walling the garden — import/export, MCP server, egress |
+| [cores.md](todo/backlog/cores.md) | ⭐ Cores — portable, extractable artifacts (Memory/Agent/Skill/Project cores → Constructs; the Extract op) |
+| [open-platform.md](todo/backlog/open-platform.md) | De-walling the garden — outward contract, MCP server, egress (portability moved to `cores.md`) |
 | [exhibits.md](todo/backlog/exhibits.md) | Rich agent-authored content (declarative protocol) |
 | [multimodal.md](todo/backlog/multimodal.md) | Multi-modal fluency — media delegation routing, video input/streaming, speech namespace |
 | [research.md](todo/backlog/research.md) | Research Mode follow-ups (form intake, delegated deep-research, Brave backends, spend ceiling) |

@@ -26,26 +26,11 @@
       Memory drawer (`lib/fileTransfer.ts` browser Blob/FileReader helper — first file I/O in the
       client). Unblocks the 18.6 eval snapshot/restore. Supersedes the old "Memory export/import
       (JSON/SQLite backup)" item.
-- [ ] **Import dry-run / preview-diff** — show the graph delta before committing (mirrors the existing
-      `POST /api/memory/consolidate/preview` pattern) so a bad hand-edit can't silently nuke the graph.
-      *Natural next follow-up to the shipped import/export above.*
-- [ ] **Verify-on-import (default on, opt-out)** — route imported facts through the three-layer
-      `check_contradictions` pipeline rather than trusting JSON verbatim; opt-out flag for trusted/raw
-      restores. *Natural next follow-up to the shipped import/export above.*
-- [ ] **Memory-as-VCS (diffable, hand-editable snapshots)** — the text-only export + idempotent
-      MERGE-on-id import (`[v0.21.24]`) already gives the core loop: export → commit/hand-edit →
-      import re-applies, re-embedding from text → branchable/restorable memory states. Remaining
-      polish: canonical/sorted-key JSON (+ optional NDJSON) for clean `git diff`; a
-      `memory:snapshot`/`memory:restore` task pair; per-node content hash to recompute only changed
-      embeddings (today import re-embeds every node); a "memory log" of snapshots.
-- [ ] **Import conflict policy** — skip / overwrite / rename strategies for cross-instance id
-      collisions (merge currently overwrites — importing another instance's export reassigns shared-id
-      nodes to the importing user).
-- [ ] **Recompute PG audit-mirror embeddings on import** — import leaves
-      `conversation_logs.embedding` NULL (recall uses the recomputed Neo4j `turn_embeddings`); fill it
-      from content (cheap via the embedding cache) if anything starts querying the PG vector column.
-- [ ] **Per-user export** — export/import is single-user (`DEFAULT_USER_ID = "default"`) until auth
-      lands; scope by authenticated user when multi-user ships.
+> **→ The portability roadmap now lives in [cores.md](cores.md)** (Cores — portable, extractable
+> artifacts; ratified 2026-07-27). The import/export follow-ups that sat here (dry-run preview,
+> verify-on-import, Memory-as-VCS, conflict policy, PG-mirror embeddings, per-user export) moved
+> there as its hardening substrate. This file keeps the outward contract (MCP server, egress,
+> hosted posture).
 - [ ] **Expose AgentX outward** — publish its own memory/agents as an MCP *server* + promote
       `OpenApi.yaml` to a stable public REST contract. (Subsumes the "Conversation MCP Tool" item under
       MCP Tools below — `memory_recall` / `memory_store` / `conversation_summary`.)
