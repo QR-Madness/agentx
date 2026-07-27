@@ -63,7 +63,9 @@ Two systems, one selection brain. **Chat thinking patterns** (the user-facing fe
 > callers. `ProfileManager` CRUD lives in `data/agent_profiles.yaml`; each profile has a
 > Docker-style `agent_id` + `self_channel` (`_self_{agent_id}`); `kind` ∈ `agent`|`ambassador`
 > with **separate defaults**, and `_ensure_ambassador_defaults()` seeds/migrates without ever
-> converting the default agent (ambassadors never appear in chat routing).
+> converting the default agent (ambassadors never appear in chat routing). Ships seeded default
+> agent profiles (AgentX, Researcher, **Deluxe Image Creator**) via one-time `seeded_defaults`
+> markers — deletions stick; seeds mirrored in `api/defaults/agent_profiles.yaml`.
 
 ### File Workspaces & Document RAG (`kit/workspaces/`, Slice 1, v0.21.103)
 
@@ -75,8 +77,10 @@ Two systems, one selection brain. **Chat thinking patterns** (the user-facing fe
 > membership (`workspace_conversations`, one project per conversation; turn precedence
 > request > membership; `ws_home` is never a project) + project memory channels
 > (`_project_{ws_id}` becomes the turn's channel; workflow > project > profile; opt-out
-> `memory.project_channels`). Agent tools `project_search` (né `workspace_search`; legacy alias
-> executes)/`document_query`/`read_document` + **write tools `create_document`/`update_document`**
+> `memory.project_channels`). Agent tools `list_project_files`/`project_search` (né
+> `workspace_search`; legacy alias executes)/`document_query`/`read_document` + **write tools
+> `create_document`/`update_document`/`append_to_document`/`edit_document`/`rename_document`/
+> `delete_document`** (partial edits use an `expected_sha256` soft write-lock)
 > (`mcp/internal_tools.py`, workspace-scoped via `InternalToolContext`); stable
 > project-identity (prio 90) + instructions (88) + manifest (85) ledger blocks + auto `doc` citations.
 
@@ -647,6 +651,7 @@ reaches uvicorn in seconds. `agentx migrate` (in-image ops CLI) calls the same `
 - **Prompt Stack editor** (Settings → Prompts → "System Prompt"): two-pane block composer over `/api/prompts/layers` — `@dnd-kit` reorder, debounced autosave, reset/diff, live preview via `lib/promptStack.ts::composeStack`. Library snippets insert as custom layers; the enhancer (`/api/prompts/enhance`) rewrites a layer in place.
 - **Themes**: six token-driven `ThemeDefinition`s in `lib/theme.ts` (~110 CSS vars + picker metadata `description`/`icon`), applied by `ThemeProvider` (stamps `data-theme` on the root); icons map in `common/themeIcons.tsx`; a vitest enforces cross-theme key parity (glow tokens use a transparent shadow, never bare `none` — `none` in a shadow list kills the whole declaration). Per-theme surface decorations (scanlines/dot-grid/glass) live in `styles/expression.css` (`[data-theme]`-scoped, unlayered). Fonts: Inter + JetBrains Mono self-hosted via `@fontsource` (imported in `main.tsx`; stacks in App.css `@theme static` → `--font-sans`/`--font-mono`).
 - **Multi-server**: per-server settings in localStorage (`agentx:servers`/`…:meta`/`activeServer`).
+- **Styling addenda (ex-CLAUDE.md specifics)**: shared primitives in `components/ui/` follow shadcn (CVA + `cn()` in `lib/utils.ts`, exported from `components/ui/index.ts`). `Input`/`Textarea` carry a `--sm` variant + `icon` slot; `IconButton` sizes md/sm/xs with `tone="danger|accent"` + `active`. Radius scale `rounded-sm..2xl/pill` = 6/8/10/12/16/999px; eyebrow labels = `text-2xs font-semibold uppercase tracking-caps text-fg-muted`.
 - **Two shells (desktop + web/PWA)**: the same app builds as the Tauri desktop app and an installable web PWA. The split is a compile-time gate — `__IS_TAURI__` (vite `define`, keyed off `TAURI_ENV_PLATFORM`) over dynamic `import()` in `src/platform/` capability triples (`opener`, `window`); `@tauri-apps/*` is confined there (guarded by `platform/importBoundary.test.ts`) so Rollup strips it from the web bundle. Runtime chrome guards stay in `lib/platform.ts`. `src/pwa/` holds `registerPwa` (SW via `vite-plugin-pwa` `registerType:'prompt'` + `vite:preloadError` stale-chunk reload) and `installPrompt` (Chromium `beforeinstallprompt` + iOS "Add to Home Screen" hint), bridged to toasts by `PwaToasts`; the plugin is `disable: isTauriBuild`, manifest + icons in `client/public/`. **Connection links** (`lib/connectionString.ts`): `#connect=<base64url>` share URLs carry server URL + optional gateway token in the fragment; `consumeConnectFragment()` (boot, `main.tsx`) → `ConnectGate` confirm → `addServer`; copy-link affordance in `ServerSelector`. Headless-testable via `.claude/launch.json` (`web`). Remote use needs the PWA origin in CORS + `AGENTX_AUTH_ENABLED=true`; Cloudflare Pages deployment is deferred (see `todo/backlog/open-platform.md`).
 
 ## API Endpoints (full reference)

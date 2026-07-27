@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 STRICT = "--strict" in sys.argv
 
 RN_BODY_LIMIT = 2048    # Release-Notes.md sets its own "~2 KB / one screen" target
-CLAUDE_MD_LIMIT = 20000  # the "light index" ceiling; ratchet DOWN as it slims, never up
+CLAUDE_MD_LIMIT = 19800  # the "light index" ceiling; ratchet DOWN as it slims, never up
 # Module-level `settings = get_settings()` snapshots in the memory kit never refresh at
 # runtime. The kit was purged of them (settings overhaul S1) — reads are live and
 # temporary overrides go through pin_memory_settings() (CLAUDE.md "Hard-Won Working
