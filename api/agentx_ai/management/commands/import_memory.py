@@ -53,7 +53,10 @@ class Command(BaseCommand):
             "--channel",
             type=str,
             default=None,
-            help="Override the wipe scope for replace mode (default: the file's channel).",
+            help=(
+                "Override the wipe scope for replace mode (default: the file's "
+                "channel(s)). Comma-separate for a channel set."
+            ),
         )
         parser.add_argument(
             "--dry-run",
@@ -74,9 +77,10 @@ class Command(BaseCommand):
         except Exception as e:  # noqa: BLE001
             raise CommandError(f"Could not parse export: {e}") from e
 
+        scope_desc = export.channels or export.channel or "_all"
         self.stdout.write(
             f"Loaded {in_path} — schema v{export.schema_version}, "
-            f"user='{export.user_id}', channel='{export.channel}' "
+            f"user='{export.user_id}', channel='{scope_desc}' "
             f"(source embedder: {export.embedder.provider_model})"
         )
         for name, n in export.counts().items():
@@ -87,9 +91,14 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("Dry-run: nothing written."))  # type: ignore[attr-defined]
             return
 
+        raw_channel: str | None = options["channel"]
+        channel_opt: str | list[str] | None = raw_channel
+        if raw_channel and "," in raw_channel:
+            channel_opt = [c.strip() for c in raw_channel.split(",") if c.strip()]
+
         try:
             summary = MemoryImporter(user_id=options["user_id"]).import_export(
-                export, mode=options["mode"], channel=options["channel"]
+                export, mode=options["mode"], channel=channel_opt
             )
         except Exception as e:  # noqa: BLE001
             raise CommandError(f"Import failed: {e}") from e

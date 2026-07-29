@@ -1441,14 +1441,14 @@ When `delete_memories` is true, also deletes all entities, facts, and strategies
 POST /api/memory/export
 ```
 
-Serializes the user's memory graph (conversations/turns, facts/entities, strategies, goals, tool-invocations) plus the PostgreSQL audit mirror into a single round-trippable envelope keyed by stable node ids. Re-import with `/api/memory/import`.
+Serializes the user's memory graph (conversations/turns, facts/entities, strategies, procedures, goals, tool-invocations) plus the PostgreSQL audit mirror into a single round-trippable envelope keyed by stable node ids. Re-import with `/api/memory/import`.
 
 **Request (optional):**
 ```json
 {"channel": "_all"}
 ```
 
-`channel` defaults to `"_all"` (every channel). Exports are **text-only** — embeddings are regenerated from text on import, so files are small, deterministic, git-diffable, and portable across embedding models.
+`channel` defaults to `"_all"` (every channel); pass `"channels": ["_self_x", "_project_y"]` instead to export a channel set (it wins over `channel`). Exports are **text-only** — embeddings are regenerated from text on import, so files are small, deterministic, git-diffable, and portable across embedding models.
 
 **Response:** `{"export": { ...envelope... }}` — `schema_version`, `embedder` (provenance), and per-type node collections.
 
@@ -1468,7 +1468,7 @@ Restores an export idempotently by `MERGE`-ing each node on its stable id. Embed
 ```
 
 - `mode`: `"merge"` (default) upserts and leaves other data untouched; `"replace"` wipes the target channel for the user first, so it ends up matching the file exactly.
-- `channel`: overrides the wipe scope for `replace` mode (defaults to the file's channel).
+- `channel` / `channels`: overrides the wipe scope for `replace` mode (defaults to the file's channel(s)); a `channels` list wipes exactly that channel set.
 
 **Response:** `{"imported": {"mode", "channel", "recomputed_embeddings", "imported": {<type>: {"created", "total"}}, ...}}`. Returns `400` for a missing envelope, bad `mode`, or an unsupported (newer) `schema_version`.
 

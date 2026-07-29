@@ -4844,10 +4844,10 @@ paths:
       operationId: memoryExport
       summary: Export the user's memory graph to a round-trippable JSON envelope
       description: >
-        Serializes conversations/turns, facts/entities, strategies, goals and
-        tool-invocations (plus the PostgreSQL audit mirror) keyed by stable ids.
-        Exports are text-only — embeddings are regenerated from text on import,
-        so files are small, deterministic and diffable.
+        Serializes conversations/turns, facts/entities, strategies, procedures,
+        goals and tool-invocations (plus the PostgreSQL audit mirror) keyed by
+        stable ids. Exports are text-only — embeddings are regenerated from
+        text on import, so files are small, deterministic and diffable.
       requestBody:
         required: false
         content:
@@ -4858,6 +4858,11 @@ paths:
                 channel:
                   type: string
                   description: Channel to export, or "_all" (default) for every channel.
+                channels:
+                  type: array
+                  items:
+                    type: string
+                  description: Channel set to export (wins over `channel`).
       responses:
         '200':
           description: The export envelope under "export"
@@ -4899,6 +4904,13 @@ paths:
                 channel:
                   type: string
                   description: Override the wipe scope for replace mode.
+                channels:
+                  type: array
+                  items:
+                    type: string
+                  description: >-
+                    Wipe-scope override as a channel set (replace mode wipes
+                    exactly these channels; wins over `channel`).
       responses:
         '200':
           description: Per-type import summary under "imported"

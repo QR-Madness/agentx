@@ -50,9 +50,10 @@ class MemoryImporter:
         self,
         payload: MemoryExport | dict[str, Any],
         mode: ImportMode = "merge",
-        channel: str | None = None,
+        channel: str | list[str] | None = None,
     ) -> dict[str, Any]:
-        """Restore `payload`. `channel` overrides the wipe scope for replace mode.
+        """Restore `payload`. `channel` overrides the wipe scope for replace mode
+        (a list wipes exactly that channel set).
 
         Returns a summary dict with per-type counts and `recomputed_embeddings`.
         """
@@ -64,7 +65,9 @@ class MemoryImporter:
         # write transaction short and makes imports portable across embedders).
         self._prepare_embeddings(export)
 
-        wipe_channel = channel if channel is not None else export.channel
+        wipe_channel: str | list[str] | None = (
+            channel if channel is not None else (export.channels or export.channel)
+        )
         results: dict[str, tuple[int, int]] = {}
 
         with Neo4jConnection.session() as session:
@@ -78,6 +81,7 @@ class MemoryImporter:
                 results["facts"] = self._import_facts(tx, export.facts)
                 results["goals"] = self._import_goals(tx, export.goals)
                 results["strategies"] = self._import_strategies(tx, export.strategies)
+                results["procedures"] = self._import_procedures(tx, export.procedures)
                 results["tool_invocations"] = self._import_tool_invocations(tx, export.tool_invocations)
                 self._rebuild_turn_chains(tx, [c["id"] for c in export.conversations])
                 tx.commit()
@@ -128,6 +132,9 @@ class MemoryImporter:
             (export.facts, lambda f: f.get("claim") or ""),
             (export.goals, lambda g: g.get("description") or ""),
             (export.strategies, lambda s: s.get("description") or ""),
+            # Matches ProceduralMemory.learn_procedure / find_procedures text.
+            (export.procedures,
+             lambda p: f"{p.get('trigger') or ''}\n{p.get('body') or ''}"),
         ]
         for rows, text_of in groups:
             if not rows:
@@ -138,9 +145,13 @@ class MemoryImporter:
 
     # -- replace-mode wipe ----------------------------------------------
 
-    def _wipe(self, tx, channel: str | None) -> None:
-        """Scoped DETACH DELETE of the user's nodes in `channel` (exact match, no _global spill)."""
-        chan = None if channel in (None, "_all") else channel
+    def _wipe(self, tx, channel: str | list[str] | None) -> None:
+        """Scoped DETACH DELETE of the user's nodes in `channel` (exact match, no _global spill).
+
+        Accepts a single channel or a channel set; None / "_all" wipes every
+        channel for the user.
+        """
+        chan: str | list[str] | None = None if channel in (None, "_all") else channel
 
         def f(alias: str) -> str:
             # include_global=False → exact channel match (don't nuke _global).
@@ -148,12 +159,17 @@ class MemoryImporter:
                 chan, include_global=False
             ).build_inline()
 
-        params = {"user_id": self.user_id, "channel": chan}
+        params = {
+            "user_id": self.user_id,
+            "channel": chan if isinstance(chan, str) else None,
+            "channels": list(chan) if isinstance(chan, (list, tuple)) else None,
+        }
         for label, rel, alias in (
             ("Fact", "HAS_FACT", "n"),
             ("Entity", "HAS_ENTITY", "n"),
             ("Strategy", "HAS_STRATEGY", "n"),
             ("Goal", "HAS_GOAL", "n"),
+            ("Procedure", "HAS_PROCEDURE", "n"),
         ):
             tx.run(cast(LiteralString, f"""
                 MATCH (u:User {{id: $user_id}})-[:{rel}]->(n:{label})
@@ -377,6 +393,48 @@ class MemoryImporter:
             )
             RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
         """, rows=rows, user_id=self.user_id))
+
+    def _import_procedures(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
+        if not rows:
+            return (0, 0)
+        counts = self._counts(tx.run("""
+            UNWIND $rows AS row
+            OPTIONAL MATCH (ex:Procedure {id: row.id})
+            WITH row, ex IS NOT NULL AS existed
+            MERGE (p:Procedure {id: row.id})
+            SET p.trigger = row.trigger,
+                p.trigger_features = row.trigger_features,
+                p.body = row.body,
+                p.rationale = row.rationale,
+                // Written as twins by learn_procedure; tolerate either in old data.
+                p.channel = coalesce(row.channel, row.scope),
+                p.scope = coalesce(row.scope, row.channel),
+                p.agent_id = row.agent_id,
+                p.strength = row.strength,
+                p.evidence_refs = row.evidence_refs,
+                p.signal_kinds = row.signal_kinds,
+                p.embedding = row.embedding,
+                p.user_id = $user_id,
+                p.created_at = CASE WHEN row.created_at IS NULL
+                    THEN coalesce(p.created_at, datetime()) ELSE datetime(row.created_at) END,
+                p.last_reinforced = CASE WHEN row.last_reinforced IS NULL
+                    THEN coalesce(p.last_reinforced, datetime()) ELSE datetime(row.last_reinforced) END
+            MERGE (u:User {id: $user_id})
+            MERGE (u)-[:HAS_PROCEDURE]->(p)
+            RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
+        """, rows=rows, user_id=self.user_id))
+
+        # DISTILLED_FROM edges (second pass; MATCH not MERGE — mirrors the write
+        # path, which never mints a Conversation for an absent evidence id).
+        distilled = [r for r in rows if r.get("conversation_ids")]
+        if distilled:
+            tx.run("""
+                UNWIND $rows AS row
+                UNWIND row.conversation_ids AS cid
+                MATCH (p:Procedure {id: row.id}), (c:Conversation {id: cid})
+                MERGE (p)-[:DISTILLED_FROM]->(c)
+            """, rows=distilled)
+        return counts
 
     def _import_tool_invocations(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
         # id-less node → MERGE on a natural key (conversation + tool + turn + ts).

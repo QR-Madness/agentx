@@ -26,22 +26,43 @@ logger = logging.getLogger(__name__)
 
 
 class MemoryExporter:
-    """Reads the memory graph for one user (optionally one channel) into a MemoryExport."""
+    """Reads the memory graph for one user (optionally a channel set) into a MemoryExport.
+
+    ``channels`` (a list) wins over the legacy single ``channel`` when both are
+    given. ``include_global=False`` makes the scope exact-match — no ``_global``
+    nodes ride along — which is what Extract needs so the artifact reconciles
+    1:1 against the wiped set; plain exports keep the inclusive default.
+    """
 
     def __init__(
         self,
         user_id: str,
         channel: str | None = None,
+        channels: list[str] | None = None,
+        include_global: bool = True,
     ):
         self.user_id = user_id
-        # Normalize "_all"/None → no channel filter.
-        self.channel = None if channel in (None, "_all") else channel
+        self.include_global = include_global
+        # Normalize both spellings into one internal list (None = no filter).
+        if channels is not None:
+            chans = [c for c in channels if c not in (None, "")]
+            self.channels: list[str] | None = (
+                None if (not chans or "_all" in chans) else list(dict.fromkeys(chans))
+            )
+        elif channel in (None, "_all"):
+            self.channels = None
+        else:
+            self.channels = [cast(str, channel)]
+        # Back-compat single-channel view (used by the envelope + callers).
+        self.channel = self.channels[0] if self.channels and len(self.channels) == 1 else None
 
     # -- helpers ---------------------------------------------------------
 
     def _channel_inline(self, alias: str) -> str:
         """Inline channel-scope clause for `alias` (empty when exporting all channels)."""
-        return CypherFilterBuilder(alias).add_channel_filter(self.channel).build_inline()
+        return CypherFilterBuilder(alias).add_channel_filter(
+            self.channels, include_global=self.include_global
+        ).build_inline()
 
     def _node(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Normalize a Neo4j node property dict for JSON. Exports are text-only:
@@ -59,10 +80,15 @@ class MemoryExporter:
         export = MemoryExport(
             user_id=self.user_id,
             channel=self.channel,
+            channels=self.channels if self.channels and len(self.channels) > 1 else None,
             embedder=current_embedder_info(),
         )
         with Neo4jConnection.session() as session:
-            params = {"user_id": self.user_id, "channel": self.channel}
+            params = {
+                "user_id": self.user_id,
+                "channel": self.channel,
+                "channels": self.channels,
+            }
 
             export.conversations = [
                 self._node(r["c"])
@@ -134,6 +160,17 @@ class MemoryExporter:
                 export.strategies.append(node)
 
             for r in session.run(cast(LiteralString, f"""
+                MATCH (u:User {{id: $user_id}})-[:HAS_PROCEDURE]->(p:Procedure)
+                WHERE true {self._channel_inline('p')}
+                OPTIONAL MATCH (p)-[:DISTILLED_FROM]->(c:Conversation)
+                WITH p, collect(DISTINCT c.id) AS conversation_ids
+                RETURN p, conversation_ids ORDER BY p.id
+            """), **params):
+                node = self._node(r["p"])
+                node["conversation_ids"] = [cid for cid in r["conversation_ids"] if cid]
+                export.procedures.append(node)
+
+            for r in session.run(cast(LiteralString, f"""
                 MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
                       -[:USED_TOOL]->(inv:ToolInvocation)
                 WHERE true {self._channel_inline('inv')}
@@ -150,8 +187,8 @@ class MemoryExporter:
             export.pg_conversation_logs = self._export_pg_logs(conv_ids)
             export.pg_tool_invocations = self._export_pg_tools(conv_ids)
 
-        logger.info("Memory export for user=%s channel=%s: %s",
-                    self.user_id, self.channel, export.counts())
+        logger.info("Memory export for user=%s channels=%s: %s",
+                    self.user_id, self.channels or "_all", export.counts())
         return export
 
     # -- PostgreSQL ------------------------------------------------------

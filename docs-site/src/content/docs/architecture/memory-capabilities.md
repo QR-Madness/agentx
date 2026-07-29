@@ -43,7 +43,7 @@ each one and how it feeds the others.
 | Deterministic link backfill | lifecycle | shipped | `link_facts_to_entities` (`entity_linking` job) | all |
 | Manual fact↔entity link | lifecycle | shipped | `link_fact_to_entity` / `unlink_fact_from_entity` (`memory/semantic.py`); `POST/DELETE /api/memory/facts/{id}/entities` | per fact |
 | Agent-attribution backfill | lifecycle | shipped | `backfill_agent_attribution` (mgmt cmd) | `_self_{agent_id}` |
-| Portability (export/import) | ops | shipped | `MemoryExporter` / `MemoryImporter` | per channel / `_all` |
+| Portability (export/import) | ops | shipped | `MemoryExporter` / `MemoryImporter` (v2 envelope: + procedures) | channel set / `_all` |
 | Debug harness | ops | shipped | `debug_attribution` (mgmt cmd) | scenario-scoped |
 
 ## How the pieces connect
@@ -237,7 +237,9 @@ double-compress the same content).
 - **Promotion** raises high-value facts to `_global`; **decay** ages salience; **dedupe**
   collapses duplicate entities (never agents — keyed by `agent_id`); **link backfill** repairs
   orphaned fact→entity edges; **agent-attribution backfill** renames legacy generic "Agent …"
-  facts to the agent's name. **Portability** round-trips a user's memory as JSON. The
+  facts to the agent's name. **Portability** round-trips a user's memory as JSON — the v2
+  envelope carries every node family *including distilled procedures*, and exports/wipes
+  accept a channel **set** (the substrate for Memory Cores). The
   **debug harness** (below) drives the whole pipeline end-to-end.
 
 ### Debug harness

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.250 -->
+<!-- release-version: 0.21.251 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,4 +21,8 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
+- **Memory exports go multi-channel** — export or replace-import an exact channel *set* (`channels` in the API/CLI), the substrate for the upcoming portable Memory Cores.
+
 ### Fixes
+
+- **Memory exports now carry distilled procedures** — learned "how we work" rules previously didn't travel; the v2 envelope round-trips them (older builds are asked to upgrade rather than silently dropping them).

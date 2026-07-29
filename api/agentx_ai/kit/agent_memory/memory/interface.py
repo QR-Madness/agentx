@@ -1137,7 +1137,11 @@ class AgentMemory:
 
     # Portability (scriptable import/export)
 
-    def export_memory(self, channel: str | None = None) -> MemoryExport:
+    def export_memory(
+        self,
+        channel: str | None = None,
+        channels: list[str] | None = None,
+    ) -> MemoryExport:
         """Serialize this user's memory graph into a round-trippable envelope.
 
         The export is text-only (embeddings are regenerated on import).
@@ -1145,17 +1149,20 @@ class AgentMemory:
         Args:
             channel: Limit to one channel (defaults to this instance's channel;
                 pass ``"_all"`` to export every channel for the user).
+            channels: Limit to a channel *set* (wins over ``channel``).
         """
         from ..portability import MemoryExporter
 
         scope = channel if channel is not None else self.channel
-        return MemoryExporter(user_id=self.user_id, channel=scope).export()
+        return MemoryExporter(
+            user_id=self.user_id, channel=scope, channels=channels
+        ).export()
 
     def import_memory(
         self,
         payload: MemoryExport | dict[str, Any],
         mode: str = "merge",
-        channel: str | None = None,
+        channel: str | list[str] | None = None,
     ) -> dict[str, Any]:
         """Restore a memory export under this user (idempotent MERGE-on-id).
 
@@ -1163,7 +1170,8 @@ class AgentMemory:
             payload: A ``MemoryExport`` or its serialized dict.
             mode: ``"merge"`` (upsert) or ``"replace"`` (wipe the target
                 channel first, then import).
-            channel: Override the wipe scope for replace mode.
+            channel: Override the wipe scope for replace mode (a list wipes
+                exactly that channel set).
         """
         from ..portability import MemoryImporter
 
