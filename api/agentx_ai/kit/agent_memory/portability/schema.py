@@ -21,7 +21,9 @@ from ..config import get_settings
 
 # Bump only on a breaking change to the envelope shape. Importers reject an
 # unknown (newer) version rather than silently mis-reading it.
-SCHEMA_VERSION = 1
+# v2: procedures collection + multi-channel `channels` — older builds would
+# silently drop procedures on import, so this is a hard gate, not additive.
+SCHEMA_VERSION = 2
 
 
 class EmbedderInfo(BaseModel):
@@ -58,6 +60,7 @@ class MemoryExport(BaseModel):
     exported_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     user_id: str
     channel: str | None = None  # None / "_all" = every channel for the user
+    channels: list[str] | None = None  # multi-channel selection (v2); `channel` stays for single/all
     # Exports are text-only — embeddings are always regenerated on import.
     # `embedder` records which model the source ran, as provenance only.
     embedder: EmbedderInfo
@@ -71,6 +74,7 @@ class MemoryExport(BaseModel):
     facts: list[dict[str, Any]] = Field(default_factory=list)  # + "entity_ids"
     goals: list[dict[str, Any]] = Field(default_factory=list)
     strategies: list[dict[str, Any]] = Field(default_factory=list)  # + "tool_sequence", "succeeded_in", "failed_in"
+    procedures: list[dict[str, Any]] = Field(default_factory=list)  # + "conversation_ids" (DISTILLED_FROM)
     tool_invocations: list[dict[str, Any]] = Field(default_factory=list)  # + "conversation_id"
 
     # PostgreSQL audit mirror (carries fields not on the graph nodes: model,
@@ -87,6 +91,7 @@ class MemoryExport(BaseModel):
             "facts": len(self.facts),
             "goals": len(self.goals),
             "strategies": len(self.strategies),
+            "procedures": len(self.procedures),
             "tool_invocations": len(self.tool_invocations),
             "pg_conversation_logs": len(self.pg_conversation_logs),
             "pg_tool_invocations": len(self.pg_tool_invocations),

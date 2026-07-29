@@ -4691,14 +4691,16 @@ class ImporterBatchEmbeddingTest(TestCase):
             facts=[{"claim": "c1"}],
             goals=[],
             strategies=[{"description": "s1"}],
+            procedures=[{"trigger": "when x", "body": "do y"}],
         )
         with patch.object(importer_module, "_IMPORT_EMBED_CHUNK", 2):
             imp._prepare_embeddings(export)
 
-        # turns (3) chunk at 2 → 2 calls; entities/facts/strategies 1 each; goals skipped.
-        self.assertEqual(embedder.embed.call_count, 5)
+        # turns (3) chunk at 2 → 2 calls; entities/facts/strategies/procedures
+        # 1 each; goals skipped.
+        self.assertEqual(embedder.embed.call_count, 6)
         sizes = [len(c.args[0]) for c in embedder.embed.call_args_list]
-        self.assertEqual(sizes, [2, 1, 1, 1, 1])
+        self.assertEqual(sizes, [2, 1, 1, 1, 1, 1])
         self.assertIn("timeout", embedder.embed.call_args.kwargs)
         embedder.embed_single.assert_not_called()
 
@@ -4707,7 +4709,9 @@ class ImporterBatchEmbeddingTest(TestCase):
         self.assertEqual(export.turns[2]["embedding"], [0.0])  # None content → ""
         self.assertEqual(export.entities[0]["embedding"], [float(len("Acme: corp"))])
         self.assertEqual(export.facts[0]["embedding"], [2.0])
-        self.assertEqual(imp._recomputed, 6)
+        # Procedure text = "trigger\nbody" (the learn_procedure derivation).
+        self.assertEqual(export.procedures[0]["embedding"], [float(len("when x\ndo y"))])
+        self.assertEqual(imp._recomputed, 7)
 
 
 class RemoteEmbeddingChunkingTest(TestCase):
@@ -5036,6 +5040,159 @@ class MemoryPortabilityTest(MemoryTestBase):
 
         with self.assertRaises(ValueError):
             MemoryImporter(user_id=self.test_user_id).import_export(payload)
+
+    def test_older_build_rejects_v2_envelope(self):
+        """A schema-1 build must refuse a v2 envelope (it would silently drop
+        procedures) — the twin of the newer-schema test, from the old side."""
+        from unittest.mock import patch as _patch
+
+        from agentx_ai.kit.agent_memory.portability import MemoryImporter
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        memory, _ = self._seed(self.test_user_id, self.test_conversation_id)
+        export = memory.export_memory(channel="_all")
+        self.assertEqual(export.schema_version, 2)
+
+        with _patch(
+            "agentx_ai.kit.agent_memory.portability.importer.SCHEMA_VERSION", 1
+        ):
+            with self.assertRaises(ValueError):
+                MemoryImporter(user_id=self.test_user_id).import_export(export)
+
+    def _seed_procedure(self, scope, trigger="when presenting a recommendation",
+                        conversation_ids=None):
+        from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
+
+        return ProceduralMemory().learn_procedure(
+            trigger=trigger,
+            body="give options with rationales",
+            rationale="the user prefers to weigh alternatives",
+            scope=scope,
+            signal_kinds=["explicit_rule"],
+            evidence_refs=["cand:test"],
+            conversation_ids=conversation_ids or [],
+            user_id=self.test_user_id,
+        )
+
+    def test_procedure_round_trip(self):
+        """Procedures travel: export carries them (text-only, with DISTILLED_FROM
+        ids), import restores node + edges and recomputes the embedding."""
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        memory, _ = self._seed(self.test_user_id, self.test_conversation_id)
+        proc = self._seed_procedure(
+            "_self_test_agent", conversation_ids=[self.test_conversation_id]
+        )
+
+        export = memory.export_memory(channel="_all")
+        self.assertEqual(len(export.procedures), 1)
+        row = export.procedures[0]
+        self.assertEqual(row["id"], proc.id)
+        self.assertFalse(row.get("embedding"))
+        self.assertIn(self.test_conversation_id, row["conversation_ids"])
+
+        self._delete_user(self.test_user_id)
+        self.assertEqual(self._count(self.test_user_id, "Procedure"), 0)
+
+        summary = memory.import_memory(export, mode="merge")
+        self.assertEqual(summary["imported"]["procedures"]["total"], 1)
+        self.assertEqual(self._count(self.test_user_id, "Procedure"), 1)
+        with Neo4jConnection.session() as session:
+            rec = session.run(
+                """
+                MATCH (u:User {id: $uid})-[:HAS_PROCEDURE]->(p:Procedure {id: $pid})
+                OPTIONAL MATCH (p)-[:DISTILLED_FROM]->(c:Conversation)
+                RETURN p.embedding IS NOT NULL AS has_emb, p.channel AS channel,
+                       p.scope AS scope, collect(c.id) AS conv_ids
+                """,
+                uid=self.test_user_id, pid=proc.id,
+            ).single()
+            self.assertIsNotNone(rec)
+            self.assertTrue(rec["has_emb"])
+            self.assertEqual(rec["channel"], "_self_test_agent")
+            self.assertEqual(rec["scope"], "_self_test_agent")
+            self.assertIn(self.test_conversation_id, rec["conv_ids"])
+
+    def test_replace_wipes_procedures_by_scope(self):
+        """Replace-mode wipe removes procedures in the target channel only."""
+        from agentx_ai.kit.agent_memory.portability.schema import (
+            MemoryExport, current_embedder_info,
+        )
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        memory, _ = self._seed(self.test_user_id, self.test_conversation_id)
+        keep = self._seed_procedure("chan_keep", trigger="when keeping")
+        drop = self._seed_procedure("chan_drop", trigger="when dropping")
+        self.assertEqual(self._count(self.test_user_id, "Procedure"), 2)
+
+        empty = MemoryExport(
+            user_id=self.test_user_id, embedder=current_embedder_info()
+        )
+        memory.import_memory(empty, mode="replace", channel="chan_drop")
+
+        with Neo4jConnection.session() as session:
+            rec = session.run(
+                "MATCH (p:Procedure) WHERE p.user_id = $uid "
+                "RETURN collect(p.id) AS ids",
+                uid=self.test_user_id,
+            ).single()
+            self.assertEqual(rec["ids"], [keep.id])
+            self.assertNotIn(drop.id, rec["ids"])
+
+    def test_multi_channel_export_selects_exactly(self):
+        """`channels` exports the named set (+_global by default) and nothing else."""
+        from uuid import uuid4
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        memory, _ = self._seed(
+            self.test_user_id, str(uuid4()), channel="chan_a"
+        )
+        self._seed(self.test_user_id, str(uuid4()), channel="chan_b")
+        self._seed(self.test_user_id, str(uuid4()), channel="chan_c")
+
+        export = memory.export_memory(channels=["chan_a", "chan_b"])
+        self.assertIsNone(export.channel)
+        self.assertEqual(export.channels, ["chan_a", "chan_b"])
+        got = {f["channel"] for f in export.facts}
+        self.assertIn("chan_a", got)
+        self.assertIn("chan_b", got)
+        self.assertNotIn("chan_c", got)
+        conv_chans = {c["channel"] for c in export.conversations}
+        self.assertNotIn("chan_c", conv_chans)
+
+    def test_replace_with_channels_wipes_exactly_those(self):
+        """Replace with a channel set wipes exactly those channels."""
+        from uuid import uuid4
+
+        from agentx_ai.kit.agent_memory.portability.schema import (
+            MemoryExport, current_embedder_info,
+        )
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        memory, _ = self._seed(
+            self.test_user_id, str(uuid4()), channel="chan_a"
+        )
+        self._seed(self.test_user_id, str(uuid4()), channel="chan_b")
+        self._seed(self.test_user_id, str(uuid4()), channel="chan_c")
+
+        empty = MemoryExport(
+            user_id=self.test_user_id, embedder=current_embedder_info()
+        )
+        memory.import_memory(empty, mode="replace", channel=["chan_a", "chan_b"])
+
+        with Neo4jConnection.session() as session:
+            rec = session.run(
+                "MATCH (f:Fact) WHERE f.user_id = $uid "
+                "RETURN collect(DISTINCT f.channel) AS chans",
+                uid=self.test_user_id,
+            ).single()
+            self.assertNotIn("chan_a", rec["chans"])
+            self.assertNotIn("chan_b", rec["chans"])
+            self.assertIn("chan_c", rec["chans"])
 
 
 @skipUnless(docker_services_running(), "Docker services not running")

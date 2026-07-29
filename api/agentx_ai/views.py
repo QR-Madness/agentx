@@ -7488,10 +7488,11 @@ def memory_export(request):
     POST /api/memory/export - Export the user's memory graph to a JSON envelope.
 
     Request body (optional):
-        {"channel": "_global"}
+        {"channel": "_global"} or {"channels": ["_self_x", "_project_y"]}
 
-    `channel` defaults to "_all" (every channel). Exports are text-only —
-    embeddings are regenerated on import.
+    `channel` defaults to "_all" (every channel); `channels` selects a channel
+    set and wins over `channel`. Exports are text-only — embeddings are
+    regenerated on import.
 
     Returns: {"export": <round-trippable envelope>}
     """
@@ -7502,13 +7503,25 @@ def memory_export(request):
         return JsonResponse({'error': 'POST only'}, status=405)
 
     try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body"}, status=400)
+
+    channel = data.get('channel', '_all')
+    channels = data.get('channels')
+    if channels is not None and (
+        not isinstance(channels, list)
+        or not all(isinstance(c, str) for c in channels)
+    ):
+        return JsonResponse(
+            {"error": "'channels' must be a list of channel names"}, status=400
+        )
+
+    try:
         from .kit.agent_memory.memory.interface import AgentMemory
 
-        data = json.loads(request.body) if request.body else {}
-        channel = data.get('channel', '_all')
-
         memory = AgentMemory(user_id=DEFAULT_USER_ID)
-        export = memory.export_memory(channel=channel)
+        export = memory.export_memory(channel=channel, channels=channels)
         return JsonResponse({"export": export.model_dump(mode="json")})
 
     except Exception as e:
@@ -7522,10 +7535,12 @@ def memory_import(request):
     POST /api/memory/import - Import a memory export (idempotent MERGE-on-id).
 
     Request body:
-        {"data": <envelope>, "mode": "merge"|"replace", "channel": "_global"?}
+        {"data": <envelope>, "mode": "merge"|"replace",
+         "channel": "_global"? | "channels": ["_self_x", ...]?}
 
     `mode` defaults to "merge" (upsert). "replace" wipes the target channel for
-    the user first. `channel` overrides the wipe scope for replace mode.
+    the user first. `channel`/`channels` override the wipe scope for replace
+    mode (a list wipes exactly that channel set).
 
     Returns: {"imported": <summary with per-type counts>}
     """
@@ -7552,12 +7567,18 @@ def memory_import(request):
             {"error": "mode must be 'merge' or 'replace'"}, status=400
         )
 
+    wipe_scope = data.get('channels') or data.get('channel')
+    if isinstance(wipe_scope, list) and not all(isinstance(c, str) for c in wipe_scope):
+        return JsonResponse(
+            {"error": "'channels' must be a list of channel names"}, status=400
+        )
+
     try:
         from .kit.agent_memory.memory.interface import AgentMemory
 
         memory = AgentMemory(user_id=DEFAULT_USER_ID)
         summary = memory.import_memory(
-            envelope, mode=mode, channel=data.get('channel')
+            envelope, mode=mode, channel=wipe_scope
         )
         return JsonResponse({"imported": summary})
 

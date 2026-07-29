@@ -65,7 +65,7 @@ class CypherFilterBuilder:
 
     def add_channel_filter(
         self,
-        channel: str | None,
+        channel: str | list[str] | None,
         include_global: bool = True,
     ) -> CypherFilterBuilder:
         """
@@ -76,14 +76,25 @@ class CypherFilterBuilder:
         - If channel is "_global": only _global channel
         - Otherwise: specified channel OR _global (if include_global=True)
 
+        A list selects a channel *set* — the caller binds it as ``$channels``
+        (vs ``$channel`` for a single string). An empty list or one containing
+        "_all" means no filter, mirroring the scalar semantics.
+
         Args:
-            channel: Channel to filter by
+            channel: Channel (or list of channels) to filter by
             include_global: If True, also includes _global channel (default)
 
         Returns:
             self for chaining
         """
-        if channel == "_all" or channel is None:
+        if isinstance(channel, (list, tuple)):
+            if not channel or "_all" in channel:
+                return self
+            cond = f"{self.node_alias}.channel IN $channels"
+            if include_global:
+                cond = f"({cond} OR {self.node_alias}.channel = '_global')"
+            self._conditions.append(cond)
+        elif channel == "_all" or channel is None:
             # No filter - show all channels
             pass
         elif channel == "_global":
@@ -344,11 +355,26 @@ class SQLFilterBuilder:
 
     def add_channel_filter(
         self,
-        channel: str | None,
+        channel: str | list[str] | None,
         include_global: bool = True,
     ) -> SQLFilterBuilder:
-        """Add channel filter with standard semantics."""
-        if channel == "_all" or channel is None:
+        """Add channel filter with standard semantics (list = channel set).
+
+        Lists render as numbered placeholders (``channel IN (:channel_0, …)``)
+        so plain ``text()`` execution works without expanding bindparams.
+        """
+        if isinstance(channel, (list, tuple)):
+            if not channel or "_all" in channel:
+                return self
+            names = []
+            for i, chan in enumerate(channel):
+                names.append(f":channel_{i}")
+                self.params[f"channel_{i}"] = chan
+            cond = f"channel IN ({', '.join(names)})"
+            if include_global:
+                cond = f"({cond} OR channel = '_global')"
+            self._conditions.append(cond)
+        elif channel == "_all" or channel is None:
             pass
         elif channel == "_global":
             self._conditions.append("channel = '_global'")

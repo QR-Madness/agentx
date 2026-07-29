@@ -80,6 +80,7 @@ written artifact re-parses cleanly and its node counts reconcile against the liv
 | Working memory / run state / job queues | **Residue** | Transient by definition |
 | Usage ledger rows | **Stays** (neither) | Billing history is the operator's, not the core's |
 | Tool-output store (Redis) | **Residue** | Debug surface, reproducible |
+| PG `procedure_candidates` | **Residue** | Pre-distillation working signal, regenerable — distilled `Procedure` nodes are the contents (ruled at Slice 0) |
 
 ### Testing cores
 
@@ -99,17 +100,21 @@ argument, `[v0.21.237]`).
 
 ### Known gaps (verified 2026-07-27)
 
-- [ ] **Procedures are not in the export schema** — zero references in `portability/`
-      (grep-verified). Procedural memory silently doesn't travel; a Memory Core bug regardless of
-      this track. → Slice 0.
+- [x] **Procedures are not in the export schema** — fixed `[v0.21.251]` (Slice 0): envelope v2
+      (`SCHEMA_VERSION` 2, hard-gated — a v1 build would silently drop procedures) carries
+      Procedures with `DISTILLED_FROM` conversation ids; import recomputes the
+      `trigger\nbody` embedding and replace-mode wipes them by exact channel. (Procedure nodes
+      carry `channel` + `scope` as twins, so the standard channel filter applies.)
 - [ ] **Avatar cross-store dependency** — profile avatars are `media:{ws}/{doc}` references into
       `ws_home`; an Agent Core must embed the avatar bytes or it imports broken. → Slice 2.
-- [ ] **Multi-channel selection** — the exporter takes one channel or all; cores need a set.
-      → Slice 0.
+- [x] **Multi-channel selection** — done `[v0.21.251]` (Slice 0): `channels` sets on the filter
+      builders (Cypher `IN` / SQL numbered placeholders), exporter (+`include_global` flag for
+      Extract's exact-scope need), replace-wipe, API bodies, and comma-separated `--channel`.
 
 ### Slices
 
 1. **Slice 0 — envelope completeness:** procedures into the export schema; multi-channel selection.
+   — shipped `[v0.21.251]`.
 2. **Slice 1 — Extract:** the verify-before-wipe pipeline + vault + quiesce over Memory Cores;
    promote eval snapshots to named Testing Cores; contents-vs-residue ADR lands.
 3. **Slice 2 — Agent + Skill Cores:** envelopes over profiles (+ avatar bytes + `_self_` slice) and

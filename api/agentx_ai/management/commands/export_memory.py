@@ -42,7 +42,10 @@ class Command(BaseCommand):
             "--channel",
             type=str,
             default="_all",
-            help="Channel to export, or '_all' for every channel (default).",
+            help=(
+                "Channel to export, '_all' for every channel (default), or a "
+                "comma-separated set (e.g. '_self_x,_project_y')."
+            ),
         )
         parser.add_argument(
             "--output",
@@ -59,13 +62,18 @@ class Command(BaseCommand):
 
         user_id = options["user_id"]
         channel = options["channel"]
+        channel_set = _parse_channels(channel)
 
         self.stdout.write(
             f"Exporting memory for user='{user_id}' channel='{channel}'…"
         )
 
         try:
-            export = MemoryExporter(user_id=user_id, channel=channel).export()
+            export = MemoryExporter(
+                user_id=user_id,
+                channel=None if channel_set else channel,
+                channels=channel_set,
+            ).export()
         except Exception as e:  # noqa: BLE001 — surface a clean CLI error
             raise CommandError(f"Export failed: {e}") from e
 
@@ -84,7 +92,16 @@ class Command(BaseCommand):
         if output:
             return Path(output)
         ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        safe_channel = (channel or "_all").lstrip("_") or "all"
+        safe_channel = (
+            (channel or "_all").replace(",", "+").lstrip("_") or "all"
+        )
         # Repo root is two levels up from api/agentx_ai/management/commands/… —
         # use cwd-relative data/ so it matches the rest of the bind-mounted data.
         return Path("data") / "memory_exports" / f"{ts}_{safe_channel}.json"
+
+
+def _parse_channels(channel: str | None) -> list[str] | None:
+    """A comma in --channel selects a channel set; otherwise None (single/all)."""
+    if not channel or "," not in channel:
+        return None
+    return [c.strip() for c in channel.split(",") if c.strip()]
