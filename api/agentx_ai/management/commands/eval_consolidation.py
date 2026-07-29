@@ -308,6 +308,12 @@ class Command(BaseCommand):
                  "(use if a snapshot run crashed between wipe and restore).",
         )
         parser.add_argument(
+            "--snapshot-name", default=None, metavar="NAME",
+            help="Promote the --snapshot to a named Testing Core at "
+                 "data/vault/testing/<NAME>.json (kept for reuse) instead of a "
+                 "throwaway timestamped file.",
+        )
+        parser.add_argument(
             "--keep", action="store_true",
             help="Leave seeded eval data in place after the run (for inspection).",
         )
@@ -679,9 +685,16 @@ class Command(BaseCommand):
         # Snapshot the whole cluster before wiping so we can restore it afterward.
         snapshot_path = None
         if opts["snapshot"]:
-            ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-            snapshot_dir = Path(__file__).resolve().parents[4] / "data" / "eval_snapshots"
-            snapshot_path = self._make_snapshot(snapshot_dir / f"{ts}.json")
+            if opts["snapshot_name"]:
+                from agentx_ai.kit.agent_memory.portability import cluster as _cluster
+                repo_root = Path(__file__).resolve().parents[4]
+                snapshot_path = self._make_snapshot(
+                    repo_root / _cluster.testing_core_path(opts["snapshot_name"])
+                )
+            else:
+                ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+                snapshot_dir = Path(__file__).resolve().parents[4] / "data" / "eval_snapshots"
+                snapshot_path = self._make_snapshot(snapshot_dir / f"{ts}.json")
         if snapshot_path or opts["wipe"]:
             self.stdout.write(self.style.WARNING("Wiping all memory data..."))
             self._wipe()

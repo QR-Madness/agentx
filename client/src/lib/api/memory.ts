@@ -1,5 +1,5 @@
 import { request as apiRequest } from './core';
-import type { CheckpointsResponse, EntitiesResponse, EntityGraph, FactForgetResult, FactProvenance, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryExport, MemoryFactEntity, MemoryImportResult, MemoryFact, MemoryFactPatch, MemoryStats, ProceduresResponse, StrategiesResponse, UserHistoryResponse } from './types';
+import type { CheckpointsResponse, EntitiesResponse, EntityGraph, FactForgetResult, FactProvenance, FactsResponse, MemoryChannel, MemoryEntity, MemoryEntityPatch, MemoryExport, MemoryExtractReceipt, MemoryFactEntity, MemoryImportResult, MemoryFact, MemoryFactPatch, MemoryStats, ProceduresResponse, StrategiesResponse, UserHistoryResponse } from './types';
 
 export const memoryApi = {
   // === Memory Explorer ===
@@ -175,6 +175,21 @@ export const memoryApi = {
     return apiRequest('/api/memory/import', {
       method: 'POST',
       body: JSON.stringify({ data, mode, channel }),
+    });
+  },
+
+  async extractMemory(params: {
+    channels: string[];
+    confirm?: boolean;
+    dryRun?: boolean;
+  }): Promise<{ receipt: MemoryExtractReceipt }> {
+    return apiRequest('/api/memory/extract', {
+      method: 'POST',
+      body: JSON.stringify({
+        channels: params.channels,
+        confirm: params.confirm ?? false,
+        dry_run: params.dryRun ?? false,
+      }),
     });
   },
 };

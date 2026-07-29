@@ -706,6 +706,7 @@ Base URL: `http://localhost:12319/api/`
 | `/api/memory/recall-settings` `/settings` | GET/POST | Get/update recall-layer / memory settings |
 | `/api/memory/consolidate` `/reset` | POST | Trigger consolidation / reset (with confirmation) |
 | `/api/memory/export` `/import` | POST | Round-trippable JSON export / idempotent import (`{data, mode: merge\|replace, channel?\|channels?}`; envelope v2 carries procedures + channel sets); also `task memory:export`/`import` |
+| `/api/memory/extract` | POST | **Extract** — export with verified deletion (`{channels, confirm, dry_run?}`): vault artifact + receipt, wipe (Neo4j + PG mirror) only after verify; channels consolidation-frozen during; also `task memory:extract` |
 | `/api/memory/conversations/{id}/meta` | PATCH | User-set conversation meta overlay (`{title?, archived?}` — `conversation_meta`, Alembic 0007): rename + archive/restore; the execution half of the Ambassador's confirmed-write proposals. Failed persist → honest `503` |
 | `/api/metrics/usage` | GET | Aggregated token/cost/latency from `conversation_logs` (`?days=` 1–90, default 14) |
 | `/api/jobs` `/jobs/{id}` | GET | List background jobs / detail |

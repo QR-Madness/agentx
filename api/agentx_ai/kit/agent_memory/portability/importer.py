@@ -36,6 +36,92 @@ _IMPORT_EMBED_CHUNK = 128
 _IMPORT_EMBED_TIMEOUT_S = 600.0
 
 
+def wipe_channels(tx, user_id: str, channel: str | list[str] | None) -> dict[str, int]:
+    """Scoped DETACH DELETE of `user_id`'s nodes in `channel` (exact match, no
+    _global spill). Accepts a single channel or a channel set; None / "_all"
+    wipes every channel for the user. Returns per-family deleted counts.
+
+    Shared by replace-mode import and Extract (which reconciles these counts
+    against the artifact it just verified).
+    """
+    chan: str | list[str] | None = None if channel in (None, "_all") else channel
+
+    def f(alias: str) -> str:
+        # include_global=False → exact channel match (don't nuke _global).
+        return CypherFilterBuilder(alias).add_channel_filter(
+            chan, include_global=False
+        ).build_inline()
+
+    params = {
+        "user_id": user_id,
+        "channel": chan if isinstance(chan, str) else None,
+        "channels": list(chan) if isinstance(chan, (list, tuple)) else None,
+    }
+    wiped: dict[str, int] = {}
+    for family, label, rel in (
+        ("facts", "Fact", "HAS_FACT"),
+        ("entities", "Entity", "HAS_ENTITY"),
+        ("strategies", "Strategy", "HAS_STRATEGY"),
+        ("goals", "Goal", "HAS_GOAL"),
+        ("procedures", "Procedure", "HAS_PROCEDURE"),
+    ):
+        rec = tx.run(cast(LiteralString, f"""
+            MATCH (u:User {{id: $user_id}})-[:{rel}]->(n:{label})
+            WHERE true {f('n')}
+            DETACH DELETE n
+            RETURN count(n) AS c
+        """), **params).single()
+        wiped[family] = (rec["c"] if rec else 0) or 0
+
+    # Conversations + their turns / tool-invocations / participants.
+    # Count first (same tx — nothing writes in between), then reuse the
+    # proven cascade delete shape.
+    rec = tx.run(cast(LiteralString, f"""
+        MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
+        WHERE true {f('c')}
+        OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
+        OPTIONAL MATCH (c)-[:USED_TOOL]->(inv:ToolInvocation)
+        RETURN count(DISTINCT c) AS convs, count(DISTINCT t) AS turns,
+               count(DISTINCT inv) AS invs
+    """), **params).single()
+    wiped["conversations"] = (rec["convs"] if rec else 0) or 0
+    wiped["turns"] = (rec["turns"] if rec else 0) or 0
+    wiped["tool_invocations"] = (rec["invs"] if rec else 0) or 0
+
+    tx.run(cast(LiteralString, f"""
+        MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
+        WHERE true {f('c')}
+        OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
+        OPTIONAL MATCH (c)-[:USED_TOOL]->(inv:ToolInvocation)
+        OPTIONAL MATCH (ap:AgentParticipant)-[:PARTICIPATED_IN]->(c)
+        DETACH DELETE t, inv, ap, c
+    """), **params)
+    return wiped
+
+
+def wipe_pg_mirror(channel: str | list[str] | None) -> dict[str, int]:
+    """Delete the PostgreSQL audit-mirror rows in `channel` (exact match).
+
+    The mirror tables carry no user column (single-user until auth lands), so
+    None / "_all" clears every row — mirroring the Neo4j wipe-all semantics.
+    Returns per-table deleted counts. Shared by replace-mode import (which
+    previously left the mirror stale — the observed asymmetry) and Extract.
+    """
+    from ..query_utils import SQLFilterBuilder
+
+    chan: str | list[str] | None = None if channel in (None, "_all") else channel
+    counts: dict[str, int] = {}
+    with get_postgres_session() as session:
+        for table in ("conversation_logs", "tool_invocations"):
+            builder = SQLFilterBuilder().add_channel_filter(chan, include_global=False)
+            where = builder.build()
+            result = session.execute(
+                text(f"DELETE FROM {table} {where}"), builder.params  # noqa: S608 — fixed table names, bound params
+            )
+            counts[f"pg_{table}"] = result.rowcount or 0  # pyright: ignore[reportAttributeAccessIssue]
+    return counts
+
+
 class MemoryImporter:
     """Writes a MemoryExport back into the live stores under one user."""
 
@@ -89,6 +175,10 @@ class MemoryImporter:
                 tx.rollback()
                 raise
 
+        # Replace mode also resets the PG mirror for the wiped channel(s) —
+        # leaving it stale was the observed Neo4j/PG asymmetry.
+        pg_wiped = wipe_pg_mirror(wipe_channel) if mode == "replace" else None
+
         pg_logs = self._import_pg_logs(export.pg_conversation_logs)
         pg_tools = self._import_pg_tools(export.pg_tool_invocations)
 
@@ -102,6 +192,8 @@ class MemoryImporter:
             "pg_conversation_logs": pg_logs,
             "pg_tool_invocations": pg_tools,
         }
+        if pg_wiped is not None:
+            summary["pg_wiped"] = pg_wiped
         logger.info("Memory import (user=%s, mode=%s): %s", self.user_id, mode, summary)
         return summary
 
@@ -146,46 +238,8 @@ class MemoryImporter:
     # -- replace-mode wipe ----------------------------------------------
 
     def _wipe(self, tx, channel: str | list[str] | None) -> None:
-        """Scoped DETACH DELETE of the user's nodes in `channel` (exact match, no _global spill).
-
-        Accepts a single channel or a channel set; None / "_all" wipes every
-        channel for the user.
-        """
-        chan: str | list[str] | None = None if channel in (None, "_all") else channel
-
-        def f(alias: str) -> str:
-            # include_global=False → exact channel match (don't nuke _global).
-            return CypherFilterBuilder(alias).add_channel_filter(
-                chan, include_global=False
-            ).build_inline()
-
-        params = {
-            "user_id": self.user_id,
-            "channel": chan if isinstance(chan, str) else None,
-            "channels": list(chan) if isinstance(chan, (list, tuple)) else None,
-        }
-        for label, rel, alias in (
-            ("Fact", "HAS_FACT", "n"),
-            ("Entity", "HAS_ENTITY", "n"),
-            ("Strategy", "HAS_STRATEGY", "n"),
-            ("Goal", "HAS_GOAL", "n"),
-            ("Procedure", "HAS_PROCEDURE", "n"),
-        ):
-            tx.run(cast(LiteralString, f"""
-                MATCH (u:User {{id: $user_id}})-[:{rel}]->(n:{label})
-                WHERE true {f(alias)}
-                DETACH DELETE n
-            """), **params)
-
-        # Conversations + their turns / tool-invocations / participants.
-        tx.run(cast(LiteralString, f"""
-            MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
-            WHERE true {f('c')}
-            OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
-            OPTIONAL MATCH (c)-[:USED_TOOL]->(inv:ToolInvocation)
-            OPTIONAL MATCH (ap:AgentParticipant)-[:PARTICIPATED_IN]->(c)
-            DETACH DELETE t, inv, ap, c
-        """), **params)
+        """Scoped wipe — see the module-level :func:`wipe_channels`."""
+        wipe_channels(tx, self.user_id, channel)
 
     # -- node writers ----------------------------------------------------
 

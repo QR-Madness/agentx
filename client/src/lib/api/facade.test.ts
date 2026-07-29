@@ -95,6 +95,7 @@ describe('api facade', () => {
         "enhancePrompt",
         "enqueueBackgroundChat",
         "exportMemory",
+        "extractMemory",
         "fetchAmbassadorBriefings",
         "fetchAmbassadorThread",
         "fetchDocumentBlob",

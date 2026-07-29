@@ -1207,6 +1207,7 @@ export interface MemoryExport {
   exported_at: string;
   user_id: string;
   channel: string | null;
+  channels?: string[] | null;
   embedder: { provider_model: string; dimensions: number };
   conversations: unknown[];
   turns: unknown[];
@@ -1214,6 +1215,7 @@ export interface MemoryExport {
   facts: unknown[];
   goals: unknown[];
   strategies: unknown[];
+  procedures?: unknown[];
   tool_invocations: unknown[];
   pg_conversation_logs: unknown[];
   pg_tool_invocations: unknown[];
@@ -1227,6 +1229,21 @@ export interface MemoryImportResult {
   imported: Record<string, { created: number; total: number }>;
   pg_conversation_logs: number;
   pg_tool_invocations: number;
+}
+
+/** Receipt of an Extract — export with verified deletion (POST /api/memory/extract). */
+export interface MemoryExtractReceipt {
+  user_id: string;
+  channels: string[];
+  file: string | null;
+  sha256: string | null;
+  counts: Record<string, number>;
+  wiped_counts: Record<string, number>;
+  exported_at: string;
+  verified: boolean;
+  wiped: boolean;
+  dry_run: boolean;
+  error: string | null;
 }
 
 /** Aggregated token/cost/latency usage from conversation_logs (GET /api/metrics/usage). */

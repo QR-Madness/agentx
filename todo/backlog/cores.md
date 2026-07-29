@@ -71,7 +71,10 @@ written artifact re-parses cleanly and its node counts reconcile against the liv
 - **Cross-store sweep:** Neo4j + PG wipe together today; Redis sidecars do not. Extract reuses the
   conversation-DELETE sidecar-clearing sweep and the contents-vs-residue ruling below.
 
-**Proposed contents-vs-residue ruling** (graduates to a Decisions.md ADR when Slice 1 lands):
+**Contents-vs-residue ruling** — ratified as **ADR-14** (`Decisions.md`) with Slice 1
+`[v0.21.252]`, alongside the Extract order + exact-scope invariants. Quiesce v1 is
+consolidation-freeze only (Redis `extract_freeze:*`, fail-open); the deeper `store_turn`
+write-freeze is deliberately deferred.
 
 | Sidecar / store | Ruling | Rationale |
 |-----------------|--------|-----------|
@@ -88,6 +91,11 @@ written artifact re-parses cleanly and its node counts reconcile against the liv
 this slice *promotes* that plumbing to first-class artifacts: named, versioned corpus cores as eval
 fixtures, and **synthetic Memory Cores at 10×/100× scale** for the long-term memory-growth testing
 [Memory-Roadmap.md](../../Memory-Roadmap.md) wants. Cheapest slice, highest immediate payoff.
+
+> Landed `[v0.21.252]`: `cluster.testing_core_path(name)` +
+> `eval_consolidation --snapshot --snapshot-name <name>` promote a run's snapshot to a kept
+> fixture at `data/vault/testing/{name}.json` (restore via `--restore`). The 10×/100× synthetic
+> cores remain open.
 
 ### Construct + marketplace posture
 
@@ -117,6 +125,9 @@ argument, `[v0.21.237]`).
    — shipped `[v0.21.251]`.
 2. **Slice 1 — Extract:** the verify-before-wipe pipeline + vault + quiesce over Memory Cores;
    promote eval snapshots to named Testing Cores; contents-vs-residue ADR lands.
+   — shipped `[v0.21.252]` (`portability/extract.py`, `POST /api/memory/extract`,
+   `task memory:extract`, Workbench Extract action, ADR-14; replace-import's PG-mirror wipe
+   fixed in the same change).
 3. **Slice 2 — Agent + Skill Cores:** envelopes over profiles (+ avatar bytes + `_self_` slice) and
    skills.
 4. **Slice 3 — Project Cores:** blobs + manifest + re-ingest on import.

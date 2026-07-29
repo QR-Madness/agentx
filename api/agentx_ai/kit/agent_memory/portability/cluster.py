@@ -53,6 +53,19 @@ def list_user_ids() -> list[str]:
         return [r["uid"] for r in s.run("MATCH (u:User) RETURN u.id AS uid") if r["uid"]]
 
 
+def testing_core_path(name: str) -> Path:
+    """Vault path for a named **Testing Core** — a promoted, reusable snapshot.
+
+    Naming a snapshot turns a throwaway eval backup into a versioned corpus
+    fixture (``data/vault/testing/{name}.json``) the harnesses can restore
+    repeatedly — see ``todo/backlog/cores.md`` §Testing cores.
+    """
+    safe = "".join(c if (c.isalnum() or c in "-_.") else "-" for c in name).strip("-.")
+    if not safe:
+        raise ValueError(f"Unusable testing-core name: {name!r}")
+    return Path("data") / "vault" / "testing" / f"{safe}.json"
+
+
 def make_snapshot(path: Path | str, log: Log = _noop_log) -> Path:
     """Export every user's full memory into one bundle file (text-only;
     embeddings are regenerated on restore)."""

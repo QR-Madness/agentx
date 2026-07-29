@@ -1212,6 +1212,26 @@ def _fetch_pending_conversations(
     """, only=only_conversation_id)
 
     records = list(result)
+
+    # Channels under an active Extract are consolidation-frozen: a sweep landing
+    # facts mid-extract would be silent loss (they'd miss the verified artifact
+    # yet still be wiped). Fail-open — Redis trouble never stalls consolidation.
+    try:
+        from ..portability.extract import is_channel_frozen
+
+        kept = [
+            r for r in records
+            if not is_channel_frozen(r["user_id"], r["channel"])
+        ]
+        if len(kept) != len(records):
+            logger.info(
+                "Consolidation: skipping %d conversation(s) in extract-frozen channels",
+                len(records) - len(kept),
+            )
+        records = kept
+    except Exception:  # noqa: BLE001
+        pass
+
     logger.info(f"Consolidation: {len(records)} conversations need processing")
     return records, len(conversations_found)
 

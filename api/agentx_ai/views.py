@@ -7591,6 +7591,65 @@ def memory_import(request):
 
 
 @csrf_exempt
+def memory_extract(request):
+    """
+    POST /api/memory/extract - Extract channels out of the live system.
+
+    Export → write to the vault → verify → wipe → receipt, in that order; the
+    wipe never runs unless the written artifact verifies against the live
+    stores. The export is exact-channel (never includes `_global`).
+
+    Request body:
+        {"channels": ["_self_x", ...], "confirm": true, "dry_run": false}
+
+    `dry_run` returns the counts + prospective vault path without writing or
+    wiping. A real run requires `confirm: true` (else 400).
+
+    Returns: {"receipt": {file, sha256, channels, counts, wiped_counts,
+              verified, wiped, ...}}
+    """
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body"}, status=400)
+
+    channels = data.get('channels')
+    if not isinstance(channels, list) or not all(
+        isinstance(c, str) for c in channels
+    ):
+        return JsonResponse(
+            {"error": "'channels' must be a list of channel names"}, status=400
+        )
+
+    dry_run = bool(data.get('dry_run', False))
+    if not dry_run and data.get('confirm') is not True:
+        return JsonResponse(
+            {"error": "Extract wipes the channel(s) — pass \"confirm\": true"},
+            status=400,
+        )
+
+    from .kit.agent_memory.portability import ExtractError, extract_memory
+
+    try:
+        receipt = extract_memory(
+            user_id=DEFAULT_USER_ID, channels=channels, dry_run=dry_run
+        )
+        return JsonResponse({"receipt": receipt.model_dump(mode="json")})
+
+    except ExtractError as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Error extracting memory: {e}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
 def jobs_clear_stuck(request):
     """
     POST /api/jobs/clear-stuck - Clear any jobs stuck in 'running' state.

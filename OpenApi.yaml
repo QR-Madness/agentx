@@ -4925,6 +4925,56 @@ paths:
         '400':
           description: Missing envelope, bad mode, or unsupported schema_version
 
+  /memory/extract:
+    post:
+      tags: [Memory]
+      operationId: memoryExtract
+      summary: Extract channel(s) — export with verified deletion
+      description: >
+        Exports the named channels to the server-side vault (data/vault/),
+        verifies the written artifact against the live stores, and only then
+        wipes those channels (Neo4j + the PostgreSQL mirror), in the strict
+        order export → write → verify → wipe → receipt. The export is
+        exact-channel (never includes _global). On any verify mismatch the
+        artifact is kept and nothing is deleted. Channels are
+        consolidation-frozen for the duration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channels]
+              properties:
+                channels:
+                  type: array
+                  items:
+                    type: string
+                  description: Channels to extract. "_all" is refused.
+                confirm:
+                  type: boolean
+                  description: Required (true) for a real run — extracts wipe live data.
+                dry_run:
+                  type: boolean
+                  default: false
+                  description: Report counts + the prospective vault path; write and wipe nothing.
+      responses:
+        '200':
+          description: The extract receipt under "receipt"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  receipt:
+                    type: object
+                    description: >-
+                      {user_id, channels, file, sha256, counts, wiped_counts,
+                      exported_at, verified, wiped, dry_run, error}
+                    additionalProperties: true
+        '400':
+          description: Bad channels, "_all", or a real run without confirm
+
   /memory/settings:
     get:
       tags: [Memory]

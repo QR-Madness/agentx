@@ -520,6 +520,14 @@ tasks:
     cmds:
       - uv run python api/manage.py import_memory {{.CLI_ARGS}}
 
+  memory:extract:
+    desc: "Extract channel(s) to the vault with verified deletion (export → verify → wipe). Pass --channel a,b [--dry-run|--yes] via CLI_ARGS."
+    deps: [db:up]
+    env:
+      DJANGO_SETTINGS_MODULE: agentx_api.settings
+    cmds:
+      - uv run python api/manage.py extract_memory {{.CLI_ARGS}}
+
   db:status:
     desc: "Show status of database containers"
     cmds:

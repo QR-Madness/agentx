@@ -400,6 +400,34 @@ own preview-deployment header, and overriding it makes previews indexable.
 
 ---
 
+### ADR-14 — Extract's verify-before-wipe order, and the contents-vs-residue ruling
+**Decision:** **Extract** (evicting a channel set from the live system, `portability/extract.py`)
+composes the shipped primitives in one non-negotiable order: **export → write → verify → wipe →
+receipt**. The wipe never runs until the artifact re-parses *from disk* and its per-family counts
+reconcile against the live stores; any mismatch keeps the artifact and deletes **nothing**
+(`verified: false` on the receipt). Three invariants make the verify meaningful:
+1. **Artifact ≡ wiped set.** The export runs exact-channel (`include_global=False`) — the plain
+   export's inclusive default would make the artifact a superset the counts could never reconcile.
+2. **Cross-store together.** The wipe covers Neo4j **and** the PostgreSQL mirror
+   (`wipe_pg_mirror`); replace-mode import adopts the same PG wipe (its Neo4j-only wipe was a
+   latent asymmetry).
+3. **Quiesce during.** Extracted channels are consolidation-frozen (Redis
+   `extract_freeze:{user}:{channel}`, fail-open, TTL-capped) so a sweep can't land facts between
+   export and wipe. Deeper write-freezes (`store_turn`) are deliberately deferred.
+Artifacts + `.receipt.json` sidecars stay in the **vault** (`data/vault/`, bind-mounted); nothing
+hard-deletes them automatically — that grace window is the undo story.
+**Contents vs residue** (what an extracted/deleted conversation-scope takes with it): conversation
+state + rolling summaries are **contents** (travel); ambassador Inquiry threads, working memory /
+run state / job queues, the Redis tool-output store, and PG `procedure_candidates` are **residue**
+(cleared or regenerable — candidates re-stage from live use; distilled `Procedure` nodes are the
+contents); usage-ledger rows are **neither** — billing history belongs to the operator, never to a
+core. **Why:** the wipe is the dangerous half of portability; sequencing + exact-scope equality is
+what makes "dump a core" safe to offer at all, and the residue ruling keeps envelopes portable
+without leaking operator-private surfaces. **Source:** Cores design (`todo/backlog/cores.md`,
+ratified 2026-07-27); Slice 1 implementation + `MemoryExtractTest`.
+
+---
+
 ## Rejected — do not relitigate
 
 Options weighed and declined (with the reason, so they don't return as "good ideas"):
