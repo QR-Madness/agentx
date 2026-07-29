@@ -4909,6 +4909,7 @@ class DedupeEntitiesAliasMergeTest(TestCase):
 
 
 @skipUnless(docker_services_running(), "Docker services not running")
+@skipUnless(docker_services_running(), "Docker services not running")
 class MemoryPortabilityTest(MemoryTestBase):
     """Round-trippable memory export/import (kit.agent_memory.portability).
 
@@ -5229,6 +5230,7 @@ class MemoryPortabilityTest(MemoryTestBase):
             self.assertIn("chan_c", rec["chans"])
 
 
+@skipUnless(docker_services_running(), "Docker services not running")
 class MemoryExtractTest(MemoryTestBase):
     """Extract — export with verified deletion (portability.extract).
 
