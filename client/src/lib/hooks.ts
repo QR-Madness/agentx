@@ -30,6 +30,7 @@ import {
   ConsolidateResult,
   MemoryExport,
   MemoryImportResult,
+  MemoryExtractReceipt,
 } from './api';
 
 export interface UseApiOptions {
@@ -735,6 +736,34 @@ export function useImportMemory() {
       try {
         const res = await api.importMemory(data, mode, channel);
         return res.imported;
+      } catch (err) {
+        setError(err as ApiError);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
+
+  return { mutate, loading, error };
+}
+
+export function useExtractMemory() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+
+  const mutate = useCallback(
+    async (params: {
+      channels: string[];
+      confirm?: boolean;
+      dryRun?: boolean;
+    }): Promise<MemoryExtractReceipt | null> => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await api.extractMemory(params);
+        return res.receipt;
       } catch (err) {
         setError(err as ApiError);
         return null;

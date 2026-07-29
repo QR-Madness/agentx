@@ -1470,9 +1470,30 @@ Restores an export idempotently by `MERGE`-ing each node on its stable id. Embed
 - `mode`: `"merge"` (default) upserts and leaves other data untouched; `"replace"` wipes the target channel for the user first, so it ends up matching the file exactly.
 - `channel` / `channels`: overrides the wipe scope for `replace` mode (defaults to the file's channel(s)); a `channels` list wipes exactly that channel set.
 
-**Response:** `{"imported": {"mode", "channel", "recomputed_embeddings", "imported": {<type>: {"created", "total"}}, ...}}`. Returns `400` for a missing envelope, bad `mode`, or an unsupported (newer) `schema_version`.
+**Response:** `{"imported": {"mode", "channel", "recomputed_embeddings", "imported": {<type>: {"created", "total"}}, ...}}`. Returns `400` for a missing envelope, bad `mode`, or an unsupported (newer) `schema_version`. Replace mode also resets the PostgreSQL audit mirror for the wiped channel(s) (`pg_wiped` in the summary).
 
 Scriptable equivalent: `task memory:import -- --input snapshot.json --mode replace --channel _global`.
+
+### Extract Memory
+
+```
+POST /api/memory/extract
+```
+
+**Extract** = export with **verified deletion**: serializes the named channels to the server-side vault (`data/vault/`), verifies the written artifact against the live stores, and only then wipes those channels from Neo4j **and** the PostgreSQL mirror — in the strict order *export → write → verify → wipe → receipt*. The export is exact-channel (never includes `_global`), so the artifact equals the wiped set. On any verify mismatch the artifact is kept and **nothing is deleted**. Channels are consolidation-frozen while the extract runs.
+
+**Request:**
+```json
+{"channels": ["_self_myagent"], "confirm": true, "dry_run": false}
+```
+
+- `channels`: the channels to extract (`"_all"` is refused — name them explicitly).
+- `confirm`: must be `true` for a real run (`400` otherwise).
+- `dry_run`: report counts + the prospective vault path; write and wipe nothing (no `confirm` needed).
+
+**Response:** `{"receipt": {"file", "sha256", "channels", "counts", "wiped_counts", "verified", "wiped", "dry_run", "error"}}`. The artifact and a `.receipt.json` sidecar stay in the vault (nothing hard-deletes them automatically).
+
+Scriptable equivalent: `task memory:extract -- --channel _self_myagent --yes` (preview with `--dry-run`). Client: Memory Workbench header → **Extract** (enabled when a specific channel is selected; shows the dry-run counts before confirming).
 
 ### Detail & Streaming Endpoints
 

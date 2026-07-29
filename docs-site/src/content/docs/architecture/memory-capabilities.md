@@ -44,6 +44,7 @@ each one and how it feeds the others.
 | Manual fact↔entity link | lifecycle | shipped | `link_fact_to_entity` / `unlink_fact_from_entity` (`memory/semantic.py`); `POST/DELETE /api/memory/facts/{id}/entities` | per fact |
 | Agent-attribution backfill | lifecycle | shipped | `backfill_agent_attribution` (mgmt cmd) | `_self_{agent_id}` |
 | Portability (export/import) | ops | shipped | `MemoryExporter` / `MemoryImporter` (v2 envelope: + procedures) | channel set / `_all` |
+| Extract (verified deletion) | ops | shipped | `extract_memory` (`portability/extract.py`); `POST /api/memory/extract` | exact channel set (never `_global`) |
 | Debug harness | ops | shipped | `debug_attribution` (mgmt cmd) | scenario-scoped |
 
 ## How the pieces connect
@@ -239,7 +240,9 @@ double-compress the same content).
   orphaned fact→entity edges; **agent-attribution backfill** renames legacy generic "Agent …"
   facts to the agent's name. **Portability** round-trips a user's memory as JSON — the v2
   envelope carries every node family *including distilled procedures*, and exports/wipes
-  accept a channel **set** (the substrate for Memory Cores). The
+  accept a channel **set** (the substrate for Memory Cores). **Extract** takes a channel set
+  *out* of the live system: export to the vault → verify the artifact → only then wipe
+  (Neo4j + PG mirror together), with the channels consolidation-frozen for the duration. The
   **debug harness** (below) drives the whole pipeline end-to-end.
 
 ### Debug harness

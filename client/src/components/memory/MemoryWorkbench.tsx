@@ -14,12 +14,15 @@ import { useState, useRef, useEffect } from 'react';
 import {
   LayoutDashboard, Users, FileText, Zap, ListChecks, GitBranch, History, Clock,
   Search, RefreshCw, ChevronLeft, X, Download, Upload, AlertTriangle, Check,
+  PackageOpen,
 } from 'lucide-react';
 import { MemoryIcon } from '../common/MemoryIcon';
 import {
   useMemoryEntities, useMemoryFacts, useMemoryStrategies, useMemoryProcedures,
   useMemoryStats, useMemoryChannels, useConsolidate, useExportMemory, useImportMemory,
+  useExtractMemory,
 } from '../../lib/hooks';
+import { useConfirm } from '../ui/ConfirmDialog';
 import { useIsMobile } from '../../lib/hooks';
 import type { MemoryExport, MemoryFact, MemoryStrategy, MemoryProcedure } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
@@ -78,6 +81,8 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
   const { consolidate, loading: consolidating } = useConsolidate();
   const { mutate: exportMemory, loading: exporting } = useExportMemory();
   const { mutate: importMemory, loading: importing } = useImportMemory();
+  const { mutate: extractMemory, loading: extracting } = useExtractMemory();
+  const confirm = useConfirm();
   const { notifySuccess, notifyError } = useNotify();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -167,6 +172,44 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
     if (!data) { notifyError('Could not export memory', 'Export failed'); return; }
     downloadJson(data, `agentx-memory-${fileTimestamp()}.json`);
     notifySuccess('Memory snapshot downloaded', 'Export complete');
+  };
+
+  const handleExtract = async () => {
+    if (channel === ALL_CHANNELS) return;
+    const dry = await extractMemory({ channels: [channel], dryRun: true });
+    if (!dry) { notifyError('Could not preview the extract', 'Extract failed'); return; }
+    const total = Object.values(dry.counts).reduce((sum, n) => sum + n, 0);
+    const ok = await confirm({
+      title: `Extract "${channel}"?`,
+      body: (
+        <>
+          <p>
+            Exports this channel to the vault, <strong>verifies the artifact</strong>,
+            then <strong>removes it from live memory</strong> ({total} item{total === 1 ? '' : 's'}:
+            {' '}{Object.entries(dry.counts).filter(([, n]) => n > 0)
+              .map(([k, n]) => `${n} ${k}`).join(', ') || 'empty'}).
+          </p>
+          <p>The artifact stays on the server at <code>{dry.file}</code> — nothing is deleted unless it verifies.</p>
+        </>
+      ),
+      confirmLabel: 'Extract',
+      danger: true,
+    });
+    if (!ok) return;
+    const receipt = await extractMemory({ channels: [channel], confirm: true });
+    if (!receipt) { notifyError('Could not extract the channel', 'Extract failed'); return; }
+    if (!receipt.verified || !receipt.wiped) {
+      notifyError(receipt.error ?? 'Verify failed — nothing was deleted; the artifact was kept.', 'Extract aborted');
+      return;
+    }
+    notifySuccess(`Extracted ${channel} to the vault (${receipt.file})`, 'Extract complete');
+    setChannel(ALL_CHANNELS);
+    setCurrentPage(1);
+    clearSelection();
+    refreshStats();
+    refreshChannels();
+    refreshEntities();
+    refreshFacts();
   };
 
   const handleFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -391,6 +434,14 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
             <Button variant="ghost" onClick={() => fileInputRef.current?.click()} disabled={importing}
               title="Import a memory snapshot from JSON">
               <Upload size={16} /><span className="mem-action-label"> Import</span>
+            </Button>
+            <Button variant="ghost" onClick={handleExtract}
+              disabled={extracting || channel === ALL_CHANNELS}
+              title={channel === ALL_CHANNELS
+                ? 'Select a channel to extract it to the vault'
+                : 'Extract this channel: export to the vault, verify, then remove it from live memory'}>
+              {extracting ? <RefreshCw size={16} className="spin" /> : <PackageOpen size={16} />}
+              <span className="mem-action-label"> Extract</span>
             </Button>
             <Button variant="ghost" onClick={() => { refreshStats(); refreshChannels(); refreshEntities(); refreshFacts(); }}
               disabled={statsLoading} title="Refresh">

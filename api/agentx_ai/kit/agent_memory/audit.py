@@ -54,6 +54,9 @@ class OperationType(str, Enum):
     # Cross-channel operations
     PROMOTE = "promote"
 
+    # Portability operations (Extract = export with verified deletion)
+    EXTRACT = "extract"
+
     # Consolidation operations
     JOB_RUN = "job_run"
 
@@ -77,6 +80,7 @@ def _is_write_operation(operation: str) -> bool:
         OperationType.DELETE.value,
         OperationType.RECORD.value,
         OperationType.PROMOTE.value,
+        OperationType.EXTRACT.value,
         OperationType.JOB_RUN.value,
     }
 

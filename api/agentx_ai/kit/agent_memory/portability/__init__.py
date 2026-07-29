@@ -9,6 +9,8 @@ deterministic, diffable, and portable across embedding models.
 Public surface:
     - ``SCHEMA_VERSION`` / ``MemoryExport`` (envelope)
     - ``MemoryExporter`` / ``MemoryImporter``
+    - ``extract_memory`` / ``ExtractReceipt`` — Extract: export with verified
+      deletion (export → write → verify → wipe → receipt; wipe never first)
     - ``current_embedder_info`` (provider/model + dims for the envelope)
     - ``cluster`` — cluster-wide snapshot/wipe/restore shared by the eval harnesses
 """
@@ -17,6 +19,7 @@ from . import cluster
 from .schema import SCHEMA_VERSION, MemoryExport, EmbedderInfo, current_embedder_info
 from .exporter import MemoryExporter
 from .importer import MemoryImporter, ImportMode
+from .extract import ExtractError, ExtractReceipt, extract_memory
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -26,5 +29,8 @@ __all__ = [
     "MemoryExporter",
     "MemoryImporter",
     "ImportMode",
+    "ExtractError",
+    "ExtractReceipt",
+    "extract_memory",
     "cluster",
 ]

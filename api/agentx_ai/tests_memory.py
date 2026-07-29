@@ -4910,10 +4910,44 @@ class DedupeEntitiesAliasMergeTest(TestCase):
 
 @skipUnless(docker_services_running(), "Docker services not running")
 class MemoryPortabilityTest(MemoryTestBase):
-    """Round-trippable memory export/import (kit.agent_memory.portability)."""
+    """Round-trippable memory export/import (kit.agent_memory.portability).
+
+    Runs against the live cluster — tearDown removes everything the test
+    seeded (Neo4j by user, the PG mirror by seeded conversation ids) so
+    repeated runs leave no residue.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._seeded_conversations: list[str] = []
+
+    def tearDown(self):
+        if docker_services_running():
+            try:
+                self._delete_user(self.test_user_id)
+                if self._seeded_conversations:
+                    from sqlalchemy import bindparam
+                    from sqlalchemy import text as sql_text
+
+                    from agentx_ai.kit.agent_memory.connections import (
+                        get_postgres_session,
+                    )
+                    with get_postgres_session() as session:
+                        for table in ("conversation_logs", "tool_invocations"):
+                            session.execute(
+                                sql_text(
+                                    f"DELETE FROM {table} "  # noqa: S608 — fixed table names, bound params
+                                    "WHERE conversation_id::text IN :ids"
+                                ).bindparams(bindparam("ids", expanding=True)),
+                                {"ids": self._seeded_conversations},
+                            )
+            except Exception:  # cleanup must never fail a test on its own
+                pass
+        super().tearDown()
 
     def _seed(self, user_id, conversation_id, channel="_global"):
         """Write a turn + entity + fact (linked) for `user_id`. Returns (memory, ids)."""
+        self._seeded_conversations.append(conversation_id)
         memory = AgentMemory(
             user_id=user_id, conversation_id=conversation_id, channel=channel
         )
@@ -5195,6 +5229,268 @@ class MemoryPortabilityTest(MemoryTestBase):
             self.assertIn("chan_c", rec["chans"])
 
 
+class MemoryExtractTest(MemoryTestBase):
+    """Extract — export with verified deletion (portability.extract).
+
+    The invariant under test everywhere: the wipe NEVER runs unless the
+    written artifact verified against the live stores.
+
+    Channel names are static, and the PG mirror has no user column — so these
+    tests scrub their channels in BOTH setUp and tearDown (live-cluster
+    integration tests must not accumulate residue across runs).
+    """
+
+    _CHANNELS = (
+        "chan_ext_a", "chan_ext_b", "chan_ext_corrupt", "chan_ext_dry",
+        "chan_ext_frz", "chan_pg_wipe",
+    )
+
+    def setUp(self):
+        super().setUp()
+        self._scrub()
+
+    def tearDown(self):
+        self._scrub()
+        super().tearDown()
+
+    def _scrub(self):
+        if not docker_services_running():
+            return
+        from sqlalchemy import bindparam
+        from sqlalchemy import text as sql_text
+
+        from agentx_ai.kit.agent_memory.connections import get_postgres_session
+        try:
+            with Neo4jConnection.session() as session:
+                session.run(
+                    "MATCH (n) WHERE n.channel IN $chans DETACH DELETE n",
+                    chans=list(self._CHANNELS),
+                ).consume()
+                session.run(
+                    "MATCH (n) WHERE n.user_id = $uid DETACH DELETE n",
+                    uid=self.test_user_id,
+                ).consume()
+            with get_postgres_session() as session:
+                for table in ("conversation_logs", "tool_invocations"):
+                    session.execute(
+                        sql_text(f"DELETE FROM {table} WHERE channel IN :chans")  # noqa: S608 — fixed table names, bound params
+                        .bindparams(bindparam("chans", expanding=True)),
+                        {"chans": list(self._CHANNELS)},
+                    )
+        except Exception:  # cleanup must never fail a test on its own
+            pass
+
+    def _seed_channel(self, channel):
+        """Turn + entity + fact in `channel` (unique conversation). Returns ids."""
+        from uuid import uuid4
+
+        conversation_id = str(uuid4())
+        memory = AgentMemory(
+            user_id=self.test_user_id, conversation_id=conversation_id,
+            channel=channel,
+        )
+        turn = Turn(
+            conversation_id=conversation_id, index=0, role="user",
+            content=f"Seed content for {channel}.",
+            timestamp=datetime.now(UTC),
+        )
+        memory.store_turn(turn)
+        entity = Entity(name=f"Topic {channel}", type="Concept", description="seed")
+        memory.upsert_entity(entity)
+        fact = memory.learn_fact(
+            f"A seeded fact in {channel}", source="user_stated", confidence=0.9,
+            entity_ids=[entity.id], source_turn_id=turn.id,
+        )
+        return {"conversation": conversation_id, "turn": turn.id,
+                "entity": entity.id, "fact": fact.id, "memory": memory}
+
+    def _count_channel(self, label, channel):
+        with Neo4jConnection.session() as session:
+            rec = session.run(
+                f"MATCH (n:{label}) WHERE n.user_id = $uid AND n.channel = $chan "
+                "RETURN count(n) AS c",
+                uid=self.test_user_id, chan=channel,
+            ).single()
+            return rec["c"] if rec else 0
+
+    def _pg_log_count(self, channel):
+        from sqlalchemy import text as sql_text
+
+        from agentx_ai.kit.agent_memory.connections import get_postgres_session
+        with get_postgres_session() as session:
+            row = session.execute(
+                sql_text("SELECT count(*) AS c FROM conversation_logs WHERE channel = :c"),
+                {"c": channel},
+            ).first()
+            return row.c if row else 0
+
+    def test_extract_happy_path(self):
+        """export → verify → wipe → receipt: the channel leaves the live stores,
+        the artifact + receipt land in the vault, other channels are untouched."""
+        import hashlib
+        import tempfile
+        from pathlib import Path
+
+        from agentx_ai.kit.agent_memory.portability import extract_memory
+        from agentx_ai.kit.agent_memory.portability.extract import is_channel_frozen
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        self._seed_channel("chan_ext_a")
+        self._seed_channel("chan_ext_b")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            receipt = extract_memory(
+                self.test_user_id, ["chan_ext_a"], vault_dir=tmp
+            )
+
+            self.assertTrue(receipt.verified)
+            self.assertTrue(receipt.wiped)
+            self.assertIsNone(receipt.error)
+            path = Path(receipt.file)
+            self.assertTrue(path.exists())
+            self.assertEqual(
+                receipt.sha256, hashlib.sha256(path.read_bytes()).hexdigest()
+            )
+            self.assertTrue(path.with_suffix(".receipt.json").exists())
+            # Artifact counts = what was wiped (facts/entities/turns seeded 1 each).
+            self.assertEqual(receipt.counts["facts"], 1)
+            self.assertEqual(receipt.wiped_counts["facts"], 1)
+            self.assertEqual(receipt.wiped_counts["conversations"], 1)
+            self.assertGreaterEqual(receipt.wiped_counts["pg_conversation_logs"], 1)
+
+        # Live stores: chan_ext_a gone, chan_ext_b intact — Neo4j AND PG mirror.
+        self.assertEqual(self._count_channel("Fact", "chan_ext_a"), 0)
+        self.assertEqual(self._count_channel("Turn", "chan_ext_a"), 0)
+        self.assertEqual(self._count_channel("Fact", "chan_ext_b"), 1)
+        self.assertEqual(self._pg_log_count("chan_ext_a"), 0)
+        self.assertEqual(self._pg_log_count("chan_ext_b"), 1)
+        self.assertFalse(is_channel_frozen(self.test_user_id, "chan_ext_a"))
+
+    def test_extract_verify_failure_wipes_nothing(self):
+        """A corrupt write → verified=False, artifact kept, NOTHING deleted,
+        freeze released."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch as _patch
+
+        from agentx_ai.kit.agent_memory.portability import extract_memory
+        from agentx_ai.kit.agent_memory.portability import extract as extract_mod
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        self._seed_channel("chan_ext_corrupt")
+
+        def corrupt_write(path, export):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(export.model_dump_json()[:40], encoding="utf-8")
+            return "deadbeef"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with _patch.object(extract_mod, "_write_artifact", side_effect=corrupt_write):
+                receipt = extract_memory(
+                    self.test_user_id, ["chan_ext_corrupt"], vault_dir=tmp
+                )
+
+            self.assertFalse(receipt.verified)
+            self.assertFalse(receipt.wiped)
+            self.assertIn("verify failed", receipt.error or "")
+            self.assertTrue(Path(receipt.file).exists())  # artifact kept
+
+        self.assertEqual(self._count_channel("Fact", "chan_ext_corrupt"), 1)
+        self.assertEqual(self._count_channel("Turn", "chan_ext_corrupt"), 1)
+        self.assertEqual(self._pg_log_count("chan_ext_corrupt"), 1)
+        self.assertFalse(
+            extract_mod.is_channel_frozen(self.test_user_id, "chan_ext_corrupt")
+        )
+
+    def test_extract_dry_run_touches_nothing(self):
+        """dry_run reports counts + the prospective path; no file, no wipe."""
+        import tempfile
+        from pathlib import Path
+
+        from agentx_ai.kit.agent_memory.portability import extract_memory
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        self._seed_channel("chan_ext_dry")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            receipt = extract_memory(
+                self.test_user_id, ["chan_ext_dry"], vault_dir=tmp, dry_run=True
+            )
+            self.assertTrue(receipt.dry_run)
+            self.assertFalse(receipt.wiped)
+            self.assertEqual(receipt.counts["facts"], 1)
+            self.assertIsNotNone(receipt.file)
+            self.assertFalse(Path(receipt.file).exists())
+
+        self.assertEqual(self._count_channel("Fact", "chan_ext_dry"), 1)
+        self.assertEqual(self._pg_log_count("chan_ext_dry"), 1)
+
+    def test_freeze_key_set_during_and_cleared_after(self):
+        """The channel is consolidation-frozen while the extract runs."""
+        import tempfile
+        from unittest.mock import patch as _patch
+
+        from agentx_ai.kit.agent_memory.portability import extract_memory
+        from agentx_ai.kit.agent_memory.portability import extract as extract_mod
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        self._seed_channel("chan_ext_frz")
+
+        seen = {}
+        real_write = extract_mod._write_artifact
+
+        def spy_write(path, export):
+            seen["frozen_mid_run"] = extract_mod.is_channel_frozen(
+                self.test_user_id, "chan_ext_frz"
+            )
+            return real_write(path, export)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with _patch.object(extract_mod, "_write_artifact", side_effect=spy_write):
+                extract_memory(self.test_user_id, ["chan_ext_frz"], vault_dir=tmp)
+
+        self.assertTrue(seen["frozen_mid_run"])
+        self.assertFalse(
+            extract_mod.is_channel_frozen(self.test_user_id, "chan_ext_frz")
+        )
+
+    def test_extract_rejects_all_and_empty(self):
+        from agentx_ai.kit.agent_memory.portability import ExtractError, extract_memory
+
+        with self.assertRaises(ExtractError):
+            extract_memory(self.test_user_id, [])
+        with self.assertRaises(ExtractError):
+            extract_memory(self.test_user_id, ["_all"])
+
+    def test_replace_import_wipes_pg_mirror(self):
+        """Replace-mode import now resets the PG mirror for the wiped channel
+        (previously only Neo4j was wiped — the observed asymmetry)."""
+        from agentx_ai.kit.agent_memory.portability.schema import (
+            MemoryExport, current_embedder_info,
+        )
+
+        if not embeddings_compatible():
+            self.skipTest("Embedding dimensions mismatch")
+        seeded = self._seed_channel("chan_pg_wipe")
+        self.assertEqual(self._pg_log_count("chan_pg_wipe"), 1)
+
+        empty = MemoryExport(
+            user_id=self.test_user_id, embedder=current_embedder_info()
+        )
+        summary = seeded["memory"].import_memory(
+            empty, mode="replace", channel="chan_pg_wipe"
+        )
+
+        self.assertIn("pg_wiped", summary)
+        self.assertEqual(summary["pg_wiped"]["pg_conversation_logs"], 1)
+        self.assertEqual(self._pg_log_count("chan_pg_wipe"), 0)
+        self.assertEqual(self._count_channel("Fact", "chan_pg_wipe"), 0)
+
+
 @skipUnless(docker_services_running(), "Docker services not running")
 class EvalSnapshotRestoreTest(MemoryTestBase):
     """eval_consolidation --snapshot/--restore: cluster snapshot bundle + per-user restore.
@@ -5272,6 +5568,18 @@ class EvalSnapshotRestoreTest(MemoryTestBase):
         finally:
             snap_path.unlink(missing_ok=True)
             self._delete_user(self.test_user_id)
+            # The PG mirror has no user column — clear the seeded rows too.
+            from sqlalchemy import text as sql_text
+
+            from agentx_ai.kit.agent_memory.connections import get_postgres_session
+            with get_postgres_session() as session:
+                session.execute(
+                    sql_text(
+                        "DELETE FROM conversation_logs "
+                        "WHERE conversation_id::text = :cid"
+                    ),
+                    {"cid": self.test_conversation_id},
+                )
 
 
 class BackfillAgentAttributionRenameTest(TestCase):
