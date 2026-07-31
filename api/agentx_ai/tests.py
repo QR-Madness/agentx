@@ -20443,13 +20443,24 @@ class ProviderCatalogTest(TestCase):
         self.assertTrue(BUILTIN_IDS <= ids)
         self.assertIn("groq", ids)
 
-    def test_configured_requires_a_credential_and_enablement(self):
+    def test_keyless_custom_endpoint_is_configured(self):
+        """Ollama / vLLM / llama.cpp authenticate nothing.
+
+        Requiring a key here would let a user register a local endpoint that
+        then silently never loaded (the registry skips unconfigured entries).
+        """
+        from agentx_ai.providers.catalog import custom_entries, upsert_custom
+
+        upsert_custom("ollama", {"base_url": "http://localhost:11434/v1"}, self.cfg)
+        entry = custom_entries(self.cfg)["ollama"]
+        self.assertIsNone(entry.api_key)
+        self.assertTrue(entry.configured)
+
+    def test_disabling_an_entry_unconfigures_it(self):
         from agentx_ai.providers.catalog import custom_entries, upsert_custom
 
         upsert_custom("nokey", {"base_url": "https://x.test/v1"}, self.cfg)
-        # An OpenAI-compatible endpoint may legitimately need no key (local vLLM),
-        # so a base URL alone counts as configured for a custom entry.
-        self.assertTrue(custom_entries(self.cfg)["nokey"].base_url)
+        self.assertTrue(custom_entries(self.cfg)["nokey"].configured)
         upsert_custom("nokey", {"api_key": "k", "enabled": False}, self.cfg)
         self.assertFalse(custom_entries(self.cfg)["nokey"].configured)
 

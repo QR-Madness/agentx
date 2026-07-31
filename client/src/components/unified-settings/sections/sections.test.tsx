@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 // The two rebuilt sections depend on server/notification contexts + the api
 // client; mock them so the components render in isolation. The hook return
@@ -8,10 +9,20 @@ import { render, screen } from '@testing-library/react';
 vi.mock('../../../contexts/ServerContext', () => {
   const value = {
     activeServer: { id: 's1', name: 'Local' },
-    activeMetadata: { apiKeys: {} },
+    activeMetadata: {},
     updateMetadata: vi.fn(),
   };
   return { useServer: () => value };
+});
+
+// ProvidersSection's Supply Line reads the active agent's model to resolve a
+// route. Stable singleton — a fresh object per render would re-fire the effect.
+vi.mock('../../../contexts/AgentProfileContext', () => {
+  const value = {
+    activeProfile: { id: 'p1', name: 'X1', defaultModel: 'openrouter:test-model' },
+    profiles: [],
+  };
+  return { useAgentProfile: () => value };
 });
 
 vi.mock('../../../contexts/NotificationContext', () => {
@@ -82,7 +93,55 @@ vi.mock('../../../lib/api', () => ({
       embeddings: { provider: 'local', model: 'BAAI/bge-m3', dimensions: 1024 },
       translation: { status: 'not_loaded', models: {} },
     }),
+    // The rebuilt Providers surface is catalog-driven: the list, the key
+    // fingerprints and the reachability all come from the server.
+    getProviderCatalog: vi.fn().mockResolvedValue({
+      count: 5,
+      configured: 1,
+      providers: [
+        { id: 'openrouter', kind: 'openrouter', label: 'OpenRouter', base_url: null,
+          key_fingerprint: '····4991', header_names: [], enabled: true, builtin: true,
+          credential: 'api_key', configured: true },
+        { id: 'anthropic', kind: 'anthropic', label: 'Anthropic', base_url: null,
+          key_fingerprint: null, header_names: [], enabled: true, builtin: true,
+          credential: 'api_key', configured: false },
+        { id: 'openai', kind: 'openai_compatible', label: 'OpenAI', base_url: null,
+          key_fingerprint: null, header_names: [], enabled: true, builtin: true,
+          credential: 'api_key', configured: false },
+        { id: 'vercel', kind: 'vercel', label: 'Vercel AI Gateway', base_url: null,
+          key_fingerprint: null, header_names: [], enabled: true, builtin: true,
+          credential: 'api_key', configured: false },
+        { id: 'lmstudio', kind: 'lmstudio', label: 'LM Studio', base_url: null,
+          key_fingerprint: null, header_names: [], enabled: true, builtin: true,
+          credential: 'base_url', configured: false },
+      ],
+    }),
+    checkProvidersHealth: vi.fn().mockResolvedValue({
+      status: 'degraded',
+      providers: { openrouter: { status: 'healthy', models_available: 364 } },
+    }),
+    getProviderRoute: vi.fn().mockResolvedValue({
+      requested: 'openrouter:test-model',
+      resolved: {
+        model: 'openrouter:test-model', provider: 'openrouter', provider_label: 'OpenRouter',
+        model_id: 'test-model', configured: true, healthy: true, known: true,
+        context_window: 1_000_000, max_output_tokens: 64_000,
+        cost_per_1k_input: 0.003, cost_per_1k_output: 0.015,
+      },
+      substituted: false,
+      candidates: [],
+      fallback_enabled: true,
+    }),
+    testProvider: vi.fn().mockResolvedValue({
+      reachable: true, base_url: 'https://x.test/v1', elapsed_ms: 12,
+      models_available: 3, models: [], error: null,
+    }),
+    saveCustomProvider: vi.fn().mockResolvedValue({ provider: {} }),
+    deleteCustomProvider: vi.fn().mockResolvedValue({
+      status: 'deleted', id: 'groq', referencing_profiles: [],
+    }),
   },
+  apiErrorMessage: (error: unknown) => String(error),
 }));
 
 // ModelsSection now embeds ModelPickerField, whose effect fetches the model
@@ -103,24 +162,60 @@ import ModelRolesSection from './ModelRolesSection';
 import { SECTION_HIERARCHY, getAllSections, findSectionById } from './index';
 
 describe('ProvidersSection', () => {
-  it('renders the provider cards, badges and a save action', () => {
+  it('renders every catalog entry with its badge and a save action', async () => {
     render(<ProvidersSection />);
-    // All five providers present.
+    // The list is catalog-driven now, so all five arrive from the server mock.
     for (const name of ['LM Studio', 'Anthropic', 'OpenAI', 'OpenRouter', 'Vercel AI Gateway']) {
-      expect(screen.getByText(name)).toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: `${name} connection settings` })).toBeInTheDocument();
     }
-    // Capability-tier badges (OpenRouter primary, Anthropic/OpenAI/Vercel beta,
-    // LM Studio local). "Beta"/"Local" also appear as tier group eyebrows, so
-    // count tolerantly (3 beta badges + eyebrow; 1 local badge + eyebrow).
     expect(screen.getByText('Recommended')).toBeInTheDocument();
-    expect(screen.getAllByText('Beta').length).toBeGreaterThanOrEqual(3);
-    expect(screen.getAllByText('Local').length).toBeGreaterThanOrEqual(1);
-    // Save button is a real <button> via the Button primitive, and starts
-    // disabled because the form matches the last-loaded state (not dirty).
+    // Tier eyebrows are gone — the tier lives only on the card badge now, so
+    // these counts are exact rather than "at least".
+    expect(screen.getAllByText('Beta')).toHaveLength(3);
+    expect(screen.getAllByText('Local')).toHaveLength(1);
+    // Secrets save explicitly; nothing is dirty on first paint.
     const save = screen.getByRole('button', { name: /save to server/i });
-    expect(save).toBeInTheDocument();
     expect(save).toBeDisabled();
     expect(screen.queryByText('Unsaved changes')).toBeNull();
+  });
+
+  it('leads with connection state rather than an identical box per provider', async () => {
+    render(<ProvidersSection />);
+    // Reachable provider reports its catalog size; the rest say they're not set up.
+    expect(await screen.findByText(/364 models available/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Not connected\. Add a key/).length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText(/Not connected\. Add a server URL/)).toBeInTheDocument();
+    // The tally summarizes the same truth.
+    expect(screen.getByText('1')).toBeInTheDocument();
+  });
+
+  it('never renders a stored key, only its fingerprint', async () => {
+    render(<ProvidersSection />);
+    // Expand OpenRouter — the credential field is behind the summary toggle.
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'OpenRouter connection settings' })
+    );
+    expect(await screen.findByText(/on file ····4991/)).toBeInTheDocument();
+    // The input starts EMPTY: typing is an explicit replacement, not an edit of
+    // a pre-filled secret (which the client no longer possesses).
+    const field = screen.getByLabelText(/API key/i) as HTMLInputElement;
+    expect(field.value).toBe('');
+    expect(field.placeholder).toMatch(/replace the stored one/i);
+  });
+
+  it('states the live route in the supply line', async () => {
+    render(<ProvidersSection />);
+    // The signature element: which provider resolves the active agent's model,
+    // and the model's REAL context window (not a provider default).
+    expect(await screen.findByText('Supply line')).toBeInTheDocument();
+    expect(screen.getByText('test-model')).toBeInTheDocument();
+    expect(screen.getByText(/1M context/)).toBeInTheDocument();
+    expect(screen.getByText('reachable')).toBeInTheDocument();
+  });
+
+  it('offers the custom-endpoint affordance', async () => {
+    render(<ProvidersSection />);
+    expect(await screen.findByText('Connect an endpoint')).toBeInTheDocument();
   });
 });
 

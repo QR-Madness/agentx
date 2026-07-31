@@ -18,6 +18,13 @@ export interface ServerConfig {
   gatewayToken?: string;
 }
 
+/**
+ * @deprecated Provider credentials are server-side truth as of v0.21.258 —
+ * Settings → Model Providers reads key fingerprints from
+ * `GET /api/providers/catalog` and never holds a secret. Kept only so
+ * `getServerMetadata` can recognize and purge values written by older builds;
+ * nothing writes it. Do not reintroduce client-side key storage.
+ */
 export interface ServerApiKeys {
   lmstudio?: string;  // LM Studio base URL (e.g., http://192.168.x.x:1234/v1)
   anthropic?: string; // Anthropic API key
@@ -204,12 +211,21 @@ export function getActiveServer(): ServerConfig | null {
 
 export function getServerMetadata(serverId: string): ServerMetadata {
   const data = localStorage.getItem(STORAGE_KEYS.serverMeta(serverId));
-  return safeJsonParse<ServerMetadata>(data, {
+  const metadata = safeJsonParse<ServerMetadata>(data, {
     serverId,
     apiKeys: {},
     preferences: {},
     cache: {},
   });
+  // Provider credentials moved to server-side truth (Settings → Model Providers
+  // reads key fingerprints from /api/providers/catalog). Any values left here by
+  // an older build are secrets sitting in browser storage for no reason, so this
+  // read purges them once rather than waiting for the user to notice.
+  if (metadata.apiKeys && Object.keys(metadata.apiKeys).length > 0) {
+    metadata.apiKeys = {};
+    saveServerMetadata(metadata);
+  }
+  return metadata;
 }
 
 export function saveServerMetadata(metadata: ServerMetadata): void {

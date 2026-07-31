@@ -99,9 +99,17 @@ class ProviderEntry:
 
     @property
     def configured(self) -> bool:
-        """Whether this entry carries enough to instantiate a provider."""
+        """Whether this entry carries enough to instantiate a provider.
+
+        A **custom** entry is usable as soon as it has an address: plenty of
+        OpenAI-compatible servers authenticate nothing (Ollama, vLLM, llama.cpp),
+        and requiring a key there would let a user register a local endpoint that
+        silently never loaded. Built-ins keep their per-provider credential rule.
+        """
         if not self.enabled:
             return False
+        if not self.builtin:
+            return bool(self.base_url)
         return bool(self.base_url if self.credential == "base_url" else self.api_key)
 
     def to_public_dict(self) -> dict[str, Any]:

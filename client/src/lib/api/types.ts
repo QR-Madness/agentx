@@ -77,11 +77,20 @@ export interface ProviderInfo {
   error?: string;
 }
 
+/** Per-provider result inside `ProvidersHealthResponse`. Every provider reports
+ *  `models_available` on a healthy ping, which is the catalog size we surface. */
+export interface ProviderHealthEntry {
+  status: 'healthy' | 'unhealthy' | 'not_configured' | 'error';
+  error?: string;
+  models_available?: number;
+  base_url?: string;
+}
+
 /** Response of `GET /api/providers/health` — async ping of every configured provider. */
 export interface ProvidersHealthResponse {
   /** `healthy` if all providers passed; `degraded` if any failed. */
   status: 'healthy' | 'degraded';
-  providers: Record<string, { status: 'healthy' | 'unhealthy'; error?: string }>;
+  providers: Record<string, ProviderHealthEntry>;
 }
 
 /** The wire protocol a provider speaks. Only `openai_compatible` is registerable. */
@@ -903,13 +912,19 @@ export interface LanguageDetectResponse {
 // === Config Types ===
 
 export interface ConfigUpdate {
+  /** Keyed by provider id. The five built-ins are named for their known field
+   *  shapes; the index signature covers user-registered custom endpoints, whose
+   *  ids aren't knowable at compile time. The server accepts the catalog's id
+   *  set (built-ins ∪ registered custom) and routes each to the right config
+   *  path — see providers/catalog.py. Entries are created and removed via
+   *  /api/providers/custom, not here. */
   providers?: {
     lmstudio?: { base_url?: string; timeout?: number };
     anthropic?: { api_key?: string; base_url?: string };
     openai?: { api_key?: string; base_url?: string };
     openrouter?: { api_key?: string; site_url?: string; app_name?: string };
     vercel?: { api_key?: string; base_url?: string };
-  };
+  } & Record<string, { api_key?: string; base_url?: string; timeout?: number } | undefined>;
   preferences?: {
     default_model?: string;
     default_reasoning_strategy?: string;
