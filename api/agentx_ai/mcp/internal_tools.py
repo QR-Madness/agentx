@@ -8,7 +8,9 @@ functionality like stored tool outputs.
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -2199,11 +2201,10 @@ def _http_get_json(url: str, *, headers: dict, params: dict) -> dict[str, Any]:
 # Ordered backend preference when none is explicitly configured / available.
 _BACKEND_ORDER: tuple[str, ...] = ("tavily", "brave")
 
-# Tavily-only tools — advertised to the model only when Tavily is the active
-# backend, but always registered (so a stale call self-guards instead of 404ing).
-_CAPABILITY_GATED_TOOLS: frozenset[str] = frozenset(
-    {"web_extract", "web_map", "web_crawl", "web_research"}
-)
+# Which backend implements which web tool is `SEARCH_CAPABILITIES`' business —
+# see `_tool_supported_by`. Tools are advertised only when the ACTIVE backend
+# declares them, but stay registered regardless (a stale call self-guards instead
+# of 404ing).
 
 # Tavily `time_range` → Brave `freshness` codes.
 _FRESHNESS_MAP = {"day": "pd", "week": "pw", "month": "pm", "year": "py"}
@@ -2340,14 +2341,35 @@ SEARCH_CAPABILITIES: dict[str, dict[str, Any]] = {
                             "beyond the first page rather than re-querying."
                         ),
                     },
+                    "grounding": {
+                        "type": "boolean",
+                        "description": (
+                            "Return pre-extracted page CONTENT (relevance-ranked passages "
+                            "per source) instead of one-line descriptions — search and "
+                            "extract fused into a single call. On by default; pass false "
+                            "when you only need a list of links to choose from."
+                        ),
+                    },
                     "extra_snippets": {
                         "type": "boolean",
                         "description": (
                             "Return up to 5 extra excerpts per result for richer "
-                            "grounding in one call (fewer follow-up extractions)."
+                            "grounding in one call (fewer follow-up extractions). "
+                            "Ignored when `grounding` is on."
                         ),
                     },
                 },
+            },
+            # Brave's Answers plan (/chat/completions with enable_research). Its
+            # presence here is what advertises `web_research` on a Brave backend;
+            # `_tool_supported_by` additionally requires `search.brave_answers_enabled`
+            # because the plan is a separate subscription from Search.
+            "web_research": {
+                "summary": (
+                    "multi-iteration research with built-in citations and a "
+                    "self-reported blind-spot list (slow; minutes)"
+                ),
+                "params": {},
             },
         },
     },
@@ -2521,6 +2543,43 @@ def build_tool_description(tool: str, backend: str) -> str:
     return base
 
 
+def _tool_supported_by(tool: str, backend: str | None) -> bool:
+    """Whether ``backend`` actually implements ``tool``.
+
+    The capability registry is the source of truth, so adding a backend's entry to
+    `SEARCH_CAPABILITIES` is all it takes to advertise the tool there — no
+    hardcoded "Tavily-only" list to keep in sync. The one exception is Brave's
+    deep research, which rides a *separate subscription* from Brave Search: the
+    same key may or may not carry it, and nothing in the key says which, so it
+    stays operator-declared.
+    """
+    if backend is None:
+        return False
+    if tool not in SEARCH_CAPABILITIES.get(backend, {}).get("tools", {}):
+        return False
+    if tool == "web_research" and backend == "brave":
+        return bool(_search_cfg("brave_answers_enabled"))
+    return True
+
+
+def _research_backend() -> str | None:
+    """Which backend serves ``web_research`` — not necessarily the search primary.
+
+    Deep research is a distinct capability with distinct entitlements: Brave's
+    rides the separately-subscribed Answers plan, Tavily's ships with any key. So
+    a Brave-primary operator who also holds a Tavily key should keep deep research
+    rather than silently losing it because their *search* primary can't do it.
+    Preference still starts at the primary, so a fully-capable Brave setup uses
+    Brave. None ⇒ nobody can, and the tool isn't advertised at all.
+    """
+    primary = resolve_active_search_backend()
+    order = [primary] + [b for b in _BACKEND_ORDER if b != primary]
+    for name in order:
+        if name and _backend_has_key(name) and _tool_supported_by("web_research", name):
+            return name
+    return None
+
+
 def _backend_has_key(name: str) -> bool:
     if name == "tavily":
         return bool(_resolve_search_key("search.tavily_api_key", "TAVILY_API_KEY"))
@@ -2634,9 +2693,100 @@ def _tavily_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
     return payload
 
 
+def _search_cfg(key: str) -> Any:
+    """Read ``search.<key>``, falling back to the SHIPPED default.
+
+    `ConfigManager` *replaces* `DEFAULT_CONFIG` with `data/config.json` rather than
+    merging them, so a key the operator has never touched reads as absent. The
+    obvious `cfg.get(k, 4096)` therefore duplicates the default at every call site
+    — and the copies drift (this function exists because two of them already did).
+    Sourcing the fallback from `DEFAULT_CONFIG` keeps one source of truth.
+    """
+    from ..config import DEFAULT_CONFIG, get_config_manager
+
+    shipped = DEFAULT_CONFIG.get("search", {}).get(key)
+    value = get_config_manager().get(f"search.{key}")
+    return shipped if value is None else value
+
+
+def _brave_grounding_on(opts: dict[str, Any]) -> bool:
+    """Whether this Brave search should use the LLM Context endpoint.
+
+    The model may steer it per call; absent that, the operator's default wins.
+    """
+    if opts.get("grounding") is not None:
+        return bool(opts["grounding"])
+    return bool(_search_cfg("brave_grounding_default"))
+
+
+def _brave_context(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
+    """Query Brave's LLM Context endpoint — search and extract fused.
+
+    Unlike the web-search endpoint (a link list with one-line descriptions), this
+    returns pre-extracted, relevance-ranked passages per source, so a single call
+    yields groundable content instead of a list to go extract afterwards. Token
+    budgets are operator-owned (`search.brave_context_*`) rather than model-steered:
+    this is precisely the knob that decides how much context window a search eats.
+
+    Normalized to the same flat `results: [{title, url, snippet, ...}]` shape as
+    every other backend — the citation auto-capture depends on it. Raises on failure.
+    """
+    key = _resolve_search_key("search.brave_api_key", "BRAVE_API_KEY")
+    if not key:
+        raise RuntimeError("Brave API key not configured (search.brave_api_key / BRAVE_API_KEY)")
+
+    threshold = str(_search_cfg("brave_context_threshold") or "balanced")
+    params: dict[str, Any] = {
+        "q": query,
+        "count": max_results,
+        "maximum_number_of_urls": max_results,
+        "maximum_number_of_tokens": int(_search_cfg("brave_context_max_tokens")),
+        "maximum_number_of_tokens_per_url": int(_search_cfg("brave_context_max_tokens_per_url")),
+        "maximum_number_of_snippets": int(_search_cfg("brave_context_max_snippets")),
+        "context_threshold_mode": (
+            threshold if threshold in ("strict", "balanced", "lenient") else "balanced"
+        ),
+    }
+    if opts.get("country"):
+        params["country"] = opts["country"]
+    if opts.get("search_lang"):
+        params["search_lang"] = opts["search_lang"]
+
+    data = _http_get_json(
+        "https://api.search.brave.com/res/v1/llm/context",
+        headers={"X-Subscription-Token": key, "Accept": "application/json"},
+        params=params,
+    )
+
+    grounding = data.get("grounding") or {}
+    sources = data.get("sources") or {}
+    results: list[dict[str, Any]] = []
+    for entry in (grounding.get("generic") or []):
+        if not isinstance(entry, dict):
+            continue
+        url = entry.get("url") or ""
+        snippets = [s for s in (entry.get("snippets") or []) if isinstance(s, str) and s.strip()]
+        meta = sources.get(url) if isinstance(sources, dict) else None
+        age = (meta or {}).get("age") if isinstance(meta, dict) else None
+        results.append({
+            "title": entry.get("title") or (meta or {}).get("title") or url,
+            "url": url,
+            # `snippet` keeps the shape every other backend returns; `snippets`
+            # carries the extra passages this endpoint exists to provide.
+            "snippet": snippets[0] if snippets else "",
+            "snippets": snippets,
+            # `age` comes back as a list of date spellings — take the first.
+            "published_date": age[0] if isinstance(age, list) and age else age,
+        })
+    return {"results": results, "grounded": True}
+
+
 def _brave_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
     """Query Brave REST; forwards only Brave-supported params (mapping
-    time_range→freshness). Raises on failure."""
+    time_range→freshness). Routes to the LLM Context endpoint when grounding is
+    on (the default) — that path returns content, not just links. Raises on failure."""
+    if _brave_grounding_on(opts):
+        return _brave_context(query, max_results, **opts)
     key = _resolve_search_key("search.brave_api_key", "BRAVE_API_KEY")
     if not key:
         raise RuntimeError("Brave API key not configured (search.brave_api_key / BRAVE_API_KEY)")
@@ -2715,15 +2865,22 @@ def _check_search_budget(weight: int = 1) -> dict[str, Any] | None:
     }
 
 
-def _record_search_spend(backend: str, credits: int, *, reported: bool = False) -> None:
+def _record_search_spend(
+    backend: str, credits: int, *, reported: bool = False, cost_usd: float | None = None
+) -> None:
     """Best-effort log of one search call to the usage ledger (source='search') and
     charge its cost to the active per-turn budget window.
 
     Tavily bills per credit; Brave bills per request. ``reported`` marks that
     ``credits`` came from the provider itself (``include_usage``) rather than our
     depth/divisor estimate, and is recorded in the pricing snapshot so a ledger row
-    says which it was. Never raises — metering must not break a turn (mirrors
-    usage_ledger's own contract).
+    says which it was.
+
+    ``cost_usd`` overrides the unit-price arithmetic entirely, for a provider that
+    hands back an exact figure — Brave Answers bills request + queries + tokens and
+    reports the total in its ``<usage>`` tag, so no per-unit rate could reconstruct
+    it. Never raises — metering must not break a turn (mirrors usage_ledger's own
+    contract).
     """
     try:
         from ..config import get_config_manager
@@ -2741,7 +2898,11 @@ def _record_search_spend(backend: str, credits: int, *, reported: bool = False) 
             units = {"queries": 1, "credits": credits}
             pricing = {"per_credit_usd": per_unit, "credits": credits}
         pricing["source"] = "provider" if reported else "estimate"
-        cost_total = round(per_unit * credits, 6)
+        if cost_usd is not None:
+            cost_total = round(max(0.0, float(cost_usd)), 6)
+            pricing["exact_cost_usd"] = cost_total
+        else:
+            cost_total = round(per_unit * credits, 6)
         charge_cost(cost_total)  # surface running spend to the model via _budget_block
         conv_id, agent_id = attribution()
         record_usage(
@@ -3114,6 +3275,143 @@ def _poll_research(client: Any, request_id: str) -> dict[str, Any]:
     }
 
 
+def _tagged(text: str, tag: str) -> str:
+    """Inner text of the LAST ``<tag>…</tag>`` block, or "".
+
+    Brave's research stream emits intermediate drafts before the final one, so the
+    last block is the authoritative answer. Tags routinely straddle SSE chunk
+    boundaries, which is why the caller accumulates the whole stream first and only
+    then parses — there is no partial-tag state machine to get wrong.
+    """
+    matches = re.findall(rf"<{tag}>(.*?)</{tag}>", text, re.DOTALL)
+    return matches[-1].strip() if matches else ""
+
+
+def _urls_from_markdown(text: str) -> list[dict[str, str]]:
+    """Best-effort `{title, url}` list from an answer's inline citations.
+
+    Brave's research mode cites inside the answer body rather than returning a
+    structured source list, but the tool-loop's citation auto-capture needs the
+    same flat `results` shape every other web tool produces — so recover them.
+    Markdown links win (they carry a title); bare URLs fall back to the hostname.
+    """
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for title, url in re.findall(r"\[([^\]]{1,200})\]\((https?://[^\s)]+)\)", text):
+        if url not in seen:
+            seen.add(url)
+            out.append({"title": title.strip() or url, "url": url})
+    for url in re.findall(r"(?<![(\[])\bhttps?://[^\s<>\")\]]+", text):
+        clean = url.rstrip(".,;:")
+        if clean not in seen:
+            seen.add(clean)
+            host = clean.split("/")[2] if len(clean.split("/")) > 2 else clean
+            out.append({"title": host, "url": clean})
+    return out
+
+
+def _brave_research(query: str, depth: str) -> dict[str, Any]:
+    """Deep research via Brave's Answers plan (/chat/completions, enable_research).
+
+    OpenAI-compatible but with hard constraints: research mode REQUIRES streaming
+    and is incompatible with `enable_citations` (the API 400s on either). The
+    stream interleaves progress tags with the answer; we buffer the whole thing,
+    then keep `<answer>` and `<blindspots>` and read the exact spend out of
+    `<usage>`. Returns the same `{report, results}` shape as the Tavily path.
+    """
+    import httpx
+
+    key = _resolve_search_key("search.brave_api_key", "BRAVE_API_KEY")
+    if not key:
+        raise RuntimeError("Brave API key not configured (search.brave_api_key / BRAVE_API_KEY)")
+
+    tiers = _search_cfg("brave_research_tiers") or {}
+    tier = tiers.get(depth) or tiers.get("auto") or {}
+    # Brave's documented ceilings; a mis-set config must not 400 the whole call.
+    iterations = max(1, min(int(tier.get("iterations", 3) or 3), 5))
+    queries = max(1, min(int(tier.get("queries", 20) or 20), 50))
+    seconds = max(1, min(int(tier.get("seconds", 180) or 180), 300))
+
+    body = {
+        "model": "brave",
+        "messages": [{"role": "user", "content": query}],
+        "stream": True,  # research mode rejects a blocking response
+        "enable_research": True,
+        "research_maximum_number_of_iterations": iterations,
+        "research_maximum_number_of_queries": queries,
+        "research_maximum_number_of_seconds": seconds,
+    }
+
+    chunks: list[str] = []
+    # Read timeout must outlast the research budget itself, else we hang up on a
+    # task we have already paid for.
+    timeout = httpx.Timeout(connect=15.0, read=seconds + 60, write=15.0, pool=15.0)
+    with httpx.Client(timeout=timeout) as client:
+        with client.stream(
+            "POST",
+            "https://api.search.brave.com/res/v1/chat/completions",
+            headers={
+                "X-Subscription-Token": key,
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+            json=body,
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                payload = line[6:].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    event = json.loads(payload)
+                except ValueError:
+                    continue
+                for choice in (event.get("choices") or []):
+                    piece = (choice.get("delta") or {}).get("content")
+                    if piece:
+                        chunks.append(piece)
+                # Honour a user Stop mid-research rather than blocking for minutes.
+                try:
+                    from ..streaming.tool_loop import _ambient_cancel_check
+                    if _ambient_cancel_check():
+                        return {"error": "Research cancelled (run stopped mid-stream)"}
+                except Exception:  # noqa: BLE001 — cancel check is best-effort
+                    pass
+
+    text = "".join(chunks)
+    report = _tagged(text, "answer")
+    if not report:
+        # No <answer> tag: either the model streamed plain prose, or the run
+        # produced nothing. Strip the debug tags and use whatever remains.
+        report = re.sub(
+            r"<(queries|analyzing|thinking|progress|usage|blindspots)>.*?</\1>",
+            "",
+            text,
+            flags=re.DOTALL,
+        ).strip()
+
+    blindspots = _tagged(text, "blindspots")
+    cost_usd: float | None = None
+    raw_usage = _tagged(text, "usage")
+    if raw_usage:
+        try:
+            usage = json.loads(raw_usage)
+            total = usage.get("X-Request-Total-Cost")
+            if isinstance(total, (int, float)):
+                cost_usd = float(total)
+        except (ValueError, AttributeError):
+            logger.debug("brave research: unparseable <usage> tag")
+
+    return {
+        "report": report,
+        "results": _urls_from_markdown(report),
+        "blindspots": blindspots,
+        "cost_usd": cost_usd,
+    }
+
+
 @register_tool(
     name="web_research",
     description=_TOOL_BASE_DESC["web_research"],
@@ -3134,11 +3432,20 @@ def web_research(query: str, depth: str = "auto", **opts: Any) -> dict[str, Any]
         return {"error": "web_research is disabled (web_research.enabled)", "success": False}
 
     model = depth if depth in ("auto", "mini", "pro") else "auto"
+    backend = _research_backend()
+    if backend is None:
+        return {
+            "error": "No configured search backend supports deep research "
+            "(Tavily needs a key; Brave needs the separate Answers plan)",
+            "success": False,
+        }
 
-    # Cache identical (query, depth) research: a deep report costs 5–20 credits,
-    # so re-serving a repeated query is a big saver. Cache hits are free (no gate).
+    # Cache identical (backend, query, depth) research: a deep report costs 5–20
+    # credits, so re-serving a repeated query is a big saver. Cache hits are free
+    # (no gate). The backend is part of the key — two providers researching the
+    # same question do not produce the same report.
     research_ttl = int(cfg.get("web_research.cache_ttl_seconds", 1800))
-    cache_key = f"research:{model}:{query.strip().lower()}"
+    cache_key = f"research:{backend}:{model}:{query.strip().lower()}"
     now = time.time()
     cached = _SEARCH_CACHE.get(cache_key)
     if cached and cached[0] > now:
@@ -3151,6 +3458,53 @@ def web_research(query: str, depth: str = "auto", **opts: Any) -> dict[str, Any]
     if budget_error is not None:
         return {"error": budget_error["error"], "success": False, "budget": budget_error["budget"]}
 
+    # --- Brave Answers path ---------------------------------------------------
+    if backend == "brave":
+        if not _search_cfg("brave_answers_enabled"):
+            return {
+                "error": "Brave deep research is disabled (search.brave_answers_enabled)",
+                "success": False,
+            }
+        try:
+            data = _brave_research(query, model)
+        except Exception as e:  # noqa: BLE001 - HTTP/stream failure
+            logger.warning(f"brave web_research failed: {e}")
+            return {
+                "error": f"Research failed: {e} (Brave deep research needs the separate "
+                "Answers plan — check the key's subscription)",
+                "success": False,
+                "budget": _budget_block(),
+            }
+        if data.get("error"):
+            return {"error": data["error"], "success": False, "budget": _budget_block()}
+        report = str(data.get("report") or "").strip()
+        if not report:
+            return {
+                "error": "Research completed but returned an empty report — try a "
+                "narrower query or depth='mini'",
+                "success": False,
+                "budget": _budget_block(),
+            }
+        results = data.get("results") or []
+        # Brave reports its own exact total (request + queries + tokens), which no
+        # per-unit rate could reconstruct; fall back to the flat rate if absent.
+        _record_search_spend("brave", 1, reported=data.get("cost_usd") is not None,
+                             cost_usd=data.get("cost_usd"))
+        response: dict[str, Any] = {
+            "report": report,
+            "results": results,
+            "count": len(results),
+            "success": True,
+        }
+        if data.get("blindspots"):
+            response["blindspots"] = data["blindspots"]
+        if research_ttl > 0:
+            _cache_put(cache_key, now + research_ttl,
+                       {k: response[k] for k in ("report", "results", "count")})
+        response["budget"] = _budget_block()
+        return response
+
+    # --- Tavily path ----------------------------------------------------------
     try:
         client = _tavily_client()
     except RuntimeError as e:
@@ -3237,18 +3591,21 @@ def get_internal_tools() -> list[ToolInfo]:
     Get all registered internal tools as ToolInfo objects (model-facing list).
 
     Capability pre-check: inventories the active search backend and advertises
-    web tools tailored to it — `web_extract`/`web_map` only when Tavily is active,
-    and `web_search` only when *some* backend is configured. Tools stay registered
-    (executable) regardless; this only governs what the model is told about.
+    web tools tailored to it — each one only when the active backend actually
+    implements it (`SEARCH_CAPABILITIES` via `_tool_supported_by`), and none at all
+    when no backend is configured. Tools stay registered (executable) regardless;
+    this only governs what the model is told about.
     """
     backend = resolve_active_search_backend()
     shell_on = _shell_allowed()
     doc_write_on = _document_write_tools_enabled()
     tools: list[ToolInfo] = []
     for tool in _INTERNAL_TOOLS.values():
-        if tool.name in _CAPABILITY_GATED_TOOLS and backend != "tavily":
-            continue
-        if tool.name == "web_search" and backend is None:
+        if tool.name == "web_research":
+            # Resolves its own backend — see `_research_backend`.
+            if _research_backend() is None:
+                continue
+        elif tool.name in _WEB_TOOLS and not _tool_supported_by(tool.name, backend):
             continue
         if tool.name in _SHELL_TOOL_NAMES and not shell_on:
             continue  # agent shells are opt-in per-workspace (workspace.allow_shell)

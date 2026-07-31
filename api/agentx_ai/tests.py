@@ -3645,9 +3645,11 @@ class WebSearchToolTest(TestCase):
         brave_payload = {"web": {"results": [
             {"title": "B1", "url": "https://x", "description": "brave snippet"},
         ]}}
+        # grounding=False pins Brave to its /web/search link-list endpoint, which
+        # is the shape this payload models; the grounded path has its own tests.
         with self._fake_tavily(RuntimeError("tavily down")), \
              patch.object(self.internal_tools, "_http_get_json", return_value=brave_payload):
-            out = self.internal_tools.web_search("hello")
+            out = self.internal_tools.web_search("hello", grounding=False)
         self.assertTrue(out["success"])
         self.assertEqual(out["backend"], "brave")
         r0 = out["results"][0]
@@ -3771,7 +3773,7 @@ class WebSearchToolTest(TestCase):
         with self._fake_tavily(RuntimeError("tavily down")), \
              patch.object(self.internal_tools, "_http_get_json", return_value=brave_payload), \
              patch("agentx_ai.agent.usage_ledger.record_usage") as mock_rec:
-            out = self.internal_tools.web_search("brave costed")
+            out = self.internal_tools.web_search("brave costed", grounding=False)
         self.assertEqual(out["backend"], "brave")
         cost = mock_rec.call_args.kwargs["cost"]["cost_total"]
         self.assertGreater(cost, 0.0)
@@ -11694,11 +11696,14 @@ class WebSearchCapabilityTest(TestCase):
         self.assertEqual(payload["answer"], "the answer")
 
     def test_brave_search_maps_time_range_to_freshness(self):
+        # grounding=False pins this to the /web/search endpoint — these params
+        # belong to the link-list path, not the LLM Context one.
         from agentx_ai.mcp import internal_tools as it
         data = {"web": {"results": [{"title": "T", "url": "https://x", "description": "d"}]}}
         with patch.object(it, "_resolve_search_key", return_value="brv"), \
              patch.object(it, "_http_get_json", return_value=data) as get:
-            payload = it._brave_search("q", 5, time_range="day", safesearch="strict", topic="news")
+            payload = it._brave_search("q", 5, time_range="day", safesearch="strict",
+                                       topic="news", grounding=False)
         params = get.call_args.kwargs["params"]
         self.assertEqual(params["freshness"], "pd")
         self.assertEqual(params["safesearch"], "strict")
@@ -11804,7 +11809,8 @@ class WebSearchCapabilityTest(TestCase):
         data = {"web": {"results": [{"title": "T", "url": "https://x", "description": "d"}]}}
         with patch.object(it, "_resolve_search_key", return_value="brv"), \
              patch.object(it, "_http_get_json", return_value=data) as get:
-            it._brave_search("q", 5, country="GB", search_lang="en", offset=-3)
+            it._brave_search("q", 5, country="GB", search_lang="en", offset=-3,
+                             grounding=False)  # link-list path
         params = get.call_args.kwargs["params"]
         self.assertEqual(params["country"], "GB")
         self.assertEqual(params["search_lang"], "en")
@@ -11877,6 +11883,196 @@ class WebSearchCapabilityTest(TestCase):
         self.assertTrue(all(k.startswith(("search:", "extract:", "research:"))
                             for k in it._SEARCH_CACHE))
         self.assertTrue(any(k.startswith("search:") for k in it._SEARCH_CACHE))
+
+    # --- Brave as a first-class backend ----------------------------------
+
+    def test_gate_follows_capability_registry(self):
+        """Advertisement is driven by SEARCH_CAPABILITIES, not a hardcoded
+        Tavily-only list: extract/map/crawl (which Brave genuinely lacks) stay
+        hidden on a Brave backend."""
+        from agentx_ai.mcp import internal_tools as it
+        with patch.object(it, "resolve_active_search_backend", return_value="brave"), \
+             patch("agentx_ai.config.get_config_manager", return_value=self._cfg()):
+            names = {t.name for t in it.get_internal_tools()}
+        self.assertIn("web_search", names)
+        for absent in ("web_extract", "web_map", "web_crawl"):
+            self.assertNotIn(absent, names)
+
+    def test_brave_research_gated_by_answers_plan(self):
+        """Brave Answers is a separate subscription from Brave Search and the key
+        doesn't say which you hold — an unsubscribed key answers
+        OPTION_NOT_IN_PLAN — so it stays operator-declared and defaults off."""
+        from agentx_ai.mcp import internal_tools as it
+        from agentx_ai.config import DEFAULT_CONFIG
+        self.assertFalse(DEFAULT_CONFIG["search"]["brave_answers_enabled"])
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()):
+            self.assertFalse(it._tool_supported_by("web_research", "brave"))
+            self.assertTrue(it._tool_supported_by("web_search", "brave"))
+        on = self._cfg(**{"search.brave_answers_enabled": True})
+        with patch("agentx_ai.config.get_config_manager", return_value=on):
+            self.assertTrue(it._tool_supported_by("web_research", "brave"))
+        # Tavily's research needs no such flag.
+        self.assertTrue(it._tool_supported_by("web_research", "tavily"))
+        self.assertFalse(it._tool_supported_by("web_search", None))
+
+    def test_research_backend_resolves_independently_of_search_primary(self):
+        """Deep research is a distinct entitlement: a Brave-primary operator who
+        also holds a Tavily key must keep web_research rather than silently
+        losing it because their *search* primary can't do it."""
+        from agentx_ai.mcp import internal_tools as it
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.object(it, "resolve_active_search_backend", return_value="brave"), \
+             patch.object(it, "_backend_has_key", lambda n: True):
+            # Brave primary, Answers not subscribed → falls through to Tavily.
+            self.assertEqual(it._research_backend(), "tavily")
+        on = self._cfg(**{"search.brave_answers_enabled": True})
+        with patch("agentx_ai.config.get_config_manager", return_value=on), \
+             patch.object(it, "resolve_active_search_backend", return_value="brave"), \
+             patch.object(it, "_backend_has_key", lambda n: True):
+            # Fully-capable Brave setup keeps using Brave.
+            self.assertEqual(it._research_backend(), "brave")
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.object(it, "resolve_active_search_backend", return_value="brave"), \
+             patch.object(it, "_backend_has_key", lambda n: n == "brave"):
+            # Brave only, no Answers → nobody can research; don't advertise it.
+            self.assertIsNone(it._research_backend())
+
+    def test_brave_grounding_routes_to_llm_context(self):
+        from agentx_ai.mcp import internal_tools as it
+        data = {
+            "grounding": {"generic": [
+                {"url": "https://a", "title": "A", "snippets": ["one", "two"]},
+            ]},
+            "sources": {"https://a": {"title": "A", "age": ["2026-01-01"]}},
+        }
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.object(it, "_resolve_search_key", return_value="brv"), \
+             patch.object(it, "_http_get_json", return_value=data) as get:
+            payload = it._brave_search("q", 3)
+        self.assertIn("/llm/context", get.call_args.args[0])
+        params = get.call_args.kwargs["params"]
+        from agentx_ai.config import DEFAULT_CONFIG
+        # Sourced from DEFAULT_CONFIG, not a duplicated literal — see _search_cfg.
+        self.assertEqual(params["maximum_number_of_tokens"],
+                         DEFAULT_CONFIG["search"]["brave_context_max_tokens"])
+        self.assertEqual(params["context_threshold_mode"], "balanced")
+        r = payload["results"][0]
+        self.assertEqual(r["url"], "https://a")
+        self.assertEqual(r["snippets"], ["one", "two"])
+        self.assertEqual(r["snippet"], "one")  # flat shape kept for citations
+        self.assertEqual(r["published_date"], "2026-01-01")
+
+    def test_brave_grounding_can_be_turned_off_per_call(self):
+        from agentx_ai.mcp import internal_tools as it
+        data = {"web": {"results": [{"title": "T", "url": "https://x", "description": "d"}]}}
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.object(it, "_resolve_search_key", return_value="brv"), \
+             patch.object(it, "_http_get_json", return_value=data) as get:
+            it._brave_search("q", 3, grounding=False)
+        self.assertIn("/web/search", get.call_args.args[0])
+
+    def test_brave_grounding_defaults_and_precedence(self):
+        """Grounding is ON by default (that's the point of the slice) but the
+        model's per-call choice outranks the operator default in both directions.
+        Pinned deliberately: this is the one behavioural change in the slice."""
+        from agentx_ai.mcp import internal_tools as it
+        from agentx_ai.config import DEFAULT_CONFIG
+        self.assertTrue(DEFAULT_CONFIG["search"]["brave_grounding_default"])
+        # Shipped budgets stay well under Brave's ceilings (32768 / 8192): a
+        # default that returned 8k tokens a search would undo the saving.
+        self.assertLessEqual(DEFAULT_CONFIG["search"]["brave_context_max_tokens"], 4096)
+
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()):
+            self.assertTrue(it._brave_grounding_on({}))
+            self.assertFalse(it._brave_grounding_on({"grounding": False}))
+        off = self._cfg(**{"search.brave_grounding_default": False})
+        with patch("agentx_ai.config.get_config_manager", return_value=off):
+            self.assertFalse(it._brave_grounding_on({}))
+            self.assertTrue(it._brave_grounding_on({"grounding": True}))
+
+    def test_tagged_takes_last_block_across_chunks(self):
+        """Brave streams intermediate drafts before the final answer, and tags
+        straddle chunk boundaries — parsing the accumulated text sidesteps both."""
+        from agentx_ai.mcp import internal_tools as it
+        text = "<answer>draft one</answer> noise <answer>final\nanswer</answer>"
+        self.assertEqual(it._tagged(text, "answer"), "final\nanswer")
+        self.assertEqual(it._tagged("nothing here", "answer"), "")
+
+    def test_urls_from_markdown_recovers_citations(self):
+        from agentx_ai.mcp import internal_tools as it
+        out = it._urls_from_markdown(
+            "See [Docs](https://docs.example.com/a) and https://plain.example.com/b. "
+            "Repeat [Docs](https://docs.example.com/a)."
+        )
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0], {"title": "Docs", "url": "https://docs.example.com/a"})
+        self.assertEqual(out[1]["url"], "https://plain.example.com/b")
+        self.assertEqual(out[1]["title"], "plain.example.com")  # hostname fallback
+
+    def test_brave_research_parses_stream_and_exact_cost(self):
+        from agentx_ai.mcp import internal_tools as it
+        usage = ('{"X-Request-Requests-Cost":0.004,"X-Request-Queries-Cost":0.032,'
+                 '"X-Request-Total-Cost":0.122}')
+        pieces = [
+            "<progress>working</progress>",
+            "<answer>Findings cite [Src](https://s.example.com/p).</answer>",
+            "<blindspots>no primary sources</blindspots>",
+            f"<usage>{usage}</usage>",
+        ]
+        lines = [f'data: {json.dumps({"choices": [{"delta": {"content": p}}]})}' for p in pieces]
+        lines.append("data: [DONE]")
+
+        resp = MagicMock()
+        resp.iter_lines.return_value = iter(lines)
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.stream.return_value.__enter__.return_value = resp
+
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg(
+                **{"search.brave_research_tiers": {
+                    "auto": {"iterations": 3, "queries": 20, "seconds": 180}}})), \
+             patch.object(it, "_resolve_search_key", return_value="brv"), \
+             patch("httpx.Client", return_value=client):
+            out = it._brave_research("q", "auto")
+
+        body = client.stream.call_args.kwargs["json"]
+        self.assertTrue(body["stream"])          # research mode requires streaming
+        self.assertTrue(body["enable_research"])
+        self.assertNotIn("enable_citations", body)  # incompatible with research mode
+        self.assertEqual(body["research_maximum_number_of_iterations"], 3)
+        self.assertIn("Findings cite", out["report"])
+        self.assertNotIn("<progress>", out["report"])
+        self.assertEqual(out["blindspots"], "no primary sources")
+        self.assertEqual(out["cost_usd"], 0.122)  # the TOTAL, not the $4/1k base
+        self.assertEqual(out["results"][0]["url"], "https://s.example.com/p")
+
+    def test_brave_research_tiers_clamped_to_api_ceilings(self):
+        from agentx_ai.mcp import internal_tools as it
+        resp = MagicMock()
+        resp.iter_lines.return_value = iter(["data: [DONE]"])
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.stream.return_value.__enter__.return_value = resp
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg(
+                **{"search.brave_research_tiers": {
+                    "pro": {"iterations": 99, "queries": 999, "seconds": 9999}}})), \
+             patch.object(it, "_resolve_search_key", return_value="brv"), \
+             patch("httpx.Client", return_value=client):
+            it._brave_research("q", "pro")
+        body = client.stream.call_args.kwargs["json"]
+        self.assertEqual(body["research_maximum_number_of_iterations"], 5)
+        self.assertEqual(body["research_maximum_number_of_queries"], 50)
+        self.assertEqual(body["research_maximum_number_of_seconds"], 300)
+
+    def test_record_spend_accepts_exact_cost(self):
+        """Brave Answers bills request + queries + tokens; no per-unit rate could
+        reconstruct the total, so an exact figure has to override the arithmetic."""
+        from agentx_ai.mcp import internal_tools as it
+        with patch("agentx_ai.agent.usage_ledger.record_usage") as rec, \
+             patch("agentx_ai.agent.search_budget.charge_cost") as charge:
+            it._record_search_spend("brave", 1, reported=True, cost_usd=0.122)
+        self.assertEqual(rec.call_args.kwargs["cost"]["cost_total"], 0.122)
+        self.assertEqual(charge.call_args.args[0], 0.122)
 
     # --- Auto-capture: web_search → passive citation ----------------------
 
@@ -12762,16 +12958,25 @@ class UsageLedgerTest(TestCase):
 class WebResearchToolsTest(TestCase):
     """Slice 5 — Tavily crawl/research tools (capability-gated, self-guarding)."""
 
-    def test_crawl_research_advertised_only_for_tavily(self):
+    def test_crawl_is_tavily_only_but_research_resolves_its_own_backend(self):
+        """`web_crawl` genuinely has no Brave equivalent, so it stays Tavily-gated.
+        `web_research` does NOT: it resolves its own backend (`_research_backend`),
+        so a Brave-primary operator holding a Tavily key keeps deep research."""
         from agentx_ai.mcp import internal_tools as it
         from unittest.mock import patch
         with patch.object(it, "resolve_active_search_backend", return_value="tavily"):
             names = {t.name for t in it.get_internal_tools()}
             self.assertIn("web_crawl", names)
             self.assertIn("web_research", names)
-        with patch.object(it, "resolve_active_search_backend", return_value="brave"):
+        with patch.object(it, "resolve_active_search_backend", return_value="brave"), \
+             patch.object(it, "_backend_has_key", lambda n: True):
             names = {t.name for t in it.get_internal_tools()}
             self.assertNotIn("web_crawl", names)
+            self.assertIn("web_research", names)  # falls through to Tavily
+        # Brave-only, Answers unsubscribed → nobody can research; don't advertise.
+        with patch.object(it, "resolve_active_search_backend", return_value="brave"), \
+             patch.object(it, "_backend_has_key", lambda n: n == "brave"):
+            names = {t.name for t in it.get_internal_tools()}
             self.assertNotIn("web_research", names)
         # still executable (self-guarding) regardless of advertisement
         self.assertIsNotNone(it.find_internal_tool("web_crawl"))
@@ -12813,6 +13018,7 @@ class WebResearchToolsTest(TestCase):
         cfg = MagicMock()
         cfg.get.side_effect = lambda k, d=None: True if k == "web_research.enabled" else d
         with patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+             patch.object(it, "_research_backend", return_value="tavily"), \
              patch.object(it, "_tavily_client", return_value=client):
             out = it.web_research("q", depth="pro")
         self.assertTrue(out["success"])

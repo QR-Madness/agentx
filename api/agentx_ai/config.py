@@ -383,6 +383,49 @@ DEFAULT_CONFIG = {
         # Brave Search bills ~$5 per 1,000 requests. Used to cost Brave-backend
         # spend in the usage ledger (previously logged as free, which was wrong).
         "brave_cost_per_request_usd": 0.005,
+        # Brave Answers bills ~$4 per 1,000 requests, but that covers only the
+        # request line — queries and tokens bill on top. Answers reports its own
+        # exact total in a `<usage>` tag, so this is a FALLBACK for when that tag
+        # is missing, not the normal accounting path.
+        "brave_answers_cost_per_request_usd": 0.004,
+        # --- Brave LLM Context (grounding) -------------------------------------
+        # Brave's /llm/context endpoint returns pre-extracted, relevance-ranked
+        # page content — search and extract fused into one call. These bound how
+        # much of the context window one grounded search may claim; they are
+        # operator-owned (the model asks for grounding, it doesn't size it).
+        #
+        # On by default: a grounded search replaces the usual search→extract pair,
+        # so it is a large net saving whenever the model would have read the pages
+        # anyway. It does cost more than a bare link list for a quick lookup, which
+        # is why the model can pass `grounding: false` per call. The token budgets
+        # below are deliberately well under Brave's own ceilings (32768/8192) —
+        # a default that returns 8k tokens per search would undo the saving it
+        # exists to create.
+        "brave_grounding_default": True,   # use /llm/context for Brave web_search
+        "brave_context_max_tokens": 4096,
+        "brave_context_max_tokens_per_url": 1024,
+        "brave_context_max_snippets": 50,
+        # Relevance bar for including a chunk: strict | balanced | lenient.
+        "brave_context_threshold": "balanced",
+        # --- Brave Answers (deep research) -------------------------------------
+        # Brave's /chat/completions with enable_research: a second web_research
+        # backend so deep research isn't lost when Brave is the active backend.
+        #
+        # Default OFF, unlike most of our feature flags. Answers is a SEPARATE
+        # subscription from Brave Search and the key doesn't advertise which you
+        # hold — an unsubscribed key answers `OPTION_NOT_IN_PLAN` (verified). On
+        # by default would mean advertising a tool that always fails for anyone
+        # who hasn't bought the plan, which is worse than not offering it. Turn it
+        # on once the Answers plan is active on the key.
+        "brave_answers_enabled": False,
+        # Per-depth research envelopes. Same principle as alloy.effort_tiers: the
+        # model names a depth, the operator owns the numbers. Brave caps these at
+        # 5 iterations / 50 queries / 300 seconds.
+        "brave_research_tiers": {
+            "mini": {"iterations": 2, "queries": 8, "seconds": 90},
+            "auto": {"iterations": 3, "queries": 20, "seconds": 180},
+            "pro": {"iterations": 5, "queries": 40, "seconds": 300},
+        },
         # API keys (env fallback: TAVILY_API_KEY / BRAVE_API_KEY). Redacted on GET /api/config.
         "tavily_api_key": None,
         "brave_api_key": None,
