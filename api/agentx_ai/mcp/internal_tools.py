@@ -2726,6 +2726,106 @@ def _search_cfg(key: str) -> Any:
     return shipped if value is None else value
 
 
+# Operator search defaults → the per-call param each one fills in. Applied only
+# where the model stayed silent, so an explicit choice always wins.
+_SEARCH_DEFAULT_PARAMS: tuple[tuple[str, str], ...] = (
+    ("default_search_depth", "search_depth"),
+    ("default_chunks_per_source", "chunks_per_source"),
+    ("safesearch", "safesearch"),
+    ("country", "country"),
+    ("search_lang", "search_lang"),
+)
+
+
+def _apply_search_defaults(opts: dict[str, Any]) -> dict[str, Any]:
+    """Fill unset params from the operator's configured search defaults.
+
+    Returns a NEW dict. An empty string / 0 means "no opinion", which is the
+    shipped state — so a fresh install behaves exactly as it did before these
+    knobs existed. Backends still drop whatever they don't support, so setting
+    `safesearch` doesn't leak a Brave-only param into a Tavily call.
+    """
+    merged = dict(opts)
+    for cfg_key, param in _SEARCH_DEFAULT_PARAMS:
+        if merged.get(param) is not None:
+            continue  # the model asked for something specific; leave it alone
+        value = _search_cfg(cfg_key)
+        if value in (None, "", 0):
+            continue
+        merged[param] = value
+    return merged
+
+
+def _source_policy() -> dict[str, Any]:
+    """The operator's source policy, normalized to `{trusted, blocked, goggle}`."""
+    raw = _search_cfg("source_policy") or {}
+    if not isinstance(raw, dict):
+        return {"trusted": [], "blocked": [], "goggle": ""}
+
+    def _domains(key: str) -> list[str]:
+        value = raw.get(key) or []
+        if isinstance(value, str):  # tolerate a comma-separated string
+            value = value.split(",")
+        return [d.strip() for d in value if isinstance(d, str) and d.strip()]
+
+    goggle = raw.get("goggle")
+    return {
+        "trusted": _domains("trusted"),
+        "blocked": _domains("blocked"),
+        "goggle": goggle.strip() if isinstance(goggle, str) else "",
+    }
+
+
+def _policy_goggle(policy: dict[str, Any]) -> str:
+    """Compile the source policy into Brave Goggle rules.
+
+    A hosted Goggle URL is passed through untouched (Brave fetches it). Otherwise
+    the domain lists become inline rules: `blocked` → `$discard,site=`, `trusted`
+    → `$boost=3,site=`. Trusted deliberately BOOSTS rather than `$discard`-ing
+    everything else — an allow-list that hard-drops the rest turns a slightly-off
+    trusted list into zero results, which is a much worse failure than a few
+    lower-ranked extras.
+    """
+    goggle = policy.get("goggle") or ""
+    if goggle.startswith(("http://", "https://")):
+        return goggle
+    rules = [r for r in goggle.splitlines() if r.strip()]
+    rules += [f"$discard,site={d}" for d in policy.get("blocked", [])]
+    rules += [f"$boost=3,site={d}" for d in policy.get("trusted", [])]
+    return "\n".join(rules)
+
+
+def _apply_source_policy(
+    opts: dict[str, Any], backend: str, policy: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Merge the operator's source policy into one call's params.
+
+    Returns a NEW opts dict — the caller's is reused across a fan-out's sub-queries
+    and must not be mutated. `blocked` is a hard floor (always merged, model can't
+    escape it); `trusted` only applies when the model didn't scope the call itself.
+
+    ``policy`` is passed in during a fan-out so the config is read once on the
+    calling thread rather than once per worker.
+    """
+    policy = _source_policy() if policy is None else policy
+    if not (policy["trusted"] or policy["blocked"] or policy["goggle"]):
+        return opts
+    merged = dict(opts)
+    if backend == "brave":
+        compiled = _policy_goggle(policy)
+        if compiled and not merged.get("goggles"):
+            merged["goggles"] = compiled
+        return merged
+    # Tavily: domain include/exclude lists.
+    if policy["blocked"]:
+        existing = merged.get("exclude_domains") or []
+        existing = [existing] if isinstance(existing, str) else list(existing)
+        merged["exclude_domains"] = list(dict.fromkeys([*existing, *policy["blocked"]]))
+    if policy["trusted"] and not merged.get("include_domains"):
+        merged["include_domains"] = list(policy["trusted"])
+    return merged
+
+
 def _brave_grounding_on(opts: dict[str, Any]) -> bool:
     """Whether this Brave search should use the LLM Context endpoint.
 
@@ -2768,6 +2868,8 @@ def _brave_context(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
         params["country"] = opts["country"]
     if opts.get("search_lang"):
         params["search_lang"] = opts["search_lang"]
+    if opts.get("goggles"):
+        params["goggles"] = opts["goggles"]
 
     data = _http_get_json(
         "https://api.search.brave.com/res/v1/llm/context",
@@ -2821,6 +2923,8 @@ def _brave_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
     if opts.get("offset") is not None:
         # Brave rejects a negative offset; clamp rather than 422 the whole call.
         params["offset"] = max(0, int(opts["offset"]))
+    if opts.get("goggles"):
+        params["goggles"] = opts["goggles"]
     if opts.get("extra_snippets"):
         params["extra_snippets"] = "true"
     data = _http_get_json(
@@ -3000,18 +3104,29 @@ def _record_search_spend(
     description=_TOOL_BASE_DESC["web_search"],
     input_schema=_base_tool_schema("web_search"),
 )
-def _run_backends(q: str, order: list[str], max_results: int, opts: dict[str, Any]) -> dict[str, Any]:
+def _run_backends(
+    q: str,
+    order: list[str],
+    max_results: int,
+    opts: dict[str, Any],
+    policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Try each backend in turn for one query. Pure network work, no side effects.
 
     Runs on a worker thread during a fan-out, so it must not touch the budget
     window, the ledger, or the cache: ContextVars do not cross into
     `ThreadPoolExecutor` workers, so a `charge_cost` here would silently find no
     window and drop the spend. The caller owns all of that.
+
+    The source policy is applied per backend here (Tavily and Brave express it
+    differently) but resolved once by the caller.
     """
     errors: list[str] = []
     for name in order:
         try:
-            payload = _SEARCH_BACKENDS[name](q, max_results, **opts)
+            payload = _SEARCH_BACKENDS[name](
+                q, max_results, **_apply_source_policy(opts, name, policy)
+            )
         except Exception as e:  # noqa: BLE001 - backend/network failure → try fallback
             errors.append(f"{name}: {e}")
             logger.warning(f"web_search backend '{name}' failed: {e}")
@@ -3059,6 +3174,9 @@ def web_search(
     if max_results is None:
         max_results = int(cfg.get("search.max_results", 5))
     ttl = int(cfg.get("search.cache_ttl_seconds", 300))
+    # Operator defaults fill only what the model left unset — and they join the
+    # cache key below, so changing a default doesn't serve pre-change results.
+    opts = _apply_search_defaults(opts)
 
     # Backend order: configured primary, then the other (if fallback enabled)
     primary = backend if backend in _SEARCH_BACKENDS else "tavily"
@@ -3066,12 +3184,20 @@ def web_search(
     if fallback_enabled:
         order += [b for b in _BACKEND_ORDER if b != primary]
 
+    # Resolved once here, not once per worker (and never mutated downstream).
+    policy = _source_policy()
+
     now = time.time()
     # Cache keys are per sub-query. The `search:` prefix keeps this namespace
     # clear of the `extract:`/`research:` entries sharing the dict — without it a
     # query literally starting with "extract:" could collide with an extraction.
+    # The policy is part of the key: change the trusted/blocked lists and the
+    # previous results are answers to a different question.
+    policy_key = repr(sorted((k, repr(v)) for k, v in policy.items()))
+
     def _key(q: str) -> str:
-        return f"search:{backend}:{max_results}:{q.lower()}:{sorted(opts.items())!r}"
+        return (f"search:{backend}:{max_results}:{q.lower()}:"
+                f"{sorted(opts.items())!r}:{policy_key}")
 
     # Split cached from pending on the calling thread: a cache hit spends nothing,
     # so it must not be charged, and the cache dict is left single-threaded.
@@ -3099,11 +3225,12 @@ def web_search(
     fresh: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
     if len(pending) == 1:
-        fresh[pending[0]] = _run_backends(pending[0], order, max_results, opts)
+        fresh[pending[0]] = _run_backends(pending[0], order, max_results, opts, policy)
     elif pending:
         with ThreadPoolExecutor(max_workers=len(pending)) as pool:
             futures = {
-                pool.submit(_run_backends, q, order, max_results, opts): q for q in pending
+                pool.submit(_run_backends, q, order, max_results, opts, policy): q
+                for q in pending
             }
             for future in as_completed(futures):
                 fresh[futures[future]] = future.result()

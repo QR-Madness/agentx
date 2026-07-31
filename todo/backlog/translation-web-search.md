@@ -28,6 +28,25 @@
 > tool-gating persistence-bug fix, **Settings → Multi-Agent** toggle, **Researcher** preset); profile
 > editor **hybrid Tabs+Accordion** UX. SearXNG was dropped in favor of Tavily (no proxy/blacklist ops).
 
+> **Search economics & control plane shipped `[v0.21.253–256]`** (4 slices): targeted extraction
+> (`web_extract(query=…)` — 3.8% of a page), the full Tavily/Brave param surface + provider-reported
+> cost, **Brave as a first-class backend** (`llm/context` grounding + Answers deep research), **fan-out**
+> (`queries[]` in one tool round) + URL canonicalization/cross-turn dedup + a **per-turn dollar
+> ceiling**, and **Settings → Web Search** as the operator control plane (defaults, budgets, and a
+> **source policy** mapping to Tavily domain filters or a Brave Goggle). Details in
+> [Development-Notes.md](../../Development-Notes.md); Brave Answers is built + unit-tested but
+> **not live-verified** (the key lacks the Answers plan) and ships default-off.
+
+Still open here:
+- [ ] **Redis-backed shared search cache** — `_SEARCH_CACHE` is in-process, so credits are re-spent
+      across workers and API restarts. Redis is already a dependency; a shared TTL cache keyed by the
+      same normalized key would cut real spend, especially in the cluster/multi-user deployments.
+- [ ] **Per-profile source policy** — the policy is global today; an agent-level override would let a
+      research agent and a coding agent trust different corners of the web.
+- [ ] **`web_extract` is not on the per-turn budget gate** — it records spend but never calls
+      `_check_search_budget`, so a turn can extract without limit. Deliberately left alone (adding it
+      changes existing research-turn behaviour); wants its own weighting decision.
+
 Deferred — **Search Router** subsystem ("browsing on autopilot"); a delegatable Researcher already
 covers ~80% of this via its own tool loop:
 - [ ] **`fetch_page` tool** — trafilatura (static) now, Playwright (JS-heavy) later — lets a

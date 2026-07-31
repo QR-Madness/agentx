@@ -44,8 +44,8 @@ Open:
       — **default-off** (`search.brave_answers_enabled`) because Answers is a separate
       subscription and an unsubscribed key returns `OPTION_NOT_IN_PLAN`; it is therefore built to
       the documented contract and unit-tested, but **not yet live-verified**.
-      Still open: a curated **Goggle** for source-quality re-ranking (boost primary/authoritative
-      sources, discard content farms) — folded into the source-policy work.
+      **Goggles shipped `[v0.21.256]`** as part of the source policy
+      (`search.source_policy` → `$discard`/`$boost` rules, or a hosted Goggle URL).
 - [~] **Dollar-denominated spend ceiling + composer cost-meter** — **ceiling shipped `[v0.21.255]`**:
       `search.per_turn_cost_usd` / `search.research_per_turn_cost_usd` bind alongside the call
       count (whichever runs out first; both 0 = off by default), and the `budget` block stamped on

@@ -867,9 +867,29 @@ export interface ConfigUpdate {
     fallback_enabled?: boolean;
     max_results?: number;
     cache_ttl_seconds?: number;
+    timeout?: number;
     /** Omit when unchanged (redacted) so the stored key isn't overwritten. */
     tavily_api_key?: string;
     brave_api_key?: string;
+    /** Per-turn ceilings. 0 disables the ceiling in every case. */
+    per_turn_limit?: number;
+    research_per_turn_limit?: number;
+    per_turn_cost_usd?: number;
+    research_per_turn_cost_usd?: number;
+    /** Operator search defaults — '' / 0 mean "let the provider decide". */
+    default_search_depth?: string;
+    default_chunks_per_source?: number;
+    safesearch?: string;
+    country?: string;
+    search_lang?: string;
+    /** Brave grounding (LLM Context) + the separately-subscribed Answers plan. */
+    brave_grounding_default?: boolean;
+    brave_context_max_tokens?: number;
+    brave_context_max_tokens_per_url?: number;
+    brave_context_threshold?: string;
+    brave_answers_enabled?: boolean;
+    /** Applied to every search; `blocked` is a hard floor, `trusted` a preference. */
+    source_policy?: { trusted?: string[]; blocked?: string[]; goggle?: string };
   };
   /** Conversation-context management (the Conversation Context settings section). */
   context?: {

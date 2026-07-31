@@ -11884,6 +11884,117 @@ class WebSearchCapabilityTest(TestCase):
                             for k in it._SEARCH_CACHE))
         self.assertTrue(any(k.startswith("search:") for k in it._SEARCH_CACHE))
 
+    # --- Control plane: settings surface + source policy ------------------
+
+    def test_search_write_allowlist_matches_manifest(self):
+        """`views.config_update` and the settings manifest must agree on which
+        search keys are writable — the manifest's docstring promises lockstep and
+        they have drifted once already."""
+        import re as _re
+        from pathlib import Path
+        from agentx_ai.settings_manifest import _CONFIG_WRITE_ROUTES
+        from agentx_ai.config import DEFAULT_CONFIG
+
+        views_src = Path(__file__).with_name("views.py").read_text()
+        block = _re.search(r"_SEARCH_KEYS = \((.*?)\)\n", views_src, _re.DOTALL)
+        self.assertIsNotNone(block)
+        assert block is not None  # narrow for the type checker
+        view_keys = set(_re.findall(r'"([a-z0-9_]+)"', block.group(1)))
+        self.assertEqual(view_keys, set(_CONFIG_WRITE_ROUTES["search"]))
+        # Every writable key must actually exist, or the UI writes into the void.
+        self.assertEqual(view_keys - set(DEFAULT_CONFIG["search"]), set())
+
+    def test_search_defaults_fill_only_unset_params(self):
+        from agentx_ai.mcp import internal_tools as it
+        cfg = self._cfg(**{
+            "search.default_search_depth": "fast",
+            "search.default_chunks_per_source": 2,
+            "search.country": "GB",
+        })
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            filled = it._apply_search_defaults({"search_depth": "advanced"})
+        self.assertEqual(filled["search_depth"], "advanced")  # model's choice wins
+        self.assertEqual(filled["chunks_per_source"], 2)      # operator fills the gap
+        self.assertEqual(filled["country"], "GB")
+
+    def test_search_defaults_are_no_opinion_when_shipped(self):
+        """Shipped defaults are empty, so a fresh install searches exactly as it
+        did before these knobs existed."""
+        from agentx_ai.mcp import internal_tools as it
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()):
+            self.assertEqual(it._apply_search_defaults({}), {})
+
+    def test_source_policy_maps_per_backend(self):
+        from agentx_ai.mcp import internal_tools as it
+        cfg = self._cfg(**{"search.source_policy": {
+            "trusted": ["arxiv.org"], "blocked": ["pinterest.com"], "goggle": "",
+        }})
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            tav = it._apply_source_policy({}, "tavily")
+            brave = it._apply_source_policy({}, "brave")
+        self.assertEqual(tav["exclude_domains"], ["pinterest.com"])
+        self.assertEqual(tav["include_domains"], ["arxiv.org"])
+        self.assertIn("$discard,site=pinterest.com", brave["goggles"])
+        self.assertIn("$boost=3,site=arxiv.org", brave["goggles"])
+
+    def test_blocked_is_hard_floor_trusted_is_soft(self):
+        """Blocked always applies — the model can't search its way past it. Trusted
+        yields to an explicit per-call scope, because silently over-narrowing is
+        how a research turn comes back empty."""
+        from agentx_ai.mcp import internal_tools as it
+        cfg = self._cfg(**{"search.source_policy": {
+            "trusted": ["arxiv.org"], "blocked": ["spam.example"], "goggle": "",
+        }})
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            out = it._apply_source_policy(
+                {"exclude_domains": ["other.example"], "include_domains": ["nature.com"]},
+                "tavily",
+            )
+        self.assertIn("spam.example", out["exclude_domains"])   # merged, not replaced
+        self.assertIn("other.example", out["exclude_domains"])
+        self.assertEqual(out["include_domains"], ["nature.com"])  # model's scope kept
+
+    def test_source_policy_does_not_mutate_shared_opts(self):
+        """A fan-out reuses one opts dict across sub-queries; mutating it would
+        leak one backend's mapping into the next query's call."""
+        from agentx_ai.mcp import internal_tools as it
+        cfg = self._cfg(**{"search.source_policy": {
+            "trusted": [], "blocked": ["spam.example"], "goggle": "",
+        }})
+        shared: dict = {}
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            it._apply_source_policy(shared, "tavily")
+            it._apply_source_policy(shared, "brave")
+        self.assertEqual(shared, {})
+
+    def test_hosted_goggle_passes_through(self):
+        from agentx_ai.mcp import internal_tools as it
+        cfg = self._cfg(**{"search.source_policy": {
+            "trusted": ["arxiv.org"], "blocked": [], "goggle": "https://example.com/x.goggle",
+        }})
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            out = it._apply_source_policy({}, "brave")
+        self.assertEqual(out["goggles"], "https://example.com/x.goggle")
+
+    def test_no_policy_is_a_passthrough(self):
+        from agentx_ai.mcp import internal_tools as it
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()):
+            self.assertEqual(it._apply_source_policy({"a": 1}, "tavily"), {"a": 1})
+
+    def test_web_research_craft_layer_is_registered(self):
+        """The layer teaching fan-out / targeted extraction / untrusted-content
+        must actually be in the builtin stack — new capability nobody is told
+        about is capability that goes unused."""
+        from agentx_ai.prompts.layers import BUILTIN_LAYERS
+        layer = next((la for la in BUILTIN_LAYERS if la.id == "web-research-craft"), None)
+        self.assertIsNotNone(layer)
+        assert layer is not None
+        self.assertIn("queries", layer.default)
+        self.assertIn("seen_earlier", layer.default)
+        self.assertIn("UNTRUSTED", layer.default.upper())
+        # Sits between Projects (25) and Structured Thinking (30).
+        self.assertTrue(25 < layer.order < 30)
+
     # --- Turn economics: fan-out, dedup, cost envelope --------------------
 
     def test_canonical_url_normalizes_identity(self):
@@ -16225,6 +16336,7 @@ class PromptStackCompositionTest(TestCase):
         "reasoning-vs-results",
         "memory-tools",
         "project-collaboration",
+        "web-research-craft",
         "structured-thinking",
         "concise-output",
         "safety-constraints",
