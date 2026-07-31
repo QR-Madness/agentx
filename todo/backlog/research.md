@@ -46,8 +46,11 @@ Open:
       the documented contract and unit-tested, but **not yet live-verified**.
       Still open: a curated **Goggle** for source-quality re-ranking (boost primary/authoritative
       sources, discard content farms) — folded into the source-policy work.
-- [ ] **Dollar-denominated spend ceiling + composer cost-meter** — gate research on cumulative $
-      (not just call count), with a live per-conversation cost chip in the composer.
+- [~] **Dollar-denominated spend ceiling + composer cost-meter** — **ceiling shipped `[v0.21.255]`**:
+      `search.per_turn_cost_usd` / `search.research_per_turn_cost_usd` bind alongside the call
+      count (whichever runs out first; both 0 = off by default), and the `budget` block stamped on
+      every result carries `cost_remaining_usd` so the model paces by spend.
+      Still open: the **live per-conversation cost chip in the composer** (the UI half).
 - [ ] **Inline source URLs in saved reports** — v1.1's acceptance report names its sources (graded
       table) but doesn't hyperlink them; the URLs exist in the conversation's auto-captured
       `citation` exhibits (Bibliography). Bridge them into the document the agent saves (prompt

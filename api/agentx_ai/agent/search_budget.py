@@ -35,6 +35,12 @@ class _Window:
     # by ``charge_cost`` from the search spend recorder). Surfaced to the model via
     # ``snapshot`` so it can pace by cost, not just call count.
     cost_used: float = field(default=0.0)
+    # Hard USD ceiling for the turn; 0 ⇒ no cost ceiling (calls still capped by
+    # ``limit``). Whichever of the two binds first stops the turn's spending.
+    cost_limit: float = field(default=0.0)
+    # Canonical URLs already returned to the model this turn. A second sighting
+    # is answered with a stub instead of a full re-send — see `mark_seen`.
+    seen_urls: set[str] = field(default_factory=set)
 
 
 _window: ContextVar[_Window | None] = ContextVar("search_budget_window", default=None)
@@ -46,10 +52,16 @@ def search_budget_window(
     *,
     conversation_id: str | None = None,
     agent_id: str | None = None,
+    cost_limit: float = 0.0,
 ) -> Iterator[None]:
     """Open a per-turn budget window. Restores any prior window on exit."""
     token = _window.set(
-        _Window(limit=max(0, int(limit or 0)), conversation_id=conversation_id, agent_id=agent_id)
+        _Window(
+            limit=max(0, int(limit or 0)),
+            conversation_id=conversation_id,
+            agent_id=agent_id,
+            cost_limit=max(0.0, float(cost_limit or 0.0)),
+        )
     )
     try:
         yield
@@ -72,6 +84,37 @@ def consume(weight: int = 1) -> tuple[bool, int, int]:
         return False, win.used, win.limit
     win.used += weight
     return True, win.used, win.limit
+
+
+def cost_exhausted() -> tuple[bool, float, float]:
+    """Whether the turn's USD envelope is spent: ``(exhausted, used, limit)``.
+
+    Checked *before* a call, alongside ``consume`` — a turn stops when either the
+    call count or the dollar ceiling binds, whichever comes first. A limit of 0
+    (the default) means no cost ceiling, so this never blocks unless an operator
+    sets one.
+    """
+    win = _window.get()
+    if win is None or win.cost_limit <= 0:
+        return False, (win.cost_used if win else 0.0), 0.0
+    return win.cost_used >= win.cost_limit, win.cost_used, win.cost_limit
+
+
+def mark_seen(urls: list[str]) -> set[str]:
+    """Record ``urls`` as returned this turn; give back those already seen.
+
+    Deliberately *not* a filter: the caller replaces a repeat sighting with a
+    compact stub rather than dropping it, because the model may legitimately
+    re-encounter a page under a different query and the citation pipeline still
+    needs the URL. No active window ⇒ nothing is tracked (background callers
+    aren't paced).
+    """
+    win = _window.get()
+    if win is None:
+        return set()
+    repeats = {u for u in urls if u in win.seen_urls}
+    win.seen_urls.update(urls)
+    return repeats
 
 
 def charge_cost(usd: float) -> None:
@@ -101,6 +144,19 @@ def snapshot() -> tuple[int, int, int | None, float]:
         cost = win.cost_used if win is not None else 0.0
         return used, 0, None, cost
     return win.used, win.limit, max(0, win.limit - win.used), win.cost_used
+
+
+def cost_snapshot() -> tuple[float, float, float | None]:
+    """Return ``(cost_used, cost_limit, cost_remaining)`` for the active window.
+
+    ``cost_remaining`` is ``None`` when no dollar ceiling is set.
+    """
+    win = _window.get()
+    if win is None:
+        return 0.0, 0.0, None
+    if win.cost_limit <= 0:
+        return win.cost_used, 0.0, None
+    return win.cost_used, win.cost_limit, max(0.0, win.cost_limit - win.cost_used)
 
 
 def attribution() -> tuple[str | None, str | None]:
