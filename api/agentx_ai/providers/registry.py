@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from pydantic import BaseModel
@@ -49,6 +49,9 @@ class ProviderRegistry:
         self._providers: dict[str, ModelProvider] = {}
         self._model_configs: dict[str, ModelConfig] = {}
         self._provider_configs: dict[str, ProviderConfig] = {}
+        # Custom (user-registered) provider id -> ProviderKind value. Populated by
+        # _load_custom_configs; get_provider consults it for anything not built in.
+        self._custom_kinds: dict[str, str] = {}
         # Injectable ConfigManager (defaults to the global singleton on use).
         self._config_manager = config_manager
         # Best-effort provider health cache for the fallback path: name ->
@@ -134,7 +137,38 @@ class ProviderRegistry:
                 api_key=vercel_key,
                 base_url=vercel_url or "https://ai-gateway.vercel.sh/v1",
             )
-    
+
+        # User-registered OpenAI-compatible endpoints (providers/catalog.py).
+        # Loaded last so a custom entry can never shadow a built-in — the catalog
+        # already refuses built-in ids, and this ordering makes that belt-and-braces.
+        self._load_custom_configs(config)
+
+    def _load_custom_configs(self, config: ConfigManager) -> None:
+        """Merge custom catalog entries into the provider config map.
+
+        Kept separate from the built-in block so a malformed custom record can
+        never take provider loading down with it: the catalog drops unusable
+        records, and anything else here is logged and skipped.
+        """
+        from .catalog import custom_entries
+
+        try:
+            entries = custom_entries(config)
+        except Exception as e:  # noqa: BLE001 — a bad config must not break boot
+            logger.warning(f"Failed to load custom providers: {e}")
+            return
+
+        for entry in entries.values():
+            if not entry.configured or entry.id in self._provider_configs:
+                continue
+            self._provider_configs[entry.id] = ProviderConfig(
+                api_key=entry.api_key,
+                base_url=entry.base_url,
+                extra={"headers": entry.headers, "kind": entry.kind.value},
+            )
+            self._custom_kinds[entry.id] = entry.kind.value
+
+
     def load_config(self, config_path: Path) -> None:
         """Load configuration from a YAML file."""
         with open(config_path) as f:
@@ -196,6 +230,12 @@ class ProviderRegistry:
         elif name == "vercel":
             from .vercel_provider import VercelProvider
             provider = VercelProvider(config)
+        elif name in self._custom_kinds:
+            # A user-registered endpoint. Only the OpenAI-compatible kind is
+            # registerable today (catalog.CUSTOM_KINDS), so the kind lookup is a
+            # forward-compatibility hook rather than a branch that fires.
+            from .openai_compatible_provider import OpenAICompatibleProvider
+            provider = OpenAICompatibleProvider(config, name=name)
         else:
             raise ModelNotFoundError(f"Unknown provider: {name}", provider=name)
 
@@ -321,6 +361,116 @@ class ProviderRegistry:
         # Nothing configured/healthy in the chain — strict resolve gives a clear error.
         provider, model_id = self.get_provider_for_model(model)
         return provider, model_id, None
+
+    def describe_route(
+        self, model: str, *, preferred_fallback: str | None = None
+    ) -> dict[str, Any]:
+        """Explain where a turn on ``model`` would actually go — without calling.
+
+        Mirrors ``resolve_with_fallback``'s ordering (role expansion → configured
+        → not cached-unhealthy) and reports the whole candidate chain with each
+        one's capabilities. The point is to surface *substitution*: a requested
+        model quietly demoted to a smaller one is invisible at runtime and shows
+        up later as premature compaction, so the surface needs to be able to say
+        it plainly.
+
+        Read-only and total: a provider that can't describe itself contributes
+        nulls rather than raising.
+        """
+        from .catalog import get_entry
+
+        configured = set(self._provider_configs)
+
+        def _describe(candidate: str) -> dict[str, Any]:
+            provider_name, model_id = candidate.split(":", 1)
+            # Pass the registry's own ConfigManager — falling through to the
+            # global singleton here would read the live config.json even for an
+            # injected registry.
+            entry = get_entry(provider_name, self._config_manager)
+            described: dict[str, Any] = {
+                "model": candidate,
+                "provider": provider_name,
+                "provider_label": entry.label if entry else provider_name,
+                "model_id": model_id,
+                "configured": provider_name in configured,
+                "healthy": not self._is_cached_unhealthy(provider_name),
+                # Whether the provider's catalog actually lists this model id. A
+                # False here is the tell behind the whole class of "why is my
+                # context tiny" bugs: an unlisted id falls back to the provider's
+                # conservative defaults, which look like real numbers but aren't.
+                "known": None,
+                "context_window": None,
+                "max_output_tokens": None,
+                "cost_per_1k_input": None,
+                "cost_per_1k_output": None,
+            }
+            if described["configured"]:
+                try:
+                    provider = self.get_provider(provider_name)
+                    listed = provider.list_models()
+                    known = model_id in listed if listed else None
+                    caps = provider.get_capabilities(model_id)
+                    described.update({
+                        "known": known,
+                        # Report capabilities only when we know the model — an
+                        # unlisted id's numbers are defaults, and publishing them
+                        # as fact is how "8192" became a believable lie.
+                        "context_window": caps.context_window if known is not False else None,
+                        "max_output_tokens": caps.max_output_tokens if known is not False else None,
+                        "cost_per_1k_input": caps.cost_per_1k_input,
+                        "cost_per_1k_output": caps.cost_per_1k_output,
+                    })
+                except Exception as e:  # noqa: BLE001 — a description never raises
+                    logger.debug(f"Could not describe '{candidate}': {e}")
+            return described
+
+        candidates = [_describe(c) for c in self._fallback_chain(model, preferred_fallback)]
+        resolved = next(
+            (c for c in candidates if c["configured"] and c["healthy"]),
+            None,
+        )
+        return {
+            "requested": model,
+            "resolved": resolved,
+            "substituted": bool(resolved and resolved["model"] != model),
+            "candidates": candidates,
+            "fallback_enabled": self._fallback_enabled(),
+        }
+
+    async def describe_route_async(
+        self,
+        model: str,
+        *,
+        preferred_fallback: str | None = None,
+        warm_timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        """``describe_route`` with the catalogs warmed first.
+
+        A cold provider reports its *default* capabilities for every model, so
+        describing a route before the catalog loads produces confident-looking
+        numbers that are simply wrong (OpenRouter's 8192 default in place of a
+        real 1M window). Warm every provider in the chain in parallel — bounded,
+        best-effort — then describe.
+        """
+        import asyncio
+
+        names = {
+            candidate.split(":", 1)[0]
+            for candidate in self._fallback_chain(model, preferred_fallback)
+        } & set(self._provider_configs)
+
+        async def _warm(name: str) -> None:
+            try:
+                provider = self.get_provider(name)
+                fetch = getattr(provider, "fetch_models", None)
+                if callable(fetch):
+                    await asyncio.wait_for(cast(Any, fetch()), timeout=warm_timeout)
+            except Exception as e:  # noqa: BLE001 — a cold catalog is not fatal
+                logger.debug(f"Could not warm provider '{name}' for route describe: {e}")
+
+        if names:
+            await asyncio.gather(*[_warm(name) for name in names])
+        return self.describe_route(model, preferred_fallback=preferred_fallback)
 
     async def complete_with_fallback(
         self,
@@ -460,6 +610,9 @@ class ProviderRegistry:
             logger.warning(f"Error closing providers during reload: {e}")
             self._providers.clear()
         self._provider_configs.clear()
+        # Cleared too, or a deleted custom provider keeps resolving from a stale
+        # kind entry after the user removes it.
+        self._custom_kinds.clear()
 
         # Reload config from the (possibly injected) ConfigManager
         (self._config_manager or get_config_manager()).reload()

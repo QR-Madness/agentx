@@ -99,6 +99,15 @@ DEFAULT_CONFIG = {
             "site_url": None,
             "app_name": None,
         },
+        # User-registered OpenAI-compatible endpoints, keyed by provider id
+        # (the left half of a `provider:model` reference). See providers/catalog.py.
+        "custom": {},
+        # NOTE: `providers.policy.allow_private_endpoints` is deliberately NOT
+        # defaulted here. Its safe value depends on the deployment shape (local
+        # vs. cluster-exposed), which isn't known when this literal is written to
+        # a fresh config.json — providers/egress.py computes it instead, and an
+        # explicit operator setting always wins. Every other child of `providers`
+        # stays a mapping so the config redactor's shape holds.
     },
     "models": {
         "defaults": {

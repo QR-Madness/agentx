@@ -365,6 +365,119 @@ Async health check of all configured providers.
 
 `status` is `"healthy"` if all pass, `"degraded"` if any fail.
 
+### Provider Catalog
+
+```
+GET /api/providers/catalog
+```
+
+Every reachable backend — the five built-ins plus any custom endpoint the user
+registered. **Secrets never leave**: a stored key is reduced to a fingerprint and
+only header *names* are returned.
+
+**Response:**
+```json
+{
+  "providers": [
+    {
+      "id": "groq",
+      "kind": "openai_compatible",
+      "label": "Groq Cloud",
+      "base_url": "https://api.groq.com/openai/v1",
+      "key_fingerprint": "····3f21",
+      "header_names": ["X-Org"],
+      "enabled": true,
+      "builtin": false,
+      "credential": "api_key",
+      "configured": true
+    }
+  ],
+  "count": 6,
+  "configured": 4
+}
+```
+
+### Custom Providers
+
+```
+POST   /api/providers/custom
+DELETE /api/providers/custom/{id}
+POST   /api/providers/test
+```
+
+Register any **OpenAI-compatible** endpoint (Groq, Together, DeepSeek, Fireworks,
+xAI, Mistral, Cerebras, Ollama, vLLM, a private gateway). The `id` becomes the
+left half of a model reference — an entry registered as `groq` resolves
+`groq:llama-3.3-70b`. Ids are 2–32 characters, lowercase alphanumeric plus `-`/`_`,
+and may not collide with a built-in.
+
+`POST /api/providers/custom` merges onto the stored record, so a partial update
+(renaming the label) keeps the existing key. Both write endpoints hot-reload the
+provider registry — no restart.
+
+`POST /api/providers/test` dry-runs an **unsaved** draft by timing a `/models`
+listing, so the client can validate before committing:
+
+```json
+{ "reachable": true, "elapsed_ms": 412, "models_available": 364, "models": ["..."], "error": null }
+```
+
+Deleting a provider that agent profiles still reference is safe: those references
+degrade through the fallback chain instead of failing. The delete response names
+the affected profiles in `referencing_profiles`.
+
+:::note[Endpoint egress policy]
+`/providers/test` and `/providers/custom` fetch a URL the caller supplies, so they
+run behind an egress guard. A **local** install allows private addresses — LAN LM
+Studio and `localhost` Ollama are the point. Once the API is **cluster-exposed**
+(`AGENTX_PUBLIC_HOST` or `AGENTX_GATEWAY_TOKEN` set), private, loopback,
+link-local and metadata addresses are blocked and the endpoints answer `403`.
+Override either way with `providers.policy.allow_private_endpoints`.
+:::
+
+### Model Route
+
+```
+GET /api/providers/route?model=openrouter:~anthropic/claude-sonnet-latest
+```
+
+Resolves a model reference exactly as a live turn would — role expansion, provider
+health, then the fallback chain — **without making a call**. Optional `&fallback=`
+supplies the caller's known-good model, tried before the global default.
+
+**Response:**
+```json
+{
+  "requested": "openrouter:~anthropic/claude-sonnet-latest",
+  "resolved": {
+    "model": "openrouter:~anthropic/claude-sonnet-latest",
+    "provider": "openrouter",
+    "provider_label": "OpenRouter",
+    "configured": true,
+    "healthy": true,
+    "known": true,
+    "context_window": 1000000,
+    "max_output_tokens": 128000
+  },
+  "substituted": false,
+  "candidates": ["..."],
+  "fallback_enabled": true
+}
+```
+
+Two fields carry the diagnostic weight:
+
+- **`substituted`** — true when the requested model is unavailable and something
+  else would run. This substitution is invisible at runtime and shows up later as
+  premature compaction.
+- **`known`** — whether the provider's catalog actually lists the model id. `false`
+  means its capabilities are *unknown*, not small, so `context_window` and
+  `max_output_tokens` come back `null` rather than reporting a provider default as
+  if it were fact.
+
+Provider catalogs are warmed before resolving, so a cold cache can't report a
+default window as the model's real one.
+
 ### Model Roles
 
 ```

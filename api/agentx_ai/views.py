@@ -1878,6 +1878,186 @@ async def providers_health(request):
     })
 
 
+@require_methods("GET")
+def providers_catalog(request):
+    """GET /api/providers/catalog — every reachable backend, built-in and custom.
+
+    Secrets never leave: each entry carries a key *fingerprint* (`····3f21`) and
+    header *names* only, which is all the client needs to render "a key is set".
+    """
+    from .providers.catalog import all_entries
+
+    entries = [entry.to_public_dict() for entry in all_entries().values()]
+    return JsonResponse({
+        "providers": entries,
+        "count": len(entries),
+        "configured": sum(1 for e in entries if e["configured"]),
+    })
+
+
+@csrf_exempt
+@require_methods("POST")
+def providers_custom_upsert(request):
+    """POST /api/providers/custom — register or update an OpenAI-compatible endpoint.
+
+    Body: ``{id, label?, base_url, api_key?, headers?, enabled?}``. Partial updates
+    merge, so renaming a label doesn't clear the stored key. Hot-reloads the
+    registry so the new endpoint is usable on the next turn without a restart.
+    """
+    from .providers.catalog import upsert_custom
+    from .providers.egress import EndpointNotAllowed, assert_public_endpoint
+    from .providers.registry import reload_providers
+
+    data, error = parse_json_body(request)
+    if error:
+        return error
+
+    provider_id = str(data.get("id") or "").strip()
+    base_url = data.get("base_url")
+    try:
+        if base_url:
+            assert_public_endpoint(str(base_url))
+        entry = upsert_custom(provider_id, data)
+    except EndpointNotAllowed as e:
+        return json_error(str(e), status=403)
+    except ValueError as e:
+        return json_error(str(e), status=400)
+
+    reload_providers()
+    logger.info(f"Custom provider '{entry.id}' saved ({entry.base_url})")
+    return JsonResponse({"provider": entry.to_public_dict()})
+
+
+@csrf_exempt
+@require_methods("DELETE")
+def providers_custom_delete(request, provider_id: str):
+    """DELETE /api/providers/custom/{id} — unregister a custom endpoint.
+
+    Model references pointing at it (`{id}:some-model`) don't hard-fail afterwards:
+    `complete_with_fallback` walks past the now-unconfigured provider to the agent's
+    own model. The response reports how many agent profiles referenced it so the
+    client can say so plainly.
+    """
+    from .providers.catalog import delete_custom
+    from .providers.registry import reload_providers
+
+    if not delete_custom(provider_id):
+        return json_error(f"Provider '{provider_id}' is not registered", status=404)
+
+    reload_providers()
+    logger.info(f"Custom provider '{provider_id}' removed")
+    return JsonResponse({
+        "status": "deleted",
+        "id": provider_id,
+        "referencing_profiles": _profiles_referencing_provider(provider_id),
+    })
+
+
+def _profiles_referencing_provider(provider_id: str) -> list[str]:
+    """Names of agent profiles whose model points at ``provider_id``.
+
+    Best-effort: this only drives a confirmation message, so a profile-store
+    failure returns an empty list rather than blocking the delete.
+    """
+    prefix = f"{provider_id}:"
+    try:
+        from .agent.profiles import get_profile_manager
+
+        return [
+            profile.name
+            for profile in get_profile_manager().list_profiles()
+            if str(getattr(profile, "model", "") or "").startswith(prefix)
+        ]
+    except Exception as e:  # noqa: BLE001 — advisory only
+        logger.debug(f"Could not scan profiles for provider '{provider_id}': {e}")
+        return []
+
+
+@csrf_exempt
+async def providers_test(request):
+    """POST /api/providers/test — dry-run an endpoint before saving it.
+
+    Body: ``{base_url, api_key?, headers?}``. Times a `/models` listing and reports
+    the model count, so the client can validate a draft the user hasn't committed
+    yet. Runs behind the egress guard: this endpoint fetches a URL the caller
+    supplies, which is exactly the SSRF shape.
+
+    Method-checked inline rather than via ``@require_methods`` — that decorator's
+    wrapper is sync, so Django would treat this async view as sync and hand the
+    caller an un-awaited coroutine. Same reason the other async provider views
+    check inline.
+    """
+    import time
+
+    from .providers.base import ProviderConfig
+    from .providers.egress import EndpointNotAllowed, assert_public_endpoint
+    from .providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    if request.method == "OPTIONS":
+        return JsonResponse({}, status=200)
+    if request.method != "POST":
+        return json_error("Method not allowed", status=405)
+
+    data, error = parse_json_body(request)
+    if error:
+        return error
+
+    try:
+        base_url = assert_public_endpoint(str(data.get("base_url") or ""))
+    except EndpointNotAllowed as e:
+        return json_error(str(e), status=403)
+
+    headers = data.get("headers")
+    provider = OpenAICompatibleProvider(
+        ProviderConfig(
+            api_key=data.get("api_key") or None,
+            base_url=base_url,
+            timeout=10.0,
+            max_retries=0,
+            extra={"headers": headers if isinstance(headers, dict) else {}},
+        ),
+        name=str(data.get("id") or "draft"),
+    )
+
+    started = time.monotonic()
+    result = await provider.health_check()
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+
+    reachable = result.get("status") == "healthy"
+    return JsonResponse({
+        "reachable": reachable,
+        "base_url": base_url,
+        "elapsed_ms": elapsed_ms,
+        "models_available": result.get("models_available", 0),
+        "models": result.get("models", [])[:20],
+        "error": None if reachable else result.get("error"),
+    })
+
+
+async def providers_route(request):
+    """GET /api/providers/route?model= — where a turn actually goes.
+
+    Resolves a model reference the same way a live turn does (role expansion,
+    provider health, the fallback chain) and reports the winner plus the
+    candidate behind it. This is what lets the Providers surface state the real
+    route instead of inferring one client-side — the silent substitution it
+    exposes (an unavailable model quietly demoted to a smaller one) is precisely
+    the failure this endpoint exists to make visible.
+    """
+    if request.method != "GET":
+        return json_error("Method not allowed", status=405)
+
+    requested = (request.GET.get("model") or "").strip()
+    preferred = (request.GET.get("fallback") or "").strip() or None
+
+    if not requested:
+        return json_error("Pass ?model=provider:model-id", status=400)
+
+    return JsonResponse(
+        await get_registry().describe_route_async(requested, preferred_fallback=preferred)
+    )
+
+
 # ============== Agent Endpoints ==============
 
 
@@ -7728,6 +7908,43 @@ def jobs_clear_stuck(request):
 
 # ============== Config Management Endpoint ==============
 
+
+#: Config keys whose values are secrets wherever they appear in the tree.
+_SECRET_KEY_HINTS = ("key", "secret", "token", "password")
+
+#: Whole subtrees that are secret-by-assumption regardless of their inner names —
+#: custom providers let a user name their own auth headers, so `headers` can't be
+#: matched by key name alone.
+_SECRET_SUBTREES = ("headers",)
+
+
+def _redact_value(value: Any) -> str:
+    """`***3f21` — enough to recognize a secret, not enough to use it."""
+    text = str(value)
+    return '***' + text[-4:] if len(text) > 4 else '***'
+
+
+def _redact_secrets(node: Any, *, force: bool = False) -> Any:
+    """Recursively redact secret-looking leaves in a config subtree.
+
+    ``force`` marks a subtree whose leaves are all secrets (see
+    ``_SECRET_SUBTREES``). Non-dict leaves pass through untouched, so structure
+    and non-sensitive settings stay readable in the client.
+    """
+    if isinstance(node, dict):
+        redacted: dict[str, Any] = {}
+        for k, v in node.items():
+            key_is_secret = any(hint in str(k).lower() for hint in _SECRET_KEY_HINTS)
+            subtree_is_secret = str(k).lower() in _SECRET_SUBTREES
+            if (force or key_is_secret) and v and not isinstance(v, dict | list):
+                redacted[k] = _redact_value(v)
+            else:
+                redacted[k] = _redact_secrets(v, force=force or subtree_is_secret)
+        return redacted
+    if isinstance(node, list):
+        return [_redact_secrets(item, force=force) for item in node]
+    return _redact_value(node) if force and node else node
+
 def config_get(request):
     """
     GET /api/config - Get runtime configuration.
@@ -7747,24 +7964,13 @@ def config_get(request):
     safe_config = {}
     for key, value in all_config.items():
         if key in ('providers',):
-            # Redact API keys in providers
-            safe_value = {}
-            for provider, settings in (value or {}).items():
-                safe_settings = {}
-                for k, v in (settings or {}).items():
-                    if 'key' in k.lower() and v:
-                        safe_settings[k] = '***' + str(v)[-4:] if len(str(v)) > 4 else '***'
-                    else:
-                        safe_settings[k] = v
-                safe_value[provider] = safe_settings
-            safe_config[key] = safe_value
+            # Walks the whole subtree, not one level. Custom providers nest a
+            # level deeper (`providers.custom.<id>.api_key`) and carry a
+            # free-form `headers` map, so a single-level pass leaked both.
+            safe_config[key] = _redact_secrets(value)
         elif key == 'search' and isinstance(value, dict):
             # Redact API keys in the search backend config (flat dict)
-            safe_config[key] = {
-                k: ('***' + str(v)[-4:] if len(str(v)) > 4 else '***')
-                if 'key' in k.lower() and v else v
-                for k, v in value.items()
-            }
+            safe_config[key] = _redact_secrets(value)
         else:
             safe_config[key] = value
 
@@ -7903,15 +8109,24 @@ def config_update(request):
 
     updated_keys = []
 
-    # Update providers
+    # Update providers. The accepted set is the catalog's — built-ins plus any
+    # registered custom endpoint — so a custom provider's key is settable through
+    # the same path as a built-in's. Custom entries are created/removed via
+    # /api/providers/custom, not here; this only updates known ids.
+    from .providers.catalog import BUILTIN_IDS, known_ids
+
+    accepted_providers = known_ids(config)
     providers = data.get("providers", {})
     for provider, provider_settings in providers.items():
-        if provider not in ("lmstudio", "anthropic", "openai", "openrouter", "vercel"):
+        if provider not in accepted_providers or not isinstance(provider_settings, dict):
             continue  # Skip unknown providers
+        # Built-ins keep their historical `providers.<name>.*` path; custom
+        # entries live one level deeper under `providers.custom.<id>.*`.
+        base = f"providers.{provider}" if provider in BUILTIN_IDS else f"providers.custom.{provider}"
         for key, value in provider_settings.items():
             if value is not None:
-                config.set(f"providers.{provider}.{key}", value)
-                updated_keys.append(f"providers.{provider}.{key}")
+                config.set(f"{base}.{key}", value)
+                updated_keys.append(f"{base}.{key}")
 
     # Update preferences
     preferences = data.get("preferences", {})

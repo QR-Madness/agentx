@@ -795,6 +795,197 @@ paths:
                     type: object
                     additionalProperties: true
 
+  /providers/catalog:
+    get:
+      tags: [Providers]
+      operationId: providersCatalog
+      summary: List every provider entry (built-in and custom)
+      description: >
+        Secrets never leave: each entry carries a key fingerprint (`····3f21`)
+        and header names only.
+      responses:
+        '200':
+          description: Catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderCatalogEntry'
+                  count:
+                    type: integer
+                  configured:
+                    type: integer
+
+  /providers/route:
+    get:
+      tags: [Providers]
+      operationId: providersRoute
+      summary: Resolve where a turn on a model would actually go
+      description: >
+        Mirrors the runtime fallback chain without making a call. `substituted`
+        is true when the requested model is unavailable and something else would
+        run; a candidate's `known: false` means the provider's catalog does not
+        list that model, so its capabilities are unknown rather than small.
+      parameters:
+        - name: model
+          in: query
+          required: true
+          schema:
+            type: string
+          description: A `provider:model-id` reference.
+        - name: fallback
+          in: query
+          required: false
+          schema:
+            type: string
+          description: The caller's known-good model, tried before the global default.
+      responses:
+        '200':
+          description: Resolved route
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderRoute'
+        '400':
+          description: Missing model parameter
+
+  /providers/test:
+    post:
+      tags: [Providers]
+      operationId: providersTest
+      summary: Dry-run an OpenAI-compatible endpoint
+      description: >
+        Times a `/models` listing against an unsaved draft so the client can
+        validate before committing. Subject to the endpoint egress policy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base_url]
+              properties:
+                base_url:
+                  type: string
+                api_key:
+                  type: string
+                headers:
+                  type: object
+                  additionalProperties:
+                    type: string
+                id:
+                  type: string
+      responses:
+        '200':
+          description: Probe result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reachable:
+                    type: boolean
+                  base_url:
+                    type: string
+                  elapsed_ms:
+                    type: integer
+                  models_available:
+                    type: integer
+                  models:
+                    type: array
+                    items:
+                      type: string
+                  error:
+                    type: string
+                    nullable: true
+        '403':
+          description: Endpoint blocked by the egress policy
+
+  /providers/custom:
+    post:
+      tags: [Providers]
+      operationId: providersCustomUpsert
+      summary: Register or update a custom OpenAI-compatible provider
+      description: >
+        Partial updates merge onto the stored record, so omitting `api_key`
+        keeps the existing one. Hot-reloads the provider registry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, base_url]
+              properties:
+                id:
+                  type: string
+                  description: >
+                    2–32 chars, lowercase alphanumeric plus `-`/`_`. Becomes the
+                    left half of a `provider:model` reference.
+                label:
+                  type: string
+                base_url:
+                  type: string
+                api_key:
+                  type: string
+                headers:
+                  type: object
+                  additionalProperties:
+                    type: string
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider:
+                    $ref: '#/components/schemas/ProviderCatalogEntry'
+        '400':
+          description: Invalid id, kind, or missing base URL
+        '403':
+          description: Endpoint blocked by the egress policy
+
+  /providers/custom/{provider_id}:
+    delete:
+      tags: [Providers]
+      operationId: providersCustomDelete
+      summary: Unregister a custom provider
+      description: >
+        Model references pointing at it degrade through the fallback chain rather
+        than failing; `referencing_profiles` names the agent profiles affected.
+      parameters:
+        - name: provider_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  id:
+                    type: string
+                  referencing_profiles:
+                    type: array
+                    items:
+                      type: string
+        '404':
+          description: Not registered
+
   /models/roles:
     get:
       tags: [Providers]
@@ -5898,6 +6089,99 @@ components:
         error:
           type: string
           nullable: true
+
+    ProviderCatalogEntry:
+      type: object
+      description: >
+        One reachable backend. Carries no secrets — `key_fingerprint` is the last
+        four characters of the stored key and only header *names* are exposed.
+      properties:
+        id:
+          type: string
+          example: groq
+        kind:
+          type: string
+          enum: [openai_compatible, anthropic, openrouter, lmstudio, vercel]
+        label:
+          type: string
+        base_url:
+          type: string
+          nullable: true
+        key_fingerprint:
+          type: string
+          nullable: true
+          example: "····3f21"
+        header_names:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        builtin:
+          type: boolean
+        credential:
+          type: string
+          enum: [api_key, base_url]
+          description: Which field decides `configured`.
+        configured:
+          type: boolean
+
+    RouteCandidate:
+      type: object
+      properties:
+        model:
+          type: string
+        provider:
+          type: string
+        provider_label:
+          type: string
+        model_id:
+          type: string
+        configured:
+          type: boolean
+        healthy:
+          type: boolean
+        known:
+          type: boolean
+          nullable: true
+          description: >
+            Whether the provider's catalog lists this model id. False means its
+            capabilities are unknown, not small — the reported window would be a
+            provider default, so the capability fields come back null.
+        context_window:
+          type: integer
+          nullable: true
+        max_output_tokens:
+          type: integer
+          nullable: true
+        cost_per_1k_input:
+          type: number
+          nullable: true
+        cost_per_1k_output:
+          type: number
+          nullable: true
+
+    ProviderRoute:
+      type: object
+      properties:
+        requested:
+          type: string
+        resolved:
+          type: object
+          nullable: true
+          description: >
+            The candidate a turn would use — null when nothing in the chain is
+            configured and healthy.
+          allOf:
+            - $ref: '#/components/schemas/RouteCandidate'
+        substituted:
+          type: boolean
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteCandidate'
+        fallback_enabled:
+          type: boolean
 
     Model:
       type: object

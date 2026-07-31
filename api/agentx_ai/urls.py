@@ -37,6 +37,15 @@ urlpatterns = [
     path("providers", views.providers_list, name="providers-list"),
     path("providers/models", views.providers_models, name="providers-models"),
     path("providers/health", views.providers_health, name="providers-health"),
+    path("providers/catalog", views.providers_catalog, name="providers-catalog"),
+    path("providers/route", views.providers_route, name="providers-route"),
+    path("providers/test", views.providers_test, name="providers-test"),
+    path("providers/custom", views.providers_custom_upsert, name="providers-custom-upsert"),
+    path(
+        "providers/custom/<str:provider_id>",
+        views.providers_custom_delete,
+        name="providers-custom-delete",
+    ),
     # Model roles (settings overhaul D1)
     path("models/roles", views.models_roles, name="models-roles"),
     path("models/roles/adopt", views.models_roles_adopt, name="models-roles-adopt"),

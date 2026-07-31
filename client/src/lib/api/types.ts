@@ -84,6 +84,83 @@ export interface ProvidersHealthResponse {
   providers: Record<string, { status: 'healthy' | 'unhealthy'; error?: string }>;
 }
 
+/** The wire protocol a provider speaks. Only `openai_compatible` is registerable. */
+export type ProviderKind =
+  | 'openai_compatible'
+  | 'anthropic'
+  | 'openrouter'
+  | 'lmstudio'
+  | 'vercel';
+
+/** One entry from `GET /api/providers/catalog` — built-in or user-registered.
+ *  Carries no secrets: the key is a fingerprint and only header *names* survive. */
+export interface ProviderCatalogEntry {
+  id: string;
+  kind: ProviderKind;
+  label: string;
+  base_url: string | null;
+  /** `····3f21`, or null when no key is stored. Never the key itself. */
+  key_fingerprint: string | null;
+  header_names: string[];
+  enabled: boolean;
+  builtin: boolean;
+  /** Which field decides `configured` — an API key for cloud, a URL for local. */
+  credential: 'api_key' | 'base_url';
+  configured: boolean;
+}
+
+export interface ProviderCatalogResponse {
+  providers: ProviderCatalogEntry[];
+  count: number;
+  configured: number;
+}
+
+/** A draft/registered provider payload for create-update. */
+export interface ProviderCustomInput {
+  id: string;
+  label?: string;
+  base_url: string;
+  api_key?: string;
+  headers?: Record<string, string>;
+  enabled?: boolean;
+}
+
+/** Result of `POST /api/providers/test` — a dry-run `/models` listing. */
+export interface ProviderTestResult {
+  reachable: boolean;
+  base_url: string;
+  elapsed_ms: number;
+  models_available: number;
+  models: string[];
+  error: string | null;
+}
+
+/** One link in a resolved route. `known: false` means the provider's catalog
+ *  doesn't list this model — its capabilities are unknown, not small. */
+export interface RouteCandidate {
+  model: string;
+  provider: string;
+  provider_label: string;
+  model_id: string;
+  configured: boolean;
+  healthy: boolean;
+  known: boolean | null;
+  context_window: number | null;
+  max_output_tokens: number | null;
+  cost_per_1k_input: number | null;
+  cost_per_1k_output: number | null;
+}
+
+/** Response of `GET /api/providers/route` — where a turn on a model actually goes. */
+export interface ProviderRouteResponse {
+  requested: string;
+  resolved: RouteCandidate | null;
+  /** True when the requested model is unavailable and something else would run. */
+  substituted: boolean;
+  candidates: RouteCandidate[];
+  fallback_enabled: boolean;
+}
+
 export interface ModelInfo {
   id: string;
   name: string;
