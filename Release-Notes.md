@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.257 -->
+<!-- release-version: 0.21.258 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -17,19 +17,20 @@
 -->
 
 AgentX is a self-hostable AI agent platform — Django API + Tauri client.
-**Mobile-Ready Alpha**: bring your own server and model providers.
+**Mobile-Ready Alpha**: bring your own server and providers.
 
 ### Highlights
 
-- **Connect any OpenAI-compatible provider** — register Groq, Together, DeepSeek, Ollama, vLLM or a private gateway and use it as `yourid:model`, testing the endpoint first. A new route check reports where a turn *actually* goes when a model is substituted.
-- **Extract: move memory out, safely** — evict a channel to the server vault with verified deletion (export → verify → wipe → receipt; nothing deletes unless the artifact verifies). Memory Workbench → Extract, `POST /api/memory/extract`, or `task memory:extract`.
-- **Memory exports go multi-channel** — export or replace-import an exact channel *set*, the substrate for portable Memory Cores; and `eval_consolidation --snapshot-name` promotes a snapshot to a reusable Testing Core.
-- **Agents read the web far more cheaply** — `web_extract` returns only the passages answering your query (3.8% of a real article), several sub-questions run in one `web_search` call, and pages already seen come back as stubs.
-- **Brave is a real backend, not a downgrade** — Brave searches return pre-extracted page content instead of a bare link list, and deep research keeps working on a Brave-primary setup.
-- **Settings → Web Search is the control plane** — defaults, per-turn budgets in *calls and dollars*, grounding limits, and a **source policy** of preferred/blocked domains applied to every search (blocked is a hard floor). Plus date windows, country targeting and a "Test connection".
+- **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint (Groq, DeepSeek, Ollama, vLLM, your own) as `yourid:model`; each backend shows whether it's reachable and how many models it opens up; and a **supply line** states where turns really go — the provider resolving your agent's model, its true context window and price, and the fallback behind it. Keys moved server-side.
+- **Extract: move memory out, safely** — evict a channel to the server vault with verified deletion (export → verify → wipe → receipt; nothing deletes unless the artifact verifies). Memory Workbench → Extract.
+- **Memory exports go multi-channel** — export or replace-import an exact channel *set*, the substrate for portable Memory Cores; `--snapshot-name` promotes an eval snapshot to a Testing Core.
+- **Agents read the web far more cheaply** — `web_extract` returns only the passages answering your query (3.8% of a real article), several sub-questions run in one call, and seen pages come back as stubs.
+- **Brave is a real backend, not a downgrade** — Brave searches return pre-extracted page content instead of a bare link list, and deep research works Brave-primary.
+- **Settings → Web Search is the control plane** — defaults, per-turn budgets in *calls and dollars*, grounding limits, and a **source policy** of preferred/blocked domains applied to every search (blocked is a hard floor).
 
 ### Fixes
 
-- **Web-search cost tracking uses the provider's own numbers** where reported, instead of estimating from search depth.
-- **Memory exports now carry distilled procedures** — learned "how we work" rules previously didn't travel; the v2 envelope round-trips them.
-- **Replace-mode memory import now resets the PostgreSQL mirror** for the wiped channel(s) — it previously wiped only the graph, leaving stale audit rows.
+- **Web-search cost tracking uses the provider's own numbers** where reported, not an estimate from search depth.
+- **Memory exports now carry distilled procedures** — learned "how we work" rules previously didn't travel.
+- **Replace-mode memory import now resets the PostgreSQL mirror** for the wiped channels — it previously wiped only the graph, leaving stale audit rows.
+- **A model an aggregator doesn't list reads as unknown**, not as a small context window that compacts too early.

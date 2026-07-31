@@ -460,10 +460,22 @@
 /* ── Provider / config cards (Model Providers + Model Context Limits) ──
    Rebuilt after the SettingsPanel.css removal; Aurora gradient icon tiles on
    glass cards with hover lift. All token-driven. */
+/* Two-up only when there's real room. The settings content pane is ~650px, where
+   two columns would leave ~318px per card — enough to fit, not enough to read
+   (the status line wraps to three lines). A 360px floor keeps that pane single-
+   column and goes two-up on genuinely wide screens. `align-items: start` so an
+   expanded card doesn't stretch its neighbour. */
 .providers-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: var(--space-lg);
+  align-items: start;
+}
+
+@media (max-width: 700px) {
+  .providers-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .provider-card {
@@ -588,6 +600,432 @@
 .ondevice-card:hover {
   border-color: var(--border-default);
   box-shadow: var(--shadow-md);
+}
+
+/* ── Supply line ──────────────────────────────────────────────────────────
+   The signature element: the live route a turn takes. Monospace carries the
+   machine strings (model ids), prose carries everything else. Deliberately
+   quiet chrome — the *content* is the point, and it must never look decorative
+   enough to be ignored. */
+.supply-line {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--surface-sunken, var(--surface-base));
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.supply-line-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-sm);
+}
+
+/* Sized to compete with the card names below it. This is the page's thesis —
+   at caption scale it reads as a footnote and gets skipped, which defeats the
+   whole point of surfacing a silent substitution. */
+.supply-line-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-sm);
+  font-size: 14px;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.supply-line-loading {
+  color: var(--text-muted);
+}
+
+.supply-line-node {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px var(--space-xs);
+  min-width: 0;
+}
+
+/* The status dot sits on the text baseline rather than the flex baseline. */
+.supply-line-node .status-dot {
+  align-self: center;
+}
+
+.supply-line-node-model {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.supply-line-provider {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.supply-line-model {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: none;
+  padding: 0;
+  overflow-wrap: anywhere;
+}
+
+.supply-line-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.supply-line-arrow {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.supply-line-text {
+  min-width: 0;
+}
+
+.supply-line-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: var(--space-sm) 0 0;
+}
+
+.supply-line-note.warning {
+  color: var(--feedback-warning);
+}
+
+.supply-line-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.supply-line-note code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* Draw the rail in once on mount — a single orchestrated moment, not ambient
+   motion. Reduced-motion users get the end state immediately. */
+@media (prefers-reduced-motion: no-preference) {
+  .supply-line-row {
+    animation: supply-line-in 200ms ease-out both;
+  }
+}
+
+@keyframes supply-line-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Connection tally ── */
+.connection-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-lg);
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-md);
+}
+
+.connection-tally b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ── Connection cards ─────────────────────────────────────────────────────
+   Collapsed by default: reading the page is the common case, editing a key
+   is not. */
+.connection-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.connection-card:hover {
+  border-color: var(--accent-tint-medium);
+  box-shadow: var(--shadow-md), var(--border-glow-medium);
+}
+
+.connection-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  padding: var(--space-lg);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  min-height: 44px;
+}
+
+.connection-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.connection-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.connection-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.connection-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+}
+
+.connection-card.is-expanded .connection-chevron {
+  transform: rotate(180deg);
+}
+
+.connection-body {
+  padding: 0 var(--space-lg) var(--space-lg);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.connection-description {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.connection-field-label {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-top: var(--space-xs);
+}
+
+/* Proof a credential exists without ever rendering one. */
+.connection-stored {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* A registered endpoint's address — the fact that defines it. */
+.connection-endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--space-xs) 0 0;
+  min-width: 0;
+}
+
+.connection-endpoint code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.connection-remove {
+  color: var(--feedback-error);
+  margin-left: auto;
+}
+
+.connection-test {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.connection-test svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.connection-test.ok {
+  color: var(--feedback-success);
+}
+
+.connection-test.bad {
+  color: var(--feedback-error);
+}
+
+/* ── "Connect an endpoint" affordance ── */
+.connection-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  min-height: 88px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg, 12px);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.connection-add:hover {
+  border-color: var(--accent-primary);
+  background: var(--accent-tint-subtle, transparent);
+}
+
+.connection-add-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  border: 1px dashed var(--border-default);
+  color: var(--text-muted);
+}
+
+.connection-add:hover .connection-add-icon {
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.connection-add-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.connection-add-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.connection-add-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Endpoint sheet ── */
+.endpoint-sheet-lede {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-md);
+}
+
+.endpoint-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.endpoint-preset {
+  padding: 6px 12px;
+  min-height: 32px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+
+.endpoint-preset:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.endpoint-preset.is-selected {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  background: var(--accent-tint-subtle, var(--surface-raised));
+}
+
+.endpoint-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.endpoint-help {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-xs);
+  overflow-wrap: anywhere;
+}
+
+.endpoint-help code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.endpoint-optional {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.endpoint-sheet-actions {
+  justify-content: flex-end;
+  margin-top: var(--space-md);
 }
 
 /* API-key row */
