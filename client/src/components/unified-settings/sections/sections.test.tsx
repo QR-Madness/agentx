@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type React from 'react';
 
 // The two rebuilt sections depend on server/notification contexts + the api
 // client; mock them so the components render in isolation. The hook return
@@ -157,6 +158,7 @@ vi.mock('../../ui/ConfirmDialog', () => ({
 }));
 
 import ProvidersSection from './ProvidersSection';
+import { OpenRouterLink } from '../providers/OpenRouterLink';
 import ModelsSection from './ModelsSection';
 import ModelRolesSection from './ModelRolesSection';
 import { SECTION_HIERARCHY, getAllSections, findSectionById } from './index';
@@ -296,5 +298,39 @@ describe('ModelsSection', () => {
     expect(screen.getByText('Max Output Tokens')).toBeInTheDocument();
     // The explicit Save button is gone — limits autosave (SaveStatusChip).
     expect(screen.queryByRole('button', { name: /save limits/i })).toBeNull();
+  });
+});
+
+describe('OpenRouterLink', () => {
+  const renderLink = (props: Partial<React.ComponentProps<typeof OpenRouterLink>> = {}) =>
+    render(<OpenRouterLink link={null} hasKey={false} onChanged={vi.fn()} {...props} />);
+
+  it('offers one-click linking when nothing is stored', () => {
+    renderLink();
+    expect(screen.getByRole('button', { name: /link account/i })).toBeInTheDocument();
+    expect(screen.getByText(/no copying and pasting/i)).toBeInTheDocument();
+  });
+
+  it('distinguishes a linked account from a hand-pasted key', () => {
+    // The distinction is honest, not cosmetic: only an OAuth link has a user id,
+    // and claiming one for a pasted key would be a lie about where it came from.
+    const { unmount } = renderLink({
+      link: { method: 'oauth', user_id: 'user_42', linked_at: '2026-07-31T00:00:00Z' },
+      hasKey: true,
+    });
+    expect(screen.getByText('Linked account')).toBeInTheDocument();
+    expect(screen.getByText('user_42')).toBeInTheDocument();
+    unmount();
+
+    renderLink({ hasKey: true });
+    expect(screen.getByText('Key added by hand')).toBeInTheDocument();
+  });
+
+  it('always offers a route to real revocation', () => {
+    // Forgetting the key is local — AgentX holds no management key — so the UI
+    // must also point at where the user can actually revoke it.
+    renderLink({ hasKey: true });
+    expect(screen.getByRole('button', { name: /forget key/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /manage keys/i })).toBeInTheDocument();
   });
 });

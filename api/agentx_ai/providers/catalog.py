@@ -96,6 +96,10 @@ class ProviderEntry:
     builtin: bool = False
     #: Which field decides `configured` (mirrors BuiltinSpec.credential).
     credential: str = "api_key"
+    #: How the credential got here, when it wasn't hand-pasted. Currently only
+    #: OpenRouter sets this, on an OAuth account link:
+    #: ``{method, user_id, linked_at}``. Carries no secret.
+    link: dict[str, Any] | None = None
 
     @property
     def configured(self) -> bool:
@@ -130,6 +134,7 @@ class ProviderEntry:
             "builtin": self.builtin,
             "credential": self.credential,
             "configured": self.configured,
+            "link": self.link,
         }
 
 
@@ -230,6 +235,7 @@ def builtin_entries(cfg: ConfigManager | None = None) -> dict[str, ProviderEntry
             enabled=True,
             builtin=True,
             credential=spec.credential,
+            link=link if isinstance(link := config.get(f"providers.{spec.id}.link"), dict) else None,
         )
     return entries
 

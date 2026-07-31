@@ -101,6 +101,31 @@ export type ProviderKind =
   | 'lmstudio'
   | 'vercel';
 
+/** How an OpenRouter key got here. Present only when the account was linked
+ *  via OAuth — a hand-pasted key has no link metadata. */
+export interface ProviderLink {
+  method: 'oauth';
+  user_id: string | null;
+  linked_at: string;
+}
+
+/** Response of `POST /api/providers/openrouter/oauth/start`. */
+export interface OpenRouterLinkStart {
+  flow_id: string;
+  authorization_url: string;
+  callback_url: string;
+  /** True when the callback is loopback — OpenRouter then titles the consent
+   *  screen `localhost:<port>` instead of "AgentX", which the UI warns about. */
+  local_callback: boolean;
+}
+
+/** Response of `GET /api/providers/openrouter/oauth/status`. */
+export interface OpenRouterLinkStatus {
+  status: 'pending' | 'linked' | 'error' | 'expired';
+  error?: string | null;
+  user_id?: string | null;
+}
+
 /** One entry from `GET /api/providers/catalog` — built-in or user-registered.
  *  Carries no secrets: the key is a fingerprint and only header *names* survive. */
 export interface ProviderCatalogEntry {
@@ -116,6 +141,8 @@ export interface ProviderCatalogEntry {
   /** Which field decides `configured` — an API key for cloud, a URL for local. */
   credential: 'api_key' | 'base_url';
   configured: boolean;
+  /** Set when the credential came from an account link rather than a paste. */
+  link?: ProviderLink | null;
 }
 
 export interface ProviderCatalogResponse {

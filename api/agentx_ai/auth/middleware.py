@@ -84,6 +84,11 @@ class AgentXAuthMiddleware:
     PUBLIC_PREFIXES = [
         "/admin/",  # Django admin
         "/static/",  # Static files
+        # OpenRouter account linking. Same reasoning as the MCP callback above,
+        # but a *prefix*: OpenRouter's /auth accepts no `state` parameter, so the
+        # single-use nonce rides the path. The view resolves nothing for an
+        # unknown or expired nonce (400) and each nonce is claimed exactly once.
+        "/api/providers/openrouter/oauth/callback/",
     ]
 
     def __init__(self, get_response):

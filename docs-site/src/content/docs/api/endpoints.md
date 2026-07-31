@@ -435,6 +435,53 @@ link-local and metadata addresses are blocked and the endpoints answer `403`.
 Override either way with `providers.policy.allow_private_endpoints`.
 :::
 
+### OpenRouter Account Linking
+
+```
+POST /api/providers/openrouter/oauth/start
+GET  /api/providers/openrouter/oauth/callback/{nonce}     ← PUBLIC
+GET  /api/providers/openrouter/oauth/status?flow_id=
+POST /api/providers/openrouter/oauth/cancel
+POST /api/providers/openrouter/unlink
+```
+
+OpenRouter mints a **user-controlled** API key over OAuth PKCE, so a new user
+doesn't have to leave the app, create a key by hand and paste it back. `start`
+returns a consent URL to open in the user's real browser; the PKCE verifier and
+the minted key never leave the server. The client polls `status` until it reads
+`linked`, `error`, or `expired`.
+
+**The nonce rides the callback path.** OpenRouter's `/auth` accepts only
+`callback_url`, `code_challenge` and `code_challenge_method` — there is **no
+`state` parameter** — so a path segment is the only correlation channel
+guaranteed to survive the redirect. It plays the same role `state` would:
+unguessable, single-use, and expiring after 10 minutes. A nonce that has already
+settled can't be claimed again, so a replayed callback cannot mint a second key.
+
+The callback address comes from **`AGENTX_PUBLIC_HOST`** (→ `https://host`), else
+loopback. It deliberately does *not* use `request.build_absolute_uri`: without
+`SECURE_PROXY_SSL_HEADER` that yields `http://` behind a TLS-terminating proxy,
+and OpenRouter requires https for any non-localhost callback. Override with
+`AGENTX_OPENROUTER_CALLBACK_BASE`.
+
+:::caution[Cluster gateways need updating]
+The callback must reach the API without the gateway token. Clusters created
+before this release need the new tokenless
+`location ^~ /api/providers/openrouter/oauth/callback/` block from
+`clusters/template/nginx.conf.example`, then
+`docker compose … up -d --force-recreate` — a plain restart will not pick up a
+changed bind-mounted file.
+:::
+
+**Unlinking is local.** Revoking a user-controlled key needs an OpenRouter
+*management* key, which AgentX does not hold and does not ask for. `unlink`
+forgets our copy and returns `revoke_url` so the user can revoke it upstream
+themselves.
+
+On a local install the consent screen is titled `localhost:12319` — OpenRouter
+names localhost apps by host:port. `start` reports this as `local_callback` so
+the UI can say so before the browser hop rather than letting it read as phishing.
+
 ### Model Route
 
 ```

@@ -986,6 +986,154 @@ paths:
         '404':
           description: Not registered
 
+  /providers/openrouter/oauth/start:
+    post:
+      tags: [Providers]
+      operationId: openrouterOauthStart
+      summary: Begin an OpenRouter account link (OAuth PKCE)
+      description: >
+        Returns the consent URL to open in the user's real browser. The PKCE
+        verifier and the minted key stay server-side throughout. Starting a link
+        supersedes any pending one.
+      responses:
+        '200':
+          description: Consent URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flow_id:
+                    type: string
+                    description: Single-use nonce; also the last path segment of the callback.
+                  authorization_url:
+                    type: string
+                  callback_url:
+                    type: string
+                  local_callback:
+                    type: boolean
+                    description: >
+                      True when the callback is loopback — OpenRouter then titles the
+                      consent screen `localhost:<port>` rather than "AgentX".
+
+  /providers/openrouter/oauth/callback/{nonce}:
+    get:
+      tags: [Providers]
+      operationId: openrouterOauthCallback
+      summary: OAuth redirect target for OpenRouter linking (PUBLIC)
+      description: >
+        **Public route** — the browser arrives from OpenRouter's consent page with
+        no auth token, and is guarded by the unguessable single-use nonce instead.
+        The nonce rides the *path* because OpenRouter's `/auth` accepts no `state`
+        parameter. Exchanges the code server-side, stores the key, and returns an
+        HTML page for the human. An unknown, expired or already-claimed nonce
+        resolves nothing.
+      parameters:
+        - name: nonce
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Linked (HTML page)
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: Unknown/expired nonce, denied consent, or a rejected exchange
+        '502':
+          description: OpenRouter unreachable
+
+  /providers/openrouter/oauth/status:
+    get:
+      tags: [Providers]
+      operationId: openrouterOauthStatus
+      summary: Poll a pending account link
+      parameters:
+        - name: flow_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Flow state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [pending, linked, error, expired]
+                  error:
+                    type: string
+                    nullable: true
+                  user_id:
+                    type: string
+                    nullable: true
+        '400':
+          description: Missing flow_id
+
+  /providers/openrouter/oauth/cancel:
+    post:
+      tags: [Providers]
+      operationId: openrouterOauthCancel
+      summary: Abandon a pending account link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [flow_id]
+              properties:
+                flow_id:
+                  type: string
+      responses:
+        '200':
+          description: Cancelled
+        '400':
+          description: Invalid body
+
+  /providers/openrouter/unlink:
+    post:
+      tags: [Providers]
+      operationId: openrouterUnlink
+      summary: Forget the stored OpenRouter key
+      description: >
+        **Local only.** Revoking a user-controlled key upstream requires an
+        OpenRouter *management* key, which AgentX does not hold — so this drops
+        our copy and returns the URL where the user can revoke it themselves.
+      responses:
+        '200':
+          description: Unlinked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  had_key:
+                    type: boolean
+                  revoke_url:
+                    type: string
+        '400':
+          description: Invalid request
+
   /models/roles:
     get:
       tags: [Providers]
@@ -6125,6 +6273,22 @@ components:
           description: Which field decides `configured`.
         configured:
           type: boolean
+        link:
+          type: object
+          nullable: true
+          description: >
+            Set when the credential came from an account link rather than a paste
+            (currently OpenRouter OAuth only). Carries no secret.
+          properties:
+            method:
+              type: string
+              enum: [oauth]
+            user_id:
+              type: string
+              nullable: true
+            linked_at:
+              type: string
+              format: date-time
 
     RouteCandidate:
       type: object

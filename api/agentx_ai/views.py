@@ -2058,6 +2058,176 @@ async def providers_route(request):
     )
 
 
+# ---------- OpenRouter account linking (OAuth PKCE) ----------
+
+
+@csrf_exempt
+@require_methods("POST")
+def openrouter_oauth_start(request):
+    """POST /api/providers/openrouter/oauth/start — begin an account link.
+
+    Returns the consent URL for the client to open in the user's real browser.
+    The PKCE verifier stays here; the minted key never rides a browser URL.
+    """
+    from .providers import openrouter_oauth as oauth
+
+    flow = oauth.begin_flow()
+    logger.info(f"OpenRouter link started (callback {flow.callback_url})")
+    return JsonResponse({
+        "flow_id": flow.nonce,
+        "authorization_url": flow.authorization_url,
+        "callback_url": flow.callback_url,
+        # OpenRouter titles localhost apps by host:port, so the consent screen
+        # says "localhost:12319" rather than "AgentX". The client warns up front
+        # instead of letting that read as a phishing smell.
+        "local_callback": oauth.is_local_callback(),
+    })
+
+
+@csrf_exempt
+def openrouter_oauth_callback(request, nonce: str):
+    """GET /api/providers/openrouter/oauth/callback/{nonce} — the redirect target.
+
+    **PUBLIC route** (the browser arrives straight from OpenRouter's consent page
+    carrying no auth token) — exempted in AgentXAuthMiddleware and guarded by the
+    unguessable single-use nonce instead, exactly as the MCP callback is guarded
+    by its OAuth `state`. An unknown or expired nonce resolves nothing.
+
+    OpenRouter's `/auth` accepts no `state` parameter, which is why the nonce is
+    a path segment rather than a query param.
+
+    Synchronous like `mcp_oauth_callback`: it writes config and calls
+    `reload_providers`, which bridges async internally — running that from inside
+    an async view would nest event loops for no benefit.
+    """
+    from datetime import datetime
+
+    from .config import get_config_manager
+    from .providers import openrouter_oauth as oauth
+    from .providers.registry import reload_providers
+
+    if request.method != "GET":
+        return json_error("Method not allowed", status=405)
+
+    flow = oauth.take_flow(nonce)
+    if flow is None:
+        return _oauth_result_page(
+            "Unknown or expired link",
+            "This sign-in attempt is no longer pending. Start it again from AgentX.",
+            status=400,
+        )
+
+    error = request.GET.get("error")
+    if error:
+        detail = request.GET.get("error_description") or error
+        oauth.record_result(flow, status="error", error=detail)
+        return _oauth_result_page(
+            "Authorization failed",
+            f"{detail}. You can close this tab and retry from AgentX.",
+            status=400,
+        )
+
+    code = request.GET.get("code") or ""
+    if not code:
+        oauth.record_result(
+            flow, status="error", error="OpenRouter didn't return an authorization code."
+        )
+        return _oauth_result_page(
+            "Invalid callback", "OpenRouter didn't return an authorization code.", status=400
+        )
+
+    try:
+        issued = oauth.exchange_code(code, flow.verifier)
+    except ValueError as e:
+        oauth.record_result(flow, status="error", error=str(e))
+        return _oauth_result_page("Couldn't finish the link", str(e), status=400)
+    except Exception as e:  # noqa: BLE001 — the browser still deserves a page
+        logger.error(f"OpenRouter key exchange failed: {e}")
+        oauth.record_result(
+            flow, status="error", error="Couldn't reach OpenRouter to issue the key."
+        )
+        return _oauth_result_page(
+            "Couldn't finish the link",
+            "AgentX couldn't reach OpenRouter to issue the key. Try again.",
+            status=502,
+        )
+
+    config = get_config_manager()
+    config.set("providers.openrouter.api_key", issued["key"])
+    config.set("providers.openrouter.link", {
+        "method": "oauth",
+        "user_id": issued.get("user_id"),
+        "linked_at": datetime.now(UTC).isoformat(),
+    })
+    config.save()
+    reload_providers()
+    oauth.record_result(flow, status="linked", user_id=issued.get("user_id"))
+    logger.info("OpenRouter account linked via OAuth")
+    return _oauth_result_page(
+        "OpenRouter connected ✓",
+        "You can close this tab — AgentX has the key and is ready to go.",
+    )
+
+
+@require_methods("GET")
+def openrouter_oauth_status(request):
+    """GET /api/providers/openrouter/oauth/status?flow_id= — poll a pending link."""
+    from .providers import openrouter_oauth as oauth
+
+    flow_id = request.GET.get("flow_id") or ""
+    flow = oauth.get_flow(flow_id)
+    if flow is None:
+        # Expired, cancelled, or never existed — all "stop polling" for the client.
+        return JsonResponse({"status": "expired"})
+    return JsonResponse({
+        "status": flow.status,
+        "error": flow.error,
+        "user_id": flow.user_id,
+    })
+
+
+@csrf_exempt
+@require_methods("POST")
+def openrouter_oauth_cancel(request):
+    """POST /api/providers/openrouter/oauth/cancel — abandon a pending link."""
+    from .providers import openrouter_oauth as oauth
+
+    data, error = parse_json_body(request)
+    if error:
+        return error
+    cancelled = oauth.cancel_flow(str(data.get("flow_id") or ""))
+    return JsonResponse({"status": "cancelled" if cancelled else "not_pending"})
+
+
+@csrf_exempt
+@require_methods("POST")
+def openrouter_unlink(request):
+    """POST /api/providers/openrouter/unlink — forget the stored key.
+
+    Deliberately *local*. Revoking a user-controlled key upstream needs an
+    OpenRouter **management** key, which AgentX doesn't hold and doesn't ask for —
+    so this drops our copy and points the user at the page where they can revoke
+    it for real. Saying that plainly beats implying a revocation we can't perform.
+    """
+    from .config import get_config_manager
+    from .providers import openrouter_oauth as oauth
+    from .providers.registry import reload_providers
+
+    config = get_config_manager()
+    had_key = bool(config.get("providers.openrouter.api_key"))
+    config.unset("providers.openrouter.api_key")
+    config.unset("providers.openrouter.link")
+    config.save()
+    reload_providers()
+    logger.info("OpenRouter key forgotten (local unlink)")
+
+    return JsonResponse({
+        "status": "unlinked",
+        "had_key": had_key,
+        "revoke_url": oauth.KEYS_PAGE_URL,
+    })
+
+
 # ============== Agent Endpoints ==============
 
 

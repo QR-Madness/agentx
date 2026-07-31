@@ -46,6 +46,29 @@ urlpatterns = [
         views.providers_custom_delete,
         name="providers-custom-delete",
     ),
+    # OpenRouter account linking (OAuth PKCE). The callback is PUBLIC — the nonce
+    # rides the path because OpenRouter's /auth accepts no `state` parameter.
+    path(
+        "providers/openrouter/oauth/start",
+        views.openrouter_oauth_start,
+        name="openrouter-oauth-start",
+    ),
+    path(
+        "providers/openrouter/oauth/callback/<str:nonce>",
+        views.openrouter_oauth_callback,
+        name="openrouter-oauth-callback",
+    ),
+    path(
+        "providers/openrouter/oauth/status",
+        views.openrouter_oauth_status,
+        name="openrouter-oauth-status",
+    ),
+    path(
+        "providers/openrouter/oauth/cancel",
+        views.openrouter_oauth_cancel,
+        name="openrouter-oauth-cancel",
+    ),
+    path("providers/openrouter/unlink", views.openrouter_unlink, name="openrouter-unlink"),
     # Model roles (settings overhaul D1)
     path("models/roles", views.models_roles, name="models-roles"),
     path("models/roles/adopt", views.models_roles_adopt, name="models-roles-adopt"),

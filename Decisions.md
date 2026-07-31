@@ -457,6 +457,36 @@ capability-honesty rules are what stop the catalog from making the failure it ex
 harder to see. **Source:** Providers overhaul Slice 1; `ProviderCatalogTest`,
 `ProviderCatalogRegistryTest`, `ProviderEgressGuardTest`, `ConfigRedactionTest`.
 
+### ADR-16 — OpenRouter linking: nonce-in-path, server-side exchange, local-only unlink
+**Decision:** Account linking runs OAuth PKCE **server-side**
+(`providers/openrouter_oauth.py`). Four properties, each forced by something verified against the
+live service:
+1. **The nonce rides the callback path.** OpenRouter's `/auth` accepts only `callback_url`,
+   `code_challenge` and `code_challenge_method` — there is **no `state` parameter**. A path segment
+   is the only correlation channel guaranteed to survive the redirect, and it plays `state`'s role:
+   unguessable, single-use, 10-minute TTL. `take_flow` claims only a **pending** flow — popping
+   alone isn't enough, because `record_result` re-registers the flow for the status poll, and
+   without the pending check a replayed callback would mint a *second* key from the same code.
+2. **The callback base is derived, never observed.** `AGENTX_PUBLIC_HOST` → `https://host`, else
+   loopback, with `AGENTX_OPENROUTER_CALLBACK_BASE` as the override. **Not**
+   `request.build_absolute_uri`: with no `SECURE_PROXY_SSL_HEADER` configured it yields `http://`
+   behind the cluster's TLS-terminating proxy, and OpenRouter requires https for non-localhost.
+3. **The key never touches the browser.** The exchange happens in the callback view; the client only
+   learns that a flow settled. The callback is a **PUBLIC route** (prefix-exempted in
+   `AgentXAuthMiddleware` and in the cluster nginx template via `location ^~`), guarded by the nonce
+   exactly as the MCP callback is guarded by its `state`.
+4. **Unlink is local, and says so.** Revoking a user-controlled key requires an OpenRouter
+   *management* key — a second, higher-privilege secret we deliberately do not store. `unlink`
+   forgets our copy and returns `revoke_url`; the copy states plainly that the key still exists
+   upstream. Implying a revocation we cannot perform would be worse than the extra click.
+**Also ratified:** one user-facing message for both 400 and 403 from the exchange. The docs split
+them (400 = wrong challenge method, 403 = bad code), but the live service returns **400 for an
+invalid code too**, so naming a cause would be wrong in the common case; the raw status goes to the
+log instead. And the consent screen on a local install is titled `localhost:12319` (OpenRouter names
+localhost apps by host:port) — `start` returns `local_callback` so the UI warns *before* the hop
+rather than letting it read as phishing. **Source:** Providers overhaul Slice 3;
+`OpenRouterOAuthFlowTest`, `OpenRouterOAuthEndpointTest`.
+
 ---
 
 ## Rejected — do not relitigate
