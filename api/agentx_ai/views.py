@@ -8030,10 +8030,22 @@ def config_update(request):
 
     # Update web search settings (Track B). None values are skipped so unchanged
     # (redacted) API keys are preserved rather than overwritten with the mask.
+    # Keep in lockstep with settings_manifest._CONFIG_WRITE_ROUTES["search"].
     _SEARCH_KEYS = (
         "backend", "fallback_enabled", "max_results",
-        "cache_ttl_seconds", "tavily_api_key", "brave_api_key",
-        "research_per_turn_limit",  # Research Mode's elevated per-turn search cap
+        "cache_ttl_seconds", "timeout", "tavily_api_key", "brave_api_key",
+        # Per-turn budgets: call counts + the dollar envelopes.
+        "per_turn_limit", "research_per_turn_limit",
+        "per_turn_cost_usd", "research_per_turn_cost_usd",
+        # Search defaults the operator owns.
+        "default_search_depth", "default_chunks_per_source", "safesearch",
+        "country", "search_lang",
+        # Brave grounding + deep research.
+        "brave_grounding_default", "brave_context_max_tokens",
+        "brave_context_max_tokens_per_url", "brave_context_threshold",
+        "brave_answers_enabled",
+        # Source policy (nested dict — written whole).
+        "source_policy",
     )
     search_settings = data.get("search", {})
     for key, value in search_settings.items():

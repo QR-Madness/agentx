@@ -607,6 +607,43 @@
   flex-shrink: 0;
 }
 
+/* Per-backend search health, rendered after a "Test connection" probe. */
+.search-health-list {
+  list-style: none;
+  margin: var(--space-sm) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.search-health-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs) var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+}
+
+.search-health-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-weight: 500;
+}
+
+.search-health-detail {
+  color: var(--color-fg-secondary);
+  font-size: var(--text-xs, 0.75rem);
+  /* Tool lists get long — let them wrap rather than blow out the row. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Static warning banner + (legacy) inline messages */
 .config-warning {
   display: flex;

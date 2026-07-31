@@ -363,6 +363,15 @@ DEFAULT_CONFIG = {
         "fallback_enabled": True,      # fall back to the other backend on error/empty
         "max_results": 5,
         "cache_ttl_seconds": 300,      # short-TTL in-process cache of identical queries
+        # --- Operator-owned search defaults ------------------------------------
+        # Applied when the model doesn't specify them for a call. Empty/None means
+        # "no opinion — use the provider's own default", which is the shipped
+        # state: none of these change a search until someone sets one.
+        "default_search_depth": "",       # ultra-fast | fast | basic | advanced
+        "default_chunks_per_source": 0,   # 1–5; 0 = provider default
+        "safesearch": "",                 # off | moderate | strict (Brave)
+        "country": "",                    # bias results to a country
+        "search_lang": "",                # preferred results language
         # Hard per-call wall-clock cap (seconds). web_search runs synchronously in
         # the tool loop, so an unbounded call (Tavily's SDK default is ~60s) blocks
         # the turn and stalls Stop until it returns. Cap both backends here.
@@ -432,6 +441,22 @@ DEFAULT_CONFIG = {
             "mini": {"iterations": 2, "queries": 8, "seconds": 90},
             "auto": {"iterations": 3, "queries": 20, "seconds": 180},
             "pro": {"iterations": 5, "queries": 40, "seconds": 300},
+        },
+        # --- Source policy -----------------------------------------------------
+        # Operator-owned answer to "which corners of the web may ground an answer".
+        # Applied to EVERY search, mapped per backend: Tavily gets
+        # include_domains/exclude_domains, Brave gets an inline Goggle.
+        #
+        # `blocked` is a HARD floor — always merged in, and the model cannot widen
+        # past it. `trusted` is a SOFT preference: it seeds the include list but a
+        # model that explicitly passes its own `include_domains` for a call wins,
+        # because over-narrowing silently is how research turns come back empty.
+        "source_policy": {
+            "trusted": [],   # e.g. ["arxiv.org", "*.edu"]
+            "blocked": [],   # e.g. ["pinterest.com", "quora.com"]
+            # Brave only: a hosted Goggle URL or inline rules ($discard, $site=,
+            # $boost=N, $downrank=N). Merged after trusted/blocked.
+            "goggle": "",
         },
         # API keys (env fallback: TAVILY_API_KEY / BRAVE_API_KEY). Redacted on GET /api/config.
         "tavily_api_key": None,
