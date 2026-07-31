@@ -13218,7 +13218,15 @@ class WebResearchToolsTest(TestCase):
         so a Brave-primary operator holding a Tavily key keeps deep research."""
         from agentx_ai.mcp import internal_tools as it
         from unittest.mock import patch
-        with patch.object(it, "resolve_active_search_backend", return_value="tavily"):
+        # `_backend_has_key` must be stubbed here too, not just in the branches
+        # below: `web_research`'s advertisement runs through `_research_backend`,
+        # which asks whether a key exists — and that reads the developer's live
+        # `data/config.json`/env. Without the stub this asserted the box's key
+        # inventory rather than the gating logic, and passed only where a Tavily
+        # key happened to be present (the full suite isn't CI-gated, so nothing
+        # caught it). Found by running the suite with a sterile ConfigManager path.
+        with patch.object(it, "resolve_active_search_backend", return_value="tavily"), \
+             patch.object(it, "_backend_has_key", lambda n: True):
             names = {t.name for t in it.get_internal_tools()}
             self.assertIn("web_crawl", names)
             self.assertIn("web_research", names)
