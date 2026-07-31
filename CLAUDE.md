@@ -162,15 +162,15 @@ task manager:serve      # Web GUI :12320; cluster lifecycle via task cluster:* C
 
 ```bash
 task test               # All backend tests (slow — loads translation models)
-task test:quick         # Tests not needing model loading (HealthCheck, MCP)
+task test:quick         # No model loading (HealthCheck, MCP)
+task test:sterile       # Sterile config — a test must never read live config.json ★
 
 # Single test class (or .test_method):
 uv run python api/manage.py test agentx_ai.tests.TranslationKitTest -v2
 ```
 
-Test files: `tests.py` (everything non-memory) and
-`tests_memory.py` (the memory system — mock-based, fast; docker-gated integration classes
-auto-skip without `task db:up`). `task test:memory` runs the memory suite (accepts a class).
+Test files: `tests.py` (non-memory) and `tests_memory.py` (memory — mock-based, fast;
+docker-gated classes auto-skip without `task db:up`). `task test:memory` runs it (accepts a class).
 Everything degrades to skips without Docker/API keys; `DJANGO_SETTINGS_MODULE` defaults inside
 `manage.py` — bare invocations work.
 
