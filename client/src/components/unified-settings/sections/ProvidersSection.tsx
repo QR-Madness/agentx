@@ -37,6 +37,7 @@ import { Badge, Button, Card, SectionHeader } from '../../ui';
 import { useConfirm } from '../../ui/ConfirmDialog';
 import { ProviderConnectionCard, type ProviderPresentation } from '../providers/ProviderConnectionCard';
 import { EndpointSheet } from '../providers/EndpointSheet';
+import { OpenRouterLink } from '../providers/OpenRouterLink';
 import { SupplyLine } from '../providers/SupplyLine';
 import anthropicIcon from '../../../assets/providers/anthropic-dark.svg';
 import openaiIcon from '../../../assets/providers/openai-light.svg';
@@ -406,7 +407,19 @@ export default function ProvidersSection() {
                 onDraftChange={(value) => setDraft(entry.id, value)}
                 onTest={() => handleTest(entry)}
                 onDelete={entry.builtin ? undefined : () => void handleDelete(entry)}
-              />
+              >
+                {entry.id === 'openrouter' && (
+                  <OpenRouterLink
+                    link={entry.link}
+                    hasKey={!!entry.key_fingerprint}
+                    onChanged={() => {
+                      void loadCatalog();
+                      refreshHealth();
+                      setRouteToken((token) => token + 1);
+                    }}
+                  />
+                )}
+              </ProviderConnectionCard>
             ))}
 
             <button type="button" className="connection-add" onClick={() => setSheetOpen(true)}>

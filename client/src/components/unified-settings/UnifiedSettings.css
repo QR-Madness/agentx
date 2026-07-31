@@ -852,6 +852,38 @@
   overflow-wrap: anywhere;
 }
 
+/* ── OpenRouter account link ── */
+.openrouter-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md) 0 0;
+  border-top: 1px dashed var(--border-subtle);
+  margin-top: var(--space-xs);
+}
+
+.openrouter-link-state {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.openrouter-link-state svg {
+  flex-shrink: 0;
+  color: var(--feedback-success);
+}
+
+.openrouter-link-user {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 /* A registered endpoint's address — the fact that defines it. */
 .connection-endpoint {
   display: flex;

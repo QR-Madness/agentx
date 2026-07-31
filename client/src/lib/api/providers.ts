@@ -1,6 +1,8 @@
 import { request as apiRequest } from './core';
 import type {
   ModelInfo,
+  OpenRouterLinkStart,
+  OpenRouterLinkStatus,
   ProviderCatalogEntry,
   ProviderCatalogResponse,
   ProviderCustomInput,
@@ -70,5 +72,35 @@ export const providersApi = {
     return apiRequest(`/api/providers/route?${params}`, {
       signal: AbortSignal.timeout(15_000),
     });
+  },
+
+  // === OpenRouter account linking (OAuth PKCE) ===
+
+  /** Begin a link. Returns the consent URL to open in the user's real browser;
+   *  the PKCE verifier and the minted key stay server-side throughout. */
+  async startOpenRouterLink(): Promise<OpenRouterLinkStart> {
+    return apiRequest('/api/providers/openrouter/oauth/start', { method: 'POST' });
+  },
+
+  /** Poll a pending link. `expired` means stop polling. */
+  async getOpenRouterLinkStatus(flowId: string): Promise<OpenRouterLinkStatus> {
+    return apiRequest(
+      `/api/providers/openrouter/oauth/status?flow_id=${encodeURIComponent(flowId)}`
+    );
+  },
+
+  /** Abandon a pending link (the user closed the consent tab). */
+  async cancelOpenRouterLink(flowId: string): Promise<{ status: string }> {
+    return apiRequest('/api/providers/openrouter/oauth/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ flow_id: flowId }),
+    });
+  },
+
+  /** Forget the stored OpenRouter key. Local only — revoking it upstream needs
+   *  a management key AgentX doesn't hold, so the response carries the URL where
+   *  the user can do that themselves. */
+  async unlinkOpenRouter(): Promise<{ status: string; had_key: boolean; revoke_url: string }> {
+    return apiRequest('/api/providers/openrouter/unlink', { method: 'POST' });
   },
 };

@@ -20676,3 +20676,284 @@ class ConfigRedactionTest(TestCase):
         self.assertEqual(redacted["password"], "***2000")
         self.assertEqual(redacted["client_secret"], "***1234")
         self.assertEqual(redacted["base_url"], "https://ok.test")
+
+
+# ============================================================================
+# OpenRouter account linking (OAuth PKCE)
+# ============================================================================
+
+
+class OpenRouterOAuthFlowTest(TestCase):
+    """`providers/openrouter_oauth.py` — the half that must not leak."""
+
+    def setUp(self):
+        from agentx_ai.providers import openrouter_oauth as oauth
+
+        oauth._FLOWS.clear()
+        self.oauth = oauth
+
+    def _clean_env(self, **overrides):
+        base = {"AGENTX_PUBLIC_HOST": "", "AGENTX_OPENROUTER_CALLBACK_BASE": ""}
+        base.update(overrides)
+        return patch.dict(os.environ, base, clear=False)
+
+    # --- PKCE ------------------------------------------------------------
+
+    def test_challenge_is_the_s256_of_the_verifier(self):
+        """A wrong challenge is a 400 from OpenRouter, and it's silent until then."""
+        import base64
+        import hashlib
+        from urllib.parse import parse_qs, urlparse
+
+        with self._clean_env():
+            flow = self.oauth.begin_flow()
+
+        params = parse_qs(urlparse(flow.authorization_url).query)
+        expected = base64.urlsafe_b64encode(
+            hashlib.sha256(flow.verifier.encode("ascii")).digest()
+        ).decode("ascii").rstrip("=")
+
+        self.assertEqual(params["code_challenge"], [expected])
+        self.assertEqual(params["code_challenge_method"], ["S256"])
+        self.assertNotIn("=", params["code_challenge"][0])  # padding stripped
+        self.assertGreaterEqual(len(flow.verifier), 43)  # RFC 7636 floor
+        self.assertLessEqual(len(flow.verifier), 128)
+
+    def test_verifier_never_appears_in_the_authorization_url(self):
+        """Only the challenge is public — the verifier proves we started the flow."""
+        with self._clean_env():
+            flow = self.oauth.begin_flow()
+        self.assertNotIn(flow.verifier, flow.authorization_url)
+
+    # --- callback address ------------------------------------------------
+
+    def test_nonce_rides_the_path_not_the_query(self):
+        """OpenRouter's /auth accepts no `state`, so the path is the only channel
+        guaranteed to survive the redirect."""
+        with self._clean_env():
+            flow = self.oauth.begin_flow()
+        self.assertIn(f"/oauth/callback/{flow.nonce}", flow.callback_url)
+        self.assertNotIn("state=", flow.authorization_url)
+
+    def test_local_install_uses_loopback(self):
+        with self._clean_env():
+            self.assertEqual(self.oauth.callback_base(), "http://localhost:12319")
+            self.assertTrue(self.oauth.is_local_callback())
+
+    def test_public_host_yields_https(self):
+        """OpenRouter requires https for any non-localhost callback, and
+        `build_absolute_uri` would yield http:// behind the TLS-terminating proxy."""
+        with self._clean_env(AGENTX_PUBLIC_HOST="agx1.example.com"):
+            self.assertEqual(self.oauth.callback_base(), "https://agx1.example.com")
+            self.assertFalse(self.oauth.is_local_callback())
+
+    def test_explicit_override_wins(self):
+        with self._clean_env(
+            AGENTX_PUBLIC_HOST="agx1.example.com",
+            AGENTX_OPENROUTER_CALLBACK_BASE="https://custom.example.org/",
+        ):
+            self.assertEqual(self.oauth.callback_base(), "https://custom.example.org")
+
+    # --- flow lifecycle --------------------------------------------------
+
+    def test_single_flight_supersedes_a_pending_flow(self):
+        """Two live nonces could each mint a key; the second press wins outright."""
+        with self._clean_env():
+            first = self.oauth.begin_flow()
+            second = self.oauth.begin_flow()
+        self.assertIsNone(self.oauth.get_flow(first.nonce))
+        self.assertIsNotNone(self.oauth.get_flow(second.nonce))
+
+    def test_a_nonce_can_only_be_claimed_once(self):
+        """`take_flow` is the replay guard — a second callback resolves nothing."""
+        with self._clean_env():
+            flow = self.oauth.begin_flow()
+        self.assertIsNotNone(self.oauth.take_flow(flow.nonce))
+        self.assertIsNone(self.oauth.take_flow(flow.nonce))
+
+    def test_expired_flows_are_pruned(self):
+        import time as _time
+
+        with self._clean_env():
+            flow = self.oauth.begin_flow()
+        flow.created_at = _time.monotonic() - (self.oauth.FLOW_TTL_S + 1)
+        self.assertTrue(flow.expired)
+        self.assertIsNone(self.oauth.get_flow(flow.nonce))
+
+    def test_cancel_drops_a_pending_flow(self):
+        with self._clean_env():
+            flow = self.oauth.begin_flow()
+        self.assertTrue(self.oauth.cancel_flow(flow.nonce))
+        self.assertFalse(self.oauth.cancel_flow(flow.nonce))
+
+    # --- exchange --------------------------------------------------------
+
+    def _exchange_with(self, status_code, payload=None):
+        response = MagicMock()
+        response.status_code = status_code
+        response.json.return_value = payload or {}
+        client = MagicMock()
+        client.post.return_value = response
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        with patch("httpx.Client", return_value=client):
+            return self.oauth.exchange_code("code-1", "verifier-1"), client
+
+    def test_exchange_returns_the_key_and_user(self):
+        result, client = self._exchange_with(200, {"key": "sk-or-v1-abc", "user_id": "user_1"})
+        self.assertEqual(result, {"key": "sk-or-v1-abc", "user_id": "user_1"})
+        # The verifier rides the exchange, not the authorization request.
+        self.assertEqual(
+            client.post.call_args.kwargs["json"],
+            {"code": "code-1", "code_verifier": "verifier-1", "code_challenge_method": "S256"},
+        )
+
+    def test_rejection_codes_share_one_accurate_message(self):
+        """The docs split 400 (wrong challenge method) from 403 (bad code), but
+        the live service answers 400 for an invalid code too — so naming a
+        specific cause would be wrong in the common case. Verified live."""
+        for status_code in (400, 403):
+            with self.assertRaises(ValueError) as ctx:
+                self._exchange_with(status_code)
+            self.assertIn("couldn't verify this sign-in", str(ctx.exception))
+
+    def test_a_keyless_success_is_still_an_error(self):
+        with self.assertRaises(ValueError):
+            self._exchange_with(200, {"user_id": "user_1"})
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint test; don't gate on local .env auth
+class OpenRouterOAuthEndpointTest(TestCase):
+    """The link endpoints, including the PUBLIC callback."""
+
+    def setUp(self):
+        from agentx_ai.providers import openrouter_oauth as oauth
+
+        oauth._FLOWS.clear()
+        self.oauth = oauth
+        self.cfg = _FakeConfigManager()
+        # BOTH bindings. `views` imports get_config_manager *inside* each function,
+        # so patching the source module reaches it — but `catalog` binds the name
+        # at import time (catalog.py top-level), so that reference is unaffected
+        # and would read the developer's real data/config.json. Missing this made
+        # the catalog assertion below pass alone and error under the full suite.
+        self.cfg_patches = [
+            patch("agentx_ai.config.get_config_manager", return_value=self.cfg),
+            patch("agentx_ai.providers.catalog.get_config_manager", return_value=self.cfg),
+        ]
+        for cfg_patch in self.cfg_patches:
+            cfg_patch.start()
+            self.addCleanup(cfg_patch.stop)
+        self.reload_patch = patch("agentx_ai.providers.registry.reload_providers")
+        self.reload_patch.start()
+        self.addCleanup(self.reload_patch.stop)
+
+    def _start(self):
+        with patch.dict(
+            os.environ, {"AGENTX_PUBLIC_HOST": "", "AGENTX_OPENROUTER_CALLBACK_BASE": ""}
+        ):
+            return self.client.post("/api/providers/openrouter/oauth/start")
+
+    def test_start_returns_a_consent_url_and_flow_id(self):
+        body = self._start().json()
+        self.assertTrue(body["authorization_url"].startswith("https://openrouter.ai/auth?"))
+        self.assertIn(body["flow_id"], body["callback_url"])
+        self.assertTrue(body["local_callback"])
+
+    def test_callback_is_public(self):
+        """The browser arrives from OpenRouter carrying no auth token."""
+        from agentx_ai.auth.middleware import AgentXAuthMiddleware
+
+        middleware = AgentXAuthMiddleware(lambda r: None)
+        self.assertTrue(
+            middleware._is_public_route("/api/providers/openrouter/oauth/callback/abc123")
+        )
+
+    def test_unknown_nonce_resolves_nothing(self):
+        response = self.client.get("/api/providers/openrouter/oauth/callback/not-a-real-nonce")
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNone(self.cfg.get("providers.openrouter.api_key"))
+
+    def test_successful_callback_stores_the_key_and_link(self):
+        flow_id = self._start().json()["flow_id"]
+        with patch.object(
+            self.oauth, "exchange_code",
+            return_value={"key": "sk-or-v1-issued", "user_id": "user_42"},
+        ):
+            response = self.client.get(
+                f"/api/providers/openrouter/oauth/callback/{flow_id}?code=abc"
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.cfg.get("providers.openrouter.api_key"), "sk-or-v1-issued")
+        link = self.cfg.get("providers.openrouter.link")
+        self.assertEqual(link["method"], "oauth")
+        self.assertEqual(link["user_id"], "user_42")
+        status = self.client.get(
+            f"/api/providers/openrouter/oauth/status?flow_id={flow_id}"
+        ).json()
+        self.assertEqual(status["status"], "linked")
+
+    def test_the_minted_key_never_reaches_the_browser(self):
+        """The callback renders an HTML page for a human — not the credential."""
+        flow_id = self._start().json()["flow_id"]
+        with patch.object(
+            self.oauth, "exchange_code",
+            return_value={"key": "sk-or-v1-supersecret", "user_id": "user_42"},
+        ):
+            response = self.client.get(
+                f"/api/providers/openrouter/oauth/callback/{flow_id}?code=abc"
+            )
+        self.assertNotIn(b"sk-or-v1-supersecret", response.content)
+
+    def test_denied_consent_is_reported_not_stored(self):
+        flow_id = self._start().json()["flow_id"]
+        response = self.client.get(
+            f"/api/providers/openrouter/oauth/callback/{flow_id}"
+            "?error=access_denied&error_description=User+declined"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIsNone(self.cfg.get("providers.openrouter.api_key"))
+        status = self.client.get(
+            f"/api/providers/openrouter/oauth/status?flow_id={flow_id}"
+        ).json()
+        self.assertEqual(status["status"], "error")
+        self.assertIn("declined", status["error"])
+
+    def test_replayed_callback_does_not_mint_a_second_key(self):
+        flow_id = self._start().json()["flow_id"]
+        with patch.object(
+            self.oauth, "exchange_code", return_value={"key": "sk-first", "user_id": "u"},
+        ) as exchange:
+            self.client.get(f"/api/providers/openrouter/oauth/callback/{flow_id}?code=abc")
+            self.client.get(f"/api/providers/openrouter/oauth/callback/{flow_id}?code=abc")
+        self.assertEqual(exchange.call_count, 1)
+
+    def test_status_of_an_unknown_flow_says_expired(self):
+        body = self.client.get("/api/providers/openrouter/oauth/status?flow_id=nope").json()
+        self.assertEqual(body["status"], "expired")
+
+    def test_unlink_forgets_the_key_and_points_at_revocation(self):
+        """We cannot revoke a user-controlled key without a management key, so
+        the response must hand back where the user can do it themselves."""
+        self.cfg.set("providers.openrouter.api_key", "sk-or-v1-stored")
+        self.cfg.set("providers.openrouter.link", {"method": "oauth", "user_id": "u"})
+
+        body = self.client.post("/api/providers/openrouter/unlink").json()
+
+        self.assertEqual(body["status"], "unlinked")
+        self.assertTrue(body["had_key"])
+        self.assertEqual(body["revoke_url"], "https://openrouter.ai/settings/keys")
+        self.assertIsNone(self.cfg.get("providers.openrouter.api_key"))
+        self.assertIsNone(self.cfg.get("providers.openrouter.link"))
+
+    def test_catalog_surfaces_the_link_without_the_key(self):
+        self.cfg.set("providers.openrouter.api_key", "sk-or-v1-abcd1234")
+        self.cfg.set("providers.openrouter.link", {"method": "oauth", "user_id": "user_42"})
+
+        entry = next(
+            p for p in self.client.get("/api/providers/catalog").json()["providers"]
+            if p["id"] == "openrouter"
+        )
+        self.assertEqual(entry["link"]["user_id"], "user_42")
+        self.assertEqual(entry["key_fingerprint"], "····1234")
+        self.assertNotIn("sk-or-v1-abcd1234", json.dumps(entry))

@@ -97,6 +97,25 @@ server {
         proxy_set_header X-Forwarded-Host $host;
     }
 
+    # OAuth redirect for OpenRouter account linking. Same reasoning as the MCP
+    # callback above — the browser arrives from OpenRouter's consent page and
+    # cannot carry the gateway token — but a PREFIX match (`^~`), because
+    # OpenRouter's /auth accepts no `state` parameter and the single-use nonce
+    # therefore rides the path. Safe by design: the view resolves nothing for an
+    # unknown or expired nonce, each nonce is claimed exactly once, and the
+    # server-level rate limit still applies. Set AGENTX_PUBLIC_HOST in the
+    # cluster .env so AgentX builds the callback on this host over https.
+    location ^~ /api/providers/openrouter/oauth/callback/ {
+        proxy_pass http://${AGENTX_API_HOST}:${AGENTX_API_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header AgentX-Gateway-Token "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $gw_client_ip;
+        proxy_set_header X-Forwarded-For $gw_client_ip;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
     location / {
         # Token gate scoped here (not server-level) so the tokenless health
         # probe above stays reachable. `return` inside `if` is in nginx's
