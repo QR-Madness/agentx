@@ -371,11 +371,14 @@ paths:
     get:
       tags: [Providers]
       operationId: searchHealth
-      summary: Probe the configured web-search backend
+      summary: Probe the configured web-search backends
       description: >-
-        Runs a trivial query against the active search backend (Tavily/Brave) to
-        confirm it is configured and reachable. Powers the "Test connection"
-        button in Settings → Web Search.
+        Runs a trivial query against every configured search backend
+        (Tavily/Brave) to confirm each is reachable, and reports which web tools
+        each one unlocks. Powers the "Test connection" button in Settings → Web
+        Search. The probe is deliberately cheap (one result, fastest depth, Brave
+        grounding off) but still bills the provider, so it is recorded in the
+        usage ledger.
       responses:
         '200':
           description: Probe result
@@ -386,14 +389,44 @@ paths:
                 properties:
                   ok:
                     type: boolean
+                    description: Whether any backend answered.
                   backend:
                     type: string
                     nullable: true
+                    description: The backend that answered (active one preferred).
                   count:
                     type: integer
                   error:
                     type: string
                     nullable: true
+                  backends:
+                    type: array
+                    description: Per-backend breakdown.
+                    items:
+                      type: object
+                      properties:
+                        backend:
+                          type: string
+                        label:
+                          type: string
+                        configured:
+                          type: boolean
+                          description: Whether an API key is present.
+                        ok:
+                          type: boolean
+                        active:
+                          type: boolean
+                          description: True for the backend web_search hits first.
+                        count:
+                          type: integer
+                        error:
+                          type: string
+                          nullable: true
+                        tools:
+                          type: array
+                          description: Web tools this backend unlocks.
+                          items:
+                            type: string
         '500':
           description: Probe failed
           content:

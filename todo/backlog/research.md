@@ -37,11 +37,15 @@ Open:
       `finish_reason=tool_calls`), and the **`web_research` async fix** (Tavily research() is
       initiate-only; the report arrives via `get_research` polling — v1 always got an empty report
       in ~210 ms and called it success).
-- [ ] **Brave capability expansion** — a curated **Goggle** for source-quality re-ranking (boost
-      primary/authoritative sources, discard content farms); the **`llm-context`** endpoint as a
-      grounding backend (pre-extracted, token-budgeted content — could collapse search→extract into
-      one call and cut extract spend); and **`answers`** as an alternate deep-research backend
-      (complement/fallback to Tavily `web_research`).
+- [~] **Brave capability expansion** — **`llm-context` + `answers` shipped `[v0.21.254]`.**
+      Brave `web_search` defaults to the `llm/context` grounding endpoint (pre-extracted,
+      token-budgeted content in one call; budgets are operator-owned `search.brave_context_*`),
+      and `answers` is a second `web_research` backend parsing `<answer>`/`<blindspots>`/`<usage>`
+      — **default-off** (`search.brave_answers_enabled`) because Answers is a separate
+      subscription and an unsubscribed key returns `OPTION_NOT_IN_PLAN`; it is therefore built to
+      the documented contract and unit-tested, but **not yet live-verified**.
+      Still open: a curated **Goggle** for source-quality re-ranking (boost primary/authoritative
+      sources, discard content farms) — folded into the source-policy work.
 - [ ] **Dollar-denominated spend ceiling + composer cost-meter** — gate research on cumulative $
       (not just call count), with a live per-conversation cost chip in the composer.
 - [ ] **Inline source URLs in saved reports** — v1.1's acceptance report names its sources (graded

@@ -1012,6 +1012,22 @@ export interface ModelRoleMember {
   following: 'explicit' | 'role' | 'fallback';
 }
 
+/** One provider's row in the search-health probe (`GET /api/tools/search-health`). */
+export interface SearchBackendHealth {
+  backend: string;
+  label: string;
+  /** Whether an API key is present — unconfigured backends are reported, not hidden. */
+  configured: boolean;
+  /** Whether the probe query came back with results. */
+  ok: boolean;
+  /** True for the backend `web_search` would hit first. */
+  active?: boolean;
+  count: number;
+  error?: string | null;
+  /** Web tools this backend actually unlocks (e.g. web_extract, web_research). */
+  tools: string[];
+}
+
 export interface ModelRolesResponse {
   roles: Record<ModelRoleName, ModelRoleInfo>;
   members: ModelRoleMember[];

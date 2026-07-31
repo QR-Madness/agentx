@@ -1159,23 +1159,69 @@ def translate(request):
 @csrf_exempt
 @require_methods("GET")
 def search_health(request):
-    """Probe the configured web-search backend(s) with a trivial query.
+    """Probe each configured web-search backend and report what it unlocks.
 
-    Powers the 'Test connection' button in Settings → Web Search.
+    Powers the 'Test connection' button in Settings → Web Search. Probes every
+    backend that has a key — not just whichever answers first — so the UI can say
+    which providers work and which tools each one actually enables, rather than
+    hiding a broken fallback behind a healthy primary.
+
+    The probe is deliberately cheap: one result, at the fastest depth, and with
+    Brave grounding off (a grounded probe would pull real page content, and this
+    runs every time someone clicks a button).
     """
-    from .mcp.internal_tools import web_search
+    from .mcp.internal_tools import (
+        SEARCH_CAPABILITIES,
+        _backend_has_key,
+        _record_search_spend,
+        _SEARCH_BACKENDS,
+        _tool_supported_by,
+        resolve_active_search_backend,
+    )
 
-    try:
-        result = web_search(query="ping", max_results=1)
-    except Exception as e:  # noqa: BLE001 - surface any probe failure to the UI
-        logger.exception("search-health probe error")
-        return json_error(f"Search probe failed: {e}", status=500)
+    active = resolve_active_search_backend()
+    backends = []
+    for name, fn in _SEARCH_BACKENDS.items():
+        if not _backend_has_key(name):
+            backends.append({
+                "backend": name,
+                "label": SEARCH_CAPABILITIES.get(name, {}).get("label", name),
+                "ok": False, "configured": False, "count": 0,
+                "error": "no API key configured", "tools": [],
+            })
+            continue
+        entry = {
+            "backend": name,
+            "label": SEARCH_CAPABILITIES.get(name, {}).get("label", name),
+            "configured": True,
+            "active": name == active,
+            "tools": sorted(
+                t for t in SEARCH_CAPABILITIES.get(name, {}).get("tools", {})
+                if _tool_supported_by(t, name)
+            ),
+        }
+        try:
+            result = fn("ping", 1, search_depth="ultra-fast", grounding=False)
+            count = len(result.get("results") or [])
+            entry.update({"ok": count > 0, "count": count,
+                          "error": None if count else "no results"})
+            # Cheap, but not free — a probe still bills the provider, so it
+            # belongs in the ledger like any other call.
+            _record_search_spend(name, 1)
+        except Exception as e:  # noqa: BLE001 - a probe failure is the answer, not a 500
+            logger.warning(f"search-health probe failed for {name}: {e}")
+            entry.update({"ok": False, "count": 0, "error": str(e)})
+        backends.append(entry)
 
+    healthy = next((b for b in backends if b.get("active") and b["ok"]),
+                   next((b for b in backends if b["ok"]), None))
     return json_success({
-        "ok": bool(result.get("success")),
-        "backend": result.get("backend"),
-        "count": result.get("count", 0),
-        "error": result.get("error"),
+        # Flat fields keep the pre-existing client contract intact.
+        "ok": healthy is not None,
+        "backend": healthy["backend"] if healthy else None,
+        "count": healthy["count"] if healthy else 0,
+        "error": None if healthy else "no backend answered",
+        "backends": backends,
     })
 
 

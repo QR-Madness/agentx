@@ -1,5 +1,10 @@
 import { request as apiRequest } from './core';
-import type { ConfigUpdate, ModelRoleName, ModelRolesResponse } from './types';
+import type {
+  ConfigUpdate,
+  ModelRoleName,
+  ModelRolesResponse,
+  SearchBackendHealth,
+} from './types';
 
 export const configApi = {
   // === Config ===
@@ -24,10 +29,21 @@ export const configApi = {
   },
 
   /**
-   * Probe the configured web-search backend with a trivial query.
+   * Probe every configured web-search backend with a trivial query.
    * Powers the 'Test connection' button in Settings → Web Search.
+   *
+   * The flat `ok`/`backend`/`count` fields describe the backend that answered
+   * (active one preferred); `backends` carries the per-provider breakdown —
+   * which are keyed, which responded, and which tools each one unlocks — so a
+   * broken fallback can't hide behind a healthy primary.
    */
-  async searchHealth(): Promise<{ ok: boolean; backend: string | null; count: number; error?: string | null }> {
+  async searchHealth(): Promise<{
+    ok: boolean;
+    backend: string | null;
+    count: number;
+    error?: string | null;
+    backends?: SearchBackendHealth[];
+  }> {
     return apiRequest('/api/tools/search-health');
   },
 
