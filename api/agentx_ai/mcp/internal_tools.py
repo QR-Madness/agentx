@@ -2224,13 +2224,19 @@ SEARCH_CAPABILITIES: dict[str, dict[str, Any]] = {
         "tools": {
             "web_search": {
                 "summary": (
-                    "search depth, topic (news/finance), time range, domain "
-                    "include/exclude, and an optional LLM-generated answer"
+                    "four search depths, topic (news/finance), time range or an "
+                    "explicit date window, domain include/exclude, country bias, "
+                    "per-source chunk control, and an optional LLM-generated answer"
                 ),
                 "params": {
+                    # `ultra-fast`/`fast` were added after this registry was first
+                    # written. Depth governs both latency and content shape:
+                    # ultra-fast/basic return an NLP summary, fast/advanced return
+                    # query-reranked chunks. advanced bills 2 credits, the rest 1.
                     "search_depth": _enum(
-                        ["basic", "advanced"],
-                        "Search depth; 'advanced' digs deeper (slower, costs more).",
+                        ["ultra-fast", "fast", "basic", "advanced"],
+                        "Search depth. 'ultra-fast'/'fast' trade relevance for latency; "
+                        "'advanced' digs deepest (slower, 2 credits instead of 1).",
                     ),
                     "topic": _enum(
                         ["general", "news", "finance"],
@@ -2240,17 +2246,56 @@ SEARCH_CAPABILITIES: dict[str, dict[str, Any]] = {
                         ["day", "week", "month", "year"],
                         "Restrict to results from the last day/week/month/year.",
                     ),
+                    "start_date": {
+                        "type": "string",
+                        "description": "Only results published on/after this date (YYYY-MM-DD).",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "Only results published on/before this date (YYYY-MM-DD).",
+                    },
                     "include_domains": _strarr("Only return results from these domains."),
                     "exclude_domains": _strarr("Never return results from these domains."),
+                    "country": {
+                        "type": "string",
+                        "description": "Boost results from this country (e.g. 'united kingdom').",
+                    },
+                    "chunks_per_source": {
+                        "type": "integer",
+                        "description": (
+                            "How many query-relevant chunks (≤500 chars each) to keep per "
+                            "result, 1–5. Only applies at 'fast'/'advanced' depth. Lower = "
+                            "less context spent per source."
+                        ),
+                    },
+                    "exact_match": {
+                        "type": "boolean",
+                        "description": "Require the query terms to appear verbatim.",
+                    },
                     "include_answer": {
                         "type": "boolean",
                         "description": "Include a short LLM-generated answer to the query.",
                     },
+                    # Deliberately NOT advertised: `auto_parameters`. It lets the
+                    # provider silently pick search_depth="advanced" (2 credits),
+                    # which moves cost control out of the operator's hands.
                 },
             },
-            "web_extract": {"summary": "pull the full cleaned content of specific URLs", "params": {}},
+            "web_extract": {
+                "summary": (
+                    "pull the cleaned content of specific URLs — optionally reranked "
+                    "to just the chunks relevant to a query"
+                ),
+                "params": {},
+            },
             "web_map": {"summary": "discover a site's URL graph from a base URL", "params": {}},
-            "web_crawl": {"summary": "follow links from a base URL and extract pages", "params": {}},
+            "web_crawl": {
+                "summary": (
+                    "follow links from a base URL and extract pages, with path/breadth "
+                    "scoping and per-page chunk control"
+                ),
+                "params": {},
+            },
             "web_research": {
                 "summary": "agentic deep-research report with citations (slow; minutes)",
                 "params": {},
@@ -2263,7 +2308,7 @@ SEARCH_CAPABILITIES: dict[str, dict[str, Any]] = {
             "web_search": {
                 "summary": (
                     "safe-search level, a freshness window, a result-type filter, "
-                    "and extra per-result snippets"
+                    "country/language targeting, pagination, and extra per-result snippets"
                 ),
                 "params": {
                     "safesearch": _enum(
@@ -2278,6 +2323,21 @@ SEARCH_CAPABILITIES: dict[str, dict[str, Any]] = {
                         "description": (
                             "Comma-separated result types to include "
                             "(e.g. 'web,news,discussions')."
+                        ),
+                    },
+                    "country": {
+                        "type": "string",
+                        "description": "Two-letter country code to target (e.g. 'GB'), or 'ALL'.",
+                    },
+                    "search_lang": {
+                        "type": "string",
+                        "description": "Language code for results (e.g. 'en').",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": (
+                            "Page offset for pagination (0-based). Use to reach results "
+                            "beyond the first page rather than re-querying."
                         ),
                     },
                     "extra_snippets": {
@@ -2302,9 +2362,11 @@ _TOOL_BASE_DESC: dict[str, str] = {
         "them as inline links."
     ),
     "web_extract": (
-        "Extract the full cleaned text/markdown of one or more specific web pages "
-        "(when a search snippet isn't enough). Pass the `urls` you want to read in "
-        "depth; large content is stored and retrievable."
+        "Extract the cleaned text/markdown of one or more specific web pages (when a "
+        "search snippet isn't enough). Pass the `urls` you want to read in depth, and "
+        "— unless you truly need whole pages — a `query` describing what you're after, "
+        "which trims each page to just the relevant passages. Large content is stored "
+        "and retrievable."
     ),
     "web_map": (
         "Map a website's structure: given a base `url`, return the graph of "
@@ -2349,6 +2411,22 @@ def _base_tool_schema(tool: str) -> dict[str, Any]:
                     "items": {"type": "string"},
                     "description": "One or more page URLs to extract full content from (max 20).",
                 },
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "What you're looking for on these pages. STRONGLY PREFERRED: with a "
+                        "query the provider reranks each page down to the relevant chunks "
+                        "instead of returning the whole thing, which is both cheaper and "
+                        "easier to reason over. Omit only when you genuinely need full pages."
+                    ),
+                },
+                "chunks_per_source": {
+                    "type": "integer",
+                    "description": (
+                        "How many relevant chunks (≤500 chars each) to keep per page, 1–5 "
+                        "(default 3). Only applies together with `query`."
+                    ),
+                },
                 "extract_depth": _enum(
                     ["basic", "advanced"], "'advanced' parses more (tables, embeds); slower."
                 ),
@@ -2378,6 +2456,10 @@ def _base_tool_schema(tool: str) -> dict[str, Any]:
             "properties": {
                 "url": {"type": "string", "description": "Base URL to crawl from."},
                 "max_depth": {"type": "integer", "description": "Link depth to follow (default 1)."},
+                "max_breadth": {
+                    "type": "integer",
+                    "description": "Max links to follow per page. Lower = a narrower, cheaper crawl.",
+                },
                 "limit": {
                     "type": "integer",
                     "description": "Max pages to return (default 20, capped at 50).",
@@ -2385,6 +2467,21 @@ def _base_tool_schema(tool: str) -> dict[str, Any]:
                 "instructions": {
                     "type": "string",
                     "description": "Optional natural-language guidance for what to crawl.",
+                },
+                "select_paths": _strarr(
+                    "Only crawl paths matching these regexes (e.g. '/docs/.*'). The cheapest "
+                    "way to scope a crawl to the part of a site you actually need."
+                ),
+                "exclude_paths": _strarr("Never crawl paths matching these regexes."),
+                "extract_depth": _enum(
+                    ["basic", "advanced"], "'advanced' parses more (tables, embeds); slower."
+                ),
+                "chunks_per_source": {
+                    "type": "integer",
+                    "description": (
+                        "Keep only this many relevant chunks per page, 1–5, instead of full "
+                        "page content. Use with `instructions` to keep a broad crawl compact."
+                    ),
                 },
             },
             "required": ["url"],
@@ -2461,6 +2558,47 @@ def _tavily_client():
     return TavilyClient(api_key=key)
 
 
+# Tavily params `_tavily_search` forwards verbatim when present. Kept as a tuple
+# (not `**opts` passthrough) so an unknown key from prompt space can never reach
+# the SDK — the capability registry is what the model is allowed to steer.
+_TAVILY_SEARCH_PARAMS: tuple[str, ...] = (
+    "search_depth", "topic", "time_range", "start_date", "end_date",
+    "include_domains", "exclude_domains", "country", "chunks_per_source",
+    "exact_match", "include_answer",
+)
+
+
+def _provider_credits(data: Any) -> int | None:
+    """Provider-reported credit count from a Tavily response, or None.
+
+    ``include_usage=True`` asks Tavily to report what a call actually cost, which
+    beats our depth-based guess (a basic search is 1 credit and an advanced one 2,
+    but extract/crawl/map bill on per-URL/per-page divisors we can only estimate).
+    The field's exact shape isn't contractual, so probe the plausible spellings and
+    fall back to the caller's estimate rather than logging a wrong number.
+
+    A reported **zero is treated as no signal**, not as a free call. Tavily bills
+    extract/crawl on per-URL divisors (1 credit per 5 URLs) but reports usage as a
+    whole number, so a small extraction comes back as ``{"credits": 0}`` — taking
+    that literally would under-report spend and make the ledger *less* accurate
+    than the estimate it replaced. Over-counting is the safe direction for
+    something whose job is to enforce a ceiling.
+    """
+    if not isinstance(data, dict):
+        return None
+    usage = data.get("usage")
+    candidates: list[Any] = []
+    if isinstance(usage, dict):
+        candidates += [usage.get("credits"), usage.get("credits_used"), usage.get("total_credits")]
+    candidates.append(data.get("credits"))
+    for value in candidates:
+        if isinstance(value, bool):  # bool is an int subclass — never a credit count
+            continue
+        if isinstance(value, (int, float)) and value > 0:
+            return int(value)
+    return None
+
+
 def _tavily_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
     """Query Tavily via the SDK; forwards only Tavily-supported params. Deliberately
     omits `include_raw_content` (full content is web_extract's job) so the echoed
@@ -2468,8 +2606,12 @@ def _tavily_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
     client = _tavily_client()
     # Cap the call so a slow/hung search can't block the turn (the Tavily SDK
     # otherwise defaults to ~60s). Brave is capped in `_http_get_json`.
-    kwargs: dict[str, Any] = {"max_results": max_results, "timeout": _search_timeout()}
-    for p in ("search_depth", "topic", "time_range", "include_domains", "exclude_domains", "include_answer"):
+    kwargs: dict[str, Any] = {
+        "max_results": max_results,
+        "timeout": _search_timeout(),
+        "include_usage": True,  # real credits for the ledger, not our estimate
+    }
+    for p in _TAVILY_SEARCH_PARAMS:
         if opts.get(p) is not None:
             kwargs[p] = opts[p]
     data = client.search(query=query, **kwargs)
@@ -2486,6 +2628,9 @@ def _tavily_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {"results": results}
     if data.get("answer"):
         payload["answer"] = data["answer"]
+    credits = _provider_credits(data)
+    if credits is not None:
+        payload["_credits"] = credits  # internal; stripped before the model sees it
     return payload
 
 
@@ -2502,6 +2647,13 @@ def _brave_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
         params["freshness"] = _FRESHNESS_MAP[opts["time_range"]]
     if opts.get("result_filter"):
         params["result_filter"] = opts["result_filter"]
+    if opts.get("country"):
+        params["country"] = opts["country"]
+    if opts.get("search_lang"):
+        params["search_lang"] = opts["search_lang"]
+    if opts.get("offset") is not None:
+        # Brave rejects a negative offset; clamp rather than 422 the whole call.
+        params["offset"] = max(0, int(opts["offset"]))
     if opts.get("extra_snippets"):
         params["extra_snippets"] = "true"
     data = _http_get_json(
@@ -2563,12 +2715,15 @@ def _check_search_budget(weight: int = 1) -> dict[str, Any] | None:
     }
 
 
-def _record_search_spend(backend: str, credits: int) -> None:
+def _record_search_spend(backend: str, credits: int, *, reported: bool = False) -> None:
     """Best-effort log of one search call to the usage ledger (source='search') and
-    charge its estimated cost to the active per-turn budget window.
+    charge its cost to the active per-turn budget window.
 
-    Tavily bills per credit; Brave bills per request. Both are estimates. Never
-    raises — metering must not break a turn (mirrors usage_ledger's own contract).
+    Tavily bills per credit; Brave bills per request. ``reported`` marks that
+    ``credits`` came from the provider itself (``include_usage``) rather than our
+    depth/divisor estimate, and is recorded in the pricing snapshot so a ledger row
+    says which it was. Never raises — metering must not break a turn (mirrors
+    usage_ledger's own contract).
     """
     try:
         from ..config import get_config_manager
@@ -2577,7 +2732,7 @@ def _record_search_spend(backend: str, credits: int) -> None:
 
         cfg = get_config_manager()
         if backend == "brave":
-            # Brave bills per request (~$5/1k); `credits` here counts requests.
+            # Brave Search bills per request ($5/1k); `credits` here counts requests.
             per_unit = float(cfg.get("search.brave_cost_per_request_usd", 0.005) or 0.0)
             units = {"queries": 1, "requests": credits}
             pricing = {"per_request_usd": per_unit, "requests": credits}
@@ -2585,6 +2740,7 @@ def _record_search_spend(backend: str, credits: int) -> None:
             per_unit = float(cfg.get("search.cost_per_credit_usd", 0.008) or 0.0)
             units = {"queries": 1, "credits": credits}
             pricing = {"per_credit_usd": per_unit, "credits": credits}
+        pricing["source"] = "provider" if reported else "estimate"
         cost_total = round(per_unit * credits, 6)
         charge_cost(cost_total)  # surface running spend to the model via _budget_block
         conv_id, agent_id = attribution()
@@ -2624,8 +2780,11 @@ def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[
         max_results = int(cfg.get("search.max_results", 5))
     ttl = int(cfg.get("search.cache_ttl_seconds", 300))
 
-    # Cache check (keyed by backend + normalized query + count + opts)
-    cache_key = f"{backend}:{max_results}:{query.strip().lower()}:{sorted(opts.items())!r}"
+    # Cache check (keyed by backend + normalized query + count + opts). The
+    # `search:` prefix keeps this namespace clear of the `extract:`/`research:`
+    # entries sharing the dict — without it a query literally starting with
+    # "extract:" could collide with a cached extraction.
+    cache_key = f"search:{backend}:{max_results}:{query.strip().lower()}:{sorted(opts.items())!r}"
     now = time.time()
     cached = _SEARCH_CACHE.get(cache_key)
     if cached and cached[0] > now:
@@ -2638,7 +2797,8 @@ def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[
         return budget_error
 
     # Credits estimate for the ledger: Tavily bills advanced depth at 2 credits.
-    credits = 2 if str(opts.get("search_depth", "")).lower() == "advanced" else 1
+    # Only a fallback — a backend that reports real usage overrides this below.
+    est_credits = 2 if str(opts.get("search_depth", "")).lower() == "advanced" else 1
 
     # Backend order: configured primary, then the other (if fallback enabled)
     primary = backend if backend in _SEARCH_BACKENDS else "tavily"
@@ -2672,7 +2832,13 @@ def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[
             if "answer" in response:
                 cacheable["answer"] = response["answer"]
             _cache_put(cache_key, now + ttl, cacheable)
-        _record_search_spend(name, credits)
+        # Prefer the provider's own credit count over our depth-based guess.
+        reported = payload.get("_credits")
+        _record_search_spend(
+            name,
+            reported if isinstance(reported, int) else est_credits,
+            reported=isinstance(reported, int),
+        )
         # Stamp budget/cost AFTER recording spend so it reflects this call.
         response["budget"] = _budget_block()
         return response
@@ -2695,9 +2861,16 @@ def web_extract(
     urls: list[str] | str,
     extract_depth: str = "basic",
     format: str = "markdown",
+    query: str | None = None,
+    chunks_per_source: int | None = None,
     **opts: Any,
 ) -> dict[str, Any]:
-    """Extract full page content for specific URLs via the Tavily SDK.
+    """Extract page content for specific URLs via the Tavily SDK.
+
+    With ``query``, Tavily reranks each page down to the chunks relevant to it
+    (``chunks_per_source`` of them, ≤500 chars each) instead of returning the whole
+    page — cheaper in context and it spares the tool-output compressor an LLM call.
+    Without a query the full page comes back, so existing callers are unaffected.
 
     Tavily-only (no Brave equivalent): returns a clear error when Tavily isn't
     configured. Large content rides the normal oversize/stored-output handling.
@@ -2710,14 +2883,25 @@ def web_extract(
 
     depth = extract_depth if extract_depth in ("basic", "advanced") else "basic"
     fmt = format if format in ("markdown", "text") else "markdown"
+    q = query.strip() if isinstance(query, str) and query.strip() else None
+    # `chunks_per_source` only means anything alongside a query (it selects *which*
+    # chunks to keep); sending it alone would be a no-op at best.
+    chunks: int | None = None
+    if q is not None and chunks_per_source is not None:
+        try:
+            chunks = max(1, min(int(chunks_per_source), 5))
+        except (TypeError, ValueError):
+            chunks = None
 
     # Cache identical extractions: research turns re-read the same pages while
     # verifying claims, and each re-extract re-bills (1 credit / 5 URLs). Pages
-    # are stable within a turn; cache hits are free (no budget/spend).
+    # are stable within a turn; cache hits are free (no budget/spend). The query
+    # and chunk count are part of the key — the same URL extracted against a
+    # different question is a different result.
     from ..config import get_config_manager
 
     ttl = int(get_config_manager().get("search.cache_ttl_seconds", 300))
-    cache_key = f"extract:{depth}:{fmt}:{sorted(urls)!r}"
+    cache_key = f"extract:{depth}:{fmt}:{q!r}:{chunks}:{sorted(urls)!r}"
     now = time.time()
     cached = _SEARCH_CACHE.get(cache_key)
     if cached and cached[0] > now:
@@ -2734,7 +2918,12 @@ def web_extract(
         "urls": urls,
         "extract_depth": depth,
         "format": fmt,
+        "include_usage": True,  # real credits for the ledger, not our per-5 divisor
     }
+    if q is not None:
+        kwargs["query"] = q
+    if chunks is not None:
+        kwargs["chunks_per_source"] = chunks
     try:
         data = client.extract(**kwargs)
     except Exception as e:  # noqa: BLE001 - SDK/network failure
@@ -2744,9 +2933,15 @@ def web_extract(
         {"url": r.get("url", ""), "content": r.get("raw_content") or r.get("content", "")}
         for r in (data.get("results") or [])
     ]
-    # Tavily bills extraction at 1 credit per 5 successful URLs.
+    # Tavily bills extraction at 1 credit per 5 successful URLs — an estimate the
+    # provider's own reported usage overrides when present.
     if results:
-        _record_search_spend("tavily", (len(results) + 4) // 5)
+        reported = _provider_credits(data)
+        _record_search_spend(
+            "tavily",
+            reported if reported is not None else (len(results) + 4) // 5,
+            reported=reported is not None,
+        )
     response = {
         "results": results,
         "failed": data.get("failed_results") or [],
@@ -2778,15 +2973,21 @@ def web_map(url: str, max_depth: int = 1, limit: int = 50, **opts: Any) -> dict[
         return {"error": f"web_map requires Tavily: {e}", "success": False}
 
     try:
-        data = client.map(url=url, max_depth=max_depth, limit=limit)
+        data = client.map(url=url, max_depth=max_depth, limit=limit, include_usage=True)
     except Exception as e:  # noqa: BLE001 - SDK/network failure
         return {"error": f"Map failed: {e}", "success": False}
 
     found = data.get("results") or data.get("urls") or []
     found = found[:limit]
-    # Tavily bills map at 1 credit per 10 pages.
+    # Tavily bills map at 1 credit per 10 pages — an estimate the provider's own
+    # reported usage overrides when present.
     if found:
-        _record_search_spend("tavily", (len(found) + 9) // 10)
+        reported = _provider_credits(data)
+        _record_search_spend(
+            "tavily",
+            reported if reported is not None else (len(found) + 9) // 10,
+            reported=reported is not None,
+        )
     return {"base_url": url, "urls": found, "count": len(found), "success": True}
 
 
@@ -2800,10 +3001,19 @@ def web_crawl(
     max_depth: int = 1,
     limit: int = 20,
     instructions: str | None = None,
+    max_breadth: int | None = None,
+    select_paths: list[str] | None = None,
+    exclude_paths: list[str] | None = None,
+    extract_depth: str | None = None,
+    chunks_per_source: int | None = None,
     **opts: Any,
 ) -> dict[str, Any]:
     """Crawl a site from a base URL via the Tavily SDK (Tavily-only). Page count
-    is hard-capped; large content rides the existing oversize/stored-output path."""
+    is hard-capped; large content rides the existing oversize/stored-output path.
+
+    Path scoping (``select_paths``/``exclude_paths``) and ``chunks_per_source`` are
+    the levers that keep a broad crawl from flooding the context window.
+    """
     if not url or not url.strip():
         return {"error": "url is required", "success": False}
     limit = max(1, min(int(limit or 20), 50))
@@ -2813,9 +3023,32 @@ def web_crawl(
     except RuntimeError as e:
         return {"error": f"web_crawl requires Tavily: {e}", "success": False}
 
-    kwargs: dict[str, Any] = {"url": url, "max_depth": max_depth, "limit": limit}
+    kwargs: dict[str, Any] = {
+        "url": url,
+        "max_depth": max_depth,
+        "limit": limit,
+        "include_usage": True,  # real credits for the ledger, not our per-10 divisor
+    }
     if instructions and instructions.strip():
         kwargs["instructions"] = instructions
+    if max_breadth is not None:
+        try:
+            kwargs["max_breadth"] = max(1, int(max_breadth))
+        except (TypeError, ValueError):
+            pass
+    for name, raw in (("select_paths", select_paths), ("exclude_paths", exclude_paths)):
+        if isinstance(raw, str):
+            raw = [raw]
+        cleaned = [p for p in (raw or []) if isinstance(p, str) and p.strip()]
+        if cleaned:
+            kwargs[name] = cleaned
+    if extract_depth in ("basic", "advanced"):
+        kwargs["extract_depth"] = extract_depth
+    if chunks_per_source is not None:
+        try:
+            kwargs["chunks_per_source"] = max(1, min(int(chunks_per_source), 5))
+        except (TypeError, ValueError):
+            pass
     try:
         data = client.crawl(**kwargs)
     except Exception as e:  # noqa: BLE001 - SDK/network failure
@@ -2825,9 +3058,15 @@ def web_crawl(
         {"url": r.get("url", ""), "content": r.get("raw_content") or r.get("content", "")}
         for r in (data.get("results") or [])
     ][:limit]
-    # Tavily bills crawl at 1 credit per 10 pages.
+    # Tavily bills crawl at 1 credit per 10 pages — an estimate the provider's own
+    # reported usage overrides when present.
     if pages:
-        _record_search_spend("tavily", (len(pages) + 9) // 10)
+        reported = _provider_credits(data)
+        _record_search_spend(
+            "tavily",
+            reported if reported is not None else (len(pages) + 9) // 10,
+            reported=reported is not None,
+        )
     return {"base_url": url, "pages": pages, "count": len(pages), "success": True}
 
 

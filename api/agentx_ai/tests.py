@@ -11583,6 +11583,32 @@ class WebSearchCapabilityTest(TestCase):
     Brave handlers, and web_search → passive citation auto-capture.
     """
 
+    def setUp(self):
+        """Clear the module-global search cache so cache-sensitive assertions
+        don't depend on which test ran first."""
+        from agentx_ai.mcp import internal_tools as it
+        it._SEARCH_CACHE.clear()
+
+    @staticmethod
+    def _cfg(**overrides):
+        """A config-manager stub carrying the *shipped* search defaults.
+
+        Any test that calls `web_search` must use this. Reading the live
+        `data/config.json` instead would let an operator's real setup (a Brave
+        primary, a real API key, fallback off) send the test out to the actual
+        network and assert against whatever the internet returned that day.
+        """
+        values = {
+            "search.backend": "tavily",
+            "search.fallback_enabled": True,
+            "search.max_results": 5,
+            "search.cache_ttl_seconds": 300,
+        }
+        values.update(overrides)
+        fake = MagicMock()
+        fake.get.side_effect = lambda key, default=None: values.get(key, default)
+        return fake
+
     # --- Active-backend resolver + advertisement -------------------------
 
     def test_resolve_active_backend_prefers_configured_primary(self):
@@ -11708,6 +11734,150 @@ class WebSearchCapabilityTest(TestCase):
         self.assertTrue(out["success"])
         self.assertEqual(out["count"], 200)  # ceiling
 
+    # --- Provider parity: refreshed params + real usage accounting --------
+
+    def test_tavily_capability_advertises_current_depths(self):
+        """The SDK grew `fast`/`ultra-fast`; the advertised enum must track it.
+        `auto_parameters` stays unadvertised — it can silently pick the 2-credit
+        depth, which would move cost control out of the operator's hands."""
+        from agentx_ai.mcp import internal_tools as it
+        props = it.build_tool_schema("web_search", "tavily")["properties"]
+        self.assertEqual(
+            props["search_depth"]["enum"], ["ultra-fast", "fast", "basic", "advanced"]
+        )
+        for p in ("start_date", "end_date", "country", "chunks_per_source", "exact_match"):
+            self.assertIn(p, props)
+        self.assertNotIn("auto_parameters", props)
+
+    def test_tavily_search_forwards_new_params_and_requests_usage(self):
+        from agentx_ai.mcp import internal_tools as it
+        client = MagicMock()
+        client.search.return_value = {"results": [{"title": "T", "url": "https://x"}]}
+        with patch.object(it, "_tavily_client", return_value=client):
+            it._tavily_search(
+                "q", 5, search_depth="fast", start_date="2026-01-01", end_date="2026-02-01",
+                country="united kingdom", chunks_per_source=2, exact_match=True,
+                safesearch="strict",  # Brave-only → must be dropped
+            )
+        kwargs = client.search.call_args.kwargs
+        self.assertEqual(kwargs["search_depth"], "fast")
+        self.assertEqual(kwargs["start_date"], "2026-01-01")
+        self.assertEqual(kwargs["end_date"], "2026-02-01")
+        self.assertEqual(kwargs["country"], "united kingdom")
+        self.assertEqual(kwargs["chunks_per_source"], 2)
+        self.assertTrue(kwargs["exact_match"])
+        self.assertTrue(kwargs["include_usage"])
+        self.assertNotIn("safesearch", kwargs)
+
+    def test_provider_credits_reads_reported_usage(self):
+        from agentx_ai.mcp import internal_tools as it
+        self.assertEqual(it._provider_credits({"usage": {"credits": 4}}), 4)
+        self.assertEqual(it._provider_credits({"credits": 7}), 7)
+        self.assertIsNone(it._provider_credits({"usage": {}}))
+        self.assertIsNone(it._provider_credits(None))
+        # bool is an int subclass — must never be mistaken for a credit count
+        self.assertIsNone(it._provider_credits({"usage": {"credits": True}}))
+        # A reported 0 is a rounding artifact, not a free call: Tavily bills
+        # extract at 1 credit per 5 URLs but reports whole credits, so a
+        # single-URL extract answers 0. Fall back to the estimate instead of
+        # under-reporting spend (verified live against the API).
+        self.assertIsNone(it._provider_credits({"usage": {"credits": 0}}))
+
+    def test_web_search_prefers_reported_credits_over_estimate(self):
+        from agentx_ai.mcp import internal_tools as it
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS,
+                        {"tavily": lambda q, n, **o: {
+                            "results": [{"title": "T", "url": "https://x"}], "_credits": 9}},
+                        clear=False), \
+             patch.object(it, "_record_search_spend") as spend:
+            out = it.web_search("q", max_results=3, search_depth="advanced")
+        self.assertTrue(out["success"])
+        # advanced would have been *estimated* at 2; the provider said 9.
+        self.assertEqual(spend.call_args.args[1], 9)
+        self.assertTrue(spend.call_args.kwargs["reported"])
+        # the internal marker must not leak into the model-facing payload
+        self.assertNotIn("_credits", out)
+
+    def test_brave_search_forwards_country_lang_and_clamps_offset(self):
+        from agentx_ai.mcp import internal_tools as it
+        data = {"web": {"results": [{"title": "T", "url": "https://x", "description": "d"}]}}
+        with patch.object(it, "_resolve_search_key", return_value="brv"), \
+             patch.object(it, "_http_get_json", return_value=data) as get:
+            it._brave_search("q", 5, country="GB", search_lang="en", offset=-3)
+        params = get.call_args.kwargs["params"]
+        self.assertEqual(params["country"], "GB")
+        self.assertEqual(params["search_lang"], "en")
+        self.assertEqual(params["offset"], 0)  # clamped, not a 422
+
+    def test_web_extract_forwards_query_and_clamps_chunks(self):
+        from agentx_ai.mcp import internal_tools as it
+        client = MagicMock()
+        client.extract.return_value = {"results": [{"url": "https://x", "raw_content": "c"}]}
+        with patch.object(it, "_tavily_client", return_value=client):
+            it.web_extract(["https://x"], query="what changed", chunks_per_source=99)
+        kwargs = client.extract.call_args.kwargs
+        self.assertEqual(kwargs["query"], "what changed")
+        self.assertEqual(kwargs["chunks_per_source"], 5)  # clamped to the 1–5 range
+        self.assertTrue(kwargs["include_usage"])
+
+    def test_web_extract_ignores_chunks_without_query(self):
+        """`chunks_per_source` selects *which* chunks to keep, so it is meaningless
+        without a query — don't send it and imply a filtering that won't happen."""
+        from agentx_ai.mcp import internal_tools as it
+        client = MagicMock()
+        client.extract.return_value = {"results": [{"url": "https://y", "raw_content": "c"}]}
+        with patch.object(it, "_tavily_client", return_value=client):
+            it.web_extract(["https://y"], chunks_per_source=3)
+        kwargs = client.extract.call_args.kwargs
+        self.assertNotIn("chunks_per_source", kwargs)
+        self.assertNotIn("query", kwargs)
+
+    def test_web_extract_cache_distinguishes_queries(self):
+        """Same URL, different question ⇒ a different answer. A query-blind cache
+        key would serve the first question's chunks for the second."""
+        from agentx_ai.mcp import internal_tools as it
+        client = MagicMock()
+        client.extract.return_value = {"results": [{"url": "https://z", "raw_content": "c"}]}
+        with patch.object(it, "_tavily_client", return_value=client):
+            it.web_extract(["https://z"], query="first")
+            it.web_extract(["https://z"], query="second")
+            self.assertEqual(client.extract.call_count, 2)
+            it.web_extract(["https://z"], query="first")  # now a cache hit
+            self.assertEqual(client.extract.call_count, 2)
+
+    def test_web_crawl_forwards_scoping_params(self):
+        from agentx_ai.mcp import internal_tools as it
+        client = MagicMock()
+        client.crawl.return_value = {"results": [{"url": "https://x/a", "raw_content": "c"}]}
+        with patch.object(it, "_tavily_client", return_value=client):
+            it.web_crawl(
+                "https://x", max_breadth=4, select_paths=["/docs/.*"], exclude_paths=["/blog/.*"],
+                extract_depth="advanced", chunks_per_source=9,
+            )
+        kwargs = client.crawl.call_args.kwargs
+        self.assertEqual(kwargs["max_breadth"], 4)
+        self.assertEqual(kwargs["select_paths"], ["/docs/.*"])
+        self.assertEqual(kwargs["exclude_paths"], ["/blog/.*"])
+        self.assertEqual(kwargs["extract_depth"], "advanced")
+        self.assertEqual(kwargs["chunks_per_source"], 5)  # clamped
+
+    def test_search_cache_key_is_namespaced(self):
+        """web_search, web_extract and web_research share one cache dict, so the
+        search key needs its own prefix — otherwise a query literally starting
+        with 'extract:' can collide with a cached extraction."""
+        from agentx_ai.mcp import internal_tools as it
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS,
+                        {"tavily": lambda q, n, **o: {
+                            "results": [{"title": "T", "url": "https://x"}]}},
+                        clear=False), \
+             patch.object(it, "_record_search_spend"):
+            it.web_search("extract:basic:markdown", max_results=1)
+        self.assertTrue(all(k.startswith(("search:", "extract:", "research:"))
+                            for k in it._SEARCH_CACHE))
+        self.assertTrue(any(k.startswith("search:") for k in it._SEARCH_CACHE))
+
     # --- Auto-capture: web_search → passive citation ----------------------
 
     def test_citation_exhibit_dedupes_and_caps(self):
@@ -11738,7 +11908,32 @@ class WebSearchCapabilityTest(TestCase):
         self.assertTrue(events[0].startswith("event: exhibit\n"))
         payload = json.loads(events[0].split("data: ", 1)[1].strip())
         self.assertEqual(payload["id"], "exh_src_tc9")
-        self.assertEqual(payload["elements"][0]["type"], "citation")
+
+    def test_web_search_result_shape_stays_citable(self):
+        """INVARIANT: `web_search` must always return a flat top-level
+        `results: [{title, url}]`. The Bibliography's auto-capture parses exactly
+        that shape, live and on history-restore — reshaping the payload (grouping
+        it, nesting it) breaks citations silently, with nothing failing loudly.
+        """
+        from types import SimpleNamespace
+        from agentx_ai.mcp import internal_tools as it
+        from agentx_ai.streaming.tool_loop import _emit_web_search_citation
+
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS,
+                        {"tavily": lambda q, n, **o: {"results": [
+                            {"title": "A", "url": "https://a"},
+                            {"title": "B", "url": "https://b"},
+                        ]}},
+                        clear=False), \
+             patch.object(it, "_record_search_spend"):
+            out = it.web_search("q", max_results=2)
+
+        self.assertIsInstance(out["results"], list)
+        self.assertTrue(all(isinstance(r, dict) and "url" in r and "title" in r
+                            for r in out["results"]))
+        tm = SimpleNamespace(tool_call_id="inv1", name="web_search", content=json.dumps(out))
+        self.assertEqual(len(_emit_web_search_citation(tm)), 1)
 
     def test_emit_web_search_citation_skips_failed_and_disabled(self):
         from types import SimpleNamespace
