@@ -15943,6 +15943,30 @@ class _FakeConfigManager:
             cur = cur.setdefault(k, {})
         cur[keys[-1]] = value
 
+    def unset(self, key):
+        cur = self.data
+        keys = key.split(".")
+        for k in keys[:-1]:
+            if not isinstance(cur, dict) or k not in cur:
+                return False
+            cur = cur[k]
+        if isinstance(cur, dict) and keys[-1] in cur:
+            del cur[keys[-1]]
+            return True
+        return False
+
+    def get_provider_value(self, provider, key, env_var=None, default=None):
+        value = self.get(f"providers.{provider}.{key}")
+        if value is not None:
+            return value
+        if env_var:
+            return os.environ.get(env_var) or default
+        return default
+
+    def reload(self):
+        """No-op — this stand-in has no disk to re-read from."""
+        return None
+
     def save(self):
         return True
 
@@ -20274,3 +20298,370 @@ class ReadThreadCurrentTest(TestCase):
         self.assertTrue(result["success"])
         memory.read_thread.assert_called_once_with("conv-past-9", center_turn=0)
         loader.assert_not_called()
+
+
+# ============================================================================
+# Provider catalog — built-ins + user-registered OpenAI-compatible endpoints
+# ============================================================================
+
+
+class ProviderCatalogTest(TestCase):
+    """`providers/catalog.py` — the open provider list.
+
+    Every test drives a `_FakeConfigManager` rather than the live `config.json`;
+    the real one has leaked into default tests twice before (memory Settings,
+    ConfigManager) and made assertions depend on the developer's own keys.
+    """
+
+    def setUp(self):
+        self.cfg = _FakeConfigManager()
+
+    # --- ids -------------------------------------------------------------
+
+    def test_valid_ids_are_normalized(self):
+        from agentx_ai.providers.catalog import validate_id
+
+        self.assertEqual(validate_id("groq"), "groq")
+        self.assertEqual(validate_id("  Together-AI  "), "together-ai")
+        self.assertEqual(validate_id("my_gateway2"), "my_gateway2")
+
+    def test_builtin_and_reserved_ids_are_rejected(self):
+        from agentx_ai.providers.catalog import validate_id
+
+        for taken in ("openrouter", "anthropic", "lmstudio", "custom", "policy"):
+            with self.assertRaises(ValueError, msg=taken):
+                validate_id(taken)
+
+    def test_malformed_ids_are_rejected(self):
+        from agentx_ai.providers.catalog import validate_id
+
+        for bad in ("", "x", "Bad Id!", "-leading", "a" * 40, "has.dot"):
+            with self.assertRaises(ValueError, msg=bad):
+                validate_id(bad)
+
+    # --- persistence -----------------------------------------------------
+
+    def test_upsert_creates_and_partial_update_preserves_key(self):
+        from agentx_ai.providers.catalog import custom_entries, upsert_custom
+
+        upsert_custom(
+            "groq",
+            {"base_url": "https://api.groq.com/openai/v1", "api_key": "gsk_secret"},
+            self.cfg,
+        )
+        # A later edit that only renames must not wipe the stored credential.
+        entry = upsert_custom("groq", {"label": "Groq Cloud"}, self.cfg)
+        self.assertEqual(entry.label, "Groq Cloud")
+        self.assertEqual(entry.api_key, "gsk_secret")
+        self.assertEqual(custom_entries(self.cfg)["groq"].base_url, "https://api.groq.com/openai/v1")
+
+    def test_upsert_requires_a_base_url(self):
+        from agentx_ai.providers.catalog import upsert_custom
+
+        with self.assertRaises(ValueError):
+            upsert_custom("groq", {"api_key": "k"}, self.cfg)
+
+    def test_upsert_rejects_a_non_registerable_kind(self):
+        from agentx_ai.providers.catalog import upsert_custom
+
+        with self.assertRaises(ValueError):
+            upsert_custom("clone", {"kind": "anthropic", "base_url": "https://x.test/v1"}, self.cfg)
+
+    def test_delete_removes_the_entry_and_is_idempotent(self):
+        from agentx_ai.providers.catalog import custom_entries, delete_custom, upsert_custom
+
+        upsert_custom("groq", {"base_url": "https://api.groq.com/openai/v1"}, self.cfg)
+        self.assertTrue(delete_custom("groq", self.cfg))
+        self.assertEqual(custom_entries(self.cfg), {})
+        self.assertFalse(delete_custom("groq", self.cfg))
+
+    def test_missing_section_reads_as_the_shipped_default(self):
+        """Installs predating the feature have no `providers.custom` key.
+
+        ConfigManager does not merge new defaults into an existing config.json,
+        so the accessor must source its default from DEFAULT_CONFIG.
+        """
+        from agentx_ai.providers.catalog import custom_entries, custom_section
+
+        self.assertEqual(custom_section(self.cfg), {})
+        self.assertEqual(custom_entries(self.cfg), {})
+
+    def test_malformed_records_are_dropped_not_fatal(self):
+        from agentx_ai.providers.catalog import custom_entries
+
+        self.cfg.set("providers.custom", {
+            "good": {"kind": "openai_compatible", "base_url": "https://ok.test/v1"},
+            "bad_kind": {"kind": "not-a-kind", "base_url": "https://x.test/v1"},
+            "not_a_dict": "nonsense",
+        })
+        entries = custom_entries(self.cfg)
+        self.assertEqual(set(entries), {"good"})
+
+    def test_a_custom_entry_can_never_shadow_a_builtin(self):
+        from agentx_ai.providers.catalog import all_entries, custom_entries
+
+        self.cfg.set("providers.custom", {
+            "openrouter": {"kind": "openai_compatible", "base_url": "https://evil.test/v1"},
+        })
+        self.assertNotIn("openrouter", custom_entries(self.cfg))
+        self.assertTrue(all_entries(self.cfg)["openrouter"].builtin)
+
+    # --- serialization ---------------------------------------------------
+
+    def test_public_dict_never_carries_the_secret(self):
+        from agentx_ai.providers.catalog import upsert_custom
+
+        entry = upsert_custom(
+            "groq",
+            {
+                "base_url": "https://api.groq.com/openai/v1",
+                "api_key": "gsk_supersecret_tail",
+                "headers": {"X-Org": "org_secret_value"},
+            },
+            self.cfg,
+        )
+        public = entry.to_public_dict()
+        blob = json.dumps(public)
+        self.assertNotIn("gsk_supersecret_tail", blob)
+        self.assertNotIn("org_secret_value", blob)
+        self.assertEqual(public["key_fingerprint"], "····tail")
+        self.assertEqual(public["header_names"], ["X-Org"])
+
+    def test_fingerprint_collapses_short_secrets(self):
+        from agentx_ai.providers.catalog import fingerprint
+
+        self.assertIsNone(fingerprint(None))
+        self.assertIsNone(fingerprint(""))
+        self.assertEqual(fingerprint("abc"), "····")
+        self.assertEqual(fingerprint("abcdefgh"), "····efgh")
+
+    def test_known_ids_spans_builtins_and_custom(self):
+        from agentx_ai.providers.catalog import BUILTIN_IDS, known_ids, upsert_custom
+
+        upsert_custom("groq", {"base_url": "https://api.groq.com/openai/v1"}, self.cfg)
+        ids = known_ids(self.cfg)
+        self.assertTrue(BUILTIN_IDS <= ids)
+        self.assertIn("groq", ids)
+
+    def test_configured_requires_a_credential_and_enablement(self):
+        from agentx_ai.providers.catalog import custom_entries, upsert_custom
+
+        upsert_custom("nokey", {"base_url": "https://x.test/v1"}, self.cfg)
+        # An OpenAI-compatible endpoint may legitimately need no key (local vLLM),
+        # so a base URL alone counts as configured for a custom entry.
+        self.assertTrue(custom_entries(self.cfg)["nokey"].base_url)
+        upsert_custom("nokey", {"api_key": "k", "enabled": False}, self.cfg)
+        self.assertFalse(custom_entries(self.cfg)["nokey"].configured)
+
+
+class ProviderCatalogRegistryTest(TestCase):
+    """Custom catalog entries resolving through the registry."""
+
+    def _registry(self, cfg):
+        from agentx_ai.providers.registry import ProviderRegistry
+
+        return ProviderRegistry(config_manager=cfg)
+
+    def test_custom_entry_resolves_to_the_generic_provider(self):
+        from agentx_ai.providers.catalog import upsert_custom
+        from agentx_ai.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+        cfg = _FakeConfigManager()
+        upsert_custom(
+            "groq",
+            {"base_url": "https://api.groq.com/openai/v1", "api_key": "gsk_x", "headers": {"X-Org": "o"}},
+            cfg,
+        )
+        registry = self._registry(cfg)
+        provider, model_id = registry.get_provider_for_model("groq:llama-3.3-70b")
+
+        self.assertIsInstance(provider, OpenAICompatibleProvider)
+        self.assertEqual(provider.name, "groq")
+        self.assertEqual(model_id, "llama-3.3-70b")
+        self.assertEqual(provider.config.base_url, "https://api.groq.com/openai/v1")
+        # Catalog headers must reach the provider, not just the config blob.
+        self.assertEqual(provider._headers, {"X-Org": "o"})
+
+    def test_unconfigured_custom_entry_is_not_registered(self):
+        from agentx_ai.providers.catalog import upsert_custom
+
+        cfg = _FakeConfigManager()
+        upsert_custom("groq", {"base_url": "https://api.groq.com/openai/v1", "enabled": False}, cfg)
+        self.assertNotIn("groq", self._registry(cfg).list_providers())
+
+    def test_deleted_provider_degrades_via_the_fallback_chain(self):
+        """A profile still pointing at a removed provider must not hard-fail.
+
+        This is the delete path's real contract: the reference goes stale, and
+        the turn quietly lands on the agent's own model instead of erroring.
+        """
+        from agentx_ai.providers.catalog import delete_custom, upsert_custom
+
+        cfg = _FakeConfigManager()
+        cfg.set("providers.anthropic.api_key", "sk-ant-test")
+        upsert_custom("groq", {"base_url": "https://api.groq.com/openai/v1", "api_key": "k"}, cfg)
+
+        registry = self._registry(cfg)
+        self.assertIn("groq", registry.list_providers())
+
+        delete_custom("groq", cfg)
+        registry.reload()
+
+        route = registry.describe_route(
+            "groq:llama-3.3-70b", preferred_fallback="anthropic:claude-sonnet-4.5"
+        )
+        self.assertTrue(route["substituted"])
+        self.assertEqual(route["resolved"]["model"], "anthropic:claude-sonnet-4.5")
+        # And the stale kind entry is gone, so it can't resolve from a cache.
+        self.assertNotIn("groq", registry._custom_kinds)
+
+    def test_route_reports_an_unlisted_model_as_unknown(self):
+        """An id the provider doesn't list must not publish default capabilities.
+
+        Reporting a provider's fallback context window as if it were the model's
+        is what makes a silently-demoted turn look healthy — the surface needs
+        `known: False` and nulls instead.
+        """
+        cfg = _FakeConfigManager()
+        cfg.set("providers.anthropic.api_key", "sk-ant-test")
+        registry = self._registry(cfg)
+
+        provider = MagicMock()
+        provider.list_models.return_value = ["claude-sonnet-4.5"]
+        provider.get_capabilities.return_value = MagicMock(
+            context_window=8192, max_output_tokens=1024,
+            cost_per_1k_input=None, cost_per_1k_output=None,
+        )
+        with patch.object(registry, "get_provider", return_value=provider):
+            route = registry.describe_route("anthropic:not-a-real-model")
+
+        candidate = route["candidates"][0]
+        self.assertFalse(candidate["known"])
+        self.assertIsNone(candidate["context_window"])
+        self.assertIsNone(candidate["max_output_tokens"])
+
+
+class ProviderEgressGuardTest(TestCase):
+    """`providers/egress.py` — the SSRF guard on user-supplied endpoints."""
+
+    def _cluster_env(self, **overrides):
+        base = {"AGENTX_PUBLIC_HOST": "", "AGENTX_GATEWAY_TOKEN": ""}
+        base.update(overrides)
+        return patch.dict(os.environ, base, clear=False)
+
+    def test_only_http_schemes_are_accepted(self):
+        from agentx_ai.providers.egress import EndpointNotAllowed, assert_public_endpoint
+
+        cfg = _FakeConfigManager()
+        for bad in ("file:///etc/passwd", "ftp://host/v1", "gopher://host"):
+            with self.assertRaises(EndpointNotAllowed, msg=bad):
+                assert_public_endpoint(bad, cfg)
+
+    def test_empty_and_hostless_urls_are_rejected(self):
+        from agentx_ai.providers.egress import EndpointNotAllowed, assert_public_endpoint
+
+        cfg = _FakeConfigManager()
+        for bad in ("", "   ", "https:///v1"):
+            with self.assertRaises(EndpointNotAllowed, msg=bad):
+                assert_public_endpoint(bad, cfg)
+
+    def test_local_install_allows_private_endpoints(self):
+        """The LAN LM Studio / localhost Ollama case — the point of a local install."""
+        from agentx_ai.providers.egress import assert_public_endpoint
+
+        cfg = _FakeConfigManager()
+        with self._cluster_env():
+            for url in ("http://192.168.8.181:12679/v1", "http://localhost:11434/v1"):
+                self.assertEqual(assert_public_endpoint(url, cfg), url)
+
+    def test_cluster_exposed_blocks_private_and_metadata_addresses(self):
+        from agentx_ai.providers.egress import EndpointNotAllowed, assert_public_endpoint
+
+        cfg = _FakeConfigManager()
+        with self._cluster_env(AGENTX_PUBLIC_HOST="agx1.example.com"):
+            for url in (
+                "http://169.254.169.254/latest/meta-data",   # cloud metadata
+                "http://127.0.0.1:5432/v1",                  # loopback
+                "http://10.0.0.5/v1",                        # private
+                "http://[::1]/v1",                           # IPv6 loopback
+            ):
+                with self.assertRaises(EndpointNotAllowed, msg=url):
+                    assert_public_endpoint(url, cfg)
+
+    def test_gateway_token_alone_marks_the_api_exposed(self):
+        from agentx_ai.providers.egress import EndpointNotAllowed, assert_public_endpoint
+
+        cfg = _FakeConfigManager()
+        # noqa: S106 — a literal env value in a test fixture, not a credential.
+        token = "deadbeef"  # noqa: S105
+        with self._cluster_env(AGENTX_GATEWAY_TOKEN=token):
+            with self.assertRaises(EndpointNotAllowed):
+                assert_public_endpoint("http://10.0.0.5/v1", cfg)
+
+    def test_explicit_operator_override_wins_over_the_default(self):
+        from agentx_ai.providers.egress import assert_public_endpoint, private_endpoints_allowed
+
+        cfg = _FakeConfigManager()
+        cfg.set("providers.policy.allow_private_endpoints", True)
+        with self._cluster_env(AGENTX_PUBLIC_HOST="agx1.example.com"):
+            self.assertTrue(private_endpoints_allowed(cfg))
+            self.assertTrue(assert_public_endpoint("http://10.0.0.5/v1", cfg))
+
+        cfg.set("providers.policy.allow_private_endpoints", False)
+        with self._cluster_env():
+            self.assertFalse(private_endpoints_allowed(cfg))
+
+    def test_public_endpoints_pass_when_exposed(self):
+        from agentx_ai.providers.egress import assert_public_endpoint
+
+        cfg = _FakeConfigManager()
+        with self._cluster_env(AGENTX_PUBLIC_HOST="agx1.example.com"):
+            url = "https://api.groq.com/openai/v1"
+            self.assertEqual(assert_public_endpoint(url, cfg), url)
+
+
+class ConfigRedactionTest(TestCase):
+    """`_redact_secrets` — GET /api/config must not hand back usable secrets."""
+
+    def test_nested_custom_provider_keys_and_headers_are_redacted(self):
+        """The single-level walk this replaced leaked both.
+
+        Custom providers nest a level deeper than built-ins and carry a free-form
+        header map whose *names* are user-chosen — so key-name matching alone
+        can't find the secrets.
+        """
+        from agentx_ai.views import _redact_secrets
+
+        redacted = _redact_secrets({
+            "openrouter": {"api_key": "sk-or-v1-abcdef123456"},
+            "custom": {
+                "groq": {
+                    "base_url": "https://api.groq.com/openai/v1",
+                    "api_key": "gsk_abcdef123456",
+                    "headers": {"X-Org": "org_abcdef123456", "X-Trace": "on"},
+                    "enabled": True,
+                },
+            },
+        })
+
+        blob = json.dumps(redacted)
+        for secret in ("sk-or-v1-abcdef123456", "gsk_abcdef123456", "org_abcdef123456"):
+            self.assertNotIn(secret, blob)
+        # Structure and non-secrets stay readable — the client renders them.
+        self.assertEqual(redacted["custom"]["groq"]["base_url"], "https://api.groq.com/openai/v1")
+        self.assertTrue(redacted["custom"]["groq"]["enabled"])
+        self.assertEqual(redacted["custom"]["groq"]["api_key"], "***3456")
+
+    def test_secret_hints_cover_tokens_and_passwords(self):
+        from agentx_ai.views import _redact_secrets
+
+        redacted = _redact_secrets({
+            "gateway_token": "tok_abcdef1234",
+            "password": "hunter2000",
+            "client_secret": "cs_abcdef1234",
+            "base_url": "https://ok.test",
+        })
+        self.assertEqual(redacted["gateway_token"], "***1234")
+        self.assertEqual(redacted["password"], "***2000")
+        self.assertEqual(redacted["client_secret"], "***1234")
+        self.assertEqual(redacted["base_url"], "https://ok.test")

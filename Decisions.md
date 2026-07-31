@@ -426,6 +426,37 @@ what makes "dump a core" safe to offer at all, and the residue ruling keeps enve
 without leaking operator-private surfaces. **Source:** Cores design (`todo/backlog/cores.md`,
 ratified 2026-07-27); Slice 1 implementation + `MemoryExtractTest`.
 
+### ADR-15 — The provider list is a catalog; built-in config paths are frozen
+**Decision:** Providers are no longer a hardcoded five-name enum. `providers/catalog.py` is the
+single definition, and users may register any number of **custom** entries pointing at an
+OpenAI-compatible endpoint. Four properties hold:
+1. **Built-in paths are frozen.** The five shipped providers keep their historical
+   `providers.<name>.*` config paths verbatim (and their env-var fallbacks via
+   `get_provider_value`). Custom entries live one level deeper at `providers.custom.<id>`. No
+   migration, ever — an install that predates the catalog reads identically.
+2. **The id is the namespace.** A custom entry's id is the left half of a `provider:model`
+   reference (`groq:llama-3.3-70b`), so it is validated like an identifier and may not collide with
+   a built-in or a reserved key (`custom`, `policy`). Should a provider later ship as a built-in,
+   the built-in **wins** and the same-named custom entry is dropped — never a hard collision.
+3. **One custom kind.** Only `openai_compatible` is registerable (`catalog.CUSTOM_KINDS`); the
+   other `ProviderKind` values name bespoke built-in implementations. `OpenAICompatibleProvider` is
+   a *new* class, not a refactor — `LMStudioProvider` (300s timeout, raw-httpx streaming) and
+   `OpenAIProvider` (cached client) keep their load-bearing specifics.
+4. **Conservative capabilities.** An unknown endpoint reports a modest context window rather than
+   an optimistic guess, and `describe_route` returns `known: false` with **null** capabilities for a
+   model the provider's catalog doesn't list. Publishing a provider default as if it were the
+   model's fact is precisely how a silently-demoted turn looks healthy while memory degrades.
+**Egress:** `/providers/test` and `/providers/custom` fetch a caller-supplied URL, so they run
+behind `providers/egress.py`. The discriminator is **cluster exposure** (`AGENTX_PUBLIC_HOST` /
+`AGENTX_GATEWAY_TOKEN`), *not* `AGENTX_AUTH_ENABLED` — that defaults to true on a plain local
+install, so keying off it would block the LAN LM Studio setup the local case exists for.
+`providers.policy.allow_private_endpoints` is the operator override and is deliberately absent from
+`DEFAULT_CONFIG` (its safe value isn't knowable when that literal is written to a fresh config.json).
+**Why:** OpenRouter-first is a product position, not a reason to be a closed platform; and the
+capability-honesty rules are what stop the catalog from making the failure it exists to expose
+harder to see. **Source:** Providers overhaul Slice 1; `ProviderCatalogTest`,
+`ProviderCatalogRegistryTest`, `ProviderEgressGuardTest`, `ConfigRedactionTest`.
+
 ---
 
 ## Rejected — do not relitigate
