@@ -942,11 +942,17 @@ research:
          question each. A broad everything-in-one query times out and wastes
          budget; several focused queries beat one sprawling one.
        - web_search for breadth and to find specific sources; set time_range
-         (day/week/month/year) whenever recency matters.
+         (day/week/month/year) whenever recency matters. When a question splits
+         into distinct parts, pass them together in `queries` — one call, run in
+         parallel, instead of several sequential searches.
        - web_extract to pull EXACT figures, quotes, and case-study detail verbatim
          from the actual page — never reconstruct a number or quote from memory.
+         Pass a `query` describing what you need so each page comes back as the
+         relevant passages rather than in full.
        Every search result carries a "budget" field (used, limit, remaining,
-       est_cost_usd). Read it every time and pace yourself by it.
+       est_cost_usd, and cost_remaining_usd when a spend ceiling is set). Read it
+       every time and pace yourself by it. A result marked "seen_earlier" is a page
+       already returned this turn — you have it; don't spend another call on it.
 
     4. DRAFT EARLY — this is a hard gate. After your first 4-6 searches, save a
        first draft to the Project with create_document, BEFORE any deeper

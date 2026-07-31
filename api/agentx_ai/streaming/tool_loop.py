@@ -1388,6 +1388,14 @@ async def streaming_tool_loop(
         _search_limit = int(search_limit_override or 0)
     else:
         _search_limit = int(get_config_manager().get("search.per_turn_limit", 8) or 0)
+    # Dollar ceiling for the turn, binding alongside the call count (whichever
+    # runs out first stops the spending). Research Mode gets its own, since its
+    # elevated call budget is exactly when a runaway costs real money.
+    _cost_key = (
+        "search.research_per_turn_cost_usd" if search_limit_override is not None
+        else "search.per_turn_cost_usd"
+    )
+    _cost_limit = float(get_config_manager().get(_cost_key) or 0.0)
     _conv_id = getattr(getattr(agent, "session", None), "id", None)
     _agent_id = getattr(agent, "agent_id", None)
     # Background work-order registry (`delegate_start`): owned HERE so exactly
@@ -1397,7 +1405,8 @@ async def streaming_tool_loop(
     # contract: nothing in this registry ever outlives this generator.
     work_orders: dict[str, _WorkOrder] = {}
     try:
-        with search_budget_window(_search_limit, conversation_id=_conv_id, agent_id=_agent_id):
+        with search_budget_window(_search_limit, conversation_id=_conv_id,
+                                  agent_id=_agent_id, cost_limit=_cost_limit):
             async for _event in _run_tool_loop(
                 provider, model_id, messages, tools, agent,
                 temperature=temperature, max_tokens=max_tokens,

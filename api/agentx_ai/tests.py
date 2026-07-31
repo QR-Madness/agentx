@@ -11884,6 +11884,149 @@ class WebSearchCapabilityTest(TestCase):
                             for k in it._SEARCH_CACHE))
         self.assertTrue(any(k.startswith("search:") for k in it._SEARCH_CACHE))
 
+    # --- Turn economics: fan-out, dedup, cost envelope --------------------
+
+    def test_canonical_url_normalizes_identity(self):
+        from agentx_ai.mcp import internal_tools as it
+        c = it._canonical_url
+        self.assertEqual(c("https://Example.com/a/?utm_source=x&id=7#frag"),
+                         "https://example.com/a?id=7")
+        self.assertEqual(c("https://example.com/a/"), c("HTTPS://EXAMPLE.COM/a"))
+        self.assertEqual(c("https://example.com/a?fbclid=z"), "https://example.com/a")
+        # Query order/case is load-bearing on plenty of sites — leave it alone.
+        self.assertNotEqual(c("https://example.com/a?b=1&c=2"),
+                            c("https://example.com/a?c=2&b=1"))
+        self.assertEqual(c(""), "")
+        self.assertEqual(c("not a url"), "not a url")
+
+    def test_fanout_runs_queries_in_one_call(self):
+        from agentx_ai.mcp import internal_tools as it
+        seen: list[str] = []
+
+        def backend(q, n, **o):
+            seen.append(q)
+            return {"results": [{"title": q, "url": f"https://{q}"}]}
+
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS, {"tavily": backend}, clear=False), \
+             patch.object(it, "_record_search_spend") as spend:
+            out = it.web_search("alpha", queries=["beta", "gamma"])
+        self.assertEqual(sorted(seen), ["alpha", "beta", "gamma"])
+        self.assertEqual(out["count"], 3)
+        self.assertEqual(spend.call_count, 3)  # charged per sub-query, not per call
+        self.assertEqual([b["query"] for b in out["by_query"]], ["alpha", "beta", "gamma"])
+        # INVARIANT: by_query rides ALONGSIDE a flat results list, never replaces it.
+        self.assertTrue(all("url" in r and "title" in r for r in out["results"]))
+
+    def test_fanout_charges_budget_once_per_query(self):
+        """The gate must be charged on the CALLING thread: ContextVars don't cross
+        into ThreadPoolExecutor workers, so a budget consumed inside one would
+        silently find no window and let the turn run unbounded."""
+        from agentx_ai.mcp import internal_tools as it
+        from agentx_ai.agent.search_budget import search_budget_window, snapshot
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS,
+                        {"tavily": lambda q, n, **o: {
+                            "results": [{"title": q, "url": f"https://{q}"}]}},
+                        clear=False), \
+             patch.object(it, "_record_search_spend"), \
+             search_budget_window(10):
+            it.web_search("a", queries=["b", "c"])
+            used, _, remaining, _ = snapshot()
+        self.assertEqual(used, 3)
+        self.assertEqual(remaining, 7)
+
+    def test_fanout_dedupes_same_page_across_queries(self):
+        from agentx_ai.mcp import internal_tools as it
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS,
+                        {"tavily": lambda q, n, **o: {"results": [
+                            # Same page, different tracking params per query.
+                            {"title": "Shared", "url": f"https://shared.example/p?utm_source={q}"},
+                            {"title": q, "url": f"https://{q}.example"},
+                        ]}},
+                        clear=False), \
+             patch.object(it, "_record_search_spend"):
+            out = it.web_search("a", queries=["b"])
+        urls = [r["url"] for r in out["results"]]
+        shared = [u for u in urls if "shared.example" in u]
+        self.assertEqual(len(shared), 1)  # one copy, not one per sub-query
+        self.assertEqual(len(urls), 3)
+
+    def test_repeat_url_returns_stub_not_a_drop(self):
+        """A page met again under a different query comes back as a stub: the
+        model still needs to know it's there, and citations need the url+title."""
+        from agentx_ai.mcp import internal_tools as it
+        from agentx_ai.agent.search_budget import search_budget_window
+        rows = [{"title": "A", "url": "https://a.example/p", "snippet": "long body text"}]
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS,
+                        {"tavily": lambda q, n, **o: {"results": list(rows)}}, clear=False), \
+             patch.object(it, "_record_search_spend"), \
+             search_budget_window(10):
+            first = it.web_search("one")
+            second = it.web_search("two")
+        self.assertEqual(first["results"][0]["snippet"], "long body text")
+        repeat = second["results"][0]
+        self.assertTrue(repeat["seen_earlier"])
+        self.assertEqual(repeat["url"], "https://a.example/p")
+        self.assertEqual(repeat["title"], "A")     # citations still work
+        self.assertNotIn("snippet", repeat)        # but the body isn't re-sent
+
+    def test_cost_envelope_binds_before_call_count(self):
+        from agentx_ai.mcp import internal_tools as it
+        from agentx_ai.agent.search_budget import charge_cost, search_budget_window
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS,
+                        {"tavily": lambda q, n, **o: {
+                            "results": [{"title": "T", "url": "https://x"}]}},
+                        clear=False), \
+             patch.object(it, "_record_search_spend"), \
+             search_budget_window(100, cost_limit=0.05):
+            ok = it.web_search("cheap")
+            self.assertTrue(ok["success"])
+            self.assertEqual(ok["budget"]["cost_limit_usd"], 0.05)
+            charge_cost(0.06)  # blow the envelope with calls still to spare
+            blocked = it.web_search("expensive")
+        self.assertFalse(blocked["success"])
+        self.assertIn("cost envelope exhausted", blocked["error"])
+
+    def test_no_cost_ceiling_by_default(self):
+        """Shipped default is 0 = no dollar ceiling, so nothing changes for an
+        existing turn until an operator sets one."""
+        from agentx_ai.mcp import internal_tools as it
+        from agentx_ai.config import DEFAULT_CONFIG
+        from agentx_ai.agent.search_budget import charge_cost, search_budget_window
+        self.assertEqual(DEFAULT_CONFIG["search"]["per_turn_cost_usd"], 0.0)
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS,
+                        {"tavily": lambda q, n, **o: {
+                            "results": [{"title": "T", "url": "https://x"}]}},
+                        clear=False), \
+             patch.object(it, "_record_search_spend"), \
+             search_budget_window(10):
+            charge_cost(999.0)
+            out = it.web_search("still fine")
+        self.assertTrue(out["success"])
+        self.assertNotIn("cost_limit_usd", out["budget"])  # nothing to advertise
+
+    def test_fanout_cached_subqueries_are_free(self):
+        from agentx_ai.mcp import internal_tools as it
+        calls: list[str] = []
+
+        def backend(q, n, **o):
+            calls.append(q)
+            return {"results": [{"title": q, "url": f"https://{q}"}]}
+
+        with patch("agentx_ai.config.get_config_manager", return_value=self._cfg()), \
+             patch.dict(it._SEARCH_BACKENDS, {"tavily": backend}, clear=False), \
+             patch.object(it, "_record_search_spend") as spend:
+            it.web_search("alpha")
+            spend.reset_mock()
+            it.web_search("alpha", queries=["beta"])  # alpha is cached
+        self.assertEqual(calls, ["alpha", "beta"])   # alpha not re-fetched
+        self.assertEqual(spend.call_count, 1)        # and not re-charged
+
     # --- Brave as a first-class backend ----------------------------------
 
     def test_gate_follows_capability_registry(self):

@@ -12,6 +12,7 @@ import json
 import logging
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 from collections.abc import Callable
@@ -2206,6 +2207,10 @@ _BACKEND_ORDER: tuple[str, ...] = ("tavily", "brave")
 # declares them, but stay registered regardless (a stale call self-guards instead
 # of 404ing).
 
+# Ceiling on one fan-out. Every sub-query is a real billed search, so this bounds
+# the blast radius of a model that decides to decompose enthusiastically.
+_MAX_FANOUT_QUERIES = 5
+
 # Tavily `time_range` → Brave `freshness` codes.
 _FRESHNESS_MAP = {"day": "pd", "week": "pw", "month": "pm", "year": "py"}
 
@@ -2417,6 +2422,18 @@ def _base_tool_schema(tool: str) -> dict[str, Any]:
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "The search query."},
+                "queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Additional queries to run IN PARALLEL with `query`, in this same "
+                        f"call (up to {_MAX_FANOUT_QUERIES} total). When a question has "
+                        "distinct parts, decompose it and send them together rather than "
+                        "searching one at a time — same cost, a fraction of the wait. "
+                        "Results come back merged and de-duplicated, plus a `by_query` "
+                        "breakdown."
+                    ),
+                },
                 "max_results": {
                     "type": "integer",
                     "description": "Max results to return (default from config, usually 5).",
@@ -2828,18 +2845,62 @@ def _brave_search(query: str, max_results: int, **opts: Any) -> dict[str, Any]:
 _SEARCH_BACKENDS = {"tavily": _tavily_search, "brave": _brave_search}
 
 
+# Query params that identify a click/campaign rather than a document. Stripping
+# them means the same page reached via two different search results canonicalizes
+# to one URL, which is what makes cross-query dedup work at all.
+_TRACKING_PARAMS: frozenset[str] = frozenset({
+    "gclid", "fbclid", "msclkid", "mc_eid", "mc_cid", "igshid", "ref", "ref_src",
+    "spm", "scid", "yclid", "_hsenc", "_hsmi", "vero_id", "wickedid",
+})
+
+
+def _canonical_url(url: str) -> str:
+    """Normalize a URL for identity comparison (NOT for fetching).
+
+    Lowercases scheme/host, drops the fragment, strips tracking params (`utm_*`
+    and the roster above), and removes a trailing slash. Deliberately conservative:
+    query order and case are preserved, because plenty of sites route on them.
+    Returns the input unchanged if it doesn't parse.
+    """
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    if not isinstance(url, str) or not url.strip():
+        return ""
+    try:
+        parts = urlsplit(url.strip())
+        if not parts.netloc:
+            return url.strip()
+        kept = [
+            (k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if not (k.lower().startswith("utm_") or k.lower() in _TRACKING_PARAMS)
+        ]
+        path = parts.path.rstrip("/") or "/"
+        return urlunsplit((
+            parts.scheme.lower(), parts.netloc.lower(), path, urlencode(kept), "",
+        ))
+    except (ValueError, UnicodeError):
+        return url.strip()
+
+
 def _budget_block() -> dict[str, Any]:
     """Budget + cost awareness to stamp onto a search result so the model can pace
     itself by both remaining calls and estimated spend. ``limit`` 0 ⇒ unlimited."""
-    from ..agent.search_budget import snapshot
+    from ..agent.search_budget import cost_snapshot, snapshot
 
     used, limit, remaining, cost_used = snapshot()
-    return {
+    _, cost_limit, cost_remaining = cost_snapshot()
+    block: dict[str, Any] = {
         "used": used,
         "limit": limit,
         "remaining": "unlimited" if remaining is None else remaining,
         "est_cost_usd": round(cost_used, 4),
     }
+    # Only advertise a dollar ceiling when one is actually set — otherwise the
+    # model reads "unlimited" twice and learns nothing.
+    if cost_limit > 0:
+        block["cost_limit_usd"] = round(cost_limit, 4)
+        block["cost_remaining_usd"] = round(cost_remaining or 0.0, 4)
+    return block
 
 
 def _check_search_budget(weight: int = 1) -> dict[str, Any] | None:
@@ -2848,9 +2909,25 @@ def _check_search_budget(weight: int = 1) -> dict[str, Any] | None:
     Returns a budget-error dict when the turn's window is exhausted (caller must
     return it without hitting a backend), or ``None`` when the call may proceed.
     No active window ⇒ unlimited. ``weight`` lets a costly call (deep web_research)
-    charge more than a basic web_search.
+    charge more than a basic web_search, and a fan-out charge for each sub-query.
+
+    Two ceilings apply and the turn stops at whichever binds first: the call count
+    and the USD envelope. The cost check comes first because a turn that has blown
+    its dollar budget should say so, not report a call count that looks fine.
     """
-    from ..agent.search_budget import consume
+    from ..agent.search_budget import consume, cost_exhausted
+
+    over_cost, cost_used, cost_limit = cost_exhausted()
+    if over_cost:
+        return {
+            "results": [],
+            "count": 0,
+            "success": False,
+            "error": f"web-search cost envelope exhausted for this turn "
+            f"(${cost_used:.4f} of ${cost_limit:.2f}; raise the per-turn cost "
+            "limit in Settings → Web Search, or set it to 0 to disable)",
+            "budget": _budget_block(),
+        }
 
     allowed, used, limit = consume(weight)
     if allowed:
@@ -2923,16 +3000,58 @@ def _record_search_spend(
     description=_TOOL_BASE_DESC["web_search"],
     input_schema=_base_tool_schema("web_search"),
 )
-def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[str, Any]:
+def _run_backends(q: str, order: list[str], max_results: int, opts: dict[str, Any]) -> dict[str, Any]:
+    """Try each backend in turn for one query. Pure network work, no side effects.
+
+    Runs on a worker thread during a fan-out, so it must not touch the budget
+    window, the ledger, or the cache: ContextVars do not cross into
+    `ThreadPoolExecutor` workers, so a `charge_cost` here would silently find no
+    window and drop the spend. The caller owns all of that.
+    """
+    errors: list[str] = []
+    for name in order:
+        try:
+            payload = _SEARCH_BACKENDS[name](q, max_results, **opts)
+        except Exception as e:  # noqa: BLE001 - backend/network failure → try fallback
+            errors.append(f"{name}: {e}")
+            logger.warning(f"web_search backend '{name}' failed: {e}")
+            continue
+        if not (payload.get("results") or []):
+            errors.append(f"{name}: no results")
+            continue
+        return {"payload": payload, "backend": name}
+    return {"errors": errors}
+
+
+def web_search(
+    query: str,
+    max_results: int | None = None,
+    queries: list[str] | None = None,
+    **opts: Any,
+) -> dict[str, Any]:
     """Search the web via the active backend (Tavily SDK) with Brave fallback.
+
+    Passing `queries` runs those searches alongside `query` **in parallel, in this
+    one call**. That is the whole point: three sub-questions asked separately cost
+    three tool rounds — three model round-trips, three prompt re-sends — where a
+    fan-out costs one. It is charged per sub-query, so it is exactly as expensive
+    as doing them one at a time, just faster.
 
     Extra keyword params are backend-specific knobs advertised by the capability
     pre-check; each backend forwards only what it supports and ignores the rest.
     """
-    if not query or not query.strip():
-        return {"error": "query is required", "success": False, "results": []}
-
+    from ..agent.search_budget import mark_seen
     from ..config import get_config_manager
+
+    # `query` plus any extras, de-duplicated, order-preserving, hard-capped.
+    raw = [query] + list(queries or [])
+    qs: list[str] = []
+    for q in raw:
+        if isinstance(q, str) and q.strip() and q.strip() not in qs:
+            qs.append(q.strip())
+    qs = qs[:_MAX_FANOUT_QUERIES]
+    if not qs:
+        return {"error": "query is required", "success": False, "results": []}
 
     cfg = get_config_manager()
     backend = (cfg.get("search.backend", "tavily") or "tavily").lower()
@@ -2941,76 +3060,136 @@ def web_search(query: str, max_results: int | None = None, **opts: Any) -> dict[
         max_results = int(cfg.get("search.max_results", 5))
     ttl = int(cfg.get("search.cache_ttl_seconds", 300))
 
-    # Cache check (keyed by backend + normalized query + count + opts). The
-    # `search:` prefix keeps this namespace clear of the `extract:`/`research:`
-    # entries sharing the dict — without it a query literally starting with
-    # "extract:" could collide with a cached extraction.
-    cache_key = f"search:{backend}:{max_results}:{query.strip().lower()}:{sorted(opts.items())!r}"
-    now = time.time()
-    cached = _SEARCH_CACHE.get(cache_key)
-    if cached and cached[0] > now:
-        # A cache hit spends nothing, so it bypasses the budget gate.
-        return {**cached[1], "cached": True, "success": True, "budget": _budget_block()}
-
-    # Per-turn budget gate (spend only — cached hits above are free).
-    budget_error = _check_search_budget()
-    if budget_error is not None:
-        return budget_error
-
-    # Credits estimate for the ledger: Tavily bills advanced depth at 2 credits.
-    # Only a fallback — a backend that reports real usage overrides this below.
-    est_credits = 2 if str(opts.get("search_depth", "")).lower() == "advanced" else 1
-
     # Backend order: configured primary, then the other (if fallback enabled)
     primary = backend if backend in _SEARCH_BACKENDS else "tavily"
     order = [primary]
     if fallback_enabled:
         order += [b for b in _BACKEND_ORDER if b != primary]
 
+    now = time.time()
+    # Cache keys are per sub-query. The `search:` prefix keeps this namespace
+    # clear of the `extract:`/`research:` entries sharing the dict — without it a
+    # query literally starting with "extract:" could collide with an extraction.
+    def _key(q: str) -> str:
+        return f"search:{backend}:{max_results}:{q.lower()}:{sorted(opts.items())!r}"
+
+    # Split cached from pending on the calling thread: a cache hit spends nothing,
+    # so it must not be charged, and the cache dict is left single-threaded.
+    hits: dict[str, dict[str, Any]] = {}
+    pending: list[str] = []
+    for q in qs:
+        entry = _SEARCH_CACHE.get(_key(q))
+        if entry and entry[0] > now:
+            hits[q] = entry[1]
+        else:
+            pending.append(q)
+
+    # Per-turn budget gate — charged once per query that will actually be spent.
+    # Consumed HERE, on the calling thread, precisely because the workers below
+    # can't see the ContextVar window.
+    if pending:
+        budget_error = _check_search_budget(len(pending))
+        if budget_error is not None:
+            return budget_error
+
+    # Credits estimate for the ledger: Tavily bills advanced depth at 2 credits.
+    # Only a fallback — a backend that reports real usage overrides this below.
+    est_credits = 2 if str(opts.get("search_depth", "")).lower() == "advanced" else 1
+
+    fresh: dict[str, dict[str, Any]] = {}
     errors: list[str] = []
-    for name in order:
-        try:
-            payload = _SEARCH_BACKENDS[name](query, max_results, **opts)
-        except Exception as e:  # noqa: BLE001 - backend/network failure → try fallback
-            errors.append(f"{name}: {e}")
-            logger.warning(f"web_search backend '{name}' failed: {e}")
+    if len(pending) == 1:
+        fresh[pending[0]] = _run_backends(pending[0], order, max_results, opts)
+    elif pending:
+        with ThreadPoolExecutor(max_workers=len(pending)) as pool:
+            futures = {
+                pool.submit(_run_backends, q, order, max_results, opts): q for q in pending
+            }
+            for future in as_completed(futures):
+                fresh[futures[future]] = future.result()
+
+    # Ledger + cache writes, back on the calling thread and in a stable order.
+    for q in pending:
+        outcome = fresh.get(q) or {}
+        if not outcome.get("payload"):
+            errors.extend(outcome.get("errors") or [f"{q}: no results"])
             continue
-        results = payload.get("results") or []
-        if not results:
-            errors.append(f"{name}: no results")
-            continue
-        response: dict[str, Any] = {
-            "results": results,
-            "count": len(results),
-            "backend": name,
-            "cached": False,
-            "success": True,
-        }
-        if payload.get("answer"):
-            response["answer"] = payload["answer"]
+        payload, name = outcome["payload"], outcome["backend"]
         if ttl > 0:
-            cacheable = {k: response[k] for k in ("results", "count", "backend")}
-            if "answer" in response:
-                cacheable["answer"] = response["answer"]
-            _cache_put(cache_key, now + ttl, cacheable)
-        # Prefer the provider's own credit count over our depth-based guess.
+            cacheable: dict[str, Any] = {
+                "results": payload.get("results") or [], "backend": name,
+            }
+            if payload.get("answer"):
+                cacheable["answer"] = payload["answer"]
+            _cache_put(_key(q), now + ttl, cacheable)
         reported = payload.get("_credits")
         _record_search_spend(
             name,
             reported if isinstance(reported, int) else est_credits,
             reported=isinstance(reported, int),
         )
-        # Stamp budget/cost AFTER recording spend so it reflects this call.
-        response["budget"] = _budget_block()
-        return response
 
-    return {
-        "results": [],
-        "count": 0,
-        "success": False,
-        "error": "all search backends failed or returned no results: " + "; ".join(errors),
-        "budget": _budget_block(),
+    # Merge. `results` stays a FLAT list of {title, url, …} — the citation
+    # auto-capture parses exactly that shape to build the Bibliography, live and
+    # on reload, so `by_query` is added alongside it and never replaces it.
+    merged: list[dict[str, Any]] = []
+    by_query: list[dict[str, Any]] = []
+    batch_seen: set[str] = set()
+    answer: str | None = None
+    used_backend: str | None = None
+    for q in qs:
+        payload = hits.get(q) or (fresh.get(q, {}).get("payload") or {})
+        rows = payload.get("results") or []
+        used_backend = used_backend or payload.get("backend") or fresh.get(q, {}).get("backend")
+        answer = answer or payload.get("answer")
+        kept: list[str] = []
+        for row in rows:
+            canonical = _canonical_url(row.get("url", ""))
+            kept.append(row.get("url", ""))
+            if canonical and canonical in batch_seen:
+                continue  # same page from two sub-queries — keep one copy
+            if canonical:
+                batch_seen.add(canonical)
+            merged.append(row)
+        by_query.append({"query": q, "count": len(rows), "urls": kept,
+                         "cached": q in hits})
+
+    if not merged:
+        return {
+            "results": [], "count": 0, "success": False,
+            "error": "all search backends failed or returned no results: " + "; ".join(errors),
+            "budget": _budget_block(),
+        }
+
+    # Cross-turn dedup: a page already returned earlier this turn comes back as a
+    # stub rather than a full re-send. Kept (not dropped) because the model may
+    # legitimately meet it again under a different query, and citations need the
+    # url + title regardless.
+    repeats = mark_seen([_canonical_url(r.get("url", "")) for r in merged if r.get("url")])
+    if repeats:
+        merged = [
+            r if _canonical_url(r.get("url", "")) not in repeats else {
+                "title": r.get("title", ""), "url": r.get("url", ""), "seen_earlier": True,
+            }
+            for r in merged
+        ]
+
+    response: dict[str, Any] = {
+        "results": merged,
+        "count": len(merged),
+        "backend": used_backend,
+        "cached": bool(hits) and not pending,
+        "success": True,
     }
+    if answer:
+        response["answer"] = answer
+    if len(qs) > 1:
+        response["by_query"] = by_query
+    if errors:
+        response["partial_errors"] = errors
+    # Stamp budget/cost AFTER recording spend so it reflects this call.
+    response["budget"] = _budget_block()
+    return response
 
 
 @register_tool(

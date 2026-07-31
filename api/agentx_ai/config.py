@@ -377,6 +377,13 @@ DEFAULT_CONFIG = {
         # default; 0 = unlimited. Research turns need many searches + a few deep
         # web_research calls; this cap (not tool-rounds) governs how deep research goes.
         "research_per_turn_limit": 40,
+        # Dollar ceilings for one turn's searches, binding alongside the call
+        # counts above — whichever runs out first stops the spending. 0 = no cost
+        # ceiling (the shipped default, so nothing changes until an operator sets
+        # one). A call count is a poor proxy for spend once a single deep-research
+        # call can cost 20× a basic search.
+        "per_turn_cost_usd": 0.0,
+        "research_per_turn_cost_usd": 0.0,
         # Ledger cost estimate only (search spend is logged to usage_events).
         # Tavily bills per credit: a basic search = 1 credit, advanced = 2.
         "cost_per_credit_usd": 0.008,
