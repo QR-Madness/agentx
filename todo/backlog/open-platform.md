@@ -125,3 +125,33 @@
       `mimeType`), so a future bridge is a serializer + session shim, not a redesign. (There is no
       "Agent Content Protocol" — the acronym space is ACP=Agent Client Protocol, the defunct
       Agent Communication Protocol→A2A, and unrelated Agentic Commerce / Agent Control Protocols.)
+
+## Providers — after the overhaul (v0.21.257–261)
+
+The four-slice overhaul shipped the catalog (#59), the surface (#60), OpenRouter OAuth (#61) and
+the intelligence layer (#63). What was deliberately left out, with the reason:
+
+- [ ] **Measured cost in the usage ledger** — `GET /api/providers/openrouter/generation/{id}`
+      returns OpenRouter's *real* billing (cache reads/writes, long-context tiers, the endpoint that
+      actually served the turn), but nothing reconciles it into `usage_events` yet. It belongs in a
+      **background job**, not an inline per-turn call — that would add a round trip to every turn,
+      and the record is written asynchronously on OpenRouter's side so an immediate lookup 404s.
+      The primitive and the endpoint exist; only the reconciliation loop is missing.
+- [ ] **Spend cap at mint time** — `POST /auth/keys/code` accepts `limit`, `key_label`,
+      `usage_limit_type` and `expires_at`. Whether the public `/auth` consent page **forwards those
+      as query params** is undocumented and **unverified**; if it does, the guided setup can cap the
+      key it mints in one click instead of deep-linking to the keys page. Probe before promising it.
+- [ ] **Management-key features (declined for now)** — a *provisioning* key would unlock genuine
+      upstream revocation on unlink (`DELETE /keys/{hash}`), minting a dedicated capped key, and
+      `/activity`. Declined because it stores a second, higher-privilege secret for a
+      convenience; today's unlink is local and says so. Revisit only if hosted operation needs it.
+- [ ] **Unused OpenRouter surface** — `/presets` (`@preset/slug` routing), `/byok` (user-held
+      upstream keys), `/providers` privacy + status metadata, `/analytics/query`,
+      `/embeddings/models`, `/videos`. All read-only wins; none blocking.
+- [ ] **Anthropic-compatible custom endpoints** — the catalog's `ProviderKind` has the slot, but
+      only `openai_compatible` is registerable (ADR-15). Add when a real Messages-API gateway wants it.
+
+> ⚠ **Existing clusters need a gateway update before OpenRouter linking works there** — the
+> tokenless `location ^~ /api/providers/openrouter/oauth/callback/` block from
+> `clusters/template/nginx.conf.example`, then `docker compose … up -d --force-recreate`
+> (a restart will not reload a changed bind-mounted file).
