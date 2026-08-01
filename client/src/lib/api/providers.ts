@@ -1,6 +1,8 @@
 import { request as apiRequest } from './core';
 import type {
+  AliasMigrationScan,
   ModelInfo,
+  OpenRouterAccount,
   OpenRouterLinkStart,
   OpenRouterLinkStatus,
   ProviderCatalogEntry,
@@ -10,6 +12,7 @@ import type {
   ProviderRouteResponse,
   ProvidersHealthResponse,
   ProviderTestResult,
+  StaleModelRef,
 } from './types';
 
 export const providersApi = {
@@ -102,5 +105,30 @@ export const providersApi = {
    *  the user can do that themselves. */
   async unlinkOpenRouter(): Promise<{ status: string; had_key: boolean; revoke_url: string }> {
     return apiRequest('/api/providers/openrouter/unlink', { method: 'POST' });
+  },
+
+  /** Balance and spend for the stored key. Never throws for an unconfigured or
+   *  rejected key — it answers `available: false`. */
+  async getOpenRouterAccount(): Promise<OpenRouterAccount> {
+    return apiRequest('/api/providers/openrouter/account', {
+      signal: AbortSignal.timeout(15_000),
+    });
+  },
+
+  /** Scan for model ids left stale by OpenRouter's `~` alias rename. Read-only. */
+  async scanOpenRouterAliases(): Promise<AliasMigrationScan> {
+    return apiRequest('/api/providers/openrouter/alias-migration', {
+      signal: AbortSignal.timeout(20_000),
+    });
+  },
+
+  /** Repair the given references. Opt-in — pass exactly what the user confirmed. */
+  async repairOpenRouterAliases(
+    refs: StaleModelRef[]
+  ): Promise<{ applied: string[]; failed: { location: string; error: string }[]; count: number }> {
+    return apiRequest('/api/providers/openrouter/alias-migration', {
+      method: 'POST',
+      body: JSON.stringify({ refs }),
+    });
   },
 };

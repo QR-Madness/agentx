@@ -20551,6 +20551,10 @@ class ProviderCatalogRegistryTest(TestCase):
             context_window=8192, max_output_tokens=1024,
             cost_per_1k_input=None, cost_per_1k_output=None,
         )
+        # Anthropic has no alias resolver, and a bare MagicMock would invent one
+        # (auto-attributes are callable and return a truthy Mock), making every
+        # unknown model look known. Delete it so the double matches reality.
+        del provider.resolve_catalog_id
         with patch.object(registry, "get_provider", return_value=provider):
             route = registry.describe_route("anthropic:not-a-real-model")
 
@@ -20965,3 +20969,255 @@ class OpenRouterOAuthEndpointTest(TestCase):
         self.assertEqual(entry["link"]["user_id"], "user_42")
         self.assertEqual(entry["key_fingerprint"], "····1234")
         self.assertNotIn("sk-or-v1-abcd1234", json.dumps(entry))
+
+
+# ============================================================================
+# OpenRouter intelligence — alias rename, account strip, measured cost
+# ============================================================================
+
+
+class OpenRouterAliasResolutionTest(TestCase):
+    """The `~`-prefix rename, and why an unresolved alias is dangerous.
+
+    OpenRouter moved its "always the newest" aliases to a tilde prefix. A stored
+    un-prefixed id still *runs* (OpenRouter resolves it), but misses our catalog
+    — so capabilities fell through to DEFAULT_CAPABILITIES' 8192 window for a 1M
+    model, surfacing much later as premature compaction and "spotty memory".
+    """
+
+    #: The shape the live catalog actually returns for a tilde alias.
+    ALIAS_CATALOG = {
+        "~anthropic/claude-sonnet-latest": {
+            "id": "~anthropic/claude-sonnet-latest",
+            "context_length": 1_000_000,
+            "top_provider": {"max_completion_tokens": 128_000},
+            "pricing": {"prompt": "0.000003", "completion": "0.000015"},
+            "supported_parameters": ["tools"],
+        },
+    }
+
+    def _provider(self, catalog: dict):
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.openrouter_provider import OpenRouterProvider
+
+        provider = OpenRouterProvider(ProviderConfig(api_key="sk-or-test"))
+        provider._model_cache = catalog
+        return provider
+
+    def test_unprefixed_alias_resolves_to_the_tilde_entry(self):
+        provider = self._provider(self.ALIAS_CATALOG)
+        self.assertEqual(
+            provider.resolve_catalog_id("anthropic/claude-sonnet-latest"),
+            "~anthropic/claude-sonnet-latest",
+        )
+
+    def test_the_alias_reports_its_real_context_window_not_8192(self):
+        """The whole point: 8192 was a believable lie about a 1M model."""
+        provider = self._provider(self.ALIAS_CATALOG)
+        caps = provider.get_capabilities("anthropic/claude-sonnet-latest")
+        self.assertEqual(caps.context_window, 1_000_000)
+        self.assertEqual(caps.max_output_tokens, 128_000)
+
+    def test_an_exact_catalog_id_is_untouched(self):
+        provider = self._provider(self.ALIAS_CATALOG)
+        self.assertEqual(
+            provider.resolve_catalog_id("~anthropic/claude-sonnet-latest"),
+            "~anthropic/claude-sonnet-latest",
+        )
+
+    def test_a_genuinely_absent_model_stays_unresolved(self):
+        """Resolution must not invent a match — an unknown model is still unknown."""
+        provider = self._provider(self.ALIAS_CATALOG)
+        self.assertIsNone(provider.resolve_catalog_id("acme/not-a-model"))
+        self.assertIsNone(provider.resolve_catalog_id("acme/not-a-model-latest"))
+        self.assertEqual(provider.get_capabilities("acme/not-a-model").context_window, 8192)
+
+    def test_the_warning_fires_once_per_id(self):
+        """Actionable once, not once per turn."""
+        provider = self._provider(self.ALIAS_CATALOG)
+        with self.assertLogs("agentx_ai.providers.openrouter_provider", level="WARNING") as logs:
+            provider.resolve_catalog_id("anthropic/claude-sonnet-latest")
+            provider.resolve_catalog_id("anthropic/claude-sonnet-latest")
+        self.assertEqual(len(logs.records), 1)
+
+    def test_route_description_calls_a_resolved_alias_known(self):
+        """Otherwise a working alias reads as broken in the Supply Line."""
+        from agentx_ai.providers.registry import ProviderRegistry
+
+        cfg = _FakeConfigManager()
+        cfg.set("providers.openrouter.api_key", "sk-or-test")
+        registry = ProviderRegistry(config_manager=cfg)
+        provider = self._provider(self.ALIAS_CATALOG)
+        with patch.object(registry, "get_provider", return_value=provider):
+            route = registry.describe_route("openrouter:anthropic/claude-sonnet-latest")
+        candidate = route["candidates"][0]
+        self.assertTrue(candidate["known"])
+        self.assertEqual(candidate["context_window"], 1_000_000)
+
+
+class OpenRouterAliasMigrationTest(TestCase):
+    """Repairing *stored* ids — opt-in, and only to a verified target."""
+
+    def setUp(self):
+        self.cfg = _FakeConfigManager()
+
+    def _registry(self, listed):
+        registry = MagicMock()
+        provider = MagicMock()
+        provider.list_models.return_value = listed
+        registry.get_provider.return_value = provider
+        return registry
+
+    def test_scan_proposes_the_tilde_form(self):
+        from agentx_ai.providers import openrouter_migration as migration
+
+        self.cfg.set("preferences.default_model", "openrouter:anthropic/claude-sonnet-latest")
+        with patch.object(migration, "_scan_profiles", return_value=[]), \
+             patch.object(migration, "_scan_memory_settings", return_value=[]):
+            report = migration.scan(
+                self._registry(["~anthropic/claude-sonnet-latest"]), cfg=self.cfg
+            )
+        self.assertEqual(len(report.refs), 1)
+        ref = report.refs[0]
+        self.assertEqual(ref.current, "openrouter:anthropic/claude-sonnet-latest")
+        self.assertEqual(ref.suggested, "openrouter:~anthropic/claude-sonnet-latest")
+
+    def test_never_proposes_a_target_the_catalog_lacks(self):
+        """Rewriting one broken id into another would be worse than leaving it."""
+        from agentx_ai.providers import openrouter_migration as migration
+
+        self.cfg.set("preferences.default_model", "openrouter:acme/imaginary-latest")
+        with patch.object(migration, "_scan_profiles", return_value=[]), \
+             patch.object(migration, "_scan_memory_settings", return_value=[]):
+            report = migration.scan(
+                self._registry(["~anthropic/claude-sonnet-latest"]), cfg=self.cfg
+            )
+        self.assertEqual(report.refs, [])
+
+    def test_an_unreadable_catalog_is_not_an_all_clear(self):
+        """Empty + catalog_available=False means 'couldn't check' — the UI must
+        not claim everything is fine."""
+        from agentx_ai.providers import openrouter_migration as migration
+
+        report = migration.scan(self._registry([]), cfg=self.cfg)
+        self.assertFalse(report.catalog_available)
+        self.assertEqual(report.refs, [])
+
+    def test_non_openrouter_and_already_prefixed_ids_are_ignored(self):
+        from agentx_ai.providers import openrouter_migration as migration
+
+        for model in (
+            "anthropic:claude-sonnet-latest",              # different provider
+            "openrouter:~anthropic/claude-sonnet-latest",  # already correct
+            "openrouter:anthropic/claude-sonnet-4.5",      # not an alias
+            None,
+        ):
+            self.assertIsNone(migration._candidate(model), model)
+
+    def test_apply_writes_only_what_it_was_given(self):
+        from agentx_ai.providers import openrouter_migration as migration
+
+        self.cfg.set("preferences.default_model", "openrouter:anthropic/claude-sonnet-latest")
+        self.cfg.set("models.roles.summarizer", "openrouter:google/gemini-flash-latest")
+        ref = migration.StaleRef(
+            store="config",
+            location="preferences.default_model",
+            label="Default model",
+            current="openrouter:anthropic/claude-sonnet-latest",
+            suggested="openrouter:~anthropic/claude-sonnet-latest",
+        )
+        result = migration.apply([ref], cfg=self.cfg)
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(
+            self.cfg.get("preferences.default_model"),
+            "openrouter:~anthropic/claude-sonnet-latest",
+        )
+        # The untouched one stays exactly as the user left it.
+        self.assertEqual(
+            self.cfg.get("models.roles.summarizer"), "openrouter:google/gemini-flash-latest"
+        )
+
+    def test_payload_parsing_drops_malformed_entries(self):
+        from agentx_ai.providers import openrouter_migration as migration
+
+        refs = migration.refs_from_payload([
+            {"store": "config", "location": "a.b", "suggested": "openrouter:~x-latest"},
+            {"store": "elsewhere", "location": "a.b", "suggested": "x"},   # bad store
+            {"store": "config", "location": "", "suggested": "x"},          # no location
+            "not-a-dict",
+        ])
+        self.assertEqual(len(refs), 1)
+        self.assertEqual(refs[0].location, "a.b")
+
+
+class OpenRouterAccountSnapshotTest(TestCase):
+    """The balance strip — best effort, and honest about an uncapped key."""
+
+    def setUp(self):
+        from agentx_ai.providers import openrouter_oauth as oauth
+
+        oauth.clear_account_cache()
+        self.oauth = oauth
+
+    def _client(self, key_status=200, key_payload=None, credits_status=200, credits_payload=None):
+        def get(url, **kwargs):
+            response = MagicMock()
+            if url.endswith("/key"):
+                response.status_code = key_status
+                response.json.return_value = {"data": key_payload or {}}
+            else:
+                response.status_code = credits_status
+                response.json.return_value = {"data": credits_payload or {}}
+            return response
+
+        client = MagicMock()
+        client.get.side_effect = get
+        client.__enter__ = MagicMock(return_value=client)
+        client.__exit__ = MagicMock(return_value=False)
+        return client
+
+    def test_reports_balance_and_spend(self):
+        client = self._client(
+            key_payload={"limit": None, "usage": 11.6, "usage_monthly": 8.4, "is_free_tier": False},
+            credits_payload={"total_credits": 35, "total_usage": 28.7},
+        )
+        with patch("httpx.Client", return_value=client):
+            snapshot = self.oauth.account_snapshot("sk-or-test")
+        self.assertTrue(snapshot["available"])
+        self.assertEqual(snapshot["total_credits"], 35)
+        self.assertEqual(snapshot["usage_monthly"], 8.4)
+
+    def test_an_uncapped_key_keeps_limit_null(self):
+        """`limit: null` is 'no cap', not zero — coercing it would render an
+        empty gauge that reads as 'nothing left'."""
+        client = self._client(key_payload={"limit": None, "limit_remaining": None, "usage": 1.0})
+        with patch("httpx.Client", return_value=client):
+            snapshot = self.oauth.account_snapshot("sk-or-test")
+        self.assertIsNone(snapshot["limit"])
+        self.assertIsNone(snapshot["limit_remaining"])
+
+    def test_credits_being_refused_still_yields_a_snapshot(self):
+        """`/credits` is documented management-key-only; its absence is normal."""
+        client = self._client(key_payload={"usage": 2.0}, credits_status=403)
+        with patch("httpx.Client", return_value=client):
+            snapshot = self.oauth.account_snapshot("sk-or-test")
+        self.assertTrue(snapshot["available"])
+        self.assertIsNone(snapshot["total_credits"])
+
+    def test_a_rejected_key_degrades_instead_of_raising(self):
+        client = self._client(key_status=401)
+        with patch("httpx.Client", return_value=client):
+            snapshot = self.oauth.account_snapshot("sk-or-bad")
+        self.assertEqual(snapshot, {"available": False})
+
+    def test_the_snapshot_is_cached_then_cleared_on_unlink(self):
+        client = self._client(key_payload={"usage": 1.0})
+        with patch("httpx.Client", return_value=client) as ctor:
+            self.oauth.account_snapshot("sk-or-test")
+            self.oauth.account_snapshot("sk-or-test")
+            self.assertEqual(ctor.call_count, 1)
+            # A forgotten key must not keep reporting a balance.
+            self.oauth.clear_account_cache()
+            self.oauth.account_snapshot("sk-or-test")
+            self.assertEqual(ctor.call_count, 2)

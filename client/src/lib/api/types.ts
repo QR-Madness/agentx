@@ -119,6 +119,45 @@ export interface OpenRouterLinkStart {
   local_callback: boolean;
 }
 
+/** Response of `GET /api/providers/openrouter/account`.
+ *  Best-effort — `available: false` when unconfigured or the key was rejected.
+ *  `limit` is **null** on an uncapped account: that's "no cap", not zero, so the
+ *  UI shows usage without a gauge rather than rendering an empty meter. */
+export interface OpenRouterAccount {
+  available: boolean;
+  reason?: string;
+  label?: string | null;
+  limit?: number | null;
+  limit_remaining?: number | null;
+  limit_reset?: string | null;
+  usage?: number | null;
+  usage_daily?: number | null;
+  usage_monthly?: number | null;
+  is_free_tier?: boolean | null;
+  expires_at?: string | null;
+  /** From `/credits` — absent when that endpoint declines the key. */
+  total_credits?: number | null;
+  total_usage?: number | null;
+}
+
+/** One stored model id that OpenRouter's alias rename left stale. */
+export interface StaleModelRef {
+  store: 'profile' | 'config' | 'memory_settings';
+  location: string;
+  label: string;
+  current: string;
+  suggested: string;
+}
+
+/** Response of `GET /api/providers/openrouter/alias-migration`.
+ *  `catalog_available: false` means "couldn't check" — an empty `refs` then is
+ *  *not* an all-clear, and the UI must not claim one. */
+export interface AliasMigrationScan {
+  count: number;
+  catalog_available: boolean;
+  refs: StaleModelRef[];
+}
+
 /** Response of `GET /api/providers/openrouter/oauth/status`. */
 export interface OpenRouterLinkStatus {
   status: 'pending' | 'linked' | 'error' | 'expired';

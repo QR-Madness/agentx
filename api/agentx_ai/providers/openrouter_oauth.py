@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 FLOW_TTL_S = 600.0
 
 AUTH_URL = "https://openrouter.ai/auth"
-KEY_EXCHANGE_URL = "https://openrouter.ai/api/v1/auth/keys"
+API_BASE = "https://openrouter.ai/api/v1"
+KEY_EXCHANGE_URL = f"{API_BASE}/auth/keys"
 #: Where a user manages (and revokes) the keys we mint for them.
 KEYS_PAGE_URL = "https://openrouter.ai/settings/keys"
 
@@ -184,10 +185,86 @@ def record_result(flow: LinkFlow, *, status: str, error: str | None = None,
         _FLOWS[flow.nonce] = flow
 
 
+def clear_account_cache() -> None:
+    """Drop the cached balance — called on unlink/relink so a forgotten key
+    can't keep reporting a balance for the rest of the TTL."""
+    _ACCOUNT_CACHE.clear()
+
+
 def cancel_flow(nonce: str) -> bool:
     """Abandon a pending link (the user closed the consent tab)."""
     with _LOCK:
         return _FLOWS.pop(nonce, None) is not None
+
+
+#: Account snapshot cache — (expiry_epoch, payload). One entry; the key is the
+#: API key itself so a re-link invalidates it immediately.
+_ACCOUNT_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+ACCOUNT_CACHE_TTL_S = 60.0
+
+
+def account_snapshot(api_key: str, *, timeout: float = 10.0) -> dict[str, Any]:
+    """Balance and spend for the stored key, or ``{"available": False}``.
+
+    Reads ``/key`` (label, limit, usage, free-tier) and ``/credits`` (purchased
+    vs used). Both are **best effort**: OpenRouter documents ``/credits`` as
+    management-key-only but answers it for ordinary keys today, so a 401/403
+    there is a normal outcome, not an error — the caller just gets less detail.
+
+    ``limit`` is ``null`` on an uncapped account. That is not zero, and the UI
+    must not render a gauge for it — hence ``limit`` and ``limit_remaining`` are
+    passed through as-is rather than coerced.
+    """
+    import time as _time
+
+    import httpx
+
+    cached = _ACCOUNT_CACHE.get(api_key)
+    if cached and cached[0] > _time.time():
+        return cached[1]
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+    snapshot: dict[str, Any] = {"available": False}
+
+    try:
+        with httpx.Client(timeout=timeout, headers=headers) as client:
+            key_response = client.get(f"{API_BASE}/key")
+            if key_response.status_code >= 400:
+                logger.debug(f"OpenRouter /key returned {key_response.status_code}")
+                return snapshot
+            data = (key_response.json() or {}).get("data") or {}
+            snapshot = {
+                "available": True,
+                "label": data.get("label"),
+                "limit": data.get("limit"),
+                "limit_remaining": data.get("limit_remaining"),
+                "limit_reset": data.get("limit_reset"),
+                "usage": data.get("usage"),
+                "usage_daily": data.get("usage_daily"),
+                "usage_monthly": data.get("usage_monthly"),
+                "is_free_tier": data.get("is_free_tier"),
+                "expires_at": data.get("expires_at"),
+                "total_credits": None,
+                "total_usage": None,
+            }
+
+            # Documented as management-key-only; works for ordinary keys today.
+            # Absence is expected, so it must never downgrade the snapshot.
+            try:
+                credits_response = client.get(f"{API_BASE}/credits")
+                if credits_response.status_code < 400:
+                    credits = (credits_response.json() or {}).get("data") or {}
+                    snapshot["total_credits"] = credits.get("total_credits")
+                    snapshot["total_usage"] = credits.get("total_usage")
+            except Exception as e:  # noqa: BLE001 — optional detail
+                logger.debug(f"OpenRouter /credits unavailable: {e}")
+    except Exception as e:  # noqa: BLE001 — the strip degrades, never errors
+        logger.debug(f"OpenRouter account snapshot failed: {e}")
+        return {"available": False}
+
+    _ACCOUNT_CACHE.clear()
+    _ACCOUNT_CACHE[api_key] = (_time.time() + ACCOUNT_CACHE_TTL_S, snapshot)
+    return snapshot
 
 
 def exchange_code(code: str, verifier: str, timeout: float = 20.0) -> dict[str, Any]:

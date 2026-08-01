@@ -2219,12 +2219,171 @@ def openrouter_unlink(request):
     config.unset("providers.openrouter.link")
     config.save()
     reload_providers()
+    # Or a forgotten key keeps reporting a balance for the rest of the TTL.
+    oauth.clear_account_cache()
     logger.info("OpenRouter key forgotten (local unlink)")
 
     return JsonResponse({
         "status": "unlinked",
         "had_key": had_key,
         "revoke_url": oauth.KEYS_PAGE_URL,
+    })
+
+
+@require_methods("GET")
+def openrouter_account(request):
+    """GET /api/providers/openrouter/account — balance and spend for the stored key.
+
+    Best effort by design: an unconfigured or rejected key answers
+    `{"available": false}` rather than an error, because this drives a supporting
+    strip and must never be the reason the Providers page looks broken.
+
+    `limit` is **null** on an uncapped account — that's "no cap", not zero, and
+    the client renders usage without a gauge for it.
+    """
+    from .config import get_config_manager
+    from .providers import openrouter_oauth as oauth
+
+    api_key = get_config_manager().get("providers.openrouter.api_key")
+    if not api_key:
+        return JsonResponse({"available": False, "reason": "not_configured"})
+    return JsonResponse(oauth.account_snapshot(str(api_key)))
+
+
+@csrf_exempt
+async def openrouter_alias_migration(request):
+    """GET/POST /api/providers/openrouter/alias-migration — repair stale `*-latest` ids.
+
+    OpenRouter moved its alias family to a `~` prefix, so ids stored before that
+    rename miss our catalog and report conservative default capabilities (an 8192
+    window for a 1M model, surfacing later as premature compaction).
+
+    GET scans and reports; POST rewrites only the references handed back to it.
+    **Opt-in on purpose** — these are the user's own model choices, and silently
+    rewriting them is exactly the "don't change the user's defaults" failure.
+    An empty GET with `catalog_available: false` means "couldn't check", not
+    "nothing to fix"; the client must say so rather than claim all-clear.
+
+    Async because the GET warms the provider catalog first — a cold provider
+    lists nothing, which would otherwise report "can't check" on the first call
+    of every process. Method-checked inline: `@require_methods` wraps with a sync
+    function, which would make Django hand the caller an un-awaited coroutine.
+    """
+    from .providers import openrouter_migration as migration
+
+    if request.method == "OPTIONS":
+        return JsonResponse({}, status=200)
+    if request.method == "GET":
+        report = await migration.scan_async()
+        return JsonResponse(report.to_dict())
+    if request.method != "POST":
+        return json_error("Method not allowed", status=405)
+
+    data, error = parse_json_body(request)
+    if error:
+        return error
+
+    payload = data.get("refs")
+    if not isinstance(payload, list) or not payload:
+        return json_error("Pass the refs to repair (from the GET scan).", status=400)
+
+    refs = migration.refs_from_payload(payload)
+    if not refs:
+        return json_error("No usable references in the request.", status=400)
+
+    result = migration.apply(refs)
+    if result["applied"]:
+        from .providers.registry import reload_providers
+
+        reload_providers()
+    return JsonResponse(result)
+
+
+async def openrouter_generation_cost(request, generation_id: str):
+    """GET /api/providers/openrouter/generation/{id} — what a turn really cost.
+
+    `estimate_cost` multiplies catalog rates by token counts; this reports
+    OpenRouter's own billing, which also accounts for cache reads/writes,
+    long-context rate tiers and the endpoint that actually served the turn.
+
+    404 is a normal answer, not a failure: the record is written asynchronously
+    on OpenRouter's side, so a lookup right after the turn legitimately misses.
+    Callers keep the estimate and may retry.
+    """
+    from .providers import get_registry
+
+    if request.method != "GET":
+        return json_error("Method not allowed", status=405)
+
+    try:
+        provider = get_registry().get_provider("openrouter")
+    except Exception:  # noqa: BLE001 — unconfigured is a normal state
+        return json_error("OpenRouter isn't connected.", status=409)
+
+    fetch = getattr(provider, "fetch_generation_cost", None)
+    result = await cast(Any, fetch(generation_id)) if callable(fetch) else None
+    if result is None:
+        return JsonResponse(
+            {"measured": False, "generation_id": generation_id, "reason": "not_available"},
+            status=404,
+        )
+    return JsonResponse(result)
+
+
+async def openrouter_model_endpoints(request, author: str, slug: str):
+    """GET /api/providers/openrouter/models/{author}/{slug}/endpoints.
+
+    Per-provider serving detail for one model: real context length, max output,
+    quantization and price. This is the answer to "why is my context 200k and not
+    1M?" — the top-level catalog reports the *best* endpoint, while a turn may be
+    routed to a smaller one.
+    """
+    from .config import get_config_manager
+    from .providers.openrouter_provider import OPENROUTER_BASE_URL
+
+    if request.method != "GET":
+        return json_error("Method not allowed", status=405)
+
+    # An in-memory dict read under a lock — no I/O and no ORM, so it's safe to
+    # call directly from an async view without a thread hop.
+    api_key = get_config_manager().get("providers.openrouter.api_key")
+    if not api_key:
+        return json_error("OpenRouter isn't connected.", status=409)
+
+    import httpx
+
+    url = f"{OPENROUTER_BASE_URL}/models/{author}/{slug}/endpoints"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(url, headers={"Authorization": f"Bearer {api_key}"})
+    except Exception as e:  # noqa: BLE001 — a detail panel never 500s the page
+        logger.warning(f"OpenRouter endpoint lookup failed for {author}/{slug}: {e}")
+        return json_error("Couldn't reach OpenRouter for endpoint detail.", status=502)
+
+    if response.status_code == 404:
+        return json_error(f"OpenRouter doesn't list '{author}/{slug}'.", status=404)
+    if response.status_code >= 400:
+        return json_error(
+            f"OpenRouter returned {response.status_code} for endpoint detail.", status=502
+        )
+
+    data = (response.json() or {}).get("data") or {}
+    endpoints = [
+        {
+            "provider_name": e.get("provider_name"),
+            "context_length": e.get("context_length"),
+            "max_completion_tokens": e.get("max_completion_tokens"),
+            "quantization": e.get("quantization"),
+            "pricing": e.get("pricing"),
+            "status": e.get("status"),
+        }
+        for e in (data.get("endpoints") or [])
+    ]
+    return JsonResponse({
+        "id": data.get("id"),
+        "name": data.get("name"),
+        "endpoints": endpoints,
+        "count": len(endpoints),
     })
 
 

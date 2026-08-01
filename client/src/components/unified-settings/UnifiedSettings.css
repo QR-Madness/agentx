@@ -884,6 +884,88 @@
   overflow-wrap: anywhere;
 }
 
+/* ── OpenRouter account strip ── */
+.openrouter-account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.openrouter-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-lg);
+  margin: 0;
+}
+
+.openrouter-facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.openrouter-facts dt {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.openrouter-facts dd {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.openrouter-facts .is-low dd,
+.openrouter-facts > div.is-low dd {
+  color: var(--feedback-warning);
+}
+
+.openrouter-facts-sub {
+  font-family: var(--font-sans, inherit);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Stale-alias repair ── */
+.alias-repair {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+/* Rendered inside the confirm dialog — the user sees exactly what changes. */
+.alias-repair-list {
+  list-style: none;
+  margin: var(--space-sm) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.alias-repair-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.alias-repair-list code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 /* A registered endpoint's address — the fact that defines it. */
 .connection-endpoint {
   display: flex;

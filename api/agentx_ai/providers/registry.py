@@ -408,7 +408,14 @@ class ProviderRegistry:
                 try:
                     provider = self.get_provider(provider_name)
                     listed = provider.list_models()
-                    known = model_id in listed if listed else None
+                    # A provider may resolve an id that isn't a literal catalog
+                    # key (OpenRouter's '~'-prefixed alias family). Ask it before
+                    # concluding "unknown", or a working alias reads as broken.
+                    resolver = getattr(provider, "resolve_catalog_id", None)
+                    if callable(resolver) and listed:
+                        known = resolver(model_id) is not None
+                    else:
+                        known = model_id in listed if listed else None
                     caps = provider.get_capabilities(model_id)
                     described.update({
                         "known": known,

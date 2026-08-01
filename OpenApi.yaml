@@ -1134,6 +1134,217 @@ paths:
         '400':
           description: Invalid request
 
+  /providers/openrouter/account:
+    get:
+      tags: [Providers]
+      operationId: openrouterAccount
+      summary: Balance and spend for the stored OpenRouter key
+      description: >
+        Best effort — an unconfigured or rejected key answers `available: false`
+        rather than an error, because this drives a supporting strip. `limit` is
+        **null** on an uncapped account (that is "no cap", not zero); `/credits`
+        detail is absent when OpenRouter declines it for an ordinary key.
+        Cached for 60s and cleared on unlink.
+      responses:
+        '200':
+          description: Account snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                  reason:
+                    type: string
+                  label:
+                    type: string
+                    nullable: true
+                  limit:
+                    type: number
+                    nullable: true
+                  limit_remaining:
+                    type: number
+                    nullable: true
+                  usage:
+                    type: number
+                    nullable: true
+                  usage_monthly:
+                    type: number
+                    nullable: true
+                  is_free_tier:
+                    type: boolean
+                    nullable: true
+                  total_credits:
+                    type: number
+                    nullable: true
+                  total_usage:
+                    type: number
+                    nullable: true
+        '400':
+          description: Invalid request
+
+  /providers/openrouter/alias-migration:
+    get:
+      tags: [Providers]
+      operationId: openrouterAliasScan
+      summary: Find model ids left stale by OpenRouter's alias rename
+      description: >
+        OpenRouter moved its `*-latest` alias family to a `~` prefix. Stored ids
+        without it still run, but miss the catalog and report conservative
+        default capabilities — surfacing later as premature compaction. Scans
+        agent profiles, global model settings and memory-stage models. Warms the
+        catalog first. **`catalog_available: false` means "couldn't check", not
+        "nothing to fix".**
+      responses:
+        '200':
+          description: Scan result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  catalog_available:
+                    type: boolean
+                  refs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StaleModelRef'
+        '400':
+          description: Invalid request
+    post:
+      tags: [Providers]
+      operationId: openrouterAliasRepair
+      summary: Repair the confirmed stale model references
+      description: >
+        Rewrites only the references passed in. **Opt-in on purpose** — these are
+        the user's own model choices, so nothing moves until they confirm the
+        list the scan reported.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refs]
+              properties:
+                refs:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/StaleModelRef'
+      responses:
+        '200':
+          description: Repair result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applied:
+                    type: array
+                    items:
+                      type: string
+                  failed:
+                    type: array
+                    items:
+                      type: object
+                  count:
+                    type: integer
+        '400':
+          description: No usable references in the request
+
+  /providers/openrouter/models/{author}/{slug}/endpoints:
+    get:
+      tags: [Providers]
+      operationId: openrouterModelEndpoints
+      summary: Per-provider serving detail for one OpenRouter model
+      description: >
+        Real context length, max output, quantization and price **per endpoint** —
+        the answer to "why is my context 200k and not 1M?", since the top-level
+        catalog reports the best endpoint while a turn may be routed to a smaller one.
+      parameters:
+        - name: author
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Endpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  count:
+                    type: integer
+                  endpoints:
+                    type: array
+                    items:
+                      type: object
+        '404':
+          description: OpenRouter does not list this model
+        '409':
+          description: OpenRouter is not connected
+
+  /providers/openrouter/generation/{generation_id}:
+    get:
+      tags: [Providers]
+      operationId: openrouterGenerationCost
+      summary: What a completed turn actually cost
+      description: >
+        OpenRouter's own billing for one generation — it accounts for cache
+        reads/writes, long-context rate tiers and the endpoint that served the
+        turn, none of which a catalog-rate estimate can see. **404 is a normal
+        answer**: the record is written asynchronously, so a lookup right after
+        the turn legitimately misses. Callers keep the estimate and may retry.
+      parameters:
+        - name: generation_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Measured cost
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generation_id:
+                    type: string
+                  cost_total:
+                    type: number
+                  currency:
+                    type: string
+                  tokens_prompt:
+                    type: integer
+                    nullable: true
+                  tokens_completion:
+                    type: integer
+                    nullable: true
+                  provider_name:
+                    type: string
+                    nullable: true
+                  measured:
+                    type: boolean
+        '404':
+          description: Not recorded yet
+        '409':
+          description: OpenRouter is not connected
+
   /models/roles:
     get:
       tags: [Providers]
@@ -6237,6 +6448,25 @@ components:
         error:
           type: string
           nullable: true
+
+    StaleModelRef:
+      type: object
+      description: >
+        A stored model id that OpenRouter's `~` alias rename left stale. Only ever
+        proposed when the suggested replacement is verified present in the catalog.
+      properties:
+        store:
+          type: string
+          enum: [profile, config, memory_settings]
+        location:
+          type: string
+          description: Profile field, config dot-path, or memory-settings field.
+        label:
+          type: string
+        current:
+          type: string
+        suggested:
+          type: string
 
     ProviderCatalogEntry:
       type: object

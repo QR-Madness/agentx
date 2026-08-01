@@ -482,6 +482,55 @@ On a local install the consent screen is titled `localhost:12319` — OpenRouter
 names localhost apps by host:port. `start` reports this as `local_callback` so
 the UI can say so before the browser hop rather than letting it read as phishing.
 
+### OpenRouter Intelligence
+
+```
+GET  /api/providers/openrouter/account
+GET  /api/providers/openrouter/alias-migration      ← scan
+POST /api/providers/openrouter/alias-migration      ← repair (opt-in)
+GET  /api/providers/openrouter/models/{author}/{slug}/endpoints
+GET  /api/providers/openrouter/generation/{id}
+```
+
+**Account** returns balance and spend from `/key` (+ `/credits` when OpenRouter
+answers it for an ordinary key). Best effort throughout — an unconfigured or
+rejected key answers `{"available": false}` rather than erroring, because this
+drives a supporting strip. `limit` is **null** on an uncapped account: that means
+*no cap*, not zero, so the UI shows usage without a gauge. Cached 60s, cleared on
+unlink so a forgotten key can't keep reporting a balance.
+
+**Alias migration** repairs the `~` rename. OpenRouter moved its `*-latest`
+aliases to a tilde prefix; ids stored before that still *run* (OpenRouter
+resolves them) but miss our catalog, so capabilities fall back to conservative
+defaults — an 8192 window reported for a 1M model, surfacing much later as
+premature compaction and "spotty memory".
+
+The *reading* half is fixed automatically (`resolve_catalog_id` follows the
+prefix at lookup time). The *stored* half is *opt-in*: `GET` scans agent
+profiles, global model settings and memory-stage models and reports what it would
+change; `POST` rewrites only the refs handed back to it. These are the user's own
+model choices — silently rewriting them would be the "don't change the user's
+defaults" failure.
+
+:::caution
+`catalog_available: false` with an empty `refs` means **"couldn't check"**, not
+"nothing to fix". A client must not report an all-clear on it.
+:::
+
+A replacement is only ever proposed when it is **verified present in the live
+catalog** — never one broken id rewritten into another.
+
+**Model endpoints** gives per-provider serving detail (real `context_length`,
+`max_completion_tokens`, `quantization`, price). It answers "why is my context
+200k and not 1M?": the top-level catalog reports the *best* endpoint, while a
+turn may be routed to a smaller one.
+
+**Generation cost** returns OpenRouter's own billing for a completed turn —
+accounting for cache reads/writes, long-context rate tiers, and the endpoint that
+actually served it, none of which a catalog-rate estimate can see. **404 is a
+normal answer**: the record is written asynchronously, so a lookup right after
+the turn legitimately misses. Keep the estimate and retry.
+
 ### Model Route
 
 ```

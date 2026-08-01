@@ -27,6 +27,7 @@ import { openExternal } from '../../../lib/openExternal';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { useConfirm } from '../../ui/ConfirmDialog';
 import { Button } from '../../ui';
+import { OpenRouterAccount } from './OpenRouterAccount';
 
 /** Poll cadence while a consent tab is open, and the ceiling before we give up
  *  (matching the server's 10-minute flow TTL). */
@@ -49,6 +50,9 @@ export function OpenRouterLink({ link, hasKey, onChanged }: OpenRouterLinkProps)
   const confirm = useConfirm();
   const [pending, setPending] = useState(false);
   const [localCallback, setLocalCallback] = useState(false);
+  // Bumped on link/unlink so the balance strip re-reads instead of showing a
+  // cached figure for a key that just changed.
+  const [accountToken, setAccountToken] = useState(0);
   const flowRef = useRef<string | null>(null);
   const pollRef = useRef<number | null>(null);
 
@@ -95,6 +99,7 @@ export function OpenRouterLink({ link, hasKey, onChanged }: OpenRouterLinkProps)
           setPending(false);
           if (status.status === 'linked') {
             notifySuccess('Account linked', 'OpenRouter');
+            setAccountToken((t) => t + 1);
             onChanged();
           } else if (status.status === 'error') {
             notifyError(status.error || 'The sign-in failed.', 'OpenRouter');
@@ -127,6 +132,7 @@ export function OpenRouterLink({ link, hasKey, onChanged }: OpenRouterLinkProps)
     try {
       await api.unlinkOpenRouter();
       notifySuccess('Key forgotten', 'OpenRouter');
+      setAccountToken((t) => t + 1);
       onChanged();
     } catch (error) {
       notifyError(error, "Couldn't forget the key");
@@ -148,6 +154,7 @@ export function OpenRouterLink({ link, hasKey, onChanged }: OpenRouterLinkProps)
             Key added by hand
           </p>
         )}
+        <OpenRouterAccount refreshToken={accountToken} />
         <div className="connection-actions">
           <Button variant="ghost" onClick={handleUnlink}>
             <Link2Off size={16} />
