@@ -138,6 +138,17 @@ vi.mock('../../../lib/api', () => ({
       models_available: 3, models: [], error: null,
     }),
     saveCustomProvider: vi.fn().mockResolvedValue({ provider: {} }),
+    // The OpenRouter card's account strip. `available: false` is the quiet
+    // path — the strip renders nothing, which keeps these tests about the card.
+    getOpenRouterAccount: vi.fn().mockResolvedValue({ available: false, reason: 'not_configured' }),
+    scanOpenRouterAliases: vi.fn().mockResolvedValue({
+      count: 0, catalog_available: true, refs: [],
+    }),
+    repairOpenRouterAliases: vi.fn().mockResolvedValue({ applied: [], failed: [], count: 0 }),
+    unlinkOpenRouter: vi.fn().mockResolvedValue({
+      status: 'unlinked', had_key: true, revoke_url: 'https://openrouter.ai/settings/keys',
+    }),
+    cancelOpenRouterLink: vi.fn().mockResolvedValue({ status: 'not_pending' }),
     deleteCustomProvider: vi.fn().mockResolvedValue({
       status: 'deleted', id: 'groq', referencing_profiles: [],
     }),
@@ -159,6 +170,7 @@ vi.mock('../../ui/ConfirmDialog', () => ({
 
 import ProvidersSection from './ProvidersSection';
 import { OpenRouterLink } from '../providers/OpenRouterLink';
+import { OpenRouterAccount } from '../providers/OpenRouterAccount';
 import ModelsSection from './ModelsSection';
 import ModelRolesSection from './ModelRolesSection';
 import { SECTION_HIERARCHY, getAllSections, findSectionById } from './index';
@@ -332,5 +344,61 @@ describe('OpenRouterLink', () => {
     renderLink({ hasKey: true });
     expect(screen.getByRole('button', { name: /forget key/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /manage keys/i })).toBeInTheDocument();
+  });
+});
+
+describe('OpenRouterAccount', () => {
+  it('shows the balance and this-month spend', async () => {
+    const { api } = await import('../../../lib/api');
+    (api.getOpenRouterAccount as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      available: true, limit: null, limit_remaining: null,
+      usage_monthly: 8.46, total_credits: 35, total_usage: 28.7, is_free_tier: false,
+    });
+    render(<OpenRouterAccount />);
+    // $35 bought − $28.70 used = $6.30 left, which is the number a user thinks in.
+    expect(await screen.findByText('$6.30')).toBeInTheDocument();
+    expect(screen.getByText(/of \$35\.00/)).toBeInTheDocument();
+    expect(screen.getByText('$8.46')).toBeInTheDocument();
+  });
+
+  it('says an uncapped key has no cap instead of drawing an empty gauge', async () => {
+    // `limit: null` means "no cap", not zero — a meter here would read as
+    // "nothing left" and send the user hunting for a billing problem.
+    const { api } = await import('../../../lib/api');
+    (api.getOpenRouterAccount as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      available: true, limit: null, limit_remaining: null, usage_monthly: 1.2,
+      total_credits: null, total_usage: null,
+    });
+    render(<OpenRouterAccount />);
+    expect(await screen.findByText('None')).toBeInTheDocument();
+    expect(screen.getByText(/on this key/)).toBeInTheDocument();
+  });
+
+  it('renders nothing when the account is unreadable', async () => {
+    // A supporting strip must never be the reason the page looks broken.
+    const { api } = await import('../../../lib/api');
+    (api.getOpenRouterAccount as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      available: false, reason: 'not_configured',
+    });
+    const { container } = render(<OpenRouterAccount />);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(container.querySelector('.openrouter-facts')).toBeNull();
+  });
+
+  it('offers the alias repair only when something is actually stale', async () => {
+    const { api } = await import('../../../lib/api');
+    (api.scanOpenRouterAliases as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      count: 2, catalog_available: true,
+      refs: [
+        { store: 'config', location: 'preferences.default_model', label: 'Default model',
+          current: 'openrouter:anthropic/claude-sonnet-latest',
+          suggested: 'openrouter:~anthropic/claude-sonnet-latest' },
+        { store: 'profile', location: 'p1.default_model', label: 'X1 — model',
+          current: 'openrouter:google/gemini-flash-latest',
+          suggested: 'openrouter:~google/gemini-flash-latest' },
+      ],
+    });
+    render(<OpenRouterAccount />);
+    expect(await screen.findByRole('button', { name: /fix 2 references/i })).toBeInTheDocument();
   });
 });

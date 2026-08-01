@@ -69,6 +69,22 @@ urlpatterns = [
         name="openrouter-oauth-cancel",
     ),
     path("providers/openrouter/unlink", views.openrouter_unlink, name="openrouter-unlink"),
+    path("providers/openrouter/account", views.openrouter_account, name="openrouter-account"),
+    path(
+        "providers/openrouter/alias-migration",
+        views.openrouter_alias_migration,
+        name="openrouter-alias-migration",
+    ),
+    path(
+        "providers/openrouter/models/<str:author>/<str:slug>/endpoints",
+        views.openrouter_model_endpoints,
+        name="openrouter-model-endpoints",
+    ),
+    path(
+        "providers/openrouter/generation/<str:generation_id>",
+        views.openrouter_generation_cost,
+        name="openrouter-generation-cost",
+    ),
     # Model roles (settings overhaul D1)
     path("models/roles", views.models_roles, name="models-roles"),
     path("models/roles/adopt", views.models_roles_adopt, name="models-roles-adopt"),

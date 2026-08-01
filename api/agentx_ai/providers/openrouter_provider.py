@@ -64,6 +64,9 @@ class OpenRouterProvider(ModelProvider):
         self._client: Any | None = None
         self._model_cache: dict[str, dict[str, Any]] = {}
         self._cache_timestamp: float = 0
+        # Ids we've already reported as needing the '~' alias prefix — the warning
+        # is actionable once, not once per turn.
+        self._alias_warned: set[str] = set()
 
         # Attribution headers for OpenRouter
         self._site_url = config.extra.get("site_url", "") if config.extra else ""
@@ -108,10 +111,23 @@ class OpenRouterProvider(ModelProvider):
 
         try:
             async with httpx.AsyncClient(timeout=30) as http_client:
+                # `/models/user` respects the account's own provider preferences,
+                # privacy/ZDR settings and guardrails — for an account with none
+                # set it returns exactly `/models`, so this is a strict
+                # improvement rather than a filter we impose.
                 response = await http_client.get(
-                    f"{self.config.base_url or OPENROUTER_BASE_URL}/models",
+                    f"{self.config.base_url or OPENROUTER_BASE_URL}/models/user",
                     headers={"Authorization": f"Bearer {self.config.api_key}"},
                 )
+                if response.status_code >= 400:
+                    logger.debug(
+                        "OpenRouter /models/user returned %s; falling back to /models",
+                        response.status_code,
+                    )
+                    response = await http_client.get(
+                        f"{self.config.base_url or OPENROUTER_BASE_URL}/models",
+                        headers={"Authorization": f"Bearer {self.config.api_key}"},
+                    )
                 response.raise_for_status()
                 data = response.json()
 
@@ -514,10 +530,42 @@ class OpenRouterProvider(ModelProvider):
             raw_response=data,
         )
 
+    def resolve_catalog_id(self, model: str) -> str | None:
+        """The catalog key for ``model``, following the alias rename. None if absent.
+
+        OpenRouter moved its "always the newest" aliases to a **tilde prefix**:
+        the catalog lists ``~anthropic/claude-sonnet-latest``, and the plain
+        ``anthropic/claude-sonnet-latest`` is not present at all. Any id stored
+        before that rename therefore missed the cache and fell through to
+        ``DEFAULT_CAPABILITIES`` — an 8192 context window reported as fact for a
+        1M-window model, which shows up much later as a rolling digest firing
+        almost immediately and "spotty memory".
+
+        Resolution is lookup-only: the request still goes out under whatever the
+        caller asked for (OpenRouter resolves the alias itself), so this never
+        changes which model runs — only which capabilities we believe.
+        """
+        if model in self._model_cache:
+            return model
+        if model.endswith("-latest") and not model.startswith("~"):
+            prefixed = f"~{model}"
+            if prefixed in self._model_cache:
+                if model not in self._alias_warned:
+                    self._alias_warned.add(model)
+                    logger.warning(
+                        "OpenRouter model '%s' is not in the catalog; reading capabilities from "
+                        "'%s' (the alias family moved to a '~' prefix). Update the stored id — "
+                        "Settings → Model Providers offers a one-click fix.",
+                        model, prefixed,
+                    )
+                return prefixed
+        return None
+
     def get_capabilities(self, model: str) -> ModelCapabilities:
         """Get capabilities for an OpenRouter model from cached catalog."""
-        if model in self._model_cache:
-            info = self._model_cache[model]
+        catalog_id = self.resolve_catalog_id(model)
+        if catalog_id is not None:
+            info = self._model_cache[catalog_id]
             supported_params = info.get("supported_parameters", []) or []
 
             context_window = info.get("context_length", 8192)
@@ -570,6 +618,52 @@ class OpenRouterProvider(ModelProvider):
 
         logger.warning(f"Unknown OpenRouter model: {model}, using default capabilities")
         return DEFAULT_CAPABILITIES
+
+    async def fetch_generation_cost(self, generation_id: str) -> dict[str, Any] | None:
+        """OpenRouter's own accounting for one completed generation, or None.
+
+        `estimate_cost` multiplies catalog rates by token counts — close, but it
+        can't see cache reads/writes, long-context rate tiers, or which endpoint
+        actually served the turn. `/generation` reports what was really billed.
+
+        Returns None rather than raising: the record is written asynchronously on
+        OpenRouter's side, so an immediate lookup legitimately 404s. Callers
+        should treat absence as "not yet", not as an error, and keep the estimate.
+        """
+        if not generation_id:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=15) as http_client:
+                response = await http_client.get(
+                    f"{self.config.base_url or OPENROUTER_BASE_URL}/generation",
+                    params={"id": generation_id},
+                    headers={"Authorization": f"Bearer {self.config.api_key}"},
+                )
+            if response.status_code >= 400:
+                logger.debug(
+                    "OpenRouter /generation %s -> %s", generation_id, response.status_code
+                )
+                return None
+            data = (response.json() or {}).get("data") or {}
+        except Exception as e:  # noqa: BLE001 — accounting never breaks a turn
+            logger.debug(f"OpenRouter generation lookup failed for {generation_id}: {e}")
+            return None
+
+        total = data.get("total_cost")
+        if total is None:
+            return None
+        return {
+            "generation_id": generation_id,
+            "cost_total": float(total),
+            "currency": "USD",
+            "tokens_prompt": data.get("tokens_prompt"),
+            "tokens_completion": data.get("tokens_completion"),
+            "native_tokens_prompt": data.get("native_tokens_prompt"),
+            "native_tokens_completion": data.get("native_tokens_completion"),
+            "provider_name": data.get("provider_name"),
+            "model": data.get("model"),
+            "measured": True,
+        }
 
     def list_models(self) -> list[str]:
         """List available models from cache."""
