@@ -119,12 +119,42 @@ export interface SettingBinding {
 }
 
 /**
- * Bind one control to its manifest entry.
+ * Build a binding from an already-fetched manifest. Plain function, not a hook
+ * — panels bind controls inside conditional branches (a knob that only renders
+ * when its technique is on), and a hook there would change the hook count
+ * between renders. Take the manifest once with `useSettingsManifest()`, then
+ * call this as often as you like.
  *
  * Pass `currentValue` (the live draft) so "modified" tracks what's on screen
  * rather than what the server last returned — otherwise the dot lags a debounce
  * behind the user. Returns null when the key isn't in the manifest, which is
  * the normal case for a control that hasn't been declared yet.
+ */
+export function bindSetting(
+  manifest: SettingsManifestValue | null,
+  store: SettingsStore,
+  key: string,
+  currentValue?: unknown,
+): SettingBinding | null {
+  const entry = manifest?.entries.get(entryId(store, key));
+  if (!entry) return null;
+  const live = currentValue === undefined ? entry.value : currentValue;
+  return {
+    entry,
+    defaultValue: entry.default,
+    isModified: !entry.secret && !sameValue(live, entry.default),
+    min: entry.constraints?.min,
+    max: entry.constraints?.max,
+    step: entry.constraints?.step,
+    unit: entry.constraints?.unit,
+    help: entry.help,
+    tier: entry.tier,
+  };
+}
+
+/**
+ * Hook form, for a control bound unconditionally at the top level of a
+ * component. Inside conditional markup, use `bindSetting` instead.
  */
 export function useSettingEntry(
   store: SettingsStore,
@@ -132,21 +162,8 @@ export function useSettingEntry(
   currentValue?: unknown,
 ): SettingBinding | null {
   const manifest = useSettingsManifest();
-  const entry = manifest?.entries.get(entryId(store, key));
-
-  return useMemo(() => {
-    if (!entry) return null;
-    const live = currentValue === undefined ? entry.value : currentValue;
-    return {
-      entry,
-      defaultValue: entry.default,
-      isModified: !entry.secret && !sameValue(live, entry.default),
-      min: entry.constraints?.min,
-      max: entry.constraints?.max,
-      step: entry.constraints?.step,
-      unit: entry.constraints?.unit,
-      help: entry.help,
-      tier: entry.tier,
-    };
-  }, [entry, currentValue]);
+  return useMemo(
+    () => bindSetting(manifest, store, key, currentValue),
+    [manifest, store, key, currentValue],
+  );
 }

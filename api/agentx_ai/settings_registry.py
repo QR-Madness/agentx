@@ -35,6 +35,7 @@ surface stays in one file even where it can't be a static list.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -57,12 +58,25 @@ SECRET_SUBTREES: tuple[str, ...] = ("headers",)
 
 
 def is_secret_path(path: str) -> bool:
-    """True when a dotted config path (or bare memory key) holds a credential."""
+    """True when a dotted config path (or bare memory key) holds a credential.
+
+    Markers match whole words, not substrings. A plain substring test reads
+    ``max_tokens`` as a credential because "token" is inside it — which redacted
+    the default of every ``*_max_tokens`` setting on the platform (24 of them),
+    so the settings UI and the generated reference would both print ``***``
+    where a number belongs.
+
+    The ``endswith`` arm keeps unseparated names like ``apikey`` covered: it is
+    better to redact a non-secret than to leak one.
+    """
     parts = path.lower().split(".")
     if any(part in SECRET_SUBTREES for part in parts):
         return True
     leaf = parts[-1]
-    return any(marker in leaf for marker in SECRET_MARKERS)
+    words = set(re.split(r"[^a-z0-9]+", leaf))
+    if words & set(SECRET_MARKERS):
+        return True
+    return leaf.endswith(SECRET_MARKERS)
 
 
 @dataclass(frozen=True)

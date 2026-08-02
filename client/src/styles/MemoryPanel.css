@@ -2110,6 +2110,57 @@
   border: 1px solid var(--feedback-warning-border);
 }
 
+/* --- Disclosure sections + technique sub-groups ------------------------- */
+
+.settings-disclosure-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border: none;
+  background: transparent; /* base.css resets buttons; be explicit */
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.settings-disclosure-chevron {
+  transition: transform 150ms ease;
+  flex-shrink: 0;
+}
+
+.settings-disclosure-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-disclosure-chevron {
+    transition: none;
+  }
+}
+
+.settings-disclosure-trigger:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.settings-section-actions {
+  margin-left: auto;
+}
+
+/* A technique's own knobs, indented under the toggle that enables them, so a
+   technique reads as one thing instead of scattering across the panel. */
+.settings-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 4px 0 12px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border-subtle, var(--border-default));
+}
+
 /* --- Manifest chrome (FieldShell) --------------------------------------
    The label row that carries the changed-from-default dot, the reset control,
    and the help trigger. All three are optional and appear only once a control

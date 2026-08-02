@@ -13236,6 +13236,20 @@ class SettingsRegistryTest(TestCase):
         for path in ("reasoning.sc_k", "search.max_results", "recall_candidate_pool"):
             self.assertFalse(is_secret_path(path), f"{path} wrongly classified secret")
 
+    def test_token_budgets_are_not_secrets(self):
+        """`max_tokens` is a number, not a credential. A substring test for
+        "token" redacted the default of all 24 `*_max_tokens` settings, so the
+        UI and the generated reference would print `***` where a budget goes."""
+        from agentx_ai.settings_registry import is_secret_path
+
+        for path in ("planner.max_tokens", "recall_hyde_max_tokens",
+                     "context.max_input_tokens", "reasoning.min_output_tokens",
+                     "search.brave_context_max_tokens"):
+            self.assertFalse(is_secret_path(path), f"{path} wrongly redacted")
+        # Singular `token` is still a credential, separated or not.
+        for path in ("providers.x.access_token", "refresh_token", "apikey"):
+            self.assertTrue(is_secret_path(path), f"{path} must stay redacted")
+
     # --- (11) the memory sidecar can't rot -----------------------------------
 
     def test_memory_specs_reference_real_settings_fields(self):
