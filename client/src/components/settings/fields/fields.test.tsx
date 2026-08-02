@@ -4,6 +4,7 @@ import { SliderField } from './SliderField';
 import { NumberField } from './NumberField';
 import { ToggleField } from './ToggleField';
 import { PromptField } from './PromptField';
+import { SelectField } from './SelectField';
 
 describe('SliderField', () => {
   it('renders label + formatted readout and exposes a slider', () => {
@@ -43,6 +44,31 @@ describe('ToggleField', () => {
     expect(screen.getByText('combines keyword + vector')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('checkbox', { name: /Hybrid Search/ }));
     expect(onChange).toHaveBeenCalledWith(true);
+  });
+});
+
+describe('SelectField', () => {
+  const depthOptions = [
+    { value: '', label: 'Provider default' },
+    { value: 'basic', label: 'Basic' },
+  ];
+
+  it('renders an empty-valued option without throwing', () => {
+    render(
+      <SelectField label="Search Depth" value="" options={depthOptions} onChange={vi.fn()} />
+    );
+    expect(screen.getByText('Search Depth')).toBeInTheDocument();
+    expect(screen.getByText('Provider default')).toBeInTheDocument();
+  });
+
+  it('reports the empty value back to the caller as an empty string', () => {
+    const onChange = vi.fn();
+    render(
+      <SelectField label="Search Depth" value="basic" options={depthOptions} onChange={onChange} />
+    );
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('option', { name: 'Provider default' }));
+    expect(onChange).toHaveBeenCalledWith('');
   });
 });
 
