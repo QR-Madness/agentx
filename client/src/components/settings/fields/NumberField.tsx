@@ -5,14 +5,19 @@
  * Integer by default. Pass a fractional `step` (e.g. 0.05 for a dollar amount)
  * to parse as a float.
  *
+ * Bounds come from the explicit `min`/`max`/`step` props when given, and
+ * otherwise from the manifest `binding` — so a range declared once server-side
+ * reaches the input without being re-typed here.
+ *
  * NOTE: because `fallback` applies via `||`, a typed 0 falls back too. Fields
  * where 0 is a real value ("0 = unlimited") should pass `fallback={0}`.
  */
 
 import type { ReactNode } from 'react';
-import { Label, Input } from '../../ui';
+import { Input } from '../../ui';
+import { FieldShell, type FieldChromeProps } from './FieldShell';
 
-interface NumberFieldProps {
+interface NumberFieldProps extends FieldChromeProps {
   label: string;
   value: number;
   min?: number;
@@ -28,24 +33,38 @@ interface NumberFieldProps {
 
 export function NumberField({
   label, value, min, max, step, onChange, fallback, title, hint,
+  binding, onReset, badge,
 }: NumberFieldProps) {
-  const isDecimal = step !== undefined && !Number.isInteger(step);
+  const lo = min ?? binding?.min;
+  const hi = max ?? binding?.max;
+  const inc = step ?? binding?.step;
+  const isDecimal = inc !== undefined && !Number.isInteger(inc);
+
   return (
-    <div className="setting-row">
-      <Label>{label}</Label>
-      <Input
-        type="number"
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        title={title}
-        onChange={e => {
-          const parsed = isDecimal ? parseFloat(e.target.value) : parseInt(e.target.value, 10);
-          onChange(fallback !== undefined ? (parsed || fallback) : parsed);
-        }}
-      />
-      {hint && <span className="setting-hint">{hint}</span>}
-    </div>
+    <FieldShell
+      label={label}
+      labelText={label}
+      hint={hint}
+      binding={binding}
+      onReset={onReset}
+      badge={badge}
+    >
+      {({ id, describedBy }) => (
+        <Input
+          id={id}
+          aria-describedby={describedBy}
+          type="number"
+          value={value}
+          min={lo}
+          max={hi}
+          step={inc}
+          title={title}
+          onChange={e => {
+            const parsed = isDecimal ? parseFloat(e.target.value) : parseInt(e.target.value, 10);
+            onChange(fallback !== undefined ? (parsed || fallback) : parsed);
+          }}
+        />
+      )}
+    </FieldShell>
   );
 }

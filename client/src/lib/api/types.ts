@@ -1736,6 +1736,83 @@ export interface ConsolidationSettings {
   settings_file_status?: SettingsFileStatus;
 }
 
+// === Settings manifest (GET /api/settings/manifest) ===
+
+/** Which store a setting lives in — they have different write routes. */
+export type SettingsStore = 'config' | 'memory';
+
+/**
+ * How much of a setting's audience should see it: `essential` renders inline,
+ * `advanced` and `experimental` sit behind a disclosure.
+ */
+export type SettingTier = 'essential' | 'advanced' | 'experimental';
+
+/** Declared bounds. Only keys that declare them are validated server-side. */
+export interface SettingConstraints {
+  min?: number;
+  max?: number;
+  step?: number;
+  enum?: string[];
+  unit?: string;
+}
+
+/**
+ * Authored help for one setting, written once in `api/agentx_ai/settings_help.yaml`
+ * and rendered both here and in the generated docs reference — so the UI and the
+ * documentation cannot drift apart.
+ */
+export interface SettingHelp {
+  /** One line, safe to show inline under the control. */
+  summary?: string;
+  /** What it is, in the user's terms. */
+  what?: string;
+  /** How it works — the mechanism behind the knob. */
+  how?: string;
+  /** Why and when you'd change it, including the trade-off. */
+  why?: string;
+  /** How to manage it: what it interacts with, what to watch. */
+  manage?: string;
+}
+
+/**
+ * One user-tunable setting. `value`/`default` are redacted for secrets, so
+ * never render them directly — check `secret` first.
+ */
+export interface SettingsManifestEntry {
+  key: string;
+  store: SettingsStore;
+  type: string;
+  default: unknown;
+  value: unknown;
+  secret: boolean;
+  /** Endpoint that accepts a write, or null when the key is API-read-only. */
+  writable_via: string | null;
+  role_member?: string;
+  role?: string;
+
+  // --- v2 axes: present only where the registry declares them ---
+  /** An explicit null is a real write (not "leave unchanged"). */
+  nullable?: boolean;
+  /** What an empty string means here, e.g. `follow_role`. */
+  empty_means?: string;
+  /** `whole` — the dict is written atomically; a partial patch drops siblings. */
+  write_mode?: 'whole';
+  constraints?: SettingConstraints;
+  tier?: SettingTier;
+  /** SECTION_HIERARCHY id this setting renders under. */
+  ui_section?: string;
+  help?: SettingHelp;
+}
+
+export interface SettingsManifest {
+  version: number;
+  generated_at: string;
+  counts: Record<string, number>;
+  entries: SettingsManifestEntry[];
+  /** A store that failed to introspect is reported rather than breaking the endpoint. */
+  errors?: string[];
+}
+
 export interface RecallSettings {
   // Feature toggles
   recall_enable_hybrid: boolean;

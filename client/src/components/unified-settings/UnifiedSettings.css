@@ -329,6 +329,217 @@
 
 .settings-error {
   color: var(--text-error);
+  text-align: center;
+  max-width: 30rem;
+  margin: 0 auto;
+}
+
+.settings-error h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.settings-error p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The reassurance line — plainer than the error itself. */
+.settings-error__note {
+  color: var(--text-tertiary);
+}
+
+.settings-error__icon {
+  color: var(--feedback-warning);
+}
+
+/* ── Overview (the landing section) ── */
+.settings-overview-block {
+  margin-bottom: 32px;
+}
+
+.settings-overview-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-primary);
+  color: var(--text-inverse, #fff);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.settings-overview-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.settings-overview-state--warn {
+  color: var(--feedback-warning);
+}
+
+.settings-overview-note {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.settings-overview-group + .settings-overview-group {
+  margin-top: 18px;
+}
+
+.settings-overview-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+  margin: 0 0 6px;
+}
+
+.settings-overview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-overview-row-btn {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  /* Comfortable hit-region — this list is touch-reachable on mobile. */
+  min-height: 40px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.settings-overview-row-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.settings-overview-row-btn:disabled {
+  cursor: default;
+}
+
+.settings-overview-row-btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+.settings-overview-key {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.settings-overview-summary {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.settings-overview-values {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.settings-overview-default {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.settings-overview-current {
+  color: var(--accent-primary);
+  font-weight: 500;
+}
+
+.settings-overview-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.settings-overview-tile {
+  padding: 14px 16px;
+}
+
+.settings-overview-tile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.settings-overview-tile-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.settings-overview-link {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.settings-overview-link:hover {
+  background: var(--surface-hover);
+  color: var(--accent-primary);
+}
+
+.settings-overview-link:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+@media (max-width: 600px) {
+  .settings-overview-row-btn {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
 }
 
 /* ── Section styling ── */

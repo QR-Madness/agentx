@@ -4,7 +4,10 @@
 
 import { useState, useCallback } from 'react';
 
-export function useSettingsNavigation(initialSection = 'servers') {
+/** Settings open on Overview. (The old default, 'servers', named a section that
+ *  stopped existing several reorgs ago — it only ever worked because every call
+ *  site passed something else.) */
+export function useSettingsNavigation(initialSection = 'overview') {
   const [activeSection, setActiveSection] = useState(initialSection);
   const [history, setHistory] = useState<string[]>([initialSection]);
 

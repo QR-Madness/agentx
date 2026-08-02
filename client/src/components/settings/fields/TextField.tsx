@@ -5,9 +5,10 @@
  */
 
 import type { ReactNode } from 'react';
-import { Label, Input } from '../../ui';
+import { Input } from '../../ui';
+import { FieldShell, type FieldChromeProps } from './FieldShell';
 
-interface TextFieldProps {
+interface TextFieldProps extends FieldChromeProps {
   label: ReactNode;
   value: string;
   onChange: (value: string) => void;
@@ -16,23 +17,35 @@ interface TextFieldProps {
   hint?: ReactNode;
   title?: string;
   disabled?: boolean;
+  /** Help/reset announcement text when `label` isn't a plain string. */
+  labelText?: string;
 }
 
 export function TextField({
   label, value, onChange, placeholder, type = 'text', hint, title, disabled,
+  binding, onReset, badge, labelText,
 }: TextFieldProps) {
   return (
-    <div className="setting-row">
-      <Label>{label}</Label>
-      <Input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        title={title}
-        disabled={disabled}
-        onChange={e => onChange(e.target.value)}
-      />
-      {hint && <span className="setting-hint">{hint}</span>}
-    </div>
+    <FieldShell
+      label={label}
+      labelText={labelText}
+      hint={hint}
+      binding={binding}
+      onReset={onReset}
+      badge={badge}
+    >
+      {({ id, describedBy }) => (
+        <Input
+          id={id}
+          aria-describedby={describedBy}
+          type={type}
+          value={value}
+          placeholder={placeholder}
+          title={title}
+          disabled={disabled}
+          onChange={e => onChange(e.target.value)}
+        />
+      )}
+    </FieldShell>
   );
 }
