@@ -534,9 +534,6 @@ def save_memory_settings(settings_dict: dict[str, Any]) -> None:
     """
     global _runtime_settings, _settings_cache_time
 
-    # Route trajectory_compression_* keys to ConfigManager (they don't live in Settings)
-    settings_dict = _apply_trajectory_compression_settings(settings_dict)
-
     if settings_dict:
         # Ensure data directory exists
         MEMORY_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -652,47 +649,34 @@ def get_consolidation_settings() -> dict[str, Any]:
         # Entity/relationship types (read-only display)
         "entity_types": settings.entity_types,
         "relationship_types": settings.relationship_types,
-
-        # Trajectory compression (stored in ConfigManager, surfaced here for the UI)
-        **_get_trajectory_compression_settings(),
     }
 
 
-_TRAJECTORY_COMPRESSION_KEYS: dict[str, Any] = {
-    # ui_key: (config_path, default)
-    "trajectory_compression_enabled": ("trajectory_compression.enabled", True),
-    "trajectory_compression_model": ("trajectory_compression.model", ""),  # empty ⇒ summarizer role
-    "trajectory_compression_temperature": ("trajectory_compression.temperature", 0.2),
-    "trajectory_compression_max_tokens": ("trajectory_compression.max_tokens", 1500),
-    "trajectory_compression_threshold_ratio": ("trajectory_compression.threshold_ratio", 0.75),
-    "trajectory_compression_preserve_recent_rounds": ("trajectory_compression.preserve_recent_rounds", 2),
-}
+#: Keys this endpoint returns for display but refuses to write. The POST handler
+#: and the settings manifest both read this, so "shown here, not writable here"
+#: is stated once instead of being re-derived on each side.
+CONSOLIDATION_READONLY_KEYS: frozenset[str] = frozenset({
+    "entity_types",
+    "relationship_types",
+    "default_extraction_prompt",
+    "default_relevance_prompt",
+    "settings_file_status",
+})
 
-
-def _get_trajectory_compression_settings() -> dict[str, Any]:
-    """Read trajectory-compression keys from ConfigManager for the UI."""
-    from agentx_ai.config import get_config_manager
-    cfg = get_config_manager()
-    return {
-        ui_key: cfg.get(path, default)
-        for ui_key, (path, default) in _TRAJECTORY_COMPRESSION_KEYS.items()
-    }
-
-
-def _apply_trajectory_compression_settings(settings_dict: dict[str, Any]) -> dict[str, Any]:
-    """
-    Pull any trajectory_compression_* keys out of settings_dict and write them
-    to ConfigManager. Returns the remaining dict (other keys untouched).
-    """
-    if not any(k in settings_dict for k in _TRAJECTORY_COMPRESSION_KEYS):
-        return settings_dict
-    from agentx_ai.config import get_config_manager
-    cfg = get_config_manager()
-    remaining = dict(settings_dict)
-    for ui_key, (path, _default) in _TRAJECTORY_COMPRESSION_KEYS.items():
-        if ui_key in remaining:
-            cfg.set(path, remaining.pop(ui_key))
-    return remaining
+#: Retired bridge. `trajectory_compression_*` keys used to be accepted here and
+#: written through to ConfigManager — an unvalidated second write path into
+#: data/config.json (they aren't Settings fields, so `extra="ignore"` waved any
+#: value through) carrying its own copy of the defaults. The canonical route is
+#: POST /api/config/update with a `trajectory_compression` section; the endpoint
+#: rejects these keys by name rather than silently dropping them.
+RETIRED_TRAJECTORY_KEYS: frozenset[str] = frozenset({
+    "trajectory_compression_enabled",
+    "trajectory_compression_model",
+    "trajectory_compression_temperature",
+    "trajectory_compression_max_tokens",
+    "trajectory_compression_threshold_ratio",
+    "trajectory_compression_preserve_recent_rounds",
+})
 
 
 def get_recall_settings() -> dict[str, Any]:
