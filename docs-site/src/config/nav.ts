@@ -20,6 +20,7 @@ export const nav: NavEntry[] = [
       { label: 'Windows Setup', slug: 'getting-started/windows' },
       { label: 'Quick Start', slug: 'getting-started/quickstart' },
       { label: 'Configuration', slug: 'getting-started/configuration' },
+      { label: 'Settings Reference', slug: 'getting-started/settings-reference' },
     ],
   },
   {

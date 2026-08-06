@@ -230,3 +230,65 @@ def build_manifest() -> dict[str, Any]:
     if errors:
         manifest["errors"] = errors
     return manifest
+
+
+def build_reference_entries() -> list[dict[str, Any]]:
+    """Declared metadata for every setting, with no live values — what the docs
+    generator renders.
+
+    `build_manifest` reads the running install's config so the UI can show what
+    you've actually set. A committed docs page must not: it would bake one
+    machine's values into the repo and make the generated file depend on whose
+    laptop produced it. This builds the same entries from declarations alone —
+    defaults, types, bounds, tiers, help — and omits `value` entirely.
+    """
+    from .config import DEFAULT_CONFIG
+    from .kit.agent_memory.config import (
+        CONSOLIDATION_READONLY_KEYS,
+        Settings,
+        get_consolidation_settings,
+        get_recall_settings,
+    )
+    from .settings_registry import (
+        config_key_spec,
+        config_ui_section,
+        config_writable_via,
+        memory_key_spec,
+    )
+
+    consolidation_keys = set(get_consolidation_settings().keys()) - CONSOLIDATION_READONLY_KEYS
+    recall_keys = set(get_recall_settings().keys())
+
+    entries: list[dict[str, Any]] = []
+
+    for name, field in Settings.model_fields.items():
+        if name in recall_keys:
+            writable_via, ui_section = "/api/memory/recall-settings", "memory-recall"
+        elif name in consolidation_keys:
+            writable_via, ui_section = "/api/memory/settings", "memory-consolidation"
+        else:
+            writable_via, ui_section = None, None
+        entry: dict[str, Any] = {
+            "key": name,
+            "store": "memory",
+            "type": _type_name(field.default, field.annotation),
+            "default": _redact(name, _jsonable(field.default)),
+            "secret": _is_secret(name),
+            "writable_via": writable_via,
+        }
+        _apply_spec(entry, memory_key_spec(name), ui_section=ui_section)
+        entries.append(entry)
+
+    for path, default in _flatten_config(DEFAULT_CONFIG):
+        entry = {
+            "key": path,
+            "store": "config",
+            "type": _type_name(default),
+            "default": _redact(path, _jsonable(default)),
+            "secret": _is_secret(path),
+            "writable_via": config_writable_via(path),
+        }
+        _apply_spec(entry, config_key_spec(path), ui_section=config_ui_section(path))
+        entries.append(entry)
+
+    return entries

@@ -551,6 +551,35 @@ def config_ui_section(path: str) -> str | None:
     return section.ui_section if section else None
 
 
+#: Where each ``ui_section`` id sits in the settings screen, for prose that has
+#: to name it. The **id** is the contract (the client's SECTION_HIERARCHY keys
+#: off it); these labels exist so the generated reference can say
+#: "Memory → Recall" instead of printing a slug at the reader.
+UI_SECTION_LABELS: dict[str, str] = {
+    "providers": "Infrastructure → Model Providers",
+    "models": "Infrastructure → Model Limits",
+    "model-roles": "Infrastructure → Model Roles",
+    "search": "Infrastructure → Web Search",
+    "images": "Infrastructure → Images & Audio",
+    "planner": "Intelligence → Task Planner",
+    "thinking": "Intelligence → Thinking Patterns",
+    "alloy": "Intelligence → Agent Teams",
+    "ambassador": "Intelligence → Ambassador",
+    "research": "Intelligence → Research Mode",
+    "prompts": "Prompts → Prompt Enhancement",
+    "context": "Memory → Conversation Context",
+    "memory-recall": "Memory → Recall",
+    "memory-consolidation": "Memory → Consolidation",
+}
+
+
+def ui_section_label(section_id: str | None) -> str:
+    """Human-readable home for a ui_section id."""
+    if not section_id:
+        return "Not shown in Settings"
+    return UI_SECTION_LABELS.get(section_id, section_id)
+
+
 def whole_write_paths() -> tuple[str, ...]:
     """Dotted paths written as one dict — the manifest emits a single entry for
     each rather than advertising its leaves as independently writable."""

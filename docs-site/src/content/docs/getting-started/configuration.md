@@ -303,6 +303,7 @@ services:
 
 ## Related
 
+- [Settings Reference](./settings-reference.md) — every in-app setting, key by key: what it does, its default, and how to change it
 - [Development Setup](../development/setup.md) — First-time setup walkthrough
 - [MCP](../features/mcp.md) — MCP server configuration details
 - [Prompts](../features/prompts.md) — Prompt profile system
