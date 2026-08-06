@@ -26,6 +26,12 @@ from .streaming.status import emit_status
 from .utils.decorators import lazy_singleton
 from .kit.translation import get_translation_kit  # shared lazy singleton (HTTP + internal tools)
 from .exceptions import AgentXError
+# Secret classification lives in the settings registry so the config redactor,
+# the settings manifest, and the generated docs all agree on what counts as a
+# credential. (`uri` is in the marker set for connection strings, which embed
+# passwords; no config key is named that way, so nothing new redacts here.)
+from .settings_registry import SECRET_MARKERS as _SECRET_KEY_HINTS
+from .settings_registry import SECRET_SUBTREES as _SECRET_SUBTREES
 from .utils.responses import (
     error_response,
     json_error,
@@ -7600,19 +7606,30 @@ def memory_settings(request):
     elif request.method == 'POST':
         try:
             from .kit.agent_memory.config import (
+                CONSOLIDATION_READONLY_KEYS,
+                RETIRED_TRAJECTORY_KEYS,
                 get_consolidation_settings,
                 save_memory_settings,
                 validate_memory_settings,
             )
+            from .settings_registry import check_declared_constraints
 
             data = json.loads(request.body.decode('utf-8'))
 
+            # The retired trajectory-compression bridge. These were written
+            # through to ConfigManager from here without validation; say so
+            # rather than dropping them silently.
+            retired = sorted(RETIRED_TRAJECTORY_KEYS & set(data))
+            if retired:
+                return JsonResponse({
+                    "error": "trajectory_compression settings moved to "
+                             "POST /api/config/update (section: trajectory_compression)",
+                    "errors": dict.fromkeys(retired, "no longer writable here"),
+                }, status=400)
+
             # Validate and filter to only allowed settings
             allowed_keys = set(get_consolidation_settings().keys())
-            # Remove read-only keys
-            allowed_keys -= {"entity_types", "relationship_types",
-                            "default_extraction_prompt", "default_relevance_prompt",
-                            "settings_file_status"}
+            allowed_keys -= CONSOLIDATION_READONLY_KEYS
 
             filtered = {k: v for k, v in data.items() if k in allowed_keys}
 
@@ -7621,8 +7638,11 @@ def memory_settings(request):
 
             # Schema-validate BEFORE writing: reject the whole update with
             # per-key errors rather than persisting a file that would silently
-            # fall back to defaults on the next load.
+            # fall back to defaults on the next load. Declared ranges (the
+            # settings registry) are checked alongside the pydantic schema so
+            # the UI's advertised bounds are enforced server-side too.
             validation_errors = validate_memory_settings(filtered)
+            validation_errors.update(check_declared_constraints("memory", filtered))
             if validation_errors:
                 return JsonResponse({
                     "error": "Invalid settings values",
@@ -7673,6 +7693,7 @@ def recall_settings(request):
                 save_memory_settings,
                 validate_memory_settings,
             )
+            from .settings_registry import check_declared_constraints
 
             data = json.loads(request.body.decode('utf-8'))
 
@@ -7684,8 +7705,10 @@ def recall_settings(request):
             if not filtered:
                 return JsonResponse({"error": "No valid settings provided"}, status=400)
 
-            # Same reject-whole schema validation as /api/memory/settings.
+            # Same reject-whole schema validation as /api/memory/settings, plus
+            # the ranges declared in the settings registry.
             validation_errors = validate_memory_settings(filtered)
+            validation_errors.update(check_declared_constraints("memory", filtered))
             if validation_errors:
                 return JsonResponse({
                     "error": "Invalid settings values",
@@ -8238,15 +8261,6 @@ def jobs_clear_stuck(request):
 # ============== Config Management Endpoint ==============
 
 
-#: Config keys whose values are secrets wherever they appear in the tree.
-_SECRET_KEY_HINTS = ("key", "secret", "token", "password")
-
-#: Whole subtrees that are secret-by-assumption regardless of their inner names —
-#: custom providers let a user name their own auth headers, so `headers` can't be
-#: matched by key name alone.
-_SECRET_SUBTREES = ("headers",)
-
-
 def _redact_value(value: Any) -> str:
     """`***3f21` — enough to recognize a secret, not enough to use it."""
     text = str(value)
@@ -8434,273 +8448,28 @@ def config_update(request):
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
 
     from .config import get_config_manager
+    from .settings_registry import apply_ops, plan_config_update
+
     config = get_config_manager()
 
-    updated_keys = []
+    # Every writable section is declared in settings_registry.CONFIG_SECTIONS —
+    # which key lists exist, which keys accept an explicit null, which dicts are
+    # written whole, and which sections need a bespoke planner (providers'
+    # per-request accept-set, model roles' format check). The manifest and the
+    # generated settings reference derive from that same declaration, so the
+    # write surface can no longer drift from what the UI and docs advertise.
+    #
+    # Planning is pure: a payload that fails validation anywhere is rejected
+    # whole, before a single key is written, so a bad request can't leave the
+    # process-global config half-updated until the next reload.
+    ops, errors = plan_config_update(config, data)
+    if errors:
+        return JsonResponse({
+            'error': 'Invalid settings values',
+            'errors': errors,
+        }, status=400)
 
-    # Update providers. The accepted set is the catalog's — built-ins plus any
-    # registered custom endpoint — so a custom provider's key is settable through
-    # the same path as a built-in's. Custom entries are created/removed via
-    # /api/providers/custom, not here; this only updates known ids.
-    from .providers.catalog import BUILTIN_IDS, known_ids
-
-    accepted_providers = known_ids(config)
-    providers = data.get("providers", {})
-    for provider, provider_settings in providers.items():
-        if provider not in accepted_providers or not isinstance(provider_settings, dict):
-            continue  # Skip unknown providers
-        # Built-ins keep their historical `providers.<name>.*` path; custom
-        # entries live one level deeper under `providers.custom.<id>.*`.
-        base = f"providers.{provider}" if provider in BUILTIN_IDS else f"providers.custom.{provider}"
-        for key, value in provider_settings.items():
-            if value is not None:
-                config.set(f"{base}.{key}", value)
-                updated_keys.append(f"{base}.{key}")
-
-    # Update preferences
-    preferences = data.get("preferences", {})
-    for key, value in preferences.items():
-        if value is not None:
-            config.set(f"preferences.{key}", value)
-            updated_keys.append(f"preferences.{key}")
-
-    # Update LLM settings
-    llm_settings = data.get("llm_settings", {})
-    for key, value in llm_settings.items():
-        if value is not None:
-            config.set(f"llm_settings.{key}", value)
-            updated_keys.append(f"llm_settings.{key}")
-
-    # Update context limits (only lmstudio provider-level + per-model overrides)
-    context_limits_data = data.get("context_limits", {})
-    for key_or_provider, limit_settings in context_limits_data.items():
-        if isinstance(limit_settings, dict):
-            # Only allow lmstudio provider-level; "models" goes through as sub-dict
-            if key_or_provider in ("lmstudio", "models"):
-                for key, value in limit_settings.items():
-                    if value is not None:
-                        config.set(f"context_limits.{key_or_provider}.{key}", value)
-                        updated_keys.append(f"context_limits.{key_or_provider}.{key}")
-
-    # Update context/compaction knobs (the Conversation Context settings section).
-    # Allowlisted so arbitrary context.* internals aren't client-writable.
-    context_settings = data.get("context", {})
-    if isinstance(context_settings, dict):
-        _CONTEXT_KEYS = (
-            "summary_trigger_ratio", "verbatim_budget_ratio", "recent_floor",
-            "preassembly_summary_enabled", "conversation_state_enabled",
-            "conversation_state_compaction_enabled", "rehydrate_max_turns",
-            "max_input_tokens",
-        )
-        for key, value in context_settings.items():
-            if key in _CONTEXT_KEYS and value is not None:
-                config.set(f"context.{key}", value)
-                updated_keys.append(f"context.{key}")
-
-    # Compaction summarizer (session.rolling_summary.*): master switch + model +
-    # digest output budget. `model` may be explicitly "" (= follow the summarizer
-    # role), so only None is skipped.
-    session_settings = data.get("session", {})
-    if isinstance(session_settings, dict) and isinstance(
-        session_settings.get("rolling_summary"), dict
-    ):
-        _RS_KEYS = ("enabled", "model", "max_tokens")
-        for key, value in session_settings["rolling_summary"].items():
-            if key in _RS_KEYS and value is not None:
-                config.set(f"session.rolling_summary.{key}", value)
-                updated_keys.append(f"session.rolling_summary.{key}")
-
-    # In-turn trajectory compression (tool-loop rounds → Knowledge block).
-    _TRAJ_KEYS = (
-        "enabled", "threshold_ratio", "preserve_recent_rounds", "model",
-        "max_knowledge_chars",
-    )
-    traj_settings = data.get("trajectory_compression", {})
-    if isinstance(traj_settings, dict):
-        for key, value in traj_settings.items():
-            if key in _TRAJ_KEYS and value is not None:
-                config.set(f"trajectory_compression.{key}", value)
-                updated_keys.append(f"trajectory_compression.{key}")
-
-    # Tool-output compression (oversized single tool results).
-    _COMPRESSION_KEYS = ("enabled", "model", "max_summary_chars")
-    compression_settings = data.get("compression", {})
-    if isinstance(compression_settings, dict):
-        for key, value in compression_settings.items():
-            if key in _COMPRESSION_KEYS and value is not None:
-                config.set(f"compression.{key}", value)
-                updated_keys.append(f"compression.{key}")
-
-    # Memory feature toggles (ConfigManager namespace — distinct from the memory
-    # kit's pydantic settings).
-    _MEMORY_KEYS = ("episodic_leads_enabled", "project_channels")
-    memory_settings = data.get("memory", {})
-    if isinstance(memory_settings, dict):
-        for key, value in memory_settings.items():
-            if key in _MEMORY_KEYS and value is not None:
-                config.set(f"memory.{key}", value)
-                updated_keys.append(f"memory.{key}")
-
-    # Thinking Patterns (Settings → Intelligence → Thinking). Models may be
-    # explicitly "" (= follow role / active model), so only None is skipped.
-    _REASONING_KEYS = (
-        "chat_patterns_enabled", "auto_classifier_enabled", "classifier_model",
-        "classifier_min_chars", "step_back_model", "step_back_timeout_seconds",
-        "cot_enabled", "step_back_enabled", "reflection_enabled",
-        "self_consistency_enabled", "sc_model", "sc_k", "min_output_tokens",
-    )
-    reasoning_settings = data.get("reasoning", {})
-    if isinstance(reasoning_settings, dict):
-        for key, value in reasoning_settings.items():
-            if key in _REASONING_KEYS and value is not None:
-                config.set(f"reasoning.{key}", value)
-                updated_keys.append(f"reasoning.{key}")
-
-    # Update prompt enhancement settings
-    prompt_enhancement = data.get("prompt_enhancement", {})
-    for key, value in prompt_enhancement.items():
-        if value is not None:
-            config.set(f"prompt_enhancement.{key}", value)
-            updated_keys.append(f"prompt_enhancement.{key}")
-
-    # Update planner settings
-    planner_settings = data.get("planner", {})
-    for key, value in planner_settings.items():
-        # Allow explicit None for "model" (means: fall back to default model).
-        if value is None and key != "model":
-            continue
-        config.set(f"planner.{key}", value)
-        updated_keys.append(f"planner.{key}")
-
-    # Update web search settings (Track B). None values are skipped so unchanged
-    # (redacted) API keys are preserved rather than overwritten with the mask.
-    # Keep in lockstep with settings_manifest._CONFIG_WRITE_ROUTES["search"].
-    _SEARCH_KEYS = (
-        "backend", "fallback_enabled", "max_results",
-        "cache_ttl_seconds", "timeout", "tavily_api_key", "brave_api_key",
-        # Per-turn budgets: call counts + the dollar envelopes.
-        "per_turn_limit", "research_per_turn_limit",
-        "per_turn_cost_usd", "research_per_turn_cost_usd",
-        # Search defaults the operator owns.
-        "default_search_depth", "default_chunks_per_source", "safesearch",
-        "country", "search_lang",
-        # Brave grounding + deep research.
-        "brave_grounding_default", "brave_context_max_tokens",
-        "brave_context_max_tokens_per_url", "brave_context_threshold",
-        "brave_answers_enabled",
-        # Source policy (nested dict — written whole).
-        "source_policy",
-    )
-    search_settings = data.get("search", {})
-    for key, value in search_settings.items():
-        if key not in _SEARCH_KEYS or value is None:
-            continue
-        config.set(f"search.{key}", value)
-        updated_keys.append(f"search.{key}")
-
-    # Update Research Mode settings. Elevated-budget + rigorous research prompt.
-    _RESEARCH_KEYS = ("enabled", "max_tool_rounds", "default_depth", "min_max_tokens")
-    research_settings = data.get("research", {})
-    for key, value in research_settings.items():
-        if key not in _RESEARCH_KEYS or value is None:
-            continue
-        config.set(f"research.{key}", value)
-        updated_keys.append(f"research.{key}")
-
-    # Update deep-research tool settings (Tavily agentic research).
-    _WEB_RESEARCH_KEYS = (
-        "enabled", "cache_ttl_seconds", "budget_weight",
-        "poll_timeout_seconds", "poll_interval_seconds",
-    )
-    web_research_settings = data.get("web_research", {})
-    for key, value in web_research_settings.items():
-        if key not in _WEB_RESEARCH_KEYS or value is None:
-            continue
-        config.set(f"web_research.{key}", value)
-        updated_keys.append(f"web_research.{key}")
-
-    # Update Agent Alloy / multi-agent delegation settings (Track A/D).
-    _ALLOY_KEYS = (
-        "allow_adhoc_delegation", "max_parallel_delegations",
-        "max_delegation_depth", "delegation_timeout_seconds",
-        "non_blocking_delegations", "chain_of_command",
-    )
-    alloy_settings = data.get("alloy", {})
-    for key, value in alloy_settings.items():
-        if key not in _ALLOY_KEYS or value is None:
-            continue
-        config.set(f"alloy.{key}", value)
-        updated_keys.append(f"alloy.{key}")
-
-    # Update Ambassador settings (16.6). profile_id/model accept explicit None
-    # (means "fall back to the default profile / model floor").
-    _AMBASSADOR_KEYS = ("enabled", "profile_id", "model", "max_context_turns", "max_tokens",
-                        "aide", "dispatch")
-    _AIDE_KEYS = ("enabled", "model", "temperature", "max_tokens", "max_input_chars",
-                  "max_parallel", "timeout_seconds", "max_per_survey", "cache_ttl_seconds")
-    ambassador_settings = data.get("ambassador", {})
-    for key, value in ambassador_settings.items():
-        if key not in _AMBASSADOR_KEYS:
-            continue
-        if key == "aide":
-            # Merge nested aide.* sub-keys so editing one (e.g. `enabled`) never wipes
-            # the others (absent sub-keys fall back to defaults at read time).
-            if isinstance(value, dict):
-                for sub, sub_val in value.items():
-                    if sub in _AIDE_KEYS and sub_val is not None:
-                        config.set(f"ambassador.aide.{sub}", sub_val)
-                        updated_keys.append(f"ambassador.aide.{sub}")
-            continue
-        if key == "dispatch":
-            # Merge nested dispatch.* sub-keys so editing one never wipes the others.
-            if isinstance(value, dict):
-                for sub, sub_val in value.items():
-                    if sub == "enabled" and sub_val is not None:
-                        config.set("ambassador.dispatch.enabled", bool(sub_val))
-                        updated_keys.append("ambassador.dispatch.enabled")
-            continue
-        if value is None and key not in ("profile_id", "model"):
-            continue
-        config.set(f"ambassador.{key}", value)
-        updated_keys.append(f"ambassador.{key}")
-
-    # Update image-generation + vision settings. (These sections existed in
-    # DEFAULT_CONFIG but had no handler here — the Images settings UI silently
-    # dropped every save while still toasting success.)
-    _IMAGES_KEYS = ("enabled", "default_model", "avatar_model", "avatar_style_prompt")
-    images_settings = data.get("images", {})
-    for key, value in images_settings.items():
-        if key not in _IMAGES_KEYS or value is None:
-            continue
-        config.set(f"images.{key}", value)
-        updated_keys.append(f"images.{key}")
-
-    _VISION_KEYS = ("enabled", "refeed_recent_turns")
-    vision_settings = data.get("vision", {})
-    for key, value in vision_settings.items():
-        if key not in _VISION_KEYS or value is None:
-            continue
-        config.set(f"vision.{key}", value)
-        updated_keys.append(f"vision.{key}")
-
-    # Update model roles (settings overhaul D1). Only `models.roles.{known}` is
-    # writable here — the rest of the `models` section stays read-only. Values
-    # must be "" (clear the role) or a concrete provider:model; `role:` refs
-    # are rejected (no role-to-role chains). Clearing sends "" (the section's
-    # `is not None` idiom would drop an explicit null).
-    from .model_roles import ROLE_NAMES
-    roles_settings = (data.get("models", {}) or {}).get("roles", {})
-    for key, value in roles_settings.items():
-        if key not in ROLE_NAMES or value is None:
-            continue
-        value = str(value).strip()
-        if value and (":" not in value or value.lower().startswith("role:")):
-            return JsonResponse({
-                'error': f'models.roles.{key} must be "" or a concrete '
-                         f'provider:model (got {value!r})'
-            }, status=400)
-        config.set(f"models.roles.{key}", value)
-        updated_keys.append(f"models.roles.{key}")
+    updated_keys = apply_ops(config, ops)
 
     # Persist to disk
     if not config.save():

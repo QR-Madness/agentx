@@ -1,8 +1,35 @@
+/**
+ * RecallSettingsPanel — the golden section for the settings overhaul.
+ *
+ * Recall is the most bespoke surface in Settings, so it's where the new
+ * conventions get proven before the rest follow:
+ *
+ *  - **No local defaults.** Every value falls back to the manifest's declared
+ *    default rather than a literal typed here (there were 25 of them), so a
+ *    control can't disagree with the server about its own default. Bounds and
+ *    help arrive the same way.
+ *  - **Each technique owns all of its knobs.** HyDE's model, temperature and
+ *    token budget used to be split across two places — model and temperature
+ *    under "HyDE Settings", max tokens down in "Advanced" — so tuning one
+ *    technique meant hunting in two. Self-Query was split the same way.
+ *  - **Advanced is a disclosure, not a dumping ground.** It holds the
+ *    cross-cutting knobs that belong to no single technique, collapsed by
+ *    default.
+ *
+ * Every setting here is still present and still writable — nothing was removed,
+ * only grouped where it belongs.
+ */
+
 import { RefreshCw, Search } from 'lucide-react';
 import { useSettingsAutosave } from '../../lib/hooks';
 import { RecallSettings, api } from '../../lib/api';
 import { ModelPickerField } from '../common/ModelPickerField';
 import { useNotify } from '../../contexts/NotificationContext';
+import { Button } from '../ui';
+import {
+  bindSetting,
+  useSettingsManifest,
+} from '../unified-settings/SettingsManifestContext';
 import {
   SettingsSection,
   SliderField,
@@ -19,17 +46,46 @@ type RecallDraft = RecallSettings & Record<string, unknown>;
 
 export function RecallSettingsPanel() {
   const { notifyError } = useNotify();
-  const { settings, loading, error, status, update } = useSettingsAutosave<RecallDraft>({
-    load: async () => (await api.getRecallSettings()) as RecallDraft,
-    save: changed => api.updateRecallSettings(changed),
-    onError: err => notifyError(err, 'Recall settings'),
-  });
+  const manifest = useSettingsManifest();
+  const { settings, loading, error, status, update, refresh } =
+    useSettingsAutosave<RecallDraft>({
+      load: async () => (await api.getRecallSettings()) as RecallDraft,
+      save: changed => api.updateRecallSettings(changed),
+      onError: err => notifyError(err, 'Recall settings'),
+    });
 
   const handleChange = <K extends keyof RecallSettings>(
     key: K,
     value: RecallSettings[K]
   ) => {
     update({ [key]: value } as Partial<RecallDraft>);
+  };
+
+  /**
+   * Bind one key to the manifest: bounds, help, whether it differs from the
+   * shipped default, and a reset that writes that default back through the
+   * normal autosave path. Not a hook — several of these live inside
+   * conditionally-rendered branches.
+   */
+  const bind = <K extends keyof RecallSettings>(key: K) => {
+    const entry = bindSetting(manifest, 'memory', key as string, settings?.[key]);
+    return {
+      binding: entry,
+      onReset: entry
+        ? () => handleChange(key, entry.defaultValue as RecallSettings[K])
+        : undefined,
+    };
+  };
+
+  /** Value with the manifest default as the fallback. */
+  const val = <K extends keyof RecallSettings>(
+    key: K,
+    shipped: RecallSettings[K]
+  ): RecallSettings[K] => {
+    const current = settings?.[key];
+    return (current === undefined || current === null
+      ? shipped
+      : current) as RecallSettings[K];
   };
 
   if (loading) {
@@ -47,11 +103,20 @@ export function RecallSettingsPanel() {
     return (
       <div className="settings-panel">
         <div className="memory-error">
-          Failed to load recall settings{error ? `: ${error.message}` : ''}
+          <p>Failed to load recall settings{error ? `: ${error.message}` : ''}</p>
+          <Button variant="secondary" onClick={() => refresh()}>Try again</Button>
         </div>
       </div>
     );
   }
+
+  const hybridOn = val('recall_enable_hybrid', true);
+  const entityOn = val('recall_enable_entity_centric', true);
+  const expansionOn = val('recall_enable_query_expansion', true);
+  const hydeOn = val('recall_enable_hyde', false);
+  const selfQueryOn = val('recall_enable_self_query', false);
+  const rerankOn = val('cross_encoder_enabled', true);
+  const guardOn = val('recall_first_person_guard', false);
 
   return (
     <div className="settings-panel recall-settings">
@@ -63,52 +128,156 @@ export function RecallSettingsPanel() {
         </span>
       </h2>
       <p className="settings-description">
-        Configure enhanced retrieval techniques to improve memory recall accuracy.
-        These techniques help bridge the semantic gap between questions and stored facts.
+        How the agent finds what it remembers. Each technique below searches
+        stored memory a different way; they run together and their results are
+        merged, so turning one on widens what can be found rather than replacing
+        anything. Hover the <strong>?</strong> beside a setting for what it does
+        and when to change it.
       </p>
 
       <SettingsSection title="Retrieval Techniques">
         <div className="settings-grid">
           <ToggleField
             label="Hybrid Search (BM25 + Vector)"
-            title="Combine BM25 keyword matching with vector similarity using Reciprocal Rank Fusion"
             badge={{ text: 'Recommended', variant: 'success' }}
             hint="Combines keyword matching with semantic similarity"
-            checked={settings.recall_enable_hybrid ?? true}
+            checked={hybridOn}
             onChange={v => handleChange('recall_enable_hybrid', v)}
+            {...bind('recall_enable_hybrid')}
           />
+          {hybridOn && (
+            <div className="settings-subgroup">
+              <SliderField
+                label="BM25 Weight"
+                value={val('recall_hybrid_bm25_weight', 0.3)}
+                min={0} max={1} step={0.1} format={oneDp}
+                onChange={v => handleChange('recall_hybrid_bm25_weight', v)}
+                {...bind('recall_hybrid_bm25_weight')}
+              />
+              <SliderField
+                label="Vector Weight"
+                value={val('recall_hybrid_vector_weight', 0.7)}
+                min={0} max={1} step={0.1} format={oneDp}
+                onChange={v => handleChange('recall_hybrid_vector_weight', v)}
+                {...bind('recall_hybrid_vector_weight')}
+              />
+            </div>
+          )}
+
           <ToggleField
             label="Entity-Centric Retrieval"
-            title="Traverse entity relationships to find linked facts"
             badge={{ text: 'Recommended', variant: 'success' }}
             hint="Finds facts via entity graph traversal"
-            checked={settings.recall_enable_entity_centric ?? true}
+            checked={entityOn}
             onChange={v => handleChange('recall_enable_entity_centric', v)}
+            {...bind('recall_enable_entity_centric')}
           />
+          {entityOn && (
+            <div className="settings-subgroup">
+              <SliderField
+                label="Similarity Threshold"
+                value={val('recall_entity_similarity_threshold', 0.65)}
+                min={0.3} max={0.95} step={0.05}
+                onChange={v => handleChange('recall_entity_similarity_threshold', v)}
+                {...bind('recall_entity_similarity_threshold')}
+              />
+              <NumberField
+                label="Max Entities"
+                value={val('recall_entity_max_entities', 5)}
+                onChange={v => handleChange('recall_entity_max_entities', v)}
+                {...bind('recall_entity_max_entities')}
+              />
+            </div>
+          )}
+
           <ToggleField
             label="Query Expansion"
-            title="Transform questions to statement form for better matching"
             badge={{ text: 'Recommended', variant: 'success' }}
             hint={'Transforms "When is my birthday?" → "birthday is"'}
-            checked={settings.recall_enable_query_expansion ?? true}
+            checked={expansionOn}
             onChange={v => handleChange('recall_enable_query_expansion', v)}
+            {...bind('recall_enable_query_expansion')}
           />
+          {expansionOn && (
+            <div className="settings-subgroup">
+              <NumberField
+                label="Max Variants"
+                value={val('recall_expansion_max_variants', 3)}
+                onChange={v => handleChange('recall_expansion_max_variants', v)}
+                {...bind('recall_expansion_max_variants')}
+              />
+            </div>
+          )}
+
           <ToggleField
             label="HyDE (Hypothetical Document Embedding)"
-            title="Generate hypothetical answer and search with that embedding (requires LLM)"
             badge={{ text: 'LLM Required', variant: 'warning' }}
             hint="LLM generates hypothetical answer for better embedding match"
-            checked={settings.recall_enable_hyde ?? false}
+            checked={hydeOn}
             onChange={v => handleChange('recall_enable_hyde', v)}
+            {...bind('recall_enable_hyde')}
           />
+          {hydeOn && (
+            <div className="settings-subgroup">
+              <div className="setting-row">
+                <ModelPickerField
+                  label="Model"
+                  value={val('recall_hyde_model', '')}
+                  onChange={v => handleChange('recall_hyde_model', v)}
+                  showDefault={false}
+                />
+              </div>
+              <SliderField
+                label="Temperature"
+                value={val('recall_hyde_temperature', 0.7)}
+                min={0} max={1} step={0.1} format={oneDp}
+                onChange={v => handleChange('recall_hyde_temperature', v)}
+                {...bind('recall_hyde_temperature')}
+              />
+              <NumberField
+                label="Max Tokens"
+                value={val('recall_hyde_max_tokens', 150)}
+                fallback={150}
+                onChange={v => handleChange('recall_hyde_max_tokens', v)}
+                {...bind('recall_hyde_max_tokens')}
+              />
+            </div>
+          )}
+
           <ToggleField
             label="Self-Query (Filter Extraction)"
-            title="LLM extracts structured filters from natural language (requires LLM)"
             badge={{ text: 'LLM Required', variant: 'warning' }}
             hint="Extracts time filters, keywords from queries"
-            checked={settings.recall_enable_self_query ?? false}
+            checked={selfQueryOn}
             onChange={v => handleChange('recall_enable_self_query', v)}
+            {...bind('recall_enable_self_query')}
           />
+          {selfQueryOn && (
+            <div className="settings-subgroup">
+              <div className="setting-row">
+                <ModelPickerField
+                  label="Model"
+                  value={val('recall_self_query_model', '')}
+                  onChange={v => handleChange('recall_self_query_model', v)}
+                  showDefault={false}
+                />
+              </div>
+              <SliderField
+                label="Temperature"
+                value={val('recall_self_query_temperature', 0.2)}
+                min={0} max={1} step={0.05}
+                onChange={v => handleChange('recall_self_query_temperature', v)}
+                {...bind('recall_self_query_temperature')}
+              />
+              <NumberField
+                label="Max Tokens"
+                value={val('recall_self_query_max_tokens', 200)}
+                fallback={200}
+                onChange={v => handleChange('recall_self_query_max_tokens', v)}
+                {...bind('recall_self_query_max_tokens')}
+              />
+            </div>
+          )}
         </div>
       </SettingsSection>
 
@@ -116,182 +285,82 @@ export function RecallSettingsPanel() {
         <div className="settings-grid">
           <ToggleField
             label="Cross-Encoder Rerank"
-            title="Retrieve a wide candidate pool, then rerank it with a cross-encoder before returning results"
             badge={{ text: 'Recommended', variant: 'success' }}
-            hint="reranks a wider candidate pool with a cross-encoder — +20pp retrieval accuracy in evals"
-            checked={settings.cross_encoder_enabled ?? true}
+            hint="Reranks a wider candidate pool with a cross-encoder — +20pp retrieval accuracy in evals"
+            checked={rerankOn}
             onChange={v => handleChange('cross_encoder_enabled', v)}
+            {...bind('cross_encoder_enabled')}
           />
-          {(settings.cross_encoder_enabled ?? true) && (
-            <>
+          {rerankOn && (
+            <div className="settings-subgroup">
               <TextField
                 label="Cross-Encoder Model"
-                value={settings.cross_encoder_model ?? ''}
+                value={val('cross_encoder_model', '')}
                 placeholder="cross-encoder/ms-marco-MiniLM-L-6-v2"
-                hint="Hugging Face cross-encoder model id"
                 onChange={v => handleChange('cross_encoder_model', v)}
+                {...bind('cross_encoder_model')}
               />
               <NumberField
                 label="Candidate Pool"
-                value={settings.recall_candidate_pool ?? 50}
-                min={10} max={200} fallback={50}
-                hint="How many first-stage candidates the reranker scores"
+                value={val('recall_candidate_pool', 50)}
+                fallback={50}
                 onChange={v => handleChange('recall_candidate_pool', v)}
+                {...bind('recall_candidate_pool')}
               />
               <NumberField
                 label="Max Demotion"
-                value={settings.recall_ce_max_demotion ?? 2}
-                min={0} max={20}
-                hint="0 = pure cross-encoder order"
+                value={val('recall_ce_max_demotion', 2)}
+                fallback={0}
                 onChange={v => handleChange('recall_ce_max_demotion', v)}
+                {...bind('recall_ce_max_demotion')}
               />
-            </>
+            </div>
           )}
         </div>
       </SettingsSection>
 
-      {settings.recall_enable_hybrid && (
-        <SettingsSection title="Hybrid Search Settings">
-          <div className="settings-grid">
-            <SliderField
-              label="BM25 Weight"
-              value={settings.recall_hybrid_bm25_weight ?? 0.3}
-              min={0} max={1} step={0.1} format={oneDp}
-              onChange={v => handleChange('recall_hybrid_bm25_weight', v)}
-            />
-            <SliderField
-              label="Vector Weight"
-              value={settings.recall_hybrid_vector_weight ?? 0.7}
-              min={0} max={1} step={0.1} format={oneDp}
-              onChange={v => handleChange('recall_hybrid_vector_weight', v)}
-            />
-          </div>
-        </SettingsSection>
-      )}
-
-      {settings.recall_enable_entity_centric && (
-        <SettingsSection title="Entity-Centric Settings">
-          <div className="settings-grid">
-            <SliderField
-              label="Similarity Threshold"
-              value={settings.recall_entity_similarity_threshold ?? 0.65}
-              min={0.3} max={0.95} step={0.05}
-              onChange={v => handleChange('recall_entity_similarity_threshold', v)}
-            />
-            <NumberField
-              label="Max Entities"
-              value={settings.recall_entity_max_entities ?? 5}
-              min={1} max={20}
-              onChange={v => handleChange('recall_entity_max_entities', v)}
-            />
-          </div>
-        </SettingsSection>
-      )}
-
-      {settings.recall_enable_query_expansion && (
-        <SettingsSection title="Query Expansion Settings">
-          <div className="settings-grid">
-            <NumberField
-              label="Max Variants"
-              value={settings.recall_expansion_max_variants ?? 3}
-              min={1} max={10}
-              onChange={v => handleChange('recall_expansion_max_variants', v)}
-            />
-          </div>
-        </SettingsSection>
-      )}
-
-      {settings.recall_enable_hyde && (
-        <SettingsSection title="HyDE Settings">
-          <div className="settings-grid">
-            <div className="setting-row">
-              <ModelPickerField
-                label="Model"
-                value={settings.recall_hyde_model ?? ''}
-                onChange={v => handleChange('recall_hyde_model', v)}
-                showDefault={false}
-              />
-            </div>
-            <SliderField
-              label="Temperature"
-              value={settings.recall_hyde_temperature ?? 0.7}
-              min={0} max={1} step={0.1} format={oneDp}
-              onChange={v => handleChange('recall_hyde_temperature', v)}
-            />
-          </div>
-        </SettingsSection>
-      )}
-
-      {settings.recall_enable_self_query && (
-        <SettingsSection title="Self-Query Settings">
-          <div className="settings-grid">
-            <div className="setting-row">
-              <ModelPickerField
-                label="Model"
-                value={settings.recall_self_query_model ?? ''}
-                onChange={v => handleChange('recall_self_query_model', v)}
-                showDefault={false}
-              />
-            </div>
-          </div>
-        </SettingsSection>
-      )}
-
-      <SettingsSection title="Advanced">
+      {/* Cross-cutting knobs — they belong to no single technique, and most
+          people never need them. Collapsed by default. */}
+      <SettingsSection title="Advanced" variant="disclosure">
         <div className="settings-grid">
           <SliderField
             label="Min Recall Confidence"
-            value={settings.recall_min_confidence ?? 0.5}
+            value={val('recall_min_confidence', 0.5)}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('recall_min_confidence', v)}
+            {...bind('recall_min_confidence')}
           />
           <NumberField
             label="Hybrid RRF k"
-            value={settings.recall_hybrid_rrf_k ?? 60}
-            min={1} max={200} fallback={60}
-            hint="Reciprocal Rank Fusion constant (standard: 60)"
+            value={val('recall_hybrid_rrf_k', 60)}
+            fallback={60}
             onChange={v => handleChange('recall_hybrid_rrf_k', v)}
+            {...bind('recall_hybrid_rrf_k')}
           />
           <NumberField
             label="Entity Graph Depth"
-            value={settings.recall_entity_graph_depth ?? 1}
-            min={1} max={5} fallback={1}
-            hint="Relationship hops for entity-centric traversal"
+            value={val('recall_entity_graph_depth', 1)}
+            fallback={1}
             onChange={v => handleChange('recall_entity_graph_depth', v)}
-          />
-          <NumberField
-            label="HyDE Max Tokens"
-            value={settings.recall_hyde_max_tokens ?? 150}
-            min={50} max={2000} fallback={150}
-            onChange={v => handleChange('recall_hyde_max_tokens', v)}
-          />
-          <SliderField
-            label="Self-Query Temperature"
-            value={settings.recall_self_query_temperature ?? 0.2}
-            min={0} max={1} step={0.05}
-            onChange={v => handleChange('recall_self_query_temperature', v)}
-          />
-          <NumberField
-            label="Self-Query Max Tokens"
-            value={settings.recall_self_query_max_tokens ?? 200}
-            min={50} max={2000} fallback={200}
-            onChange={v => handleChange('recall_self_query_max_tokens', v)}
+            {...bind('recall_entity_graph_depth')}
           />
           <ToggleField
             label="First-Person Attribution Guard"
-            title="Penalize recall of facts whose first-person attribution doesn't match the querying speaker"
-            badge={{ text: 'Experimental' }}
             hint="Demotes facts that misattribute first-person statements"
-            checked={settings.recall_first_person_guard ?? false}
+            checked={guardOn}
             onChange={v => handleChange('recall_first_person_guard', v)}
+            {...bind('recall_first_person_guard')}
           />
-          {settings.recall_first_person_guard && (
-            <SliderField
-              label="First-Person Penalty"
-              value={settings.recall_first_person_penalty ?? 0.5}
-              min={0} max={1} step={0.05}
-              onChange={v => handleChange('recall_first_person_penalty', v)}
-            />
+          {guardOn && (
+            <div className="settings-subgroup">
+              <SliderField
+                label="First-Person Penalty"
+                value={val('recall_first_person_penalty', 0.5)}
+                min={0} max={1} step={0.05}
+                onChange={v => handleChange('recall_first_person_penalty', v)}
+                {...bind('recall_first_person_penalty')}
+              />
+            </div>
           )}
         </div>
       </SettingsSection>

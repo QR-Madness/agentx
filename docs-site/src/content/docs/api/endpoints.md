@@ -1601,7 +1601,11 @@ POST /api/memory/settings
 
 **GET** — Returns consolidation settings (extraction, relevance filter, entity linking, quality thresholds) plus default prompts, and `settings_file_status` (`{path, exists, error}` — `error` is non-null when a corrupt overrides file forced the defaults fallback).
 
-**POST** — Update consolidation settings. Accepts partial updates. Values are schema-validated: any invalid value rejects the whole update with `400 {"error", "errors": {key: message}}` (nothing persisted). Saved changes apply live — no API restart needed.
+**POST** — Update consolidation settings. Accepts partial updates. Values are schema-validated, and against any bounds declared in `settings_registry.MEMORY_KEY_SPECS`: an invalid value rejects the whole update with `400 {"error", "errors": {key: message}}` (nothing persisted). Saved changes apply live — no API restart needed.
+
+Display-only fields returned by GET (`entity_types`, `relationship_types`, the `default_*_prompt` pair, `settings_file_status`) are not writable here.
+
+> **Retired:** `trajectory_compression_*` keys are no longer accepted. They used to be written through to `data/config.json` from this endpoint without validation and against a second copy of the defaults. Send them to `POST /api/config/update` under the `trajectory_compression` section instead — posting one here returns `400` naming the replacement route.
 
 ### Recall Settings
 
@@ -1829,7 +1833,11 @@ Returns the resolved context-window limit per configured model — used by the c
 GET /api/settings/manifest
 ```
 
-Canonical machine-readable registry of every user-tunable setting across both stores (memory settings + config): per key — `store`, `type`, `default`, current `value` (secrets redacted), `writable_via` (which endpoint changes it, `null` = server-side only), and model-role linkage (`role_member`/`role`). The substrate for settings tooling and the future settings agent.
+Canonical machine-readable registry of every user-tunable setting across both stores (memory settings + config): per key — `store`, `type`, `default`, current `value` (secrets redacted), `writable_via` (which endpoint changes it, `null` = server-side only), and model-role linkage (`role_member`/`role`). Derived from `settings_registry.py` — the same declaration the write path uses — so what the manifest advertises and what `/api/config/update` accepts cannot disagree.
+
+**Version 2** adds the declaration axes, each present only on keys that declare it: `constraints` (`min`/`max`/`step`/`enum`/`unit`), `tier` (`essential` | `advanced` | `experimental`), `ui_section` (which settings screen it appears on), `write_mode: "whole"` (the dict is written atomically — patching one leaf would drop its siblings), `nullable` (an explicit null is a real write), and `empty_means` (where `""` is a meaningful value, such as `follow_role`). Keys with authored documentation also carry `help` (`summary`/`what`/`how`/`why`/`manage`) from `settings_help.yaml`.
+
+The settings UI reads this to show each control's shipped default, mark what you've changed, and render help; the docs-site [Settings Reference](../getting-started/settings-reference.md) is generated from the same source, so the two cannot drift.
 
 ### Update Config
 
@@ -1837,7 +1845,17 @@ Canonical machine-readable registry of every user-tunable setting across both st
 POST /api/config/update
 ```
 
-Updates runtime configuration. Persists to `data/config.json` and hot-reloads providers. Sectioned partial update — handled sections: `providers`, `preferences`, `llm_settings`, `context_limits`, `context` (Conversation Context knobs — allowlisted keys `verbatim_budget_ratio`, `summary_trigger_ratio`, `recent_floor`, `preassembly_summary_enabled`, `conversation_state_enabled`, `conversation_state_compaction_enabled`, `rehydrate_max_turns`, `max_input_tokens`), `session.rolling_summary` (`enabled`, `model`, `max_tokens`), `trajectory_compression` (`enabled`, `threshold_ratio`, `preserve_recent_rounds`, `model`, `max_knowledge_chars`), `compression` (`enabled`, `model`, `max_summary_chars`), `memory` (`episodic_leads_enabled`, `project_channels`), `reasoning` (Thinking Patterns — `chat_patterns_enabled`, `auto_classifier_enabled`, `classifier_model`, `classifier_min_chars`, `step_back_model`, `step_back_timeout_seconds`, per-pattern `*_enabled`, `sc_model`, `sc_k`, `min_output_tokens`), `prompt_enhancement`, `planner`, `search`, `alloy`, `ambassador`, `images`, `vision`, and `models.roles`. Together the context-family sections back **Settings → Memory → Conversation Context**.
+Updates runtime configuration. Persists to `data/config.json` and hot-reloads providers.
+
+Sectioned partial update. The writable surface is declared once in `settings_registry.CONFIG_SECTIONS`; rather than trusting a list here, query `GET /api/settings/manifest` (each entry's `writable_via`) or read the generated [Settings Reference](../getting-started/settings-reference.md). This paragraph used to enumerate every allowlist by hand, which is precisely how it drifted from the handler — in both directions.
+
+Behaviour worth knowing:
+
+- **Undeclared keys are ignored** — they are not errors, and they are not written.
+- **Validation is all-or-nothing.** The whole payload is checked before anything is applied, so a request rejected partway leaves the stored configuration untouched. Failures come back `400` with a per-key `errors` map.
+- **Only keys that declare bounds are validated.** Everything else is written as given, exactly as before.
+- **`models.roles.*`** additionally requires `""` (clear) or a concrete `provider:model` — `role:` references and bare model names are rejected.
+- **Empty strings can be meaningful.** For role-following keys (`models.roles.*`, `session.rolling_summary.model`, `compression.model`, the `reasoning.*_model` family) `""` means "follow the role", and is stored rather than skipped.
 
 **Request:**
 ```json

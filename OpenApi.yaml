@@ -5781,8 +5781,14 @@ paths:
       description: >-
         Canonical machine-readable registry across the memory-settings and
         config stores: per key — store, type, default, current value (secrets
-        redacted), write route, and model-role linkage. The substrate for the
-        settings agent (explain/suggest/validate).
+        redacted), write route, and model-role linkage. Derived from
+        `settings_registry.py`, the same declaration the write path uses, so the
+        advertised surface and the accepted surface cannot disagree.
+        Version 2 adds the declaration axes — `constraints`, `tier`,
+        `ui_section`, `write_mode`, `nullable`, `empty_means` — and authored
+        `help`, each present only on keys that declare it. The settings UI reads
+        this to show defaults, mark what you've changed, and render help; the
+        generated Settings Reference renders the same source.
       responses:
         '200':
           description: Manifest
@@ -5822,6 +5828,62 @@ paths:
                           type: string
                         role:
                           type: string
+                        nullable:
+                          type: boolean
+                          description: An explicit null is a real write, not "leave unchanged".
+                        empty_means:
+                          type: string
+                          description: >-
+                            What an empty string means for this key (e.g.
+                            `follow_role`), where it is a meaningful value
+                            rather than an absent one.
+                        write_mode:
+                          type: string
+                          enum: [whole]
+                          description: >-
+                            `whole` — the dict is written atomically; patching a
+                            single leaf would drop its siblings.
+                        tier:
+                          type: string
+                          enum: [essential, advanced, experimental]
+                        ui_section:
+                          type: string
+                          description: Settings section this key renders under.
+                        constraints:
+                          type: object
+                          description: >-
+                            Declared bounds. Only keys carrying these are
+                            validated on write; everything else keeps
+                            pass-through semantics.
+                          properties:
+                            min:
+                              type: number
+                            max:
+                              type: number
+                            step:
+                              type: number
+                            unit:
+                              type: string
+                            enum:
+                              type: array
+                              items:
+                                type: string
+                        help:
+                          type: object
+                          description: >-
+                            Authored prose from `settings_help.yaml` — the same
+                            source the docs-site Settings Reference renders.
+                          properties:
+                            summary:
+                              type: string
+                            what:
+                              type: string
+                            how:
+                              type: string
+                            why:
+                              type: string
+                            manage:
+                              type: string
 
   /config/update:
     post:
@@ -5829,22 +5891,19 @@ paths:
       operationId: configUpdate
       summary: Update runtime configuration
       description: >-
-        Sectioned partial update. `models` accepts only `roles.{fast_utility,
-        deep_reasoning,summarizer}` — each "" (clear) or a concrete
-        provider:model (`role:` refs and non-`provider:model` strings 400).
-        `images` and `vision` accept their whitelisted keys. The Conversation
-        Context family (Settings → Memory → Conversation Context) is
-        allowlisted per section — `context` (`verbatim_budget_ratio`,
-        `summary_trigger_ratio`, `recent_floor`, `preassembly_summary_enabled`,
-        `conversation_state_enabled`, `conversation_state_compaction_enabled`,
-        `rehydrate_max_turns`, `max_input_tokens`), `session.rolling_summary`
-        (`enabled`, `model`, `max_tokens`), `trajectory_compression`
-        (`enabled`, `threshold_ratio`, `preserve_recent_rounds`, `model`,
-        `max_knowledge_chars`), `compression` (`enabled`, `model`,
-        `max_summary_chars`), `memory` (`episodic_leads_enabled`,
-        `project_channels`), and `reasoning` (Thinking Patterns —
-        allowlisted per-pattern enables, classifier/step-back/sampling
-        models, `sc_k`, `min_output_tokens`).
+        Sectioned partial update. The writable surface is declared once in
+        `settings_registry.CONFIG_SECTIONS` and is the same surface
+        `GET /settings/manifest` advertises (`writable_via`) — query it, or read
+        the generated Settings Reference, rather than trusting a list here.
+        This description used to enumerate every allowlist by hand, which is how
+        it drifted from the handler in both directions.
+
+        Undeclared keys are ignored. Keys that declare bounds are validated and
+        400 with a per-key `errors` map; everything else is written as given.
+        Validation runs across the whole payload *before* anything is applied,
+        so a rejected request leaves the stored configuration untouched.
+        `models.roles.*` additionally requires "" (clear) or a concrete
+        `provider:model` — `role:` refs and bare names 400.
       requestBody:
         required: true
         content:

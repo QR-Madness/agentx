@@ -1,91 +1,45 @@
 """
-Settings Manifest v1 — canonical, machine-readable registry of every
+Settings Manifest v2 — canonical, machine-readable registry of every
 user-tunable setting across the platform's stores.
 
-The keystone substrate for the future settings agent (explain settings,
-suggest configurations, validate changes — todo/backlog/genome-advisor.md):
-one endpoint a model can read to learn what exists, where it lives, its type,
-default, current value (secrets redacted), how it can be changed, and whether
-a model role governs it.
+One endpoint that answers, for any setting: what exists, where it lives, its
+type, default, current value (secrets redacted), how it can be changed, which
+surface renders it, what values are legal, and — in prose — what it does and
+when you'd touch it. The client renders help from here rather than carrying its
+own copy, and ``scripts/gen_settings_reference.py`` generates the docs page from
+the same source, so the UI and the documentation cannot drift apart.
 
 Stores covered:
 - ``memory`` — the memory kit's pydantic ``Settings`` (~150 keys; overrides in
   ``data/memory_settings.json``), split between the two ``/api/memory/*``
   settings endpoints by their key whitelists.
-- ``config`` — ``DEFAULT_CONFIG`` leaves (``data/config.json``); writability
-  mirrors the ``config_update`` section handlers (that view stays the source
-  of truth — extend ``_CONFIG_WRITE_ROUTES`` when it grows a section).
+- ``config`` — ``DEFAULT_CONFIG`` leaves (``data/config.json``).
 
-v1 is deliberately registry-only: no prose descriptions (the docs-site is the
-narrative source until key-level descriptions are authored) and no validation
-ranges — both are the manifest's planned v2 axes.
+Writability, constraints, tiers and null/empty semantics all derive from
+``settings_registry.CONFIG_SECTIONS`` — the same declaration
+``views.config_update`` walks — so this can no longer claim a key is writable
+that the write path drops, or vice versa. Prose comes from
+``settings_help.yaml``. Nothing here is authored twice.
+
+v1 shipped registry-only and deferred prose descriptions to the docs-site plus
+validation ranges to the UI. v2 reverses that: the manifest is the source and
+both surfaces render from it.
 """
 
 import logging
 from datetime import datetime, UTC
 from typing import Any
 
+from .settings_help import get_help
+
 logger = logging.getLogger(__name__)
 
-MANIFEST_VERSION = 1
-
-# Any key whose name smells like a credential is value-redacted. URIs redact
-# too — connection strings embed passwords (postgres_uri).
-_SECRET_MARKERS = ("key", "password", "token", "secret", "uri")
-
-# config_update's writable surface, mirrored per section root. Nested tuples
-# are the per-key whitelists where the handler has one; True = every sub-key
-# under the root is writable. Keep in lockstep with views.config_update.
-_CONFIG_WRITE_ROUTES: dict[str, Any] = {
-    "providers": True,
-    "preferences": True,
-    "llm_settings": True,
-    "context_limits": True,
-    "prompt_enhancement": True,
-    "planner": True,
-    # Keep in lockstep with views.config_update's _SEARCH_KEYS.
-    "search": ("backend", "fallback_enabled", "max_results",
-               "cache_ttl_seconds", "timeout", "tavily_api_key", "brave_api_key",
-               "per_turn_limit", "research_per_turn_limit",
-               "per_turn_cost_usd", "research_per_turn_cost_usd",
-               "default_search_depth", "default_chunks_per_source", "safesearch",
-               "country", "search_lang",
-               "brave_grounding_default", "brave_context_max_tokens",
-               "brave_context_max_tokens_per_url", "brave_context_threshold",
-               "brave_answers_enabled", "source_policy"),
-    "alloy": ("allow_adhoc_delegation", "max_parallel_delegations",
-              "max_delegation_depth", "delegation_timeout_seconds",
-              "non_blocking_delegations", "chain_of_command"),
-    "ambassador": True,
-    "images": ("enabled", "default_model", "avatar_model", "avatar_style_prompt"),
-    "vision": ("enabled", "refeed_recent_turns"),
-    "models": ("roles.fast_utility", "roles.deep_reasoning", "roles.summarizer"),
-    # The Conversation Context settings section (one home for the in-conversation
-    # context techniques).
-    "context": ("summary_trigger_ratio", "verbatim_budget_ratio", "recent_floor",
-                "preassembly_summary_enabled", "conversation_state_enabled",
-                "conversation_state_compaction_enabled", "rehydrate_max_turns",
-                "max_input_tokens"),
-    "session": ("rolling_summary.enabled", "rolling_summary.model",
-                "rolling_summary.max_tokens"),
-    "trajectory_compression": ("enabled", "threshold_ratio",
-                               "preserve_recent_rounds", "model",
-                               "max_knowledge_chars"),
-    "compression": ("enabled", "model", "max_summary_chars"),
-    "memory": ("episodic_leads_enabled", "project_channels"),
-    # Thinking Patterns (Settings → Intelligence → Thinking).
-    "reasoning": ("chat_patterns_enabled", "auto_classifier_enabled",
-                  "classifier_model", "classifier_min_chars",
-                  "step_back_model", "step_back_timeout_seconds",
-                  "cot_enabled", "step_back_enabled", "reflection_enabled",
-                  "self_consistency_enabled", "sc_model", "sc_k",
-                  "min_output_tokens"),
-}
-
+MANIFEST_VERSION = 2
 
 def _is_secret(name: str) -> bool:
-    n = name.lower()
-    return any(marker in n for marker in _SECRET_MARKERS)
+    from .settings_registry import is_secret_path
+
+    return is_secret_path(name)
 
 
 def _redact(name: str, value: Any) -> Any:
@@ -105,6 +59,43 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
+def _apply_spec(entry: dict[str, Any], spec: Any, *, ui_section: str | None) -> None:
+    """Attach the v2 axes to an entry.
+
+    Only declared axes are emitted — an entry with no tier carries no ``tier``
+    key rather than a null, so a consumer can tell "not classified" from
+    "classified as nothing".
+    """
+    if ui_section:
+        entry["ui_section"] = ui_section
+
+    if spec is not None:
+        if spec.nullable:
+            entry["nullable"] = True
+        if spec.empty_means:
+            entry["empty_means"] = spec.empty_means
+        if spec.whole_write:
+            entry["write_mode"] = "whole"
+        if spec.tier:
+            entry["tier"] = spec.tier
+        if spec.secret is not None:
+            entry["secret"] = spec.secret
+        constraints = {
+            k: v
+            for k, v in (
+                ("min", spec.min), ("max", spec.max), ("step", spec.step),
+                ("enum", list(spec.enum) if spec.enum else None), ("unit", spec.unit),
+            )
+            if v is not None
+        }
+        if constraints:
+            entry["constraints"] = constraints
+
+    help_entry = get_help(entry["store"], entry["key"])
+    if help_entry:
+        entry["help"] = help_entry
+
+
 def _type_name(value: Any, annotation: Any = None) -> str:
     if annotation is not None:
         name = getattr(annotation, "__name__", None)
@@ -114,24 +105,21 @@ def _type_name(value: Any, annotation: Any = None) -> str:
     return type(value).__name__
 
 
-def _config_writable_via(path: str) -> str | None:
-    root, _, rest = path.partition(".")
-    route = _CONFIG_WRITE_ROUTES.get(root)
-    if route is True:
-        return "/api/config/update"
-    if isinstance(route, tuple):
-        # Match either the immediate key or an explicit nested path.
-        head = rest.partition(".")[0]
-        if rest in route or head in route:
-            return "/api/config/update"
-    return None
-
-
 def _flatten_config(d: dict, prefix: str = "") -> list[tuple[str, Any]]:
+    """Flatten DEFAULT_CONFIG to leaves.
+
+    A dict declared ``whole_write`` in the registry stops the descent: it is
+    written as one value, so it is one entry here rather than a set of leaves
+    the client could be misled into patching individually.
+    """
+    from .settings_registry import whole_write_paths
+
+    atomic = set(whole_write_paths())
+
     leaves: list[tuple[str, Any]] = []
     for k, v in d.items():
         path = f"{prefix}{k}"
-        if isinstance(v, dict) and v:
+        if isinstance(v, dict) and v and path not in atomic:
             leaves.extend(_flatten_config(v, path + "."))
         else:
             leaves.append((path, v))
@@ -140,15 +128,19 @@ def _flatten_config(d: dict, prefix: str = "") -> list[tuple[str, Any]]:
 
 def _memory_entries() -> list[dict[str, Any]]:
     from .kit.agent_memory.config import (
+        CONSOLIDATION_READONLY_KEYS,
         Settings,
         get_consolidation_settings,
         get_recall_settings,
         get_settings,
     )
     from .model_roles import ROLE_MEMBERS
+    from .settings_registry import memory_key_spec
 
     current = get_settings()
-    consolidation_keys = set(get_consolidation_settings().keys())
+    # Mirror the POST handlers: a key the GET builder shows for display only is
+    # not writable, and saying so here is what keeps the manifest honest.
+    consolidation_keys = set(get_consolidation_settings().keys()) - CONSOLIDATION_READONLY_KEYS
     recall_keys = set(get_recall_settings().keys())
     role_by_source = {
         meta["source"]: (member, meta["role"])
@@ -160,11 +152,14 @@ def _memory_entries() -> list[dict[str, Any]]:
     for name, field in Settings.model_fields.items():
         if name in recall_keys:
             writable_via = "/api/memory/recall-settings"
+            ui_section = "memory-recall"
         elif name in consolidation_keys:
             writable_via = "/api/memory/settings"
+            ui_section = "memory-consolidation"
         else:
             # Connection/embedding/workspace plumbing — .env / settings-file only.
             writable_via = None
+            ui_section = None
         entry: dict[str, Any] = {
             "key": name,
             "store": "memory",
@@ -174,6 +169,7 @@ def _memory_entries() -> list[dict[str, Any]]:
             "secret": _is_secret(name),
             "writable_via": writable_via,
         }
+        _apply_spec(entry, memory_key_spec(name), ui_section=ui_section)
         if name in role_by_source:
             entry["role_member"], entry["role"] = role_by_source[name]
         entries.append(entry)
@@ -183,6 +179,7 @@ def _memory_entries() -> list[dict[str, Any]]:
 def _config_entries() -> list[dict[str, Any]]:
     from .config import DEFAULT_CONFIG, get_config_manager
     from .model_roles import ROLE_MEMBERS
+    from .settings_registry import config_key_spec, config_ui_section, config_writable_via
 
     cfg = get_config_manager()
     role_by_source = {
@@ -190,14 +187,9 @@ def _config_entries() -> list[dict[str, Any]]:
         for member, meta in ROLE_MEMBERS.items()
         if meta["kind"] == "config"
     }
-    # trajectory_compression.* is now written directly via /api/config/update
-    # (Settings → Conversation Context); the legacy memory-settings bridge
-    # (trajectory_compression_* keys on /api/memory/settings) still accepts
-    # writes for back-compat but is no longer the canonical route.
 
     entries: list[dict[str, Any]] = []
     for path, default in _flatten_config(DEFAULT_CONFIG):
-        writable_via = _config_writable_via(path)
         entry: dict[str, Any] = {
             "key": path,
             "store": "config",
@@ -205,8 +197,9 @@ def _config_entries() -> list[dict[str, Any]]:
             "default": _redact(path, _jsonable(default)),
             "value": _redact(path, _jsonable(cfg.get(path, default))),
             "secret": _is_secret(path),
-            "writable_via": writable_via,
+            "writable_via": config_writable_via(path),
         }
+        _apply_spec(entry, config_key_spec(path), ui_section=config_ui_section(path))
         if path in role_by_source:
             entry["role_member"], entry["role"] = role_by_source[path]
         entries.append(entry)
@@ -237,3 +230,65 @@ def build_manifest() -> dict[str, Any]:
     if errors:
         manifest["errors"] = errors
     return manifest
+
+
+def build_reference_entries() -> list[dict[str, Any]]:
+    """Declared metadata for every setting, with no live values — what the docs
+    generator renders.
+
+    `build_manifest` reads the running install's config so the UI can show what
+    you've actually set. A committed docs page must not: it would bake one
+    machine's values into the repo and make the generated file depend on whose
+    laptop produced it. This builds the same entries from declarations alone —
+    defaults, types, bounds, tiers, help — and omits `value` entirely.
+    """
+    from .config import DEFAULT_CONFIG
+    from .kit.agent_memory.config import (
+        CONSOLIDATION_READONLY_KEYS,
+        Settings,
+        get_consolidation_settings,
+        get_recall_settings,
+    )
+    from .settings_registry import (
+        config_key_spec,
+        config_ui_section,
+        config_writable_via,
+        memory_key_spec,
+    )
+
+    consolidation_keys = set(get_consolidation_settings().keys()) - CONSOLIDATION_READONLY_KEYS
+    recall_keys = set(get_recall_settings().keys())
+
+    entries: list[dict[str, Any]] = []
+
+    for name, field in Settings.model_fields.items():
+        if name in recall_keys:
+            writable_via, ui_section = "/api/memory/recall-settings", "memory-recall"
+        elif name in consolidation_keys:
+            writable_via, ui_section = "/api/memory/settings", "memory-consolidation"
+        else:
+            writable_via, ui_section = None, None
+        entry: dict[str, Any] = {
+            "key": name,
+            "store": "memory",
+            "type": _type_name(field.default, field.annotation),
+            "default": _redact(name, _jsonable(field.default)),
+            "secret": _is_secret(name),
+            "writable_via": writable_via,
+        }
+        _apply_spec(entry, memory_key_spec(name), ui_section=ui_section)
+        entries.append(entry)
+
+    for path, default in _flatten_config(DEFAULT_CONFIG):
+        entry = {
+            "key": path,
+            "store": "config",
+            "type": _type_name(default),
+            "default": _redact(path, _jsonable(default)),
+            "secret": _is_secret(path),
+            "writable_via": config_writable_via(path),
+        }
+        _apply_spec(entry, config_key_spec(path), ui_section=config_ui_section(path))
+        entries.append(entry)
+
+    return entries

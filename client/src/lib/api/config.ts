@@ -4,6 +4,7 @@ import type {
   ModelRoleName,
   ModelRolesResponse,
   SearchBackendHealth,
+  SettingsManifest,
 } from './types';
 
 export const configApi = {
@@ -26,6 +27,18 @@ export const configApi = {
       method: 'POST',
       body: JSON.stringify(config),
     });
+  },
+
+  /**
+   * The canonical registry of every user-tunable setting: where it lives, its
+   * type and shipped default, its current value (secrets redacted), how it can
+   * be written, and — where authored — its constraints, tier, and help.
+   *
+   * This is what lets the settings UI show a real default beside a control,
+   * mark what you've changed, and render help that can't drift from the docs.
+   */
+  async getSettingsManifest(): Promise<SettingsManifest> {
+    return apiRequest('/api/settings/manifest');
   },
 
   /**

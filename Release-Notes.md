@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.262 -->
+<!-- release-version: 0.21.263 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,15 +21,16 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
-- **Link your OpenRouter account in one click** — sign in once and AgentX gets its own key, no pasting. The card also shows your balance and monthly spend, and offers a one-click fix for models OpenRouter has renamed (their real context window was reading as 8k, compacting turns far too early).
-- **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint (Groq, DeepSeek, Ollama, vLLM, your own) as `yourid:model`. Each backend shows whether it's reachable and how many models it opens up, and a **supply line** states where turns really go — which provider resolves your agent's model, its real context window and price, and the fallback behind it.
-- **Extract: move memory out, safely** — evict a channel to the server vault with verified deletion (export → verify → wipe → receipt; nothing deletes unless it verifies). Exports also go multi-channel now — an exact channel *set*, the substrate for portable Memory Cores.
-- **Agents read the web far more cheaply** — `web_extract` returns only the passages answering your query (3.8% of a real article), sub-questions batch into one call, and seen pages come back as stubs.
-- **Brave is a real backend, not a downgrade** — Brave searches return pre-extracted page content instead of a bare link list, and deep research works Brave-primary.
-- **Settings → Web Search is the control plane** — defaults, per-turn budgets in *calls and dollars*, grounding limits, and a **source policy** of preferred/blocked domains (blocked is a hard floor).
+- **Settings opens somewhere useful** — a new Overview lists what you've changed from the defaults and offers to put it back, instead of landing on an API-key page. Controls show their default, and **Memory → Recall** explains every knob and when to move it.
+- **Link your OpenRouter account in one click** — sign in once, no key pasting; the card shows balance and spend, and repairs models OpenRouter renamed (their real context read as 8k, compacting turns far too early).
+- **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint (Groq, DeepSeek, Ollama, your own) as `yourid:model`. Backends show if they're reachable, and a **supply line** states where turns really go: the resolving provider, its real context and price, the fallback.
+- **Extract: move memory out, safely** — evict a channel to the server vault with verified deletion (export → verify → wipe → receipt; nothing deletes unless it verifies). Exports go multi-channel.
+- **Agents read the web far more cheaply** — `web_extract` returns only the passages answering your query (3.8% of a real article), sub-questions batch, seen pages return as stubs. Brave returns real page content, not a link list.
+- **Settings → Web Search is the control plane** — defaults, per-turn budgets in *calls and dollars*, and a **source policy** of preferred/blocked domains (blocked is absolute).
 
 ### Fixes
 
-- **Web-search cost tracking uses the provider's own numbers** where reported, not an estimate from search depth.
-- **Memory exports now carry distilled procedures** — learned "how we work" rules didn't travel before.
-- **Replace-mode memory import resets the PostgreSQL mirror** for the wiped channels — it wiped only the graph before, leaving stale audit rows.
+- **Settings that claimed to save now do** — Ambassador's voice pickers were dropped silently; editing one Web Search source-policy list wiped the others. A failing section no longer downs the app.
+- **Web-search cost tracking uses the provider's own numbers** where reported, not a depth estimate.
+- **Memory exports carry distilled procedures** — learned "how we work" rules didn't travel.
+- **Replace-mode memory import resets the PostgreSQL mirror** for wiped channels — it cleared only the graph, leaving stale rows.

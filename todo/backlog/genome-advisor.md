@@ -65,10 +65,31 @@
   - [x] **v1 registry + API** `[v0.21.160]` — `agentx_ai/settings_manifest.py` +
         `GET /api/settings/manifest`: both stores (memory `Settings` fields + `DEFAULT_CONFIG`
         leaves) with per-key `{store, type, default, value (secrets redacted), writable_via,
-        role_member/role}`; write routing mirrors `config_update`'s section handlers
-        (`_CONFIG_WRITE_ROUTES` — extend in lockstep) and the two memory endpoints' whitelists.
-  - [ ] **v2**: prose `description`/"how it works" per key, validation ranges, dead-knob flags —
-        then `/api/config/update` validation + auto-generated UI hints hang off it.
+        role_member/role}`; write routing mirrored `config_update`'s section handlers
+        (`_CONFIG_WRITE_ROUTES` — "extend in lockstep") and the two memory endpoints' whitelists.
+  - [x] **v2 + the registry it hangs off** `[v0.21.263]` — Genome Foundation Wave 1. The mirror is
+        gone: `settings_registry.py` is the one declaration, and the write path, the manifest, and
+        the docs all derive from it (ADR-17). Ships two-phase writes (validate-all-then-apply-all),
+        per-key `constraints`/`tier`/`ui_section`/`nullable`/`empty_means`/`write_mode`, authored
+        `help` in `settings_help.yaml`, opt-in write validation, and unified secret classification.
+        Fixed by construction: `research`/`web_research` under-reported, `ambassador`'s voice keys
+        over-reported-then-dropped, `search.source_policy` per-leaf clobbering. Retired the
+        unvalidated `trajectory_compression_*` bridge on `/api/memory/settings`.
+  - [x] **Settings UI reads the manifest** `[v0.21.263]` — field kit v2 (default chips, reset,
+        first-class help popovers, the a11y label fixes), the Overview landing (what you've changed,
+        computed from the manifest), per-section error boundaries, and the golden Recall refit as
+        the help-content exemplar.
+  - [x] **Generated Settings Reference** `[v0.21.263]` — `scripts/gen_settings_reference.py` renders
+        the docs-site page from the same declarations, gated by `task docs:check`. Settings and docs
+        can no longer drift.
+  - [ ] **Wave 2 — reach the setting**: per-setting search over the manifest (today's search matches
+        21 section labels and hand-typed keyword arrays, not the ~200 settings), jump-to-control with
+        the flash-anchor pattern, deep links into a section/setting (the `ModalConfig.props` chain
+        already carries props — `stubs.tsx` swallows them), and palette commands per section.
+  - [ ] **Wave 3 — help cadence**: write up the remaining sections to the golden standard, section by
+        section; sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
+  - [ ] **Dead-knob flags** — declared-but-unread keys. `scripts/check_config_keys.py` already has the
+        inventory half; the registry makes its output authoritative enough to gate on.
 - [ ] **`@Settings` Advisor agent** — a built-in agent profile addressed via the shipped @-mention
       routing (16.5). Free-rein **read** access: the Settings Manifest, the docs-site (a docs-search
       tool), and a **conversation-diagnostic** tool (transcript + the **Context Inspector** + logs/

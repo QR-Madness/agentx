@@ -2,10 +2,14 @@
  * UnifiedSettings — Full-screen immersive settings interface
  *
  * Replaces fragmented drawer-based settings with a cohesive experience:
- * - Vertical sidebar navigation with 4 categories, 12 sections
+ * - Vertical sidebar navigation, grouped by category
  * - Enhanced glassmorphism with depth layers
  * - Smooth Framer Motion animations
  * - Parallax background effects
+ *
+ * Opens on Overview, which answers "where do I start" — what you've changed
+ * from the defaults, and where everything lives. It used to open on Model
+ * Providers, so the first thing anyone saw was an API-key admin page.
  */
 
 import { useEffect, useState } from 'react';
@@ -14,6 +18,7 @@ import { X, Menu } from 'lucide-react';
 import { useSettingsNavigation } from './hooks/useSettingsNavigation';
 import { SettingsNav } from './SettingsNav';
 import { SettingsContent } from './SettingsContent';
+import { SettingsManifestProvider } from './SettingsManifestContext';
 import { ParallaxBackground } from './animations/ParallaxBackground';
 import { backdropVariants, containerVariants } from './animations/transitions';
 import './UnifiedSettings.css';
@@ -24,7 +29,7 @@ interface UnifiedSettingsProps {
 }
 
 export function UnifiedSettings({ isOpen, onClose }: UnifiedSettingsProps) {
-  const { activeSection, navigateTo } = useSettingsNavigation('providers');
+  const { activeSection, navigateTo } = useSettingsNavigation();
   const [isNavOpen, setIsNavOpen] = useState(false);
 
   // ESC key handler
@@ -116,7 +121,14 @@ export function UnifiedSettings({ isOpen, onClose }: UnifiedSettingsProps) {
                 }}
                 onClose={() => setIsNavOpen(false)}
               />
-              <SettingsContent activeSection={activeSection} />
+              {/* One manifest fetch for the whole surface; sections read what
+                  they need from it and work fine if it never arrives. */}
+              <SettingsManifestProvider>
+                <SettingsContent
+                  activeSection={activeSection}
+                  onNavigate={navigateTo}
+                />
+              </SettingsManifestProvider>
             </div>
           </motion.div>
         </>

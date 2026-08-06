@@ -2110,6 +2110,149 @@
   border: 1px solid var(--feedback-warning-border);
 }
 
+/* --- Disclosure sections + technique sub-groups ------------------------- */
+
+.settings-disclosure-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border: none;
+  background: transparent; /* base.css resets buttons; be explicit */
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.settings-disclosure-chevron {
+  transition: transform 150ms ease;
+  flex-shrink: 0;
+}
+
+.settings-disclosure-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-disclosure-chevron {
+    transition: none;
+  }
+}
+
+.settings-disclosure-trigger:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.settings-section-actions {
+  margin-left: auto;
+}
+
+/* A technique's own knobs, indented under the toggle that enables them, so a
+   technique reads as one thing instead of scattering across the panel. */
+.settings-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 4px 0 12px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border-subtle, var(--border-default));
+}
+
+/* --- Manifest chrome (FieldShell) --------------------------------------
+   The label row that carries the changed-from-default dot, the reset control,
+   and the help trigger. All three are optional and appear only once a control
+   is bound to its settings-manifest entry. */
+
+.setting-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 22px;
+}
+
+/* Small enough to read as punctuation, not as an error. */
+.setting-modified-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.setting-help-trigger,
+.setting-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent; /* base.css resets buttons; be explicit */
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.setting-help-trigger:hover,
+.setting-reset-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.setting-help-trigger:focus-visible,
+.setting-reset-btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+/* Help panel (inside the Popover surface) */
+.setting-help-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+
+.setting-help-summary {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+}
+
+.setting-help-block + .setting-help-block {
+  margin-top: 10px;
+}
+
+.setting-help-heading {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-tertiary);
+  margin: 0 0 3px;
+}
+
+.setting-help-body {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 0;
+  white-space: pre-line;
+}
+
+.setting-help-panel {
+  max-height: min(60vh, 30rem);
+  overflow-y: auto;
+}
+
 /* Setting Hint */
 .setting-hint {
   display: block;

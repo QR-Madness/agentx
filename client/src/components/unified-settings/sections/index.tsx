@@ -29,6 +29,7 @@ import {
   Search,
   GitMerge,
   Telescope,
+  Compass,
 } from 'lucide-react';
 import { MemoryIcon } from '../../common/MemoryIcon';
 
@@ -49,6 +50,19 @@ export interface CategoryGroup {
 export type SectionHierarchy = Record<string, CategoryGroup>;
 
 export const SECTION_HIERARCHY: SectionHierarchy = {
+  home: {
+    label: 'Home',
+    icon: <Compass size={16} />,
+    sections: [
+      {
+        id: 'overview',
+        label: 'Overview',
+        icon: <Compass size={18} />,
+        component: lazy(() => import('./OverviewSection')),
+        keywords: ['overview', 'home', 'start', 'changed', 'modified', 'defaults', 'reset', 'summary']
+      },
+    ]
+  },
   infrastructure: {
     label: 'Infrastructure',
     icon: <Server size={16} />,

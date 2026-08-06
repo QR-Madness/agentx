@@ -5,6 +5,8 @@
  */
 
 export { SettingsSection } from './SettingsSection';
+export { FieldShell } from './FieldShell';
+export type { FieldChromeProps } from './FieldShell';
 export { ToggleField } from './ToggleField';
 export { SliderField } from './SliderField';
 export { NumberField } from './NumberField';

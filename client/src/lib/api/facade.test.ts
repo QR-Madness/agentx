@@ -134,6 +134,7 @@ describe('api facade', () => {
         "getProviderCatalog",
         "getProviderRoute",
         "getRecallSettings",
+        "getSettingsManifest",
         "getToolOutput",
         "getUsageMetrics",
         "getUserHistory",

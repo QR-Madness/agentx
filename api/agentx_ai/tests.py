@@ -11886,23 +11886,22 @@ class WebSearchCapabilityTest(TestCase):
 
     # --- Control plane: settings surface + source policy ------------------
 
-    def test_search_write_allowlist_matches_manifest(self):
-        """`views.config_update` and the settings manifest must agree on which
-        search keys are writable — the manifest's docstring promises lockstep and
-        they have drifted once already."""
-        import re as _re
-        from pathlib import Path
-        from agentx_ai.settings_manifest import _CONFIG_WRITE_ROUTES
+    def test_search_write_keys_exist(self):
+        """Every declared writable search key must exist in DEFAULT_CONFIG, or the
+        UI writes into the void.
+
+        This used to scrape `_SEARCH_KEYS` out of views.py as *source text* and
+        compare it to the manifest's mirror — a guard for a lockstep that no
+        longer exists. The write path and the manifest now both derive from
+        `settings_registry.CONFIG_SECTIONS`, so agreement is structural;
+        SettingsRegistryTest asserts it for every section at once.
+        """
+        from agentx_ai.settings_registry import CONFIG_SECTIONS
         from agentx_ai.config import DEFAULT_CONFIG
 
-        views_src = Path(__file__).with_name("views.py").read_text()
-        block = _re.search(r"_SEARCH_KEYS = \((.*?)\)\n", views_src, _re.DOTALL)
-        self.assertIsNotNone(block)
-        assert block is not None  # narrow for the type checker
-        view_keys = set(_re.findall(r'"([a-z0-9_]+)"', block.group(1)))
-        self.assertEqual(view_keys, set(_CONFIG_WRITE_ROUTES["search"]))
-        # Every writable key must actually exist, or the UI writes into the void.
-        self.assertEqual(view_keys - set(DEFAULT_CONFIG["search"]), set())
+        declared = set(CONFIG_SECTIONS["search"].keys or ())
+        self.assertTrue(declared, "search section declares no writable keys")
+        self.assertEqual(declared - set(DEFAULT_CONFIG["search"]), set())
 
     def test_search_defaults_fill_only_unset_params(self):
         from agentx_ai.mcp import internal_tools as it
@@ -12914,7 +12913,8 @@ class ModelRolesEndpointTest(TestCase):
 
 
 class SettingsManifestTest(TestCase):
-    """Settings Manifest v1 — the settings-agent substrate."""
+    """Settings Manifest v2 — the settings-agent substrate, and the one source
+    the settings UI and the generated reference both read."""
 
     def _manifest(self):
         from agentx_ai.settings_manifest import build_manifest
@@ -12938,14 +12938,19 @@ class SettingsManifestTest(TestCase):
                          "/api/config/update")
         comp = by_key["compression.model"]
         self.assertEqual(comp["role_member"], "compression")
-        # trajectory_compression.* is config-stored and written directly via
-        # /api/config/update (Settings → Conversation Context); the old
-        # memory-settings bridge is back-compat only, not the canonical route.
+        # trajectory_compression.* is config-stored and written only via
+        # /api/config/update (Settings → Conversation Context). The legacy
+        # memory-settings bridge is gone — see MemorySettingsBridgeTombstoneTest.
         self.assertEqual(by_key["trajectory_compression.model"]["writable_via"],
                          "/api/config/update")
         # Plumbing keys are API-read-only.
         self.assertIsNone(by_key["neo4j_uri"]["writable_via"])
-        # Sanity: the registry is substantial, not a sample.
+        # Display-only consolidation keys are not writable, even though they ride
+        # the same GET payload as the settings the panel edits.
+        self.assertIsNone(by_key["entity_types"]["writable_via"])
+        # Sanity: the registry is substantial, not a sample. `search.source_policy`
+        # collapsed from per-leaf entries to one whole-write entry (it is written
+        # atomically), so the config count sits a little below the v1 number.
         self.assertGreater(m["counts"]["memory"], 100)
         self.assertGreater(m["counts"]["config"], 60)
 
@@ -12971,9 +12976,372 @@ class SettingsManifestEndpointTest(TestCase):
         resp = self.client.get("/api/settings/manifest")
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
-        self.assertEqual(body["version"], 1)
+        self.assertEqual(body["version"], 2)
         self.assertIsInstance(body["entries"], list)
         self.assertEqual(body["counts"]["total"], len(body["entries"]))
+
+    def test_v2_axes_present_on_declared_keys(self):
+        """v2 adds constraints/tier/help/ui_section — emitted only where declared,
+        so v1 consumers see no new noise on undeclared keys."""
+        body = self.client.get("/api/settings/manifest").json()
+        by_key = {e["key"]: e for e in body["entries"]}
+
+        pool = by_key["recall_candidate_pool"]
+        self.assertEqual(pool["constraints"]["min"], 10)
+        self.assertEqual(pool["constraints"]["max"], 200)
+        self.assertEqual(pool["tier"], "essential")
+        self.assertEqual(pool["ui_section"], "memory-recall")
+        self.assertTrue(pool["help"]["summary"])
+        self.assertTrue(pool["help"]["why"])
+        # A knob that only matters once you're tuning sits behind the disclosure.
+        self.assertEqual(by_key["recall_hybrid_rrf_k"]["tier"], "advanced")
+        self.assertEqual(by_key["recall_first_person_guard"]["tier"], "experimental")
+
+        # An undeclared key carries none of the v2 axes.
+        self.assertNotIn("constraints", by_key["neo4j_uri"])
+        self.assertNotIn("tier", by_key["neo4j_uri"])
+
+        # source_policy is advertised as one atomic entry, not per-leaf.
+        policy = by_key["search.source_policy"]
+        self.assertEqual(policy["write_mode"], "whole")
+        self.assertNotIn("search.source_policy.trusted", by_key)
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class SettingsRegistryTest(TestCase):
+    """The settings registry is the single source behind the config write path,
+    the manifest, and the generated reference. These tests replace the old
+    source-scraping lockstep guard: agreement is now structural, so it is
+    asserted for every declared section at once rather than for `search` alone.
+    """
+
+    def _post(self, body: dict):
+        return self.client.post("/api/config/update", data=json.dumps(body),
+                                content_type="application/json")
+
+    def _probe_for(self, default):
+        """A type-correct value that differs from the shipped default."""
+        if isinstance(default, bool):
+            return not default
+        if isinstance(default, int):
+            return int(default) + 7
+        if isinstance(default, float):
+            return round(float(default) / 2 + 0.05, 4)
+        if isinstance(default, str):
+            return (default + "-probe") if default else "probe"
+        if isinstance(default, list):
+            return []
+        return None
+
+    # --- (1) generic round-trip: every declared writable key persists ---------
+
+    def test_every_declared_generic_key_round_trips(self):
+        """A declared key that config_update silently drops is the Images bug.
+        Walk the whole generic surface and assert each key actually lands."""
+        from agentx_ai.settings_registry import CONFIG_SECTIONS, ALL_SUBTREE
+        from agentx_ai.config import DEFAULT_CONFIG
+
+        checked = 0
+        for root, spec in CONFIG_SECTIONS.items():
+            if spec.planner is not None or spec.manifest_keys is ALL_SUBTREE:
+                continue  # bespoke sections have their own test below
+            for rel in (spec.keys or ()):
+                key_spec = spec.spec_for(rel)
+                if key_spec is not None and (key_spec.has_constraints()
+                                             or key_spec.whole_write):
+                    continue  # covered by the constraint / whole-write tests
+                default = DEFAULT_CONFIG.get(root, {})
+                for part in rel.split("."):
+                    default = default.get(part, {}) if isinstance(default, dict) else {}
+                probe = self._probe_for(default)
+                if probe is None:
+                    continue
+                # Build the nested payload the section expects.
+                payload: dict = {}
+                cur = payload
+                parts = rel.split(".")
+                for part in parts[:-1]:
+                    cur = cur.setdefault(part, {})
+                cur[parts[-1]] = probe
+
+                cfg = _FakeConfigManager()
+                with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+                    resp = self._post({root: payload})
+                self.assertEqual(resp.status_code, 200, f"{root}.{rel} rejected")
+                self.assertEqual(cfg.get(f"{root}.{rel}"), probe,
+                                 f"{root}.{rel} declared writable but did not persist")
+                self.assertIn(f"{root}.{rel}", resp.json()["updated"])
+                checked += 1
+        self.assertGreater(checked, 50, "generic surface unexpectedly small")
+
+    def test_undeclared_key_is_ignored(self):
+        cfg = _FakeConfigManager()
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            resp = self._post({"reasoning": {"totally_made_up": True}})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(cfg.get("reasoning.totally_made_up"))
+        self.assertEqual(resp.json()["updated"], [])
+
+    # --- (2) bespoke planners -------------------------------------------------
+
+    def test_model_roles_valid_clear_and_reject(self):
+        cfg = _FakeConfigManager()
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            ok = self._post({"models": {"roles": {"summarizer": "openai:gpt-4o-mini"}}})
+            self.assertEqual(ok.status_code, 200)
+            self.assertEqual(cfg.get("models.roles.summarizer"), "openai:gpt-4o-mini")
+            # "" clears the role — a meaningful value, never treated as absent.
+            cleared = self._post({"models": {"roles": {"summarizer": ""}}})
+            self.assertEqual(cleared.status_code, 200)
+            self.assertEqual(cfg.get("models.roles.summarizer"), "")
+            # role: references and bare names are rejected.
+            bad = self._post({"models": {"roles": {"summarizer": "role:fast_utility"}}})
+            self.assertEqual(bad.status_code, 400)
+
+    def test_ambassador_nested_merge_and_coercion(self):
+        cfg = _FakeConfigManager()
+        cfg.set("ambassador.aide.enabled", True)
+        cfg.set("ambassador.aide.model", "keep-me")
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            resp = self._post({"ambassador": {"aide": {"enabled": False},
+                                              "dispatch": {"enabled": 1}}})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIs(cfg.get("ambassador.aide.enabled"), False)
+        # Editing one aide sub-key must not wipe its siblings.
+        self.assertEqual(cfg.get("ambassador.aide.model"), "keep-me")
+        # dispatch.enabled coerces to a real bool.
+        self.assertIs(cfg.get("ambassador.dispatch.enabled"), True)
+
+    def test_ambassador_voice_keys_are_writable(self):
+        """These were in DEFAULT_CONFIG and advertised as writable, but the old
+        handler's key tuple omitted them — the manifest over-reported and every
+        save was silently dropped."""
+        cfg = _FakeConfigManager()
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            resp = self._post({"ambassador": {"speech_model": "tts-1",
+                                              "voice": "alloy",
+                                              "transcription_model": "whisper-1"}})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(cfg.get("ambassador.speech_model"), "tts-1")
+        self.assertEqual(cfg.get("ambassador.voice"), "alloy")
+        self.assertEqual(cfg.get("ambassador.transcription_model"), "whisper-1")
+
+    def test_nullable_keys_accept_explicit_null(self):
+        cfg = _FakeConfigManager()
+        cfg.set("planner.model", "openai:gpt-4o")
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            resp = self._post({"planner": {"model": None}})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(cfg.get("planner.model"))
+
+    def test_non_nullable_key_skips_null(self):
+        cfg = _FakeConfigManager()
+        cfg.set("reasoning.sc_k", 3)
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            resp = self._post({"reasoning": {"sc_k": None}})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(cfg.get("reasoning.sc_k"), 3)
+
+    def test_context_limits_wildcard_subtree_is_set_only(self):
+        """A free-form model-id subtree: arbitrary ids are writable, but the
+        combined payload only *sets*. Deletion stays on the dedicated
+        /api/config/context-limits route, exactly as before the rewrite."""
+        cfg = _FakeConfigManager()
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            resp = self._post({"context_limits": {"models": {"my:model": 42}}})
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(cfg.get("context_limits.models.my:model"), 42)
+            # null is skipped here rather than deleting.
+            noop = self._post({"context_limits": {"models": {"my:model": None}}})
+            self.assertEqual(noop.status_code, 200)
+        self.assertEqual(cfg.get("context_limits.models.my:model"), 42)
+
+    def test_context_limits_endpoint_deletes_with_null(self):
+        """The delete verb no other section has, on its own route."""
+        cfg = _FakeConfigManager()
+        cfg.set("context_limits.models.my:model", 42)
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            resp = self.client.post("/api/config/context-limits",
+                                    data=json.dumps({"models": {"my:model": None}}),
+                                    content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(cfg.get("context_limits.models.my:model"))
+
+    # --- (3) manifest writability == registry derivation ---------------------
+
+    def test_manifest_writability_matches_registry(self):
+        """The manifest must advertise exactly what the write path accepts —
+        the property the old lockstep comment asked humans to maintain."""
+        from agentx_ai.settings_manifest import build_manifest
+        from agentx_ai.settings_registry import config_writable_via
+
+        for entry in build_manifest()["entries"]:
+            if entry["store"] != "config":
+                continue
+            self.assertEqual(
+                entry["writable_via"], config_writable_via(entry["key"]),
+                f"{entry['key']}: manifest and registry disagree on writability")
+
+    # --- (4) validate-all-then-apply-all -------------------------------------
+
+    def test_invalid_payload_leaves_config_untouched(self):
+        """A 400 raised partway through must not leave the process-global
+        ConfigManager half-written until the next reload."""
+        cfg = _FakeConfigManager()
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            resp = self._post({
+                "reasoning": {"sc_k": 9},                       # valid
+                "models": {"roles": {"summarizer": "bogus"}},   # invalid
+            })
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("errors", resp.json())
+        self.assertIsNone(cfg.get("reasoning.sc_k"),
+                          "valid section applied despite a rejected payload")
+
+    # --- (5) whole-write dict leaves -----------------------------------------
+
+    def test_source_policy_is_written_whole(self):
+        cfg = _FakeConfigManager()
+        policy = {"trusted": ["a.com"], "blocked": [], "goggle": ""}
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+            resp = self._post({"search": {"source_policy": policy}})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(cfg.get("search.source_policy"), policy)
+
+    # --- (6) constraints are opt-in ------------------------------------------
+
+    def test_declared_constraint_rejects_out_of_range(self):
+        from agentx_ai.settings_registry import check_declared_constraints
+
+        errors = check_declared_constraints("memory", {"recall_candidate_pool": 5000})
+        self.assertIn("recall_candidate_pool", errors)
+        self.assertFalse(check_declared_constraints("memory", {"recall_candidate_pool": 50}))
+
+    def test_undeclared_key_accepts_any_value(self):
+        """Zero-friction guard: only keys that declare constraints validate."""
+        from agentx_ai.settings_registry import check_declared_constraints
+
+        self.assertFalse(check_declared_constraints("memory", {"extraction_model": "anything"}))
+        self.assertFalse(check_declared_constraints("config", {"reasoning.sc_k": 99999}))
+
+    # --- (7) one secret classification ---------------------------------------
+
+    def test_secret_classification_is_shared(self):
+        from agentx_ai.settings_registry import is_secret_path
+
+        for path in ("search.tavily_api_key", "providers.anthropic.api_key",
+                     "neo4j_password", "postgres_uri",
+                     "providers.custom.x.headers.authorization"):
+            self.assertTrue(is_secret_path(path), f"{path} not classified secret")
+        for path in ("reasoning.sc_k", "search.max_results", "recall_candidate_pool"):
+            self.assertFalse(is_secret_path(path), f"{path} wrongly classified secret")
+
+    def test_token_budgets_are_not_secrets(self):
+        """`max_tokens` is a number, not a credential. A substring test for
+        "token" redacted the default of all 24 `*_max_tokens` settings, so the
+        UI and the generated reference would print `***` where a budget goes."""
+        from agentx_ai.settings_registry import is_secret_path
+
+        for path in ("planner.max_tokens", "recall_hyde_max_tokens",
+                     "context.max_input_tokens", "reasoning.min_output_tokens",
+                     "search.brave_context_max_tokens"):
+            self.assertFalse(is_secret_path(path), f"{path} wrongly redacted")
+        # Singular `token` is still a credential, separated or not.
+        for path in ("providers.x.access_token", "refresh_token", "apikey"):
+            self.assertTrue(is_secret_path(path), f"{path} must stay redacted")
+
+    # --- (11) the memory sidecar can't rot -----------------------------------
+
+    def test_memory_specs_reference_real_settings_fields(self):
+        from agentx_ai.settings_registry import MEMORY_KEY_SPECS
+        from agentx_ai.kit.agent_memory.config import Settings
+
+        unknown = set(MEMORY_KEY_SPECS) - set(Settings.model_fields)
+        self.assertEqual(unknown, set(), f"MEMORY_KEY_SPECS names non-fields: {unknown}")
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class MemorySettingsWriteSurfaceTest(TestCase):
+    """The memory store's write surface: the retired trajectory bridge, the
+    display-only keys, and the registry's declared ranges."""
+
+    def _post(self, path: str, body: dict):
+        return self.client.post(path, data=json.dumps(body),
+                                content_type="application/json")
+
+    def test_retired_trajectory_bridge_is_rejected_loudly(self):
+        """These keys used to be written through to `data/config.json` from the
+        memory endpoint with no validation and a second copy of the defaults.
+        The route is gone; the 400 names where they moved."""
+        with patch("agentx_ai.kit.agent_memory.config.save_memory_settings") as save:
+            resp = self._post("/api/memory/settings",
+                              {"trajectory_compression_enabled": True})
+        self.assertEqual(resp.status_code, 400)
+        body = resp.json()
+        self.assertIn("/api/config/update", body["error"])
+        self.assertIn("trajectory_compression_enabled", body["errors"])
+        save.assert_not_called()
+
+    def test_display_only_keys_are_not_writable(self):
+        with patch("agentx_ai.kit.agent_memory.config.save_memory_settings") as save:
+            resp = self._post("/api/memory/settings", {"entity_types": ["nope"]})
+        self.assertEqual(resp.status_code, 400)  # nothing writable in the payload
+        save.assert_not_called()
+
+    def test_declared_range_is_enforced_on_write(self):
+        with patch("agentx_ai.kit.agent_memory.config.save_memory_settings") as save:
+            resp = self._post("/api/memory/recall-settings",
+                              {"recall_candidate_pool": 5000})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("recall_candidate_pool", resp.json()["errors"])
+        save.assert_not_called()
+
+
+class SettingsHelpTest(TestCase):
+    """Help is authored once (settings_help.yaml) and rendered by both the
+    settings UI and the generated reference — so coverage is testable."""
+
+    def test_golden_section_has_full_help(self):
+        """Recall is the golden section: every key carries the full five-field
+        treatment, which is the register the other sections refit toward."""
+        from agentx_ai.settings_help import get_help
+        from agentx_ai.kit.agent_memory.config import get_recall_settings
+
+        missing = []
+        for key in get_recall_settings():
+            help_entry = get_help("memory", key)
+            if not help_entry:
+                missing.append(f"{key}: no help")
+                continue
+            for field in ("summary", "what", "how", "why", "manage"):
+                if not (help_entry.get(field) or "").strip():
+                    missing.append(f"{key}.{field}")
+        self.assertEqual(missing, [], f"golden section help incomplete: {missing}")
+
+    def test_no_orphan_help_keys(self):
+        """Help authored for a key that no longer exists is drift — it would
+        render in the docs and never in the UI."""
+        from agentx_ai.settings_help import all_help
+        from agentx_ai.kit.agent_memory.config import Settings
+        from agentx_ai.config import DEFAULT_CONFIG
+
+        def _leaves(d, prefix=""):
+            out = set()
+            for k, v in d.items():
+                path = f"{prefix}{k}"
+                if isinstance(v, dict) and v:
+                    out |= _leaves(v, path + ".")
+                else:
+                    out.add(path)
+                out.add(path)  # dict leaves may be documented whole
+            return out
+
+        known = {"memory": set(Settings.model_fields), "config": _leaves(DEFAULT_CONFIG)}
+        orphans = [f"{store}:{key}"
+                   for store, entries in all_help().items()
+                   for key in entries
+                   if key not in known.get(store, set())]
+        self.assertEqual(orphans, [], f"help authored for unknown keys: {orphans}")
 
 
 @override_settings(AGENTX_AUTH_ENABLED=False)

@@ -5,6 +5,7 @@ import { NumberField } from './NumberField';
 import { ToggleField } from './ToggleField';
 import { PromptField } from './PromptField';
 import { SelectField } from './SelectField';
+import { TextField } from './TextField';
 
 describe('SliderField', () => {
   it('renders label + formatted readout and exposes a slider', () => {
@@ -79,5 +80,93 @@ describe('PromptField', () => {
     expect(screen.getByText('Leave empty to use default prompt')).toBeInTheDocument();
     fireEvent.click(screen.getByTitle('Reset to default'));
     expect(onReset).toHaveBeenCalled();
+  });
+});
+
+describe('field accessibility', () => {
+  // Five of the eight primitives rendered a <Label> with no htmlFor and a
+  // control with no id, so the label announced nothing. NumberField was worse:
+  // its accessible name resolved to `title` — the hint sentence, not the
+  // setting's name. These assert the label is what gets announced.
+  it('NumberField is named by its label, not its hint', () => {
+    render(
+      <NumberField
+        label="Max Results"
+        value={5}
+        title="Results returned per search (1–20)"
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('spinbutton', { name: 'Max Results' })).toBeInTheDocument();
+  });
+
+  it('TextField is named by its label', () => {
+    render(<TextField label="Cross-Encoder Model" value="bge" onChange={vi.fn()} />);
+    expect(screen.getByRole('textbox', { name: 'Cross-Encoder Model' })).toBeInTheDocument();
+  });
+
+  it('SelectField is named by its label', () => {
+    render(
+      <SelectField
+        label="Search Depth"
+        value="basic"
+        options={[{ value: 'basic', label: 'Basic' }]}
+        onChange={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('combobox', { name: 'Search Depth' })).toBeInTheDocument();
+  });
+
+  it('describes a control by its hint', () => {
+    render(<NumberField label="Candidate Pool" value={50} hint="How many the reranker scores" onChange={vi.fn()} />);
+    expect(screen.getByRole('spinbutton', { name: 'Candidate Pool' }))
+      .toHaveAccessibleDescription('How many the reranker scores');
+  });
+});
+
+describe('manifest chrome', () => {
+  const binding = {
+    entry: {
+      key: 'recall_candidate_pool',
+      store: 'memory' as const,
+      type: 'int',
+      default: 50,
+      value: 120,
+      secret: false,
+      writable_via: '/api/memory/recall-settings',
+    },
+    defaultValue: 50,
+    isModified: true,
+    min: 10,
+    max: 200,
+    help: { summary: 'How many candidates the reranker scores.' },
+  };
+
+  it('marks a changed setting and resets it to the shipped default', () => {
+    const onReset = vi.fn();
+    render(
+      <NumberField label="Candidate Pool" value={120} binding={binding} onReset={onReset} onChange={vi.fn()} />
+    );
+    expect(screen.getByLabelText('Changed from the default')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Candidate Pool to default' }));
+    expect(onReset).toHaveBeenCalled();
+  });
+
+  it('takes bounds from the manifest when the caller gives none', () => {
+    render(<NumberField label="Candidate Pool" value={120} binding={binding} onChange={vi.fn()} />);
+    const input = screen.getByRole('spinbutton', { name: 'Candidate Pool' });
+    expect(input).toHaveAttribute('min', '10');
+    expect(input).toHaveAttribute('max', '200');
+  });
+
+  it('offers help when the setting has authored prose', () => {
+    render(<NumberField label="Candidate Pool" value={50} binding={binding} onChange={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'About Candidate Pool' })).toBeInTheDocument();
+  });
+
+  it('renders nothing extra for an unbound control', () => {
+    render(<NumberField label="Candidate Pool" value={50} onChange={vi.fn()} />);
+    expect(screen.queryByLabelText('Changed from the default')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^About/ })).not.toBeInTheDocument();
   });
 });

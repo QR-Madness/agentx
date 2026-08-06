@@ -243,6 +243,7 @@ describe('SECTION_HIERARCHY (settings overhaul S4)', () => {
       ])
     );
     expect(shape).toEqual({
+      home: ['overview'],
       infrastructure: ['providers', 'models', 'model-roles', 'search', 'images'],
       intelligence: ['planner', 'thinking', 'alloy', 'ambassador', 'research'],
       prompts: ['prompt-stack', 'prompts', 'prompt-templates', 'feature-prompts'],
@@ -250,6 +251,13 @@ describe('SECTION_HIERARCHY (settings overhaul S4)', () => {
       tools: ['translation'],
       interface: ['appearance'],
     });
+  });
+
+  it('opens on Overview, and home is the first group', () => {
+    // Settings used to land on Model Providers — an API-key admin page as the
+    // answer to "where do I start". Overview leads instead, and leads visually.
+    expect(Object.keys(SECTION_HIERARCHY)[0]).toBe('home');
+    expect(findSectionById('overview')).not.toBeNull();
   });
 
   it('renames the alloy section to Agent Teams (user-facing only)', () => {
