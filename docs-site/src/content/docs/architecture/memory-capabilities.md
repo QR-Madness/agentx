@@ -225,6 +225,9 @@ double-compress the same content).
   matching it. The query-driven RecallLayer rides along as a lower-priority **supplement** (deduped
   against the core); the **Context Ledger** (`agent/context_ledger.py`) budgets both — see
   *Conversation Context* in `Development-Notes.md`.
+- Every knob named above is documented key-by-key — bounds, defaults, and when to move them — in
+  the [Settings Reference](../getting-started/settings-reference.md), generated from the same
+  declarations the settings screen reads.
 
 ### Context gating
 - Oversized tool outputs are compressed and indexed (`ToolOutputCompressor`), chunked and

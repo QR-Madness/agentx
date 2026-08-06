@@ -489,6 +489,56 @@ rather than letting it read as phishing. **Source:** Providers overhaul Slice 3;
 
 ---
 
+### ADR-17 — One settings declaration drives the write path, the manifest, and the docs
+**Decision:** `settings_registry.py` is the single source for the config store's writable surface.
+Everything that needs to know what a setting is derives from it rather than restating it.
+
+1. **The declaration records deltas, not the world.** Type and default still come from
+   `DEFAULT_CONFIG` and the memory kit's pydantic `Settings`; a section declares only what a generic
+   walker can't infer — writability, `nullable`, `empty_means`, `whole_write`, coercion, and the
+   presentation axes (`constraints`, `tier`, `ui_section`). Undeclared ⇒ read-only, never silently
+   writable. Sections whose accept-set is computed per request (`providers`) or that carry a verb no
+   other section has (`context_limits`) register a planner instead of a key list, so even the
+   irregular cases live in the one file.
+2. **Writes are validate-all-then-apply-all.** `plan_config_update` is pure and returns the ops it
+   *would* apply; `apply_ops` mutates. A payload rejected halfway can no longer leave the
+   process-global ConfigManager half-written until the next reload.
+3. **Constraints are opt-in per key.** Only keys that declare bounds are validated; everything else
+   keeps exactly the previous pass-through behaviour. This is the zero-friction invariant — no
+   existing stored value can become un-writable by virtue of this change.
+4. **Help is authored once**, in `settings_help.yaml`, keyed store→key. Manifest v2 serves it to the
+   settings UI and `scripts/gen_settings_reference.py` renders it into the docs site. Neither
+   surface authors prose of its own, so the two cannot disagree. This **inverts** the v1 manifest's
+   stated position — *"the docs-site is the narrative source until key-level descriptions are
+   authored"* (`settings_manifest.py`, v1 docstring). They are now authored.
+5. **The generator is pure.** It imports declarations and never reads live config, so a committed
+   page can't bake one machine's values into the repo. Drift warns, a missing page errors — a stale
+   generated artifact should degrade, never lie (the ADR-13 rule).
+6. **The legacy trajectory-compression bridge is removed.** `/api/memory/settings` accepted
+   `trajectory_compression_*` and wrote them through to `data/config.json` unvalidated
+   (`extra="ignore"` waved them past the schema) against a second copy of the defaults. A second
+   blessed write path contradicts (1); an undeclared one is the bug class this ADR exists to end.
+   Posting one now returns 400 naming `/api/config/update`.
+
+**Why not `Field()` on the 150 pydantic fields:** it would add `ge`/`le` where none existed, changing
+validation behaviour for keys nobody asked to constrain, and put UI governance inside runtime kit
+code. The sidecar (`MEMORY_KEY_SPECS`) keeps pydantic as the type/default truth and is pinned to real
+field names by a test.
+
+**Why not keep the four hand-synced copies:** they had already drifted in both directions —
+`research`/`web_research` writable but reported read-only, `ambassador`'s voice keys reported
+writable but silently dropped, `search.source_policy` advertising per-leaf writes that clobbered
+siblings. The old guard test scraped `_SEARCH_KEYS` out of `views.py` as source text and checked one
+section; the property now holds structurally for all of them.
+
+**Source:** Genome Foundation — Settings, Wave 1. Guards: `SettingsRegistryTest` (round-trip for
+every declared key, manifest-vs-registry writability, atomic rejection, whole-write, opt-in
+constraints), `MemorySettingsWriteSurfaceTest` (bridge tombstone, display-only keys),
+`SettingsHelpTest` (golden-section coverage, no orphan keys), and
+`gen_settings_reference.py --check` in `task docs:check`.
+
+---
+
 ## Rejected — do not relitigate
 
 Options weighed and declined (with the reason, so they don't return as "good ideas"):

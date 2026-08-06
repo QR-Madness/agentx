@@ -64,6 +64,8 @@ export function SettingsNav({ activeSection, onSectionChange, isOpen, onClose }:
               <button
                 key={section.id}
                 className={`nav-item ${activeSection === section.id ? 'active' : ''}`}
+                // The active section reads as current, not merely highlighted.
+                aria-current={activeSection === section.id ? 'page' : undefined}
                 onClick={() => onSectionChange(section.id)}
               >
                 {section.icon}

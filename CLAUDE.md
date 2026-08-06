@@ -26,12 +26,16 @@ Find the right doc before diving in:
 
 - The client is cross-platform — UI must be highly responsive with comfortable hit-regions.
 - Post-v0.20, all changes must be migratable for existing platforms (`versions.yaml` is authoritative).
-- **Version + notes travel with the work.** Any notable/user-facing change **bumps the version and the release notes in the same commit** — bump `versions.yaml` via `task versions:sync` (propagates manifests **+ refreshes the lockfiles, which ride the version commit**), match the `<!-- release-version: X.Y.Z -->` marker in root `Release-Notes.md`, and add the change to its body (it always describes the *next* release). Continuous habit, not a release-time step: `task release:check` asserts the marker. See [Build & Release](#build--release).
+- **Version + notes travel with the work.** Any notable change bumps both **in the same commit**: `versions.yaml` via `task versions:sync` (propagates manifests + lockfiles), and root `Release-Notes.md` — its `<!-- release-version -->` marker *and* body (always the *next* release). A continuous habit, not a release step; `task release:check` asserts it. See [Build & Release](#build--release).
 
 ## Hard-Won Working Rules
 
 Landmines that cost real debugging time:
 
+0. **Adding a setting:** declare it in `settings_registry` + help in
+   `settings_help.yaml`, then `task docs:gen:settings`. Undeclared = read-only by
+   design (first place to look when a save "does nothing"). Never hand-write a
+   `config_update` handler. ADR-17 ★
 1. **Settings overrides:** the memory kit reads settings **live** (zero module snapshots,
    ratchet 0). Temporary overrides use ONE mechanism:
    `with pin_memory_settings(override):` — never `save_memory_settings()` (it writes
@@ -52,7 +56,7 @@ Landmines that cost real debugging time:
 
 ## Project Overview
 
-AgentX is an AI Agent Platform: a Django REST API (`api/`, port 12319 — translation, agent memory, MCP client, model providers, drafting, reasoning) + a Tauri v2 desktop app (`client/`, React 19/TypeScript/Vite) over Neo4j (graphs), PostgreSQL + pgvector (vectors), and Redis (cache), all via Docker.
+AgentX is an AI Agent Platform: a Django REST API (`api/`, port 12319) + a Tauri v2 desktop app (`client/`, React 19/TypeScript/Vite) over Neo4j (graphs), PostgreSQL + pgvector (vectors), and Redis (cache), all via Docker.
 
 ## Terminology
 
@@ -85,19 +89,20 @@ One-liners for orientation; ★ = deep internals in [`Development-Notes.md`](Dev
 
 - `kit/translation.py` — `TranslationKit` (NLLB-200) + `LanguageLexicon` (ISO 639 code bridging)
 - `kit/agent_memory/` — memory system, lazy-loaded connections (`interface.py` → `connections.py` → impls); `RecallLayer` = 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query) + a cross-encoder rerank stage (default-ON). ★
-- `kit/shell/` — Agent Shells: **opt-in per-workspace** (`workspaces.allow_shell`, off by default) sandboxed command execution — bubblewrap jail default, per-workspace Docker-container backend optional. Internals + threat model ★. e2e: `scripts/shell_e2e.py`.
-- `kit/workspaces/` — File Workspaces & Document RAG, surfaced as **Projects** (instructions ride every turn; durable conversation membership; `_project_{ws_id}` memory channels; `ws_home` is never a project). Read + write agent tools (`project_search`, `document_query`, `create_document`, `edit_document`, … — partial edits use an `expected_sha256` soft write-lock); full roster + internals ★. e2e: `scripts/rag_e2e.py`.
-- `mcp/` — MCP client manager, server registry, tool executor, transports, remote OAuth 2.1, registry-search proxy; `mcp_servers.json`; `media_passthrough.py` surfaces returned image/audio blocks as exhibits (capped, untrusted). Client surface: **Connectors & Tools** (internal name stays `toolkit`). ★
-- `content_blocks.py` — multi-modal payload vocabulary mirroring MCP/ACP ContentBlocks; the seam shared by providers (`StreamChunk.media`), the MCP executor, and exhibits. Audio in/out rides it (`agent/audio_gen.py` + `generate_speech` = the audio twin of `image_gen.py`/`generate_image`). ★
+- `kit/shell/` — Agent Shells: **opt-in per-workspace** (`workspaces.allow_shell`, off by default) sandboxed command execution — bubblewrap jail default, Docker-container backend optional. Internals + threat model ★. e2e: `scripts/shell_e2e.py`.
+- `kit/workspaces/` — File Workspaces & Document RAG, surfaced as **Projects** (instructions ride every turn; durable conversation membership; `_project_{ws_id}` memory channels; `ws_home` is never a project). Read + write agent tools (partial edits take an `expected_sha256` soft write-lock); full roster + internals ★. e2e: `scripts/rag_e2e.py`.
+- `mcp/` — MCP client manager, server registry, tool executor, transports, remote OAuth 2.1, registry-search proxy; `mcp_servers.json`; `media_passthrough.py` surfaces returned image/audio blocks as exhibits (capped, untrusted). Client surface: **Connectors & Tools** (internally `toolkit`). ★
+- `content_blocks.py` — multi-modal payload vocabulary mirroring MCP/ACP ContentBlocks; the seam shared by providers (`StreamChunk.media`), the MCP executor, and exhibits. Audio in/out rides it (`agent/audio_gen.py` = the audio twin of `image_gen.py`). ★
 - `kit/speech.py` — neutral TTS/STT seam; the Ambassador keeps only profile-precedence wrappers, chat consumes directly. **ADR-11**: capabilities live in neutral modules, surfaces consume — enforced by `tests.CapabilitySeamBoundaryTest`. `providers/capabilities.py` = the one warm-once modality probe.
 - `providers/` — `ModelProvider` over the five built-ins **+ user-registered OpenAI-compatible endpoints** (`catalog.py`; `egress.py` guards caller-supplied URLs). `models.yaml`, `pricing.py`. Resolution/fallback + the catalog ★ · ADR-15
 - `config.py` — `ConfigManager` singleton; persists `data/config.json`, dot-notation access + env-var fallback
+- `settings_registry.py` — **the one declaration** behind the config write surface; `config_update`, the settings manifest, and the generated docs reference all derive from it. ★ · ADR-17
 - `drafting/` — speculative decoding, multi-stage pipelines, N-best candidates; `drafting_strategies.yaml`
 - `reasoning/` — **Thinking Patterns**: chat patterns compiled into the streaming turn (`chat_patterns.py` + `streaming/thinking_exec.py`; `selection.py` = the shared auto brain) + the offline reasoning kit for `/agent/run`. ★
 - `agent/` — `Agent` orchestrates reasoning + drafting + tools; `TaskPlanner` decomposes (chat path composes plans with the main agent model ★); `SessionManager` for conversations.
-- `agent/profiles.py` — `ProfileManager` CRUD (`data/agent_profiles.yaml`); Docker-style `agent_id` + `self_channel`; ships seeded default profiles (one-time markers, deletions stick ★). **Rule:** `kind` ∈ `agent`|`ambassador`, and ambassadors are **excluded from chat** (default/routing/`delegate_to` filter `kind=='agent'`). ★
-- `agent/skills.py` — **Agent Skills**: named instruction packs, progressively disclosed — compact index in the chat prompt, bodies load via the `use_skill` internal tool; `data/skills.yaml`; per-agent access. UI: Connectors & Tools → Skills. ★
-- `alloy/` — **Agent Teams** (user-facing name; internals/routes/config keep `alloy`): Team (workflow) CRUD (`data/workflows.yaml`), `delegate_to` tool (per-dispatch `effort` tiers quick/standard/deep/marathon → tool-round budgets, `alloy.effort_tiers`) + `AlloyExecutor`; supervisor prompt in workflows, **soft ad-hoc roster block** in normal chats (opt-in `available_for_delegation` + `delegation_hint`; per-conversation `disable_delegation`). ★
+- `agent/profiles.py` — `ProfileManager` CRUD (`data/agent_profiles.yaml`); Docker-style `agent_id` + `self_channel`; seeded default profiles (one-time markers, deletions stick ★). **Rule:** `kind` ∈ `agent`|`ambassador`; ambassadors are **excluded from chat** (default/routing/`delegate_to` filter `kind=='agent'`). ★
+- `agent/skills.py` — **Agent Skills**: named instruction packs, progressively disclosed — compact index in the chat prompt, bodies load via `use_skill`; `data/skills.yaml`; per-agent access. UI: Connectors & Tools → Skills. ★
+- `alloy/` — **Agent Teams** (user-facing name; internals/routes/config keep `alloy`): Team (workflow) CRUD (`data/workflows.yaml`), `delegate_to` tool (per-dispatch `effort` tiers → tool-round budgets, `alloy.effort_tiers`) + `AlloyExecutor`; supervisor prompt in workflows, **soft ad-hoc roster block** in normal chats (opt-in `available_for_delegation`; per-conversation `disable_delegation`). ★
 - `agent/tool_output_compressor.py` / `tool_output_chunker.py` — task-aware LLM compression for oversized tool outputs
 - `streaming/trajectory_compression.py` — Focus-style intra-trajectory compression for multi-round tool loops
 - `prompts/` — `PromptManager` + durable layered system-prompt stack (`LayerStore`). ★

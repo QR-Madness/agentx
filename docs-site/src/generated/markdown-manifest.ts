@@ -5,12 +5,12 @@
 // to set `x-markdown-tokens` when it serves a twin under Accept negotiation.
 
 export const MARKDOWN_TOKENS: Record<string, number> = {
-  '/docs/api/endpoints.md': 20750,
+  '/docs/api/endpoints.md': 21162,
   '/docs/api/models.md': 2953,
   '/docs/architecture/api.md': 1374,
   '/docs/architecture/client.md': 1245,
   '/docs/architecture/databases.md': 1780,
-  '/docs/architecture/memory-capabilities.md': 5721,
+  '/docs/architecture/memory-capabilities.md': 5779,
   '/docs/architecture/memory.md': 6094,
   '/docs/architecture/overview.md': 1660,
   '/docs/architecture/system-design.md': 2056,
