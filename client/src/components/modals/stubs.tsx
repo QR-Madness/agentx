@@ -190,9 +190,23 @@ export function TranslationModalContent({ onClose: _onClose }: ModalContentProps
 
 /**
  * UnifiedSettingsModalContent — New unified settings interface
+ *
+ * Forwards the deep-link props (`initialSection`, `focusSetting`) that
+ * `ModalConfig.props` carries. This used to destructure `onClose` alone, which
+ * is where the chain broke: the modal layer has always spread arbitrary props,
+ * but they died here.
  */
-export function UnifiedSettingsModalContent({ onClose }: ModalContentProps) {
-  return <UnifiedSettings isOpen={true} onClose={onClose} />;
+export function UnifiedSettingsModalContent({
+  onClose, initialSection, focusSetting,
+}: ModalContentProps & { initialSection?: string; focusSetting?: string }) {
+  return (
+    <UnifiedSettings
+      isOpen={true}
+      onClose={onClose}
+      initialSection={initialSection}
+      focusSetting={focusSetting}
+    />
+  );
 }
 
 /**

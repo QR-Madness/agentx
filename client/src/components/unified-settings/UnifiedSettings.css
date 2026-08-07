@@ -355,6 +355,82 @@
   color: var(--feedback-warning);
 }
 
+/* ── Search hits: individual settings, not just sections ── */
+.nav-hits-count {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--glass-layer-2);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.nav-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  /* Comfortable hit-region — this list is touch-reachable. */
+  min-height: 44px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-hit:hover:not(:disabled) {
+  background: var(--glass-layer-2);
+  color: var(--text-primary);
+}
+
+.nav-hit:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.nav-hit:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+.nav-hit-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav-hit-section {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* ── Jump-to-setting: mark what you were sent to ──
+   Scrolling alone leaves the user hunting for what changed; the ring says
+   "this one". Reduced-motion keeps the mark and drops the movement. */
+[data-setting].setting-flash {
+  animation: settingFlash 1.4s ease;
+  border-radius: 8px;
+}
+
+@keyframes settingFlash {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  30% { box-shadow: 0 0 0 2px var(--accent-primary); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-setting].setting-flash {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--accent-primary);
+  }
+}
+
 /* ── Overview (the landing section) ── */
 .settings-overview-block {
   margin-bottom: 32px;

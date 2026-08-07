@@ -6,17 +6,23 @@
  * surfaces through `SURFACES` (see `lib/surfaces.ts`) so the two can't drift.
  *
  * Scope discipline: groups are fixed to Navigation / Conversation / Workspace /
- * Theme / Account. We deliberately do NOT generate per-conversation, per-agent,
- * or per-server entries — those have their own surfaces and would turn the
- * palette into a state browser.
+ * Settings / Theme / Account. We deliberately do NOT generate per-conversation,
+ * per-agent, or per-server entries — those have their own surfaces and would
+ * turn the palette into a state browser.
+ *
+ * The Settings and Theme groups are generated, which is not a breach of that
+ * rule: both iterate a *static registry* (SECTION_HIERARCHY, THEMES), not live
+ * application state. The entries are the same on every launch. Settings
+ * sections are `searchOnly` so ~20 of them don't bury the resting list.
  */
 
 import {
   Home, LayoutDashboard, Bot, Plus, X, Settings, Wrench, ListChecks,
   BookMarked, Languages, BrainCircuit, Eye, EyeOff, Zap, KeyRound, LogOut, Radio,
   ScrollText, Monitor, MessagesSquare, FileStack, FolderOpen, Users,
-  Orbit, Telescope,
+  Orbit, Telescope, SlidersHorizontal,
 } from 'lucide-react';
+import { getAllSections } from '../components/unified-settings/sections';
 import { MemoryIcon } from '../components/common/MemoryIcon';
 import { useMemo } from 'react';
 import { useModal } from '../contexts/ModalContext';
@@ -31,10 +37,11 @@ import { THEMES, type ThemePreference } from '../lib/theme';
 import { THEME_ICONS } from '../components/common/themeIcons';
 import type { PageId } from '../layouts/TopBar';
 
-export type CommandGroup = 'Navigation' | 'Conversation' | 'Workspace' | 'Theme' | 'Account';
+export type CommandGroup =
+  | 'Navigation' | 'Conversation' | 'Workspace' | 'Settings' | 'Theme' | 'Account';
 
 export const GROUP_ORDER: CommandGroup[] = [
-  'Navigation', 'Conversation', 'Workspace', 'Theme', 'Account',
+  'Navigation', 'Conversation', 'Workspace', 'Settings', 'Theme', 'Account',
 ];
 
 export interface Command {
@@ -46,6 +53,12 @@ export interface Command {
   hint?: string;
   run: () => void;
   isActive?: boolean;
+  /**
+   * Hide from the resting palette; only offer it once the user has typed.
+   * For long registry-driven families (one command per settings section) that
+   * would otherwise bury the handful of commands worth seeing on open.
+   */
+  searchOnly?: boolean;
 }
 
 interface UseCommandsArgs {
@@ -63,7 +76,13 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
 
   return useMemo<Command[]>(() => {
     const go = (page: PageId) => () => { onNavigate(page); onClose(); };
-    const open = (key: SurfaceKey) => () => { openModal(SURFACES[key]); onClose(); };
+    // `props` rides through ModalContext → ModalPortal's spread, so a command
+    // can open a surface *at* something (Settings at a section, say) rather
+    // than only opening it.
+    const open = (key: SurfaceKey, props?: Record<string, unknown>) => () => {
+      openModal(props ? { ...SURFACES[key], props } : SURFACES[key]);
+      onClose();
+    };
     const theme = (pref: ThemePreference) => () => { setTheme(pref); onClose(); };
     const memLocked = !!(activeTab && (activeTab.sessionId || activeTab.messages.length > 0));
 
@@ -109,6 +128,19 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
         };
       }),
       { id: 'theme-system', group: 'Theme', label: 'Theme: System', icon: <Monitor size={16} />, keywords: ['auto', 'appearance'], isActive: preference === 'system', run: theme('system') },
+
+      // Settings sections — registry-driven, exactly like Theme above: a section
+      // added to SECTION_HIERARCHY is reachable from the palette with no edit
+      // here. `searchOnly` keeps ~20 of them out of the resting list.
+      ...getAllSections().map((section): Command => ({
+        id: `settings-${section.id}`,
+        group: 'Settings',
+        label: `Settings: ${section.label}`,
+        icon: <SlidersHorizontal size={16} />,
+        keywords: ['settings', 'preferences', 'config', ...(section.keywords ?? [])],
+        searchOnly: true,
+        run: open('settings', { initialSection: section.id }),
+      })),
     ];
 
     // Conversation actions that depend on an active tab

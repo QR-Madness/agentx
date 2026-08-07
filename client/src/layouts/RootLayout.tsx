@@ -13,6 +13,7 @@ import { VersionMismatchPage } from '../pages/VersionMismatchPage';
 import { useConversation } from '../contexts/ConversationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useModal } from '../contexts/ModalContext';
+import { SURFACES } from '../lib/surfaces';
 import { useUIChrome } from '../contexts/UIChromeContext';
 import { CommandPalette } from '../components/common/CommandPalette';
 import './RootLayout.css';
@@ -53,13 +54,9 @@ export function RootLayout() {
         if (activeTabId) closeTab(activeTabId);
       } else if (e.key === ',') {
         e.preventDefault();
-        // Open unified settings (Cmd+,)
-        openModal({
-          id: 'unified-settings',
-          type: 'modal',
-          component: 'unifiedSettings',
-          size: 'full',
-        });
+        // Open unified settings (Cmd+,). Uses the shared descriptor rather than
+        // re-declaring one — the palette and this shortcut must not drift.
+        openModal(SURFACES.settings);
       } else if (e.key === 'k') {
         e.preventDefault();
         setPaletteOpen(prev => !prev);

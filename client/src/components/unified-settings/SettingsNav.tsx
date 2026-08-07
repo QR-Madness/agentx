@@ -1,23 +1,36 @@
 /**
  * SettingsNav — Vertical sidebar navigation for settings sections
+ *
+ * Searching here matches individual settings as well as sections: a hit takes
+ * you to the control itself rather than dropping you at the top of the section
+ * that happens to contain it.
  */
 
 import { motion } from 'framer-motion';
-import { Search, X } from 'lucide-react';
+import { Search, X, CornerDownRight } from 'lucide-react';
 import { SECTION_HIERARCHY, getAllSections } from './sections';
 import { useSettingsSearch } from './hooks/useSettingsSearch';
+import { useSettingsManifest } from './SettingsManifestContext';
 import { navVariants } from './animations/transitions';
 
 interface SettingsNavProps {
   activeSection: string;
   onSectionChange: (sectionId: string) => void;
+  /** Navigate to a section and land on one of its settings. */
+  onSettingSelect?: (sectionId: string, settingId: string) => void;
   isOpen?: boolean;
   onClose?: () => void;
 }
 
-export function SettingsNav({ activeSection, onSectionChange, isOpen, onClose }: SettingsNavProps) {
+export function SettingsNav({
+  activeSection, onSectionChange, onSettingSelect, isOpen, onClose,
+}: SettingsNavProps) {
   const allSections = getAllSections();
-  const { query, setQuery, filtered } = useSettingsSearch(allSections);
+  const manifest = useSettingsManifest();
+  const {
+    query, setQuery, filtered, settingHits, isSearching, hasResults,
+  } = useSettingsSearch(allSections, manifest?.entries.values());
+  const sectionLabels = new Map(allSections.map(s => [s.id, s.label]));
 
   return (
     <motion.nav
@@ -76,8 +89,45 @@ export function SettingsNav({ activeSection, onSectionChange, isOpen, onClose }:
         );
       })}
 
+      {/* Matching settings — the part section-only search could never do. */}
+      {isSearching && settingHits.length > 0 && (
+        <div className="nav-category nav-hits">
+          <div className="category-header">
+            <CornerDownRight size={16} />
+            <span>Settings</span>
+            <span className="nav-hits-count">{settingHits.length}</span>
+          </div>
+          {settingHits.map(hit => (
+            <button
+              key={hit.id}
+              className="nav-hit"
+              onClick={() => {
+                if (hit.sectionId) onSettingSelect?.(hit.sectionId, hit.id);
+              }}
+              disabled={!hit.sectionId}
+              title={hit.summary}
+            >
+              <span className="nav-hit-label">
+                {hit.label}
+                {hit.isModified && (
+                  <span
+                    className="setting-modified-dot"
+                    aria-label="Changed from the default"
+                  />
+                )}
+              </span>
+              {hit.sectionId && (
+                <span className="nav-hit-section">
+                  {sectionLabels.get(hit.sectionId) ?? hit.sectionId}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* No results message */}
-      {query && filtered.length === 0 && (
+      {isSearching && !hasResults && (
         <div className="nav-empty">
           <p>No settings found for "{query}"</p>
         </div>

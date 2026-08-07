@@ -26,10 +26,17 @@ import './UnifiedSettings.css';
 interface UnifiedSettingsProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Open straight to a section (palette commands, deep links). */
+  initialSection?: string;
+  /** `store:key` of a setting to scroll to and flash once it renders. */
+  focusSetting?: string;
 }
 
-export function UnifiedSettings({ isOpen, onClose }: UnifiedSettingsProps) {
-  const { activeSection, navigateTo } = useSettingsNavigation();
+export function UnifiedSettings({
+  isOpen, onClose, initialSection, focusSetting,
+}: UnifiedSettingsProps) {
+  const { activeSection, navigateTo, focusSettingIn, focus } =
+    useSettingsNavigation(initialSection, focusSetting);
   const [isNavOpen, setIsNavOpen] = useState(false);
 
   // ESC key handler
@@ -110,26 +117,32 @@ export function UnifiedSettings({ isOpen, onClose }: UnifiedSettingsProps) {
               />
             )}
 
-            {/* Two-column layout */}
-            <div className="unified-settings-layout">
-              <SettingsNav
-                activeSection={activeSection}
-                isOpen={isNavOpen}
-                onSectionChange={(id) => {
-                  navigateTo(id);
-                  setIsNavOpen(false);
-                }}
-                onClose={() => setIsNavOpen(false)}
-              />
-              {/* One manifest fetch for the whole surface; sections read what
-                  they need from it and work fine if it never arrives. */}
-              <SettingsManifestProvider>
+            {/* Two-column layout. One manifest fetch for the whole surface —
+                the nav searches it, the sections render from it, and both work
+                fine if it never arrives. */}
+            <SettingsManifestProvider>
+              <div className="unified-settings-layout">
+                <SettingsNav
+                  activeSection={activeSection}
+                  isOpen={isNavOpen}
+                  onSectionChange={(id) => {
+                    navigateTo(id);
+                    setIsNavOpen(false);
+                  }}
+                  onSettingSelect={(sectionId, settingId) => {
+                    focusSettingIn(sectionId, settingId);
+                    setIsNavOpen(false);
+                  }}
+                  onClose={() => setIsNavOpen(false)}
+                />
                 <SettingsContent
                   activeSection={activeSection}
                   onNavigate={navigateTo}
+                  onFocusSetting={focusSettingIn}
+                  focus={focus}
                 />
-              </SettingsManifestProvider>
-            </div>
+              </div>
+            </SettingsManifestProvider>
           </motion.div>
         </>
       )}
