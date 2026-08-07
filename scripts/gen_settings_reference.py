@@ -81,7 +81,9 @@ HELP_SECTIONS = [
 ]
 
 TIER_NOTE = {
-    "advanced": "Advanced — behind the disclosure in Settings.",
+    # Deliberately not "behind the disclosure in Settings" — that was true of
+    # the one section this started with and is not a promise every screen keeps.
+    "advanced": "Advanced — most installs never need to change this.",
     "experimental": "Experimental — unproven; may change or be withdrawn.",
 }
 

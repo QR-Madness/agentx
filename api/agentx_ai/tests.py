@@ -13042,14 +13042,31 @@ class SettingsRegistryTest(TestCase):
         return self.client.post("/api/config/update", data=json.dumps(body),
                                 content_type="application/json")
 
-    def _probe_for(self, default):
-        """A type-correct value that differs from the shipped default."""
+    def _probe_for(self, default, spec=None):
+        """A type-correct value that differs from the shipped default — and
+        that satisfies the key's declared constraints, so a constrained key can
+        be round-tripped rather than skipped."""
+        if spec is not None and spec.enum:
+            # Pick a legal value other than the current one where possible.
+            other = [v for v in spec.enum if v != default]
+            return other[0] if other else spec.enum[0]
+
         if isinstance(default, bool):
             return not default
-        if isinstance(default, int):
-            return int(default) + 7
-        if isinstance(default, float):
-            return round(float(default) / 2 + 0.05, 4)
+        if isinstance(default, (int, float)):
+            probe = (int(default) + 7 if isinstance(default, int)
+                     else round(float(default) / 2 + 0.05, 4))
+            if spec is not None:
+                lo = spec.min if spec.min is not None else probe
+                hi = spec.max if spec.max is not None else probe
+                probe = min(max(probe, lo), hi)
+                if probe == default:
+                    # Clamping landed back on the default: step off it, staying
+                    # inside the range, so the assertion still proves a write.
+                    probe = hi if default != hi else lo
+                if isinstance(default, int):
+                    probe = int(probe)
+            return probe
         if isinstance(default, str):
             return (default + "-probe") if default else "probe"
         if isinstance(default, list):
@@ -13070,13 +13087,16 @@ class SettingsRegistryTest(TestCase):
                 continue  # bespoke sections have their own test below
             for rel in (spec.keys or ()):
                 key_spec = spec.spec_for(rel)
-                if key_spec is not None and (key_spec.has_constraints()
-                                             or key_spec.whole_write):
-                    continue  # covered by the constraint / whole-write tests
+                if key_spec is not None and key_spec.whole_write:
+                    continue  # written as one dict; its own test covers it
                 default = DEFAULT_CONFIG.get(root, {})
                 for part in rel.split("."):
                     default = default.get(part, {}) if isinstance(default, dict) else {}
-                probe = self._probe_for(default)
+                # Constrained keys are probed *within* their declared range
+                # rather than skipped. Skipping them meant this coverage shrank
+                # every time a section declared bounds — the opposite of what
+                # the help cadence should do to it.
+                probe = self._probe_for(default, key_spec)
                 if probe is None:
                     continue
                 # Build the nested payload the section expects.
@@ -13095,7 +13115,10 @@ class SettingsRegistryTest(TestCase):
                                  f"{root}.{rel} declared writable but did not persist")
                 self.assertIn(f"{root}.{rel}", resp.json()["updated"])
                 checked += 1
-        self.assertGreater(checked, 50, "generic surface unexpectedly small")
+        # A floor, and one that should only ever rise: every section refit on
+        # the help cadence declares more keys, not fewer. If this trips, the
+        # question is what stopped being covered — not what the number should be.
+        self.assertGreater(checked, 65, "generic surface unexpectedly small")
 
     def test_undeclared_key_is_ignored(self):
         cfg = _FakeConfigManager()
@@ -13330,33 +13353,33 @@ class SettingsHelpTest(TestCase):
     DOCUMENTED_SECTIONS = (
         ("memory", "recall", "Memory → Recall"),
         ("config", "context", "Memory → Conversation Context"),
+        ("config", "search", "Infrastructure → Web Search"),
+        ("config", "research", "Intelligence → Research Mode"),
     )
 
     def _keys_for(self, store, group):
+        """Every writable key the named screen owns.
+
+        For the config store this is derived from the registry rather than
+        restated: a screen can span several config roots (Conversation Context
+        spans five), and a key can be declared onto a screen its root doesn't
+        own (`search.research_per_turn_limit` renders under Research Mode). Both
+        are exactly the cases a hand-written list gets wrong.
+        """
         if store == "memory" and group == "recall":
             from agentx_ai.kit.agent_memory.config import get_recall_settings
             return list(get_recall_settings())
-        if store == "config" and group == "context":
-            # Every config key the Conversation Context screen surfaces — it
-            # spans five config roots, so take them from the registry rather
-            # than restating the list here.
-            from agentx_ai.settings_registry import CONFIG_SECTIONS, config_ui_section
-            from agentx_ai.config import DEFAULT_CONFIG
+        if store == "config":
+            from agentx_ai.settings_manifest import build_reference_entries
 
-            def leaves(d, prefix=""):
-                for k, v in d.items():
-                    path = f"{prefix}{k}"
-                    if isinstance(v, dict) and v:
-                        yield from leaves(v, path + ".")
-                    else:
-                        yield path
-
-            return [
-                p for p in leaves(DEFAULT_CONFIG)
-                if config_ui_section(p) == "context"
-                and CONFIG_SECTIONS[p.split(".")[0]].keys is not None
-                and p.split(".", 1)[1] in (CONFIG_SECTIONS[p.split(".")[0]].keys or ())
+            keys = [
+                e["key"] for e in build_reference_entries()
+                if e["store"] == "config"
+                and e.get("writable_via")
+                and e.get("ui_section") == group
             ]
+            self.assertTrue(keys, f"no writable config keys map to screen {group!r}")
+            return keys
         raise AssertionError(f"unknown documented group {store}/{group}")
 
     def test_documented_sections_have_full_help(self):
