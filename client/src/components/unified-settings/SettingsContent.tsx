@@ -13,18 +13,24 @@
  * out.
  */
 
-import { Suspense, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { findSectionById } from './sections';
 import { contentVariants } from './animations/transitions';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { Button } from '../ui';
+import { scrollToAnchor } from '../../lib/scrollToAnchor';
+import type { SettingFocus } from './hooks/useSettingsNavigation';
 
 interface SettingsContentProps {
   activeSection: string;
   /** Lets a section hand navigation back to the shell (Overview uses it). */
   onNavigate?: (sectionId: string) => void;
+  /** Same, but landing on a specific control. */
+  onFocusSetting?: (sectionId: string, settingId: string) => void;
+  /** Setting to scroll to once this section has rendered (see SettingFocus). */
+  focus?: SettingFocus;
 }
 
 function LoadingSpinner() {
@@ -55,8 +61,29 @@ function SectionError({ label, error, reset }: {
   );
 }
 
-export function SettingsContent({ activeSection, onNavigate }: SettingsContentProps) {
+export function SettingsContent({
+  activeSection, onNavigate, onFocusSetting, focus,
+}: SettingsContentProps) {
   const section = useMemo(() => findSectionById(activeSection), [activeSection]);
+  const areaRef = useRef<HTMLDivElement>(null);
+
+  // Deliver a deep-linked focus once the section's lazy chunk has rendered.
+  // scrollToAnchor retries across a few frames, which covers the Suspense gap
+  // and the autosave hook's first load without needing to observe either.
+  //
+  // `focus.seq` is in the deps so re-selecting the same setting flashes again;
+  // nothing clears the focus here, because a state change during delivery would
+  // re-run this effect and its cleanup would cancel the scroll mid-flight.
+  const focusKey = focus?.key;
+  const focusSeq = focus?.seq;
+  useEffect(() => {
+    if (!focusKey) return;
+    return scrollToAnchor('setting', focusKey, {
+      within: areaRef.current,
+      flashClass: 'setting-flash',
+      retries: 12,
+    });
+  }, [focusKey, focusSeq, activeSection]);
 
   if (!section) {
     return (
@@ -75,6 +102,7 @@ export function SettingsContent({ activeSection, onNavigate }: SettingsContentPr
       <motion.div
         className="settings-content-area"
         key={activeSection}
+        ref={areaRef}
         variants={contentVariants}
         initial="initial"
         animate="animate"
@@ -87,7 +115,7 @@ export function SettingsContent({ activeSection, onNavigate }: SettingsContentPr
           )}
         >
           <Suspense fallback={<LoadingSpinner />}>
-            <Component onNavigate={onNavigate} />
+            <Component onNavigate={onNavigate} onFocusSetting={onFocusSetting} />
           </Suspense>
         </ErrorBoundary>
       </motion.div>

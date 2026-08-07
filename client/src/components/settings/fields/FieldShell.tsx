@@ -65,9 +65,12 @@ export function FieldShell({
   const hintId = `${id}-hint`;
   const name = labelText ?? (typeof label === 'string' ? label : 'this setting');
   const modified = Boolean(binding?.isModified);
+  // Anchor for search results and the Overview digest to land on. Only bound
+  // controls get one — an unbound field has no stable key to be found by.
+  const anchor = binding ? `${binding.entry.store}:${binding.entry.key}` : undefined;
 
   return (
-    <div className={className ?? 'setting-row'}>
+    <div className={className ?? 'setting-row'} data-setting={anchor}>
       <div className="setting-label-row">
         {labelledControl ? (
           <Label htmlFor={id} className="setting-label">

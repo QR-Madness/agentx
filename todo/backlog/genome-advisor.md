@@ -82,10 +82,13 @@
   - [x] **Generated Settings Reference** `[v0.21.263]` — `scripts/gen_settings_reference.py` renders
         the docs-site page from the same declarations, gated by `task docs:check`. Settings and docs
         can no longer drift.
-  - [ ] **Wave 2 — reach the setting**: per-setting search over the manifest (today's search matches
-        21 section labels and hand-typed keyword arrays, not the ~200 settings), jump-to-control with
-        the flash-anchor pattern, deep links into a section/setting (the `ModalConfig.props` chain
-        already carries props — `stubs.tsx` swallows them), and palette commands per section.
+  - [x] **Wave 2 — reach the setting** `[v0.21.264]` — search matches individual settings (keys,
+        humanized names, and authored help) via the manifest, not just the 21 section labels;
+        results jump to the control with a scroll + flash (`lib/scrollToAnchor.ts`, generalized from
+        the Plans-drawer recipe) using `data-setting` anchors the field kit emits; the modal props
+        chain carries `initialSection`/`focusSetting` end-to-end (fixed `stubs.tsx`, `surfaces`,
+        `open()` arity, and RootLayout's duplicated ⌘, descriptor); registry-driven `Settings: <x>`
+        palette commands, `searchOnly` so they don't bury the resting list.
   - [ ] **Wave 3 — help cadence**: write up the remaining sections to the golden standard, section by
         section; sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
   - [ ] **Dead-knob flags** — declared-but-unread keys. `scripts/check_config_keys.py` already has the

@@ -79,4 +79,32 @@ describe('CommandPalette', () => {
     fireEvent.keyDown(screen.getByPlaceholderText(/type a command/i), { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
+
+  describe('settings section commands', () => {
+    // Registry-driven, one per section — so they must not bury the handful of
+    // commands worth seeing when the palette opens.
+    it('stays out of the resting list', () => {
+      render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
+      expect(screen.queryByText('Settings: Recall')).not.toBeInTheDocument();
+      expect(screen.queryByText('Settings: Web Search')).not.toBeInTheDocument();
+      // The plain entry point is still there.
+      expect(screen.getByText('Open Settings')).toBeInTheDocument();
+    });
+
+    it('appears once the user searches', () => {
+      render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
+      fireEvent.change(screen.getByPlaceholderText(/type a command/i), {
+        target: { value: 'recall' },
+      });
+      expect(screen.getByText('Settings: Recall')).toBeInTheDocument();
+    });
+
+    it('is reachable by a section keyword, not just its label', () => {
+      render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
+      fireEvent.change(screen.getByPlaceholderText(/type a command/i), {
+        target: { value: 'tavily' },
+      });
+      expect(screen.getByText('Settings: Web Search')).toBeInTheDocument();
+    });
+  });
 });

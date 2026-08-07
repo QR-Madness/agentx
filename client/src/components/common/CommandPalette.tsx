@@ -63,10 +63,18 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
   }, [isOpen, search, byId]);
 
   const groups = useMemo<[CommandGroup, Cmd[]][]>(
-    () =>
-      GROUP_ORDER.map(g => [g, commands.filter(c => c.group === g)] as [CommandGroup, Cmd[]])
-        .filter(([, items]) => items.length > 0),
-    [commands],
+    () => {
+      // `searchOnly` commands (the per-section Settings family) appear once the
+      // user is looking for something, so ~20 entries don't bury the handful
+      // worth seeing when the palette first opens.
+      const visible = search.trim()
+        ? commands
+        : commands.filter(c => !c.searchOnly);
+      return GROUP_ORDER
+        .map(g => [g, visible.filter(c => c.group === g)] as [CommandGroup, Cmd[]])
+        .filter(([, items]) => items.length > 0);
+    },
+    [commands, search],
   );
 
   if (!isOpen) return null;

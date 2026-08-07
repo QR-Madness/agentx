@@ -39,8 +39,11 @@ export function ToggleField({
   const name = labelText ?? (typeof label === 'string' ? label : 'this setting');
   const modified = Boolean(binding?.isModified);
 
+  // Anchor for search / the Overview digest to land on (see FieldShell).
+  const anchor = binding ? `${binding.entry.store}:${binding.entry.key}` : undefined;
+
   return (
-    <div className="setting-row checkbox">
+    <div className="setting-row checkbox" data-setting={anchor}>
       <div className="flex items-center gap-2" title={title}>
         <Checkbox
           id={id}

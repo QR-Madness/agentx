@@ -26,6 +26,8 @@ import type { SettingsManifestEntry } from '../../../lib/api';
 
 interface OverviewSectionProps {
   onNavigate?: (sectionId: string) => void;
+  /** Navigate to a section and land on the specific control. */
+  onFocusSetting?: (sectionId: string, settingId: string) => void;
 }
 
 /** `recall_candidate_pool` → "Recall candidate pool"; `search.max_results` →
@@ -55,7 +57,7 @@ function displayValue(value: unknown): string {
   return String(value);
 }
 
-export default function OverviewSection({ onNavigate }: OverviewSectionProps) {
+export default function OverviewSection({ onNavigate, onFocusSetting }: OverviewSectionProps) {
   const manifest = useSettingsManifest();
   const sectionLabels = new Map(getAllSections().map(s => [s.id, s.label]));
 
@@ -141,7 +143,14 @@ export default function OverviewSection({ onNavigate }: OverviewSectionProps) {
                   <button
                     type="button"
                     className="settings-overview-row-btn"
-                    onClick={() => sectionLabels.has(sectionId) && onNavigate?.(sectionId)}
+                    onClick={() => {
+                      if (!sectionLabels.has(sectionId)) return;
+                      const settingId = `${entry.store}:${entry.key}`;
+                      // Land on the control itself; fall back to the section if
+                      // the caller hasn't wired focus (older mounts, tests).
+                      if (onFocusSetting) onFocusSetting(sectionId, settingId);
+                      else onNavigate?.(sectionId);
+                    }}
                     disabled={!sectionLabels.has(sectionId)}
                   >
                     <span className="settings-overview-key">
