@@ -384,17 +384,55 @@ CONFIG_SECTIONS: dict[str, SectionSpec] = {
         ),
         ui_section="thinking",
         overrides={
-            "classifier_model": KeySpec(empty_means="follow_role"),
-            "step_back_model": KeySpec(empty_means="follow_role"),
-            "sc_model": KeySpec(empty_means="follow_role"),
+            # --- Availability: what Auto and explicit selection may pick ---
+            "chat_patterns_enabled": KeySpec(tier="essential"),
+            "cot_enabled": KeySpec(tier="essential"),
+            "step_back_enabled": KeySpec(tier="essential"),
+            "reflection_enabled": KeySpec(tier="essential"),
+            "self_consistency_enabled": KeySpec(tier="essential"),
+            "auto_classifier_enabled": KeySpec(tier="essential"),
+            # --- Per-pattern models and budgets ---
+            # Only the classifier follows a role. The other two fall back to the
+            # *conversation's own* model — which is what the code does and what
+            # the UI has always said, but not what this declared until now.
+            "classifier_model": KeySpec(empty_means="follow_role", tier="advanced"),
+            "step_back_model": KeySpec(empty_means="active_turn_model", tier="advanced"),
+            "sc_model": KeySpec(empty_means="active_turn_model", tier="advanced"),
+            "classifier_min_chars": KeySpec(min=0, max=5000, step=1,
+                                            unit="characters", tier="advanced"),
+            "step_back_timeout_seconds": KeySpec(min=5, max=120, step=1,
+                                                 unit="seconds", tier="advanced"),
+            "sc_k": KeySpec(min=2, max=5, step=1, unit="samples", tier="advanced"),
+            "min_output_tokens": KeySpec(min=0, max=65536, step=1,
+                                         unit="tokens", tier="advanced"),
         },
     ),
-    "prompt_enhancement": SectionSpec(keys=None, ui_section="prompts"),
+    "prompt_enhancement": SectionSpec(
+        keys=None,
+        ui_section="prompts",
+        # The prompt body is edited on Feature Prompts alongside the other
+        # feature prompts, not on the Prompt Enhancement screen.
+        overrides={"system_prompt": KeySpec(ui_section="feature-prompts")},
+    ),
     "planner": SectionSpec(
         keys=None,
         ui_section="planner",
-        # Explicit null clears the override and falls back to the default model.
-        overrides={"model": KeySpec(nullable=True)},
+        overrides={
+            # Explicit null clears the override and falls back to the default model.
+            "model": KeySpec(nullable=True, tier="advanced"),
+            "enabled": KeySpec(tier="essential"),
+            "complexity_threshold": KeySpec(
+                enum=("simple", "moderate", "complex"), tier="essential"),
+            "max_subtasks": KeySpec(min=1, max=20, step=1,
+                                    unit="subtasks", tier="essential"),
+            "temperature": KeySpec(min=0, max=1, step=0.1, tier="advanced"),
+            "max_tokens": KeySpec(min=100, max=4000, step=1,
+                                  unit="tokens", tier="advanced"),
+            # Edited on Feature Prompts with the other feature prompts — the
+            # Task Planner screen says so in as many words and doesn't show it.
+            "prompt_override": KeySpec(empty_means="built_in_prompt", tier="advanced",
+                                       ui_section="feature-prompts"),
+        },
     ),
     "search": SectionSpec(
         keys=(
@@ -491,6 +529,17 @@ CONFIG_SECTIONS: dict[str, SectionSpec] = {
               "max_delegation_depth", "delegation_timeout_seconds",
               "non_blocking_delegations", "chain_of_command"),
         ui_section="alloy",
+        overrides={
+            "allow_adhoc_delegation": KeySpec(tier="essential"),
+            "chain_of_command": KeySpec(tier="essential"),
+            "max_delegation_depth": KeySpec(min=1, max=5, step=1,
+                                            unit="levels deep", tier="essential"),
+            "max_parallel_delegations": KeySpec(min=1, max=8, step=1,
+                                                unit="at once", tier="advanced"),
+            "delegation_timeout_seconds": KeySpec(min=30, max=3600, step=1,
+                                                  unit="seconds", tier="advanced"),
+            "non_blocking_delegations": KeySpec(tier="advanced"),
+        },
     ),
     "ambassador": SectionSpec(
         planner=_plan_ambassador,
@@ -670,6 +719,10 @@ UI_SECTION_LABELS: dict[str, str] = {
     "ambassador": "Intelligence → Ambassador",
     "research": "Intelligence → Research Mode",
     "prompts": "Prompts → Prompt Enhancement",
+    # Owns no config *root* of its own — it edits the prompt bodies belonging to
+    # other features (planner decomposition, prompt enhancement, and two memory
+    # prompts), which is why they declare their way here rather than inherit.
+    "feature-prompts": "Prompts → Feature Prompts",
     "context": "Memory → Conversation Context",
     "memory-recall": "Memory → Recall",
     "memory-consolidation": "Memory → Consolidation",
@@ -683,7 +736,6 @@ UI_ONLY_SECTIONS: dict[str, str] = {
     "overview": "Overview",
     "prompt-stack": "Prompts → System Prompt",
     "prompt-templates": "Prompts → Template Library",
-    "feature-prompts": "Prompts → Feature Prompts",
     "memory-overview": "Memory → Overview",
     "translation": "Tools → Translation",
     "appearance": "Interface → Appearance",

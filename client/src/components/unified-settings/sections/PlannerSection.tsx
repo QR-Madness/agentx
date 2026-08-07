@@ -19,19 +19,34 @@ import {
   SliderField,
   ToggleField,
 } from '../../settings/fields';
+import { sectionBinder, useSettingsManifest } from '../SettingsManifestContext';
 
 type ComplexityThreshold = 'simple' | 'moderate' | 'complex';
+
+/** Local field name → `store:key`. `prompt_override` is absent on purpose: it
+ *  is edited on Prompts → Feature Prompts, and now declares itself onto that
+ *  screen rather than inheriting this one from its config root. */
+const KEYS: Partial<Record<keyof PlannerSettings & string, string>> = {
+  enabled: 'config:planner.enabled',
+  model: 'config:planner.model',
+  temperature: 'config:planner.temperature',
+  max_tokens: 'config:planner.max_tokens',
+  max_subtasks: 'config:planner.max_subtasks',
+  complexity_threshold: 'config:planner.complexity_threshold',
+};
 
 interface PlannerSettings extends Record<string, unknown> {
   enabled: boolean;
   model: string;
   temperature: number;
   max_tokens: number;
+  max_subtasks: number;
   complexity_threshold: ComplexityThreshold;
 }
 
 export default function PlannerSection() {
   const { notifyError } = useNotify();
+  const manifest = useSettingsManifest();
 
   const { settings, loading, status, update } = useSettingsAutosave<PlannerSettings>({
     load: async () => {
@@ -44,6 +59,7 @@ export default function PlannerSection() {
         model: p.model || '',
         temperature: p.temperature ?? 0.3,
         max_tokens: p.max_tokens ?? 1000,
+        max_subtasks: p.max_subtasks ?? 6,
         complexity_threshold: (p.complexity_threshold as ComplexityThreshold) || 'complex',
       };
     },
@@ -57,6 +73,8 @@ export default function PlannerSection() {
     },
     onError: err => notifyError(err, 'Task Planner settings'),
   });
+
+  const bind = sectionBinder<PlannerSettings>(manifest, KEYS, settings, update);
 
   return (
     <div className="settings-section fade-in">
@@ -79,16 +97,16 @@ export default function PlannerSection() {
             onChange={enabled => update({ enabled })}
             label="Enable Planner"
             hint="When off, every task takes the single-pass path regardless of complexity."
+            {...bind('enabled')}
           />
 
-          <div className="setting-row">
-            <ModelPickerField
-              label="Planner Model"
-              value={settings.model}
-              onChange={model => update({ model })}
-              showDefault={true}
-            />
-          </div>
+          <ModelPickerField
+            label="Planner Model"
+            value={settings.model}
+            onChange={model => update({ model })}
+            showDefault={true}
+            {...bind('model')}
+          />
 
           <SelectField
             label="Complexity Threshold"
@@ -100,6 +118,18 @@ export default function PlannerSection() {
               { value: 'moderate', label: 'Moderate — decompose moderate or complex tasks' },
               { value: 'complex', label: 'Complex — only decompose complex tasks' },
             ]}
+            {...bind('complexity_threshold')}
+          />
+
+          <NumberField
+            label="Max subtasks"
+            value={settings.max_subtasks}
+            min={1}
+            max={20}
+            fallback={6}
+            onChange={max_subtasks => update({ max_subtasks })}
+            title="Hard cap on the pieces one request may be split into. Each subtask is execution overhead as well as planning overhead."
+            {...bind('max_subtasks')}
           />
 
           <SliderField
@@ -110,6 +140,7 @@ export default function PlannerSection() {
             step={0.1}
             onChange={temperature => update({ temperature })}
             format={v => v.toFixed(1)}
+            {...bind('temperature')}
           />
 
           <NumberField
@@ -120,6 +151,7 @@ export default function PlannerSection() {
             fallback={1000}
             onChange={max_tokens => update({ max_tokens })}
             title="Maximum length of the plan response."
+            {...bind('max_tokens')}
           />
 
           <p className="setting-hint">

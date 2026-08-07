@@ -14,17 +14,30 @@ import { useSettingsAutosave } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { SectionHeader } from '../../ui';
 import { NumberField, SaveStatusChip, ToggleField } from '../../settings/fields';
+import { sectionBinder, useSettingsManifest } from '../SettingsManifestContext';
+
+/** Local field name → `store:key`. */
+const KEYS: Partial<Record<keyof AlloySettings & string, string>> = {
+  allow_adhoc_delegation: 'config:alloy.allow_adhoc_delegation',
+  max_parallel_delegations: 'config:alloy.max_parallel_delegations',
+  max_delegation_depth: 'config:alloy.max_delegation_depth',
+  delegation_timeout_seconds: 'config:alloy.delegation_timeout_seconds',
+  non_blocking_delegations: 'config:alloy.non_blocking_delegations',
+  chain_of_command: 'config:alloy.chain_of_command',
+};
 
 interface AlloySettings extends Record<string, unknown> {
   allow_adhoc_delegation: boolean;
   max_parallel_delegations: number;
   max_delegation_depth: number;
   delegation_timeout_seconds: number;
+  non_blocking_delegations: boolean;
   chain_of_command: boolean;
 }
 
 export default function AlloySection() {
   const { notifyError } = useNotify();
+  const manifest = useSettingsManifest();
 
   const { settings, loading, status, update } = useSettingsAutosave<AlloySettings>({
     load: async () => {
@@ -35,6 +48,7 @@ export default function AlloySection() {
         max_parallel_delegations: a.max_parallel_delegations ?? 3,
         max_delegation_depth: a.max_delegation_depth ?? 3,
         delegation_timeout_seconds: a.delegation_timeout_seconds ?? 300,
+        non_blocking_delegations: a.non_blocking_delegations ?? true,
         chain_of_command: a.chain_of_command ?? true,
       };
     },
@@ -43,6 +57,8 @@ export default function AlloySection() {
     },
     onError: err => notifyError(err, 'Agent Teams settings'),
   });
+
+  const bind = sectionBinder<AlloySettings>(manifest, KEYS, settings, update);
 
   return (
     <div className="settings-section fade-in">
@@ -70,6 +86,7 @@ export default function AlloySection() {
                 hand subtasks to any profile that joined the team roster.
               </>
             }
+            {...bind('allow_adhoc_delegation')}
           />
 
           <ToggleField
@@ -83,6 +100,15 @@ export default function AlloySection() {
                 Agents outside any org keep the flat roster.
               </>
             }
+            {...bind('chain_of_command')}
+          />
+
+          <ToggleField
+            checked={settings.non_blocking_delegations}
+            onChange={non_blocking_delegations => update({ non_blocking_delegations })}
+            label="Non-blocking dispatch"
+            hint="A dispatch returns a receipt at once and its report folds in later in the same turn, so the agent keeps working instead of stalling. Nothing outlives the turn."
+            {...bind('non_blocking_delegations')}
           />
 
           <NumberField
@@ -93,6 +119,7 @@ export default function AlloySection() {
             fallback={3}
             onChange={max_parallel_delegations => update({ max_parallel_delegations })}
             title="How many teammates may run at once when an agent fans out in a single turn (1–8)."
+            {...bind('max_parallel_delegations')}
           />
 
           <NumberField
@@ -103,6 +130,7 @@ export default function AlloySection() {
             fallback={3}
             onChange={max_delegation_depth => update({ max_delegation_depth })}
             title="How many delegation hops deep a chain may go before it's rejected (1–5)."
+            {...bind('max_delegation_depth')}
           />
 
           <NumberField
@@ -113,6 +141,7 @@ export default function AlloySection() {
             fallback={300}
             onChange={delegation_timeout_seconds => update({ delegation_timeout_seconds })}
             title="How long a delegated subtask may run before it's cancelled."
+            {...bind('delegation_timeout_seconds')}
           />
         </div>
       )}

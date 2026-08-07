@@ -436,15 +436,89 @@ Task decomposition — breaking a request into subtasks before execution rather 
 
 Raise the threshold if simple requests are being over-planned; lower it if the agent charges into multi-step work with no structure and loses the thread halfway.
 
-| Setting | Type | Default | Store | Set via |
-| --- | --- | --- | --- | --- |
-| `planner.complexity_threshold` | str | `complex` | config | `/api/config/update` |
-| `planner.enabled` | bool | `true` | config | `/api/config/update` |
-| `planner.max_subtasks` | int | `6` | config | `/api/config/update` |
-| `planner.max_tokens` | int | `1000` | config | `/api/config/update` |
-| `planner.model` | NoneType | — | config | `/api/config/update` |
-| `planner.prompt_override` | str | *(empty)* | config | `/api/config/update` |
-| `planner.temperature` | float | `0.3` | config | `/api/config/update` |
+### `planner.complexity_threshold`
+
+*How complex a request must be before it gets a plan.*
+
+**Default:** `complex` · **Range:** `simple` / `moderate` / `complex` · **Set via:** `/api/config/update`
+
+**What it is.** The bar a request must clear before the planner is invoked at all.
+
+**How it works.** Three levels. `simple` plans nearly everything, `complex` — the shipped default — plans only genuinely multi-step requests, and `moderate` sits between.
+
+**When to change it.** Raise to `complex` if simple requests are being over-planned into ceremony. Lower toward `simple` if the agent charges into multi-step work with no structure and loses the thread halfway through.
+
+**Managing it.** This is the dial to reach for before turning planning off entirely. The failure mode of over-planning is wasted latency; the failure mode of under-planning is work abandoned half-done, which is worse.
+
+### `planner.enabled`
+
+*Whether the agent breaks big requests into a plan first.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Task decomposition — turning one complex request into an ordered set of subtasks before doing any of them.
+
+**How it works.** Off means every request is worked straight through. On, a request that clears the complexity threshold gets a planning call first, and the plan then drives execution.
+
+**When to change it.** Keep it on for multi-step work. Turn it off if your requests are mostly single-shot and the planning step reads as ceremony — it costs a call and some latency before anything visible happens.
+
+**Managing it.** The threshold below decides *which* requests get planned, so it is usually the better dial than this switch: raising the threshold keeps planning for the work that needs it and skips the rest.
+
+### `planner.max_subtasks`
+
+*A hard cap on how many pieces a request may be split into.*
+
+**Default:** `6` · **Range:** 1 to 20, subtasks · **Set via:** `/api/config/update`
+
+**What it is.** The ceiling on subtasks in a single plan, regardless of how the model would like to decompose the work.
+
+**How it works.** Applied to the plan the model produces. A request that genuinely needs more pieces gets a coarser plan rather than a longer one.
+
+**When to change it.** Raise it for genuinely large engagements where a coarse plan loses important structure. Lower it to force the agent to think in bigger steps — long plans tend to fragment work into pieces too small to carry context.
+
+**Managing it.** Default 6. Each subtask is execution overhead as well as planning overhead, so the cost of a high cap is paid on every step, not once.
+
+### `planner.max_tokens`
+
+*How much room the plan itself may take.*
+
+**Default:** `1000` · **Range:** 100 to 4000, tokens · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget for the planning call.
+
+**How it works.** A plan that does not fit is truncated, which produces a partial plan rather than an error — the agent then executes an incomplete decomposition.
+
+**When to change it.** Raise it if plans arrive visibly cut short, particularly with a high subtask cap. Lower it only to control cost on a planner pointed at an expensive model.
+
+**Managing it.** Default 1000, comfortable for the shipped subtask cap. If you raise `max_subtasks` substantially, raise this with it — the two bind together and truncation is silent.
+
+### `planner.model`
+
+*Which model writes the plan.*
+
+**Default:** — · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** An explicit model for the planning call, overriding the agent's own.
+
+**How it works.** Unset means the agent's default model plans its own work. Clearing this back to unset is a real write, not a no-op.
+
+**When to change it.** Set it when planning quality matters more than planning cost — decomposition rewards a stronger model more than most background tasks do, because a bad plan is expensive to follow. Set it cheaper when plans are routine.
+
+**Managing it.** Planning happens once per request while execution happens many times, so a stronger planner is usually better value than a stronger executor.
+
+### `planner.temperature`
+
+*How much variety the planner allows itself.*
+
+**Default:** `0.3` · **Range:** 0 to 1 · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** Sampling temperature for the planning call only.
+
+**How it works.** Lower values make decomposition more deterministic and conventional; higher values let the planner consider less obvious orderings and groupings.
+
+**When to change it.** Keep it low. Planning is a structural task, not a creative one, and a high-temperature plan is mostly a differently-shaped plan rather than a better one. Raise it only if plans feel formulaic on work that has genuinely unusual structure.
+
+**Managing it.** Default 0.3, deliberately below the conversational default. If plans are erratic between identical requests, this is the first thing to lower.
 
 ## Intelligence → Thinking Patterns
 
@@ -454,21 +528,187 @@ The reasoning patterns compiled into a live streamed turn: step-by-step chains, 
 
 Turn individual patterns off when they cost more time than they earn on your kind of work. These are the global fallbacks — per-agent defaults live on the profile, and the composer chip overrides for one conversation.
 
-| Setting | Type | Default | Store | Set via |
-| --- | --- | --- | --- | --- |
-| `reasoning.auto_classifier_enabled` | bool | `true` | config | `/api/config/update` |
-| `reasoning.chat_patterns_enabled` | bool | `true` | config | `/api/config/update` |
-| `reasoning.classifier_min_chars` | int | `240` | config | `/api/config/update` |
-| `reasoning.classifier_model` | str | *(empty)* | config | `/api/config/update` |
-| `reasoning.cot_enabled` | bool | `true` | config | `/api/config/update` |
-| `reasoning.min_output_tokens` | int | `0` | config | `/api/config/update` |
-| `reasoning.reflection_enabled` | bool | `true` | config | `/api/config/update` |
-| `reasoning.sc_k` | int | `3` | config | `/api/config/update` |
-| `reasoning.sc_model` | str | *(empty)* | config | `/api/config/update` |
-| `reasoning.self_consistency_enabled` | bool | `true` | config | `/api/config/update` |
-| `reasoning.step_back_enabled` | bool | `true` | config | `/api/config/update` |
-| `reasoning.step_back_model` | str | *(empty)* | config | `/api/config/update` |
-| `reasoning.step_back_timeout_seconds` | int | `20` | config | `/api/config/update` |
+### `reasoning.auto_classifier_enabled`
+
+*Let a small model break the tie when the heuristics are unsure.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** An optional second opinion inside Auto mode. Auto always runs instant keyword heuristics first; this decides what happens when those are not confident.
+
+**How it works.** The heuristics are free and run on every message, so **the common path costs nothing extra**. Only when they are unconfident — and only on a message long enough to be worth it — does one tiny classification call fire, bounded at about 150 output tokens and a five-second timeout.
+
+**When to change it.** Leave it on. It is the cheapest quality improvement here: a bounded call on a minority of messages, choosing between patterns you are already paying for. Turn it off only if you want Auto to be strictly deterministic, or on an install where any extra provider call is unwelcome.
+
+**Managing it.** With this off, unconfident cases fall back to the heuristics' best guess rather than to no pattern. The message-length floor below is what keeps it from firing on trivial turns.
+
+### `reasoning.chat_patterns_enabled`
+
+*The master switch for reasoning scaffolds in chat.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Whether the agent may be given a thinking pattern at all — a structure it follows before answering, compiled into the live streamed turn rather than run as a separate step you wait for.
+
+**How it works.** Off restores plain turns: no pattern is selected, no pre-calls are made, and the per-pattern switches below stop mattering. Models that think natively still stream their own reasoning — that is the provider's behaviour, not this feature's.
+
+**When to change it.** Leave it on. The patterns are what turn a fast answer into a considered one, and Auto only reaches for the expensive ones when the message warrants it. Turn it off to isolate whether a behaviour you dislike comes from the scaffolding or from the model itself — that is what a kill-switch is for.
+
+**Managing it.** This is the global fallback. Each agent profile carries its own default, and the composer chip overrides for a single conversation, so turning this off is the only way to be certain no pattern runs anywhere.
+
+### `reasoning.classifier_min_chars`
+
+*How long a message must be before the tiebreak is worth paying for.*
+
+**Default:** `240` · **Range:** 0 to 5000, characters · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A length floor. Below it, the classification call never fires and Auto settles the choice with heuristics alone.
+
+**How it works.** Measured against the message you sent. Short messages are overwhelmingly simple ones, and paying a provider call to decide how to think about "thanks" is pure overhead.
+
+**When to change it.** Lower it if you write tersely and still want careful pattern selection — a dense two-line question can deserve more thought than a rambling paragraph. Raise it to cut classifier calls further on a chatty install.
+
+**Managing it.** Default 240 characters, roughly a short paragraph. 0 means every message is eligible, which is the setting most likely to make the classifier's cost visible.
+
+### `reasoning.classifier_model`
+
+*Which model breaks the tie.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The model used for the bounded classification call — a small, fast judgement, not a reasoning task.
+
+**How it works.** Empty follows the **Fast Utility** role, so it moves with that role rather than needing to be set here. The call is capped at about 150 output tokens with a five-second timeout regardless of the model chosen.
+
+**When to change it.** Set it only to pin a specific model for this one job — usually because the Fast Utility role points somewhere you would rather not send message text, or because you want the cheapest possible model for a decision this small.
+
+**Managing it.** Do not point this at a large reasoning model. The call is a classification with a hard timeout; a slow model will simply time out and the heuristics will decide anyway, having cost you five seconds.
+
+### `reasoning.cot_enabled`
+
+*Allow the step-by-step pattern.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Chain of thought — the agent works through a problem in explicit steps before committing to an answer.
+
+**How it works.** Costs nothing extra: the structure rides in the same call as the answer, so the only price is the output tokens the reasoning itself occupies.
+
+**When to change it.** Keep it on. It is the cheapest pattern here and the one that helps most broadly. The one case it does not help is a model that already reasons natively — Auto knows this and will not stack a redundant scaffold on top.
+
+**Managing it.** If turns feel padded with visible working you did not want, the thing to change is usually the agent's profile default rather than this switch, which removes the pattern from every agent at once.
+
+### `reasoning.min_output_tokens`
+
+*A floor on output budget when the agent is thinking.*
+
+**Default:** `0` · **Range:** 0 to 65536, tokens · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** Thinking spends output tokens before the visible answer begins, so a budget sized for the answer alone can leave nothing for the answer.
+
+**How it works.** 0 means automatic: the budget floors itself whenever a pattern is active or the model reasons natively. A non-zero value pins the floor regardless.
+
+**When to change it.** Set it when answers are being cut off mid-sentence on thinking turns and the automatic floor is not enough — long reflection passes are the usual cause. Leave it at 0 otherwise; the automatic behaviour already covers the case this exists for.
+
+**Managing it.** The model's own output cap still binds above this, so a large value here does nothing if the model cannot deliver it. If raising this does not help, the model's declared limit under **Model Limits** is the real constraint.
+
+### `reasoning.reflection_enabled`
+
+*Allow the draft-then-critique pattern.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Reflection — the agent drafts an answer, criticises its own draft, and revises before you see anything.
+
+**How it works.** The most expensive pattern in ordinary use: it spends output tokens on a draft you never read. It also gates the multi-pass "reflect deeply" variant, so turning it off removes both.
+
+**When to change it.** Keep it on for work where being wrong is costly and being slow is not. Turn it off when turns are short and conversational — the critique pass has little to find and you pay for it every time.
+
+**Managing it.** Watch the thinking output floor below if reflection answers arrive truncated: draft, critique and answer all come out of the same output budget.
+
+### `reasoning.sc_k`
+
+*How many independent attempts consensus votes over.*
+
+**Default:** `3` · **Range:** 2 to 5, samples · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The number of samples drawn before the agreed answer is chosen.
+
+**How it works.** Each sample is a full completion, so this is a direct multiplier on the turn's cost. An odd number avoids ties.
+
+**When to change it.** Raise it when a question is genuinely marginal and three attempts still disagree; lower it to 2 only if you want the pattern nearly free, accepting that two samples cannot form a majority.
+
+**Managing it.** Default 3, capped at 5. Returns fall off quickly — the gap between 3 and 5 is much smaller than the gap between 1 and 3, while the cost difference is the same size.
+
+### `reasoning.sc_model`
+
+*Which model produces the consensus samples.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The model used for the k independent attempts that consensus votes over.
+
+**How it works.** Empty uses **the conversation's own model**. The samples are the cost of this pattern, so this setting multiplies: whatever the model charges, it charges k times.
+
+**When to change it.** The best lever on this screen for making consensus affordable. Voting draws its value from attempts being *independent*, not from each being excellent, so a cheaper sampling model usually keeps most of the benefit at a fraction of the price.
+
+**Managing it.** Read it with the sample count below: cheaper model plus a higher k is often a better trade than an expensive model sampled twice.
+
+### `reasoning.self_consistency_enabled`
+
+*Allow the consensus pattern — several samples, one judged answer.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Self-consistency — the same question is answered several times independently and the agreed answer wins.
+
+**How it works.** The k samples **are** the cost: at the default this is roughly three times an ordinary turn. Auto only selects it for short calculation or logic questions with no tools, where independent attempts genuinely disagree and the majority is usually right.
+
+**When to change it.** Keep it on if arithmetic and logic matter in your work; that is exactly where a single sample is unreliable and voting fixes it. Turn it off if cost matters more — it is the clearest multiplier on this screen.
+
+**Managing it.** The sample count and the model used for sampling are below. Pointing the samples at a cheaper model is usually better than reducing k, since the value comes from independent attempts rather than from each being excellent.
+
+### `reasoning.step_back_enabled`
+
+*Allow the principles-first pattern.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Step-back — before answering, the agent distils the governing principles of the question, then answers with those in hand.
+
+**How it works.** Costs **one small hidden pre-call** before the turn. The principles are not shown; they enter the prompt that produces the answer.
+
+**When to change it.** Worth keeping on for conceptual and design questions, where naming the right principle changes the answer rather than decorating it. Turn it off if the extra call's latency is noticeable on work that is mostly factual — a pre-call adds real wall-clock time before anything starts streaming.
+
+**Managing it.** The model and timeout for that pre-call are below. If step-back turns feel slow, check the timeout before disabling the pattern outright.
+
+### `reasoning.step_back_model`
+
+*Which model distils the principles before a step-back turn.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The model used for step-back's hidden pre-call.
+
+**How it works.** Empty uses **the conversation's own model** — not a role. That differs from the classifier above, which follows Fast Utility, and it is deliberate: the principles feed directly into the answering prompt, so a mismatch in capability shows up in the answer.
+
+**When to change it.** Point it at a cheaper model when step-back is common and the principles are straightforward; point it at a stronger one when the conceptual framing is the hard part and the answer is easy once framed.
+
+**Managing it.** Keep in mind this is a *pre*-call: its latency is added before anything streams. A slow model here makes every step-back turn feel unresponsive even if the answer is fast.
+
+### `reasoning.step_back_timeout_seconds`
+
+*How long to wait for those principles before giving up on them.*
+
+**Default:** `20` · **Range:** 5 to 120, seconds · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A wall-clock cap on the step-back pre-call.
+
+**How it works.** On timeout the turn proceeds without the principles rather than failing — you get an ordinary answer, slightly later than you would have.
+
+**When to change it.** Raise it if you have pointed step-back at a slower model and are losing the pre-call to timeouts. Lower it to keep the worst-case delay before streaming tight — this cap is exactly that delay.
+
+**Managing it.** Default 20 seconds. Since the failure mode is silent — the pattern degrades to no pattern — a too-low value looks like step-back "not doing anything" rather than like an error.
 
 ## Intelligence → Agent Teams
 
@@ -478,18 +718,98 @@ Delegation: an agent dispatching a subtask to another agent, either ad-hoc from 
 
 Lower the depth or parallelism when delegation is running away with cost. Turn ad-hoc delegation off entirely if you want agents to work alone unless a team explicitly says otherwise.
 
+### `alloy.allow_adhoc_delegation`
+
+*Let agents hand work to each other outside a defined team.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Whether an agent in a normal conversation is offered a roster of other agents it may dispatch a subtask to.
+
+**How it works.** On, agents get a delegation tool and a roster block naming who is available. The roster is **opt-in per profile** — an agent appears only if it has been marked available for delegation — so nothing delegates on a fresh install regardless of this switch.
+
+**When to change it.** Leave it on. The opt-in roster is the real gate, and this being on is what lets you enable delegation by ticking a profile rather than by finding this setting. Turn it off to guarantee that only defined teams delegate.
+
+**Managing it.** A conversation can also disable delegation for itself, so this is the outermost of three gates: this switch, the per-profile opt-in, and the per-conversation override.
+
+### `alloy.chain_of_command`
+
+*Restrict delegation to the org chart where one exists.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Strict adjacency for agents that belong to an organisation: a manager may dispatch to the leads of teams it owns, a lead to its own members, a member upward to its own lead — and no further.
+
+**How it works.** Enforced in two places at once: the delegation tool only *offers* legal targets, and the executor rejects an illegal one anyway. Only agents whose teams name a manager are considered part of an org, so installs with no org structure are completely unaffected.
+
+**When to change it.** Leave it on if you have built an org. It is what stops a specialist at the bottom of the chart dispatching across the whole roster, which is how a delegation chain becomes unbounded.
+
+**Managing it.** Turning it off does not remove the org — it removes the *restriction*, so every org agent falls back to the flat opt-in roster.
+
+### `alloy.delegation_timeout_seconds`
+
+*How long a delegated subtask may run before it is abandoned.*
+
+**Default:** `300` · **Range:** 30 to 3600, seconds · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A wall-clock cap on one dispatched subtask.
+
+**How it works.** On timeout the dispatching agent gets a failure for that subtask and carries on with the rest, rather than the whole turn hanging.
+
+**When to change it.** Raise it when specialists do genuinely long work — deep research or a large document pass will exceed a short cap routinely. Lower it to fail fast when delegation is meant to be quick and a hung specialist is worse than a missing answer.
+
+**Managing it.** Default 300 seconds. Set it against the *effort tier* a dispatch uses: tiers set the specialist's tool-round budget, and a marathon tier against a short timeout will be cut off every time.
+
+### `alloy.max_delegation_depth`
+
+*How far a chain of delegation may run.*
+
+**Default:** `3` · **Range:** 1 to 5, levels deep · **Set via:** `/api/config/update`
+
+**What it is.** The limit on delegation depth: an agent dispatching to an agent that dispatches again, and so on.
+
+**How it works.** Counted from the agent handling your turn. At the limit, further delegation is refused and the agent must do the work itself.
+
+**When to change it.** This is the main runaway guard. Each level multiplies both cost and latency, and a deep chain is usually a sign that the work was not scoped rather than that it was genuinely deep. Lower it if delegation is running away; raise it only for deliberately layered org structures.
+
+**Managing it.** Default 3, capped at 5. Read together with the parallel limit: depth times parallelism is roughly the worst-case fan-out of a single turn.
+
+### `alloy.max_parallel_delegations`
+
+*How many subtasks may run at once.*
+
+**Default:** `3` · **Range:** 1 to 8, at once · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The ceiling on concurrent dispatches from a single agent.
+
+**How it works.** Excess dispatches queue rather than failing. Parallelism cuts wall-clock time without changing total cost — the same work is done either way.
+
+**When to change it.** Raise it when a team's specialists are independent and you want the turn to finish sooner. Lower it if concurrent work is hitting provider rate limits, which surfaces as sporadic delegation failures rather than as slowness.
+
+**Managing it.** Default 3, capped at 8. This bounds one agent's fan-out, not the whole turn's — combined with depth, a modest number here can still produce a large tree.
+
+### `alloy.non_blocking_delegations`
+
+*Let a dispatch return immediately and fold its report in later.*
+
+**Default:** `true` · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** An additional dispatch style: instead of waiting for the specialist, the agent gets a receipt at once and the result arrives later in the same turn.
+
+**How it works.** The dispatching agent keeps working while the subtask runs, and the report is folded in when it lands. Nothing outlives the turn — an unfinished work order is cancelled when the turn ends, however it ends.
+
+**When to change it.** Leave it on. It is the difference between an agent that stalls on every dispatch and one that keeps making progress, and it costs nothing extra — the same work runs either way.
+
+**Managing it.** Turn it off if you want strictly sequential, easier-to-follow turns; the transcript of a non-blocking turn interleaves the agent's own work with reports arriving out of order.
+
+**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+
 | Setting | Type | Default | Store | Set via |
 | --- | --- | --- | --- | --- |
-| `alloy.allow_adhoc_delegation` | bool | `true` | config | `/api/config/update` |
-| `alloy.chain_of_command` | bool | `true` | config | `/api/config/update` |
-| `alloy.delegation_timeout_seconds` | int | `300` | config | `/api/config/update` |
 | `alloy.effort_tiers.deep` | int | `60` | config | read-only |
 | `alloy.effort_tiers.marathon` | int | `100` | config | read-only |
 | `alloy.effort_tiers.quick` | int | `8` | config | read-only |
 | `alloy.effort_tiers.standard` | int | `30` | config | read-only |
-| `alloy.max_delegation_depth` | int | `3` | config | `/api/config/update` |
-| `alloy.max_parallel_delegations` | int | `3` | config | `/api/config/update` |
-| `alloy.non_blocking_delegations` | bool | `true` | config | `/api/config/update` |
 
 ## Intelligence → Ambassador
 
@@ -681,8 +1001,35 @@ Useful when you type quickly and want intent inferred. Turn it off when you need
 | `prompt_enhancement.enabled` | bool | `true` | config | `/api/config/update` |
 | `prompt_enhancement.max_tokens` | int | `1000` | config | `/api/config/update` |
 | `prompt_enhancement.model` | str | *(empty)* | config | `/api/config/update` |
-| `prompt_enhancement.system_prompt` | str | *(empty)* | config | `/api/config/update` |
 | `prompt_enhancement.temperature` | float | `0.7` | config | `/api/config/update` |
+
+## Prompts → Feature Prompts
+
+*Override the built-in prompts that features use internally.*
+
+The prompts behind extraction, relevance filtering, planning, and prompt enhancement. Each ships with a default; an override replaces it, and a diff shows exactly what you changed.
+
+Worth touching only when a feature misbehaves in a way you can trace to its wording. Left on their defaults, these improve when the defaults do — an override opts that key out of future improvements.
+
+### `planner.prompt_override`
+
+*Replace the built-in planning prompt with your own.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The instruction the planner works from. Empty uses the shipped prompt, which is the normal state.
+
+**How it works.** An override replaces the built-in prompt entirely rather than appending to it, so anything the shipped prompt established has to be restated.
+
+**When to change it.** Worth touching only when you can trace a planning failure to the wording — for instance a domain where the default decomposition style is wrong. For per-agent behaviour, the agent's profile is a better place than a global override.
+
+**Managing it.** Leaving this empty means the prompt improves when the shipped one does; an override opts out of that permanently. Clear it to return to the default.
+
+**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `prompt_enhancement.system_prompt` | str | *(empty)* | config | `/api/config/update` |
 
 ## Memory → Conversation Context
 
