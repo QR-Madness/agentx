@@ -255,24 +255,23 @@ export default function ContextSection() {
                 label="Automatic compaction"
                 hint="Master switch for both compaction targets. Off means turns past the budget drop with no coverage — not recommended."
               />
-              <div className="setting-row">
-                <ModelPickerField
-                  label="Summarizer model"
-                  value={settings.compaction_model}
-                  onChange={v => update({ compaction_model: v })}
-                  placeholder="Summarizer role"
-                  hint="Empty follows the summarizer model role (Model Roles)."
-                />
-            </div>
-            <NumberField
-              label="Digest size budget (tokens)"
-              value={settings.compaction_max_tokens}
-              min={200}
-              max={4000}
-              fallback={800}
-              onChange={v => update({ compaction_max_tokens: v })}
-            {...bind('compaction_max_tokens')}
-            />
+              <ModelPickerField
+                label="Summarizer model"
+                value={settings.compaction_model}
+                onChange={v => update({ compaction_model: v })}
+                placeholder="Summarizer role"
+                hint="Empty follows the summarizer model role (Model Roles)."
+                {...bind('compaction_model')}
+              />
+              <NumberField
+                label="Digest size budget (tokens)"
+                value={settings.compaction_max_tokens}
+                min={200}
+                max={4000}
+                fallback={800}
+                onChange={v => update({ compaction_max_tokens: v })}
+                {...bind('compaction_max_tokens')}
+              />
             </div>
           </SettingsSection>
 
@@ -307,24 +306,23 @@ export default function ContextSection() {
                 onChange={v => update({ trajectory_preserve_recent_rounds: v })}
               {...bind('trajectory_preserve_recent_rounds')}
               />
-              <div className="setting-row">
-                <ModelPickerField
-                  label="Compression model"
-                  value={settings.trajectory_model}
-                  onChange={v => update({ trajectory_model: v })}
-                  placeholder="Summarizer role"
-                  hint="Empty follows the summarizer model role."
-                />
-            </div>
-            <NumberField
-              label="Knowledge block size (chars)"
-              value={settings.trajectory_max_knowledge_chars}
-              min={500}
-              max={10000}
-              fallback={3000}
-              onChange={v => update({ trajectory_max_knowledge_chars: v })}
-            {...bind('trajectory_max_knowledge_chars')}
-            />
+              <ModelPickerField
+                label="Compression model"
+                value={settings.trajectory_model}
+                onChange={v => update({ trajectory_model: v })}
+                placeholder="Summarizer role"
+                hint="Empty follows the summarizer model role."
+                {...bind('trajectory_model')}
+              />
+              <NumberField
+                label="Knowledge block size (chars)"
+                value={settings.trajectory_max_knowledge_chars}
+                min={500}
+                max={10000}
+                fallback={3000}
+                onChange={v => update({ trajectory_max_knowledge_chars: v })}
+                {...bind('trajectory_max_knowledge_chars')}
+              />
             </div>
           </SettingsSection>
 
@@ -339,24 +337,23 @@ export default function ContextSection() {
                 {...bind('tool_output_enabled')}
                 label="Enable tool-output compression"
               />
-              <div className="setting-row">
-                <ModelPickerField
-                  label="Compression model"
-                  value={settings.tool_output_model}
-                  onChange={v => update({ tool_output_model: v })}
-                  placeholder="Summarizer role"
-                  hint="Empty follows the summarizer model role."
-                />
-            </div>
-            <NumberField
-              label="Summary size (chars)"
-              value={settings.tool_output_max_summary_chars}
-              min={500}
-              max={10000}
-              fallback={2000}
-              onChange={v => update({ tool_output_max_summary_chars: v })}
-            {...bind('tool_output_max_summary_chars')}
-            />
+              <ModelPickerField
+                label="Compression model"
+                value={settings.tool_output_model}
+                onChange={v => update({ tool_output_model: v })}
+                placeholder="Summarizer role"
+                hint="Empty follows the summarizer model role."
+                {...bind('tool_output_model')}
+              />
+              <NumberField
+                label="Summary size (chars)"
+                value={settings.tool_output_max_summary_chars}
+                min={500}
+                max={10000}
+                fallback={2000}
+                onChange={v => update({ tool_output_max_summary_chars: v })}
+                {...bind('tool_output_max_summary_chars')}
+              />
             </div>
           </SettingsSection>
 

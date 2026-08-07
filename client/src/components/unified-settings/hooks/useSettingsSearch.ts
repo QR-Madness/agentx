@@ -15,6 +15,7 @@
 
 import { useState, useMemo } from 'react';
 import type { SettingsManifestEntry } from '../../../lib/api';
+import { humanizeSettingKey } from '../settingLabel';
 
 export interface SearchableSection {
   id: string;
@@ -35,15 +36,6 @@ export interface SettingHit {
   rank: number;
 }
 
-/** `recall_candidate_pool` → "Recall candidate pool". */
-function humanize(key: string): string {
-  return key
-    .split('.')
-    .map(part => part.replace(/_/g, ' '))
-    .join(' · ')
-    .replace(/^\w/, c => c.toUpperCase());
-}
-
 /**
  * Rank a setting against a query. Lower is better; null means no match.
  *
@@ -53,7 +45,7 @@ function humanize(key: string): string {
  */
 function scoreSetting(entry: SettingsManifestEntry, q: string): number | null {
   const key = entry.key.toLowerCase();
-  const human = humanize(entry.key).toLowerCase();
+  const human = humanizeSettingKey(entry.key).toLowerCase();
   const summary = (entry.help?.summary || '').toLowerCase();
 
   if (key === q) return 0;
@@ -101,7 +93,7 @@ export function useSettingsSearch(
       hits.push({
         id: `${entry.store}:${entry.key}`,
         key: entry.key,
-        label: humanize(entry.key),
+        label: humanizeSettingKey(entry.key),
         sectionId: entry.ui_section,
         summary: entry.help?.summary,
         isModified: entry.value !== entry.default,

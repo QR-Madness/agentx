@@ -6,6 +6,7 @@ import { ToggleField } from './ToggleField';
 import { PromptField } from './PromptField';
 import { SelectField } from './SelectField';
 import { TextField } from './TextField';
+import { ModelPickerField } from '../../common/ModelPickerField';
 
 describe('SliderField', () => {
   it('renders label + formatted readout and exposes a slider', () => {
@@ -168,5 +169,57 @@ describe('manifest chrome', () => {
     render(<NumberField label="Candidate Pool" value={50} onChange={vi.fn()} />);
     expect(screen.queryByLabelText('Changed from the default')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^About/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('ModelPickerField chrome', () => {
+  // Model-valued settings are the most common kind left in the settings area,
+  // and this control lived outside the field kit — so every one of them
+  // rendered with no anchor, which meant search could find them and then fail
+  // to land on them.
+  const binding = {
+    entry: {
+      key: 'session.rolling_summary.model',
+      store: 'config' as const,
+      type: 'str',
+      default: '',
+      value: 'anthropic:claude-opus-5',
+      secret: false,
+      writable_via: '/api/config/update',
+    },
+    defaultValue: '',
+    isModified: true,
+    help: { summary: 'The model that folds aged-out turns into the digest.' },
+  };
+
+  it('emits the anchor search lands on, plus dot, help and reset', () => {
+    const onReset = vi.fn();
+    const { container } = render(
+      <ModelPickerField
+        label="Summarizer model"
+        value="anthropic:claude-opus-5"
+        onChange={vi.fn()}
+        binding={binding}
+        onReset={onReset}
+      />
+    );
+    expect(container.querySelector('[data-setting="config:session.rolling_summary.model"]'))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText('Changed from the default')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'About Summarizer model' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Summarizer model to default' }));
+    expect(onReset).toHaveBeenCalled();
+  });
+
+  it('leaves the unbound control exactly as it was', () => {
+    // The profile editors render this with no manifest behind it; their markup
+    // must not move because settings gained chrome.
+    const { container } = render(
+      <ModelPickerField label="Model" value="" onChange={vi.fn()} hint="Leave empty to inherit" />
+    );
+    expect(container.querySelector('.mpf-label')).toHaveTextContent('Model');
+    expect(container.querySelector('.mpf-hint')).toHaveTextContent('Leave empty to inherit');
+    expect(container.querySelector('[data-setting]')).toBeNull();
+    expect(screen.queryByLabelText('Changed from the default')).not.toBeInTheDocument();
   });
 });

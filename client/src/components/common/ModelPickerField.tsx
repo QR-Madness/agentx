@@ -6,6 +6,14 @@
  * that opens the proper filterable picker. For settings that store the provider
  * separately (e.g. `extraction_provider`), `onProviderChange` is fired with the
  * picked model's provider.
+ *
+ * **Manifest chrome.** Model-valued settings are the single most common kind
+ * left in the settings area, and this control sat outside the field kit — so
+ * every one of them rendered with no default chip, no reset, no help popover,
+ * and no `data-setting` anchor, which meant settings search could *find* them
+ * and then fail to land on them. Pass a `binding` and it renders through
+ * `FieldShell` like the rest of the kit. Pass none — as the profile editors do,
+ * where there is no manifest — and the markup is exactly what it always was.
  */
 
 import { useEffect, useState } from 'react';
@@ -13,6 +21,7 @@ import { ChevronRight, Wrench, Eye, Image as ImageIcon } from 'lucide-react';
 import type { ModelInfo } from '../../lib/api';
 import { fetchModelsOnce } from './modelCatalog';
 import { ModelPickerModal } from './ModelPickerModal';
+import { FieldShell, type FieldChromeProps } from '../settings/fields/FieldShell';
 import './ModelPickerField.css';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -23,7 +32,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   vercel: 'Vercel Gateway',
 };
 
-interface ModelPickerFieldProps {
+interface ModelPickerFieldProps extends FieldChromeProps {
   /** Currently selected model id (empty string = inherit / system default) */
   value: string;
   /** Called when the user picks a model */
@@ -51,6 +60,9 @@ export function ModelPickerField({
   hint,
   requireCapability,
   placeholder = 'System default',
+  binding,
+  onReset,
+  badge,
 }: ModelPickerFieldProps) {
   const [open, setOpen] = useState(false);
   const [catalog, setCatalog] = useState<ModelInfo[]>([]);
@@ -82,41 +94,76 @@ export function ModelPickerField({
     }
   };
 
+  const trigger = (ids?: { id: string; describedBy?: string }) => (
+    <button
+      type="button"
+      id={ids?.id}
+      aria-describedby={ids?.describedBy}
+      className="mpf-trigger"
+      onClick={() => setOpen(true)}
+    >
+      <div className="mpf-trigger-main">
+        <span className="mpf-trigger-name">{selectedName}</span>
+        {providerLabel && <span className="mpf-trigger-provider">{providerLabel}</span>}
+      </div>
+      <div className="mpf-trigger-meta">
+        {ctx && (
+          <span className="mpf-trigger-badge">
+            {ctx >= 1000 ? `${Math.round(ctx / 1000)}k ctx` : `${ctx} ctx`}
+          </span>
+        )}
+        {selected?.supports_tools && (
+          <span className="mpf-trigger-cap" title="Tools"><Wrench size={12} /></span>
+        )}
+        {selected?.supports_vision && (
+          <span className="mpf-trigger-cap" title="Vision"><Eye size={12} /></span>
+        )}
+        {(selected?.supports_image || selected?.output_modalities?.includes('image')) && (
+          <span className="mpf-trigger-cap" title="Image generation"><ImageIcon size={12} /></span>
+        )}
+        <ChevronRight size={14} className="mpf-trigger-chev" />
+      </div>
+    </button>
+  );
+
+  const picker = (
+    <ModelPickerModal
+      isOpen={open}
+      onClose={() => setOpen(false)}
+      value={value}
+      onChange={handleChange}
+      showDefault={showDefault}
+      requireCapability={requireCapability}
+    />
+  );
+
+  // Bound to the manifest: FieldShell owns the label row (dot, help, reset) and
+  // the anchor. `mpf-field` stays on for the picker's own spacing rules.
+  if (binding) {
+    return (
+      <>
+        <FieldShell
+          className="setting-row mpf-field"
+          label={label ?? ''}
+          labelText={label ?? binding.entry.key}
+          hint={hint}
+          binding={binding}
+          onReset={onReset}
+          badge={badge}
+        >
+          {trigger}
+        </FieldShell>
+        {picker}
+      </>
+    );
+  }
+
   return (
     <div className="mpf-field">
       {label && <span className="mpf-label">{label}</span>}
-      <button type="button" className="mpf-trigger" onClick={() => setOpen(true)}>
-        <div className="mpf-trigger-main">
-          <span className="mpf-trigger-name">{selectedName}</span>
-          {providerLabel && <span className="mpf-trigger-provider">{providerLabel}</span>}
-        </div>
-        <div className="mpf-trigger-meta">
-          {ctx && (
-            <span className="mpf-trigger-badge">
-              {ctx >= 1000 ? `${Math.round(ctx / 1000)}k ctx` : `${ctx} ctx`}
-            </span>
-          )}
-          {selected?.supports_tools && (
-            <span className="mpf-trigger-cap" title="Tools"><Wrench size={12} /></span>
-          )}
-          {selected?.supports_vision && (
-            <span className="mpf-trigger-cap" title="Vision"><Eye size={12} /></span>
-          )}
-          {(selected?.supports_image || selected?.output_modalities?.includes('image')) && (
-            <span className="mpf-trigger-cap" title="Image generation"><ImageIcon size={12} /></span>
-          )}
-          <ChevronRight size={14} className="mpf-trigger-chev" />
-        </div>
-      </button>
+      {trigger()}
       {hint && <span className="mpf-hint">{hint}</span>}
-      <ModelPickerModal
-        isOpen={open}
-        onClose={() => setOpen(false)}
-        value={value}
-        onChange={handleChange}
-        showDefault={showDefault}
-        requireCapability={requireCapability}
-      />
+      {picker}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { Search, X, CornerDownRight } from 'lucide-react';
 import { SECTION_HIERARCHY, getAllSections } from './sections';
 import { useSettingsSearch } from './hooks/useSettingsSearch';
 import { useSettingsManifest } from './SettingsManifestContext';
+import { useSharedSettingsSearch } from './SettingsSearchContext';
 import { navVariants } from './animations/transitions';
 
 interface SettingsNavProps {
@@ -27,9 +28,13 @@ export function SettingsNav({
 }: SettingsNavProps) {
   const allSections = getAllSections();
   const manifest = useSettingsManifest();
+  // Prefer the shared search, so this box and the Overview's are one input.
+  // The local instance is the fallback for rendering outside the provider —
+  // the same null-safety contract the manifest context holds to.
+  const local = useSettingsSearch(allSections, manifest?.entries.values());
   const {
     query, setQuery, filtered, settingHits, isSearching, hasResults,
-  } = useSettingsSearch(allSections, manifest?.entries.values());
+  } = useSharedSettingsSearch() ?? local;
   const sectionLabels = new Map(allSections.map(s => [s.id, s.label]));
 
   return (
