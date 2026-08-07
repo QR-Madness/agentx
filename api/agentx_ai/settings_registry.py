@@ -107,6 +107,9 @@ class KeySpec:
     tier: Tier | None = None
     #: Override the name-based secret heuristic.
     secret: bool | None = None
+    #: Override the section's ``ui_section``. ``None`` inherits it; ``""`` means
+    #: this key has no control on any screen, so nothing should claim it does.
+    ui_section: str | None = None
 
     def has_constraints(self) -> bool:
         return self.min is not None or self.max is not None or self.enum is not None
@@ -310,28 +313,67 @@ CONFIG_SECTIONS: dict[str, SectionSpec] = {
             "max_input_tokens",
         ),
         ui_section="context",
+        overrides={
+            "verbatim_budget_ratio": KeySpec(min=0.5, max=0.98, step=0.01,
+                                             unit="of the context window",
+                                             tier="essential"),
+            "summary_trigger_ratio": KeySpec(min=0.5, max=0.98, step=0.01,
+                                             unit="of the history budget",
+                                             tier="essential"),
+            "recent_floor": KeySpec(min=1, max=50, step=1, unit="turns",
+                                    tier="essential"),
+            "conversation_state_enabled": KeySpec(tier="essential"),
+            "preassembly_summary_enabled": KeySpec(tier="advanced"),
+            "conversation_state_compaction_enabled": KeySpec(tier="advanced"),
+            "rehydrate_max_turns": KeySpec(min=20, max=2000, step=1, unit="turns",
+                                           tier="advanced"),
+            "max_input_tokens": KeySpec(min=0, max=1_000_000, step=1, unit="tokens",
+                                        tier="advanced"),
+        },
     ),
     "session": SectionSpec(
         keys=("rolling_summary.enabled", "rolling_summary.model", "rolling_summary.max_tokens"),
         ui_section="context",
         overrides={
+            "rolling_summary.enabled": KeySpec(tier="essential"),
             "rolling_summary.model": KeySpec(empty_means="follow_role"),
+            "rolling_summary.max_tokens": KeySpec(min=200, max=4000, step=1,
+                                                  unit="tokens", tier="advanced"),
         },
     ),
     "trajectory_compression": SectionSpec(
         keys=("enabled", "threshold_ratio", "preserve_recent_rounds", "model",
               "max_knowledge_chars"),
         ui_section="context",
-        overrides={"model": KeySpec(empty_means="follow_role")},
+        overrides={
+            "model": KeySpec(empty_means="follow_role"),
+            "threshold_ratio": KeySpec(min=0.5, max=0.95, step=0.05,
+                                       unit="of the turn budget", tier="advanced"),
+            "preserve_recent_rounds": KeySpec(min=1, max=5, step=1, unit="rounds",
+                                              tier="advanced"),
+            "max_knowledge_chars": KeySpec(min=500, max=10_000, step=1,
+                                           unit="characters", tier="advanced"),
+        },
     ),
     "compression": SectionSpec(
         keys=("enabled", "model", "max_summary_chars"),
         ui_section="context",
-        overrides={"model": KeySpec(empty_means="follow_role")},
+        overrides={
+            "model": KeySpec(empty_means="follow_role"),
+            "max_summary_chars": KeySpec(min=500, max=10_000, step=1,
+                                         unit="characters", tier="advanced"),
+        },
     ),
     "memory": SectionSpec(
         keys=("episodic_leads_enabled", "project_channels"),
         ui_section="context",
+        overrides={
+            "episodic_leads_enabled": KeySpec(tier="advanced"),
+            # Projects/workspace channel scoping — writable, but no screen shows
+            # it. It inherited "context" from this root and claimed a home on the
+            # Conversation Context page that has never rendered it.
+            "project_channels": KeySpec(ui_section=""),
+        },
     ),
     "reasoning": SectionSpec(
         keys=(
@@ -546,9 +588,15 @@ def config_key_spec(path: str) -> KeySpec | None:
 
 
 def config_ui_section(path: str) -> str | None:
-    root, _ = _section_and_rel(path)
+    root, rel = _section_and_rel(path)
     section = CONFIG_SECTIONS.get(root)
-    return section.ui_section if section else None
+    if not section:
+        return None
+    spec = section.spec_for(rel)
+    if spec is not None and spec.ui_section is not None:
+        # "" = declared as having no screen; distinct from inheriting the root's.
+        return spec.ui_section or None
+    return section.ui_section
 
 
 #: Where each ``ui_section`` id sits in the settings screen, for prose that has

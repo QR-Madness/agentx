@@ -13301,22 +13301,57 @@ class SettingsHelpTest(TestCase):
     """Help is authored once (settings_help.yaml) and rendered by both the
     settings UI and the generated reference — so coverage is testable."""
 
-    def test_golden_section_has_full_help(self):
-        """Recall is the golden section: every key carries the full five-field
-        treatment, which is the register the other sections refit toward."""
+    #: Sections written up to the full five-field standard. A section joins this
+    #: list when it is refit; the test then holds it there, so help can't rot
+    #: back out once written. (store, keys-callable-or-tuple, label)
+    DOCUMENTED_SECTIONS = (
+        ("memory", "recall", "Memory → Recall"),
+        ("config", "context", "Memory → Conversation Context"),
+    )
+
+    def _keys_for(self, store, group):
+        if store == "memory" and group == "recall":
+            from agentx_ai.kit.agent_memory.config import get_recall_settings
+            return list(get_recall_settings())
+        if store == "config" and group == "context":
+            # Every config key the Conversation Context screen surfaces — it
+            # spans five config roots, so take them from the registry rather
+            # than restating the list here.
+            from agentx_ai.settings_registry import CONFIG_SECTIONS, config_ui_section
+            from agentx_ai.config import DEFAULT_CONFIG
+
+            def leaves(d, prefix=""):
+                for k, v in d.items():
+                    path = f"{prefix}{k}"
+                    if isinstance(v, dict) and v:
+                        yield from leaves(v, path + ".")
+                    else:
+                        yield path
+
+            return [
+                p for p in leaves(DEFAULT_CONFIG)
+                if config_ui_section(p) == "context"
+                and CONFIG_SECTIONS[p.split(".")[0]].keys is not None
+                and p.split(".", 1)[1] in (CONFIG_SECTIONS[p.split(".")[0]].keys or ())
+            ]
+        raise AssertionError(f"unknown documented group {store}/{group}")
+
+    def test_documented_sections_have_full_help(self):
+        """Refit sections carry the full five-field treatment — the register the
+        remaining sections are being brought up to, one section at a time."""
         from agentx_ai.settings_help import get_help
-        from agentx_ai.kit.agent_memory.config import get_recall_settings
 
         missing = []
-        for key in get_recall_settings():
-            help_entry = get_help("memory", key)
-            if not help_entry:
-                missing.append(f"{key}: no help")
-                continue
-            for field in ("summary", "what", "how", "why", "manage"):
-                if not (help_entry.get(field) or "").strip():
-                    missing.append(f"{key}.{field}")
-        self.assertEqual(missing, [], f"golden section help incomplete: {missing}")
+        for store, group, label in self.DOCUMENTED_SECTIONS:
+            for key in self._keys_for(store, group):
+                help_entry = get_help(store, key)
+                if not help_entry:
+                    missing.append(f"{label}: {key} has no help")
+                    continue
+                for field in ("summary", "what", "how", "why", "manage"):
+                    if not (help_entry.get(field) or "").strip():
+                        missing.append(f"{label}: {key}.{field}")
+        self.assertEqual(missing, [], f"documented-section help incomplete: {missing}")
 
     def test_no_orphan_help_keys(self):
         """Help authored for a key that no longer exists is drift — it would

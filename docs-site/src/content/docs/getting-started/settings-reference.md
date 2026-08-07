@@ -27,6 +27,286 @@ moved and offers to put it back.
 
 These carry the full write-up. The rest of the catalogue is tabulated below, and is being written up section by section.
 
+### `compression.enabled`
+
+*Summarise a single tool result that comes back too large.*
+
+**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** Compression of one oversized tool output, before it enters the turn.
+
+**How it works.** A result past the size threshold is summarised task-aware — with the question in view — so what survives is the part that answers it.
+
+**When to change it.** Leave it on. A single large page or query result can otherwise consume the whole turn. Off, oversized results are truncated instead, which cuts arbitrarily.
+
+**Managing it.** Distinct from trajectory compression, which compresses *across* rounds. This one shrinks a single result.
+
+### `compression.max_summary_chars`
+
+*How much of an oversized tool result survives compression.*
+
+**Default:** `2000` · **Range:** 500 to 10000, characters · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** The size budget for the summary that replaces a too-large result.
+
+**How it works.** The compressor writes within this budget, keeping what answers the query.
+
+**When to change it.** Raise it when compressed results lose specifics the agent needed — figures, names, exact wording. Lower it when tool output still crowds the turn.
+
+**Managing it.** Default 2000 characters. If you find yourself raising this a lot, the more effective fix is usually a narrower tool query.
+
+### `compression.model`
+
+*Which model summarises oversized tool results.*
+
+**Default:** *(empty)* · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** The model used for task-aware compression of a single result.
+
+**How it works.** Empty follows the Summarizer role; an explicit value overrides it here only.
+
+**When to change it.** Override when tool-heavy turns feel slow and this is where the time is going.
+
+**Managing it.** Readers floor to a small fast model.
+
+### `context.conversation_state_compaction_enabled`
+
+*Fold aged-out turns into the structured digest instead of free prose.*
+
+**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** Which of the two summary mechanisms receives compacted history.
+
+**How it works.** On, aged-out turns roll into the conversation state's digest field, re-summarised in place. Off, they fall back to the legacy free-prose rolling summary.
+
+**When to change it.** The structured digest is the better default — it sits beside the goals and decisions it relates to, and it's editable. The prose fallback exists for comparison and for conversations where the structure gets in the way.
+
+**Managing it.** Inert when `context.conversation_state_enabled` is off.
+
+### `context.conversation_state_enabled`
+
+*Keep a structured working memory for the conversation.*
+
+**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** A per-conversation record of goals, decisions, open threads and artifacts — plus the rolling digest of aged-out turns.
+
+**How it works.** Rendered into the prompt as a ledger block. The agent maintains it deliberately through the `update_conversation_state` tool, and you can edit it yourself from the composer badge.
+
+**When to change it.** Leave it on for anything long-running: it's what lets an agent still know the goal after the turn that stated it has aged out. Turning it off hides the block and removes the agent's tool for it.
+
+**Managing it.** Structured state is also the default compaction target — see `context.conversation_state_compaction_enabled`.
+
+### `context.max_input_tokens`
+
+*Optional hard ceiling on what one turn may spend on input.*
+
+**Default:** `0` · **Range:** 0 to 1000000, tokens · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** A per-turn spend guard for the tool loop, in tokens. 0 turns it off.
+
+**How it works.** With a value set, a turn stops growing its input past this ceiling even if the model's window would allow more — a brake on runaway multi-round tool loops.
+
+**When to change it.** Set it when you want a predictable per-turn cost ceiling on an expensive model. Leave it at 0 to let the model's real window govern, which is the right default now that windows are read accurately.
+
+**Managing it.** This replaced a flat 32k cap that quietly strangled large-window models. Setting it too low reintroduces exactly that problem — prefer the model's own window unless you have a billing reason not to.
+
+### `context.preassembly_summary_enabled`
+
+*Refresh the digest mid-turn rather than let anything drop uncovered.*
+
+**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** The backstop that guarantees nothing leaves the model's view without being summarised first.
+
+**How it works.** Before assembling an over-budget turn, the digest is refreshed so the turns about to age out are already covered. If the summarizer is unavailable, a deterministic fallback digest stands in — coverage does not depend on a model call succeeding.
+
+**When to change it.** Leave it on. Off, a turn that outgrows its budget can drop history that the digest hasn't caught up with yet, and the agent silently forgets something you said. The cost is one extra summarisation on the turns that need it.
+
+**Managing it.** Pre-warm (`context.summary_trigger_ratio`) is what keeps this from firing often — this is the safety net, not the mechanism.
+
+### `context.recent_floor`
+
+*How many recent turns are never summarised, whatever the pressure.*
+
+**Default:** `4` · **Range:** 1 to 50, turns · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** The number of most-recent turns that always stay word-for-word.
+
+**How it works.** Compaction works from the oldest turn forward and stops here. Even a conversation well over budget keeps this many exchanges intact.
+
+**When to change it.** Raise it if the agent loses the thread of what was just said — the immediate back-and-forth is where that lives. Lower it only if you are severely context-constrained and would rather keep older material in view.
+
+**Managing it.** Four turns is enough for the model to see what it just said and what you replied. High values interact with the verbatim budget: the floor wins, so setting both aggressively can push assembly against its hard cap.
+
+### `context.rehydrate_max_turns`
+
+*How far back to read when reopening a cold conversation.*
+
+**Default:** `400` · **Range:** 20 to 2000, turns · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** The cap on turns pulled from durable history when a session is resumed.
+
+**How it works.** Reopening a conversation the server no longer holds in memory replays up to this many turns from storage to rebuild context.
+
+**When to change it.** Raise it for long-lived conversations you return to across days. Lower it if reopening a large conversation is slow — the cost is read volume at open time, not per turn.
+
+**Managing it.** This bounds what is *read*, not what is *sent*: the verbatim budget still decides how much of it reaches the model.
+
+### `context.summary_trigger_ratio`
+
+*When to prepare the digest, ahead of actually needing it.*
+
+**Default:** `0.85` · **Range:** 0.5 to 0.98, of the history budget · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** The point at which compaction runs *after* a turn, so the digest is already fresh the next time older turns need to leave the verbatim window.
+
+**How it works.** Measured against the turn's real history budget (input budget minus granted preamble blocks). Crossing it schedules a post-turn pre-warm that folds the oldest turns into the digest.
+
+**When to change it.** Keep it slightly below the verbatim budget — that gap is the whole point. Pre-warm does the summarising between turns, where you don't feel it; if this sits at or above the verbatim ceiling, the work lands in the middle of a turn instead and you wait for it.
+
+**Managing it.** Default 0.85 against a 0.9 verbatim budget. Move the two together and keep the gap; closing it doesn't save anything, it only changes when you notice the cost.
+
+### `context.verbatim_budget_ratio`
+
+*How much of the model's context window the word-for-word transcript may fill.*
+
+**Default:** `0.9` · **Range:** 0.5 to 0.98, of the context window · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** The ceiling on the verbatim window — the stretch of recent conversation the model sees exactly as it happened, rather than as a summary.
+
+**How it works.** Each turn is sized against the model's *real* context window, not a fixed number. Turns are kept verbatim until they would exceed this fraction of it; older ones fold into the conversation-state digest. Assembly still hard-caps at window − reserved output, so this can never squeeze out the reply.
+
+**When to change it.** Lower it to leave room for a long answer, or if you are paying per token and would rather summarise sooner. Raise it to keep more exact wording in view — worth it when detail matters more than cost. It was 0.7 and is now 0.9 deliberately: compressing at 70% of a large window discarded detail long before anything was actually short of room.
+
+**Managing it.** With a correct window configured (Model Limits), most conversations never compact at all. If yours compact constantly, check the model's declared window before touching this — an understated window is the usual cause.
+
+### `memory.episodic_leads_enabled`
+
+*Offer pointers to earlier conversations that look related.*
+
+**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** Short leads drawn from episodic memory — "we discussed this on…" — rather than full recalled content.
+
+**How it works.** Derived per turn and injected as a low-priority block, so they yield to the transcript and the state ledger when room is tight.
+
+**When to change it.** Leave it on for continuity across conversations. Turn it off if leads to unrelated past chats are distracting the agent, or if you want per-turn context strictly scoped to the conversation at hand.
+
+**Managing it.** Leads are pointers, not recall; the Recall layer is what fetches actual content. They ride at low priority and are the first thing dropped under pressure.
+
+### `session.rolling_summary.enabled`
+
+*Whether conversations compact automatically at all.*
+
+**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** The master switch for automatic compaction, whichever target it writes to.
+
+**How it works.** Off, no automatic summarisation runs: turns stay verbatim until they hit the budget and then simply leave view.
+
+**When to change it.** Leave it on. Off is for diagnosing whether a context problem comes from compaction — useful briefly, lossy as a standing setting.
+
+**Managing it.** Gates both the structured digest and the legacy prose summary. Named for the original prose mechanism, which the digest has since superseded as the default.
+
+### `session.rolling_summary.max_tokens`
+
+*How long one compaction pass may make the digest.*
+
+**Default:** `800` · **Range:** 200 to 4000, tokens · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** The output budget for a single summarisation pass.
+
+**How it works.** The digest is re-summarised in place on each pass, so this effectively bounds its steady-state size rather than letting it grow with the conversation.
+
+**When to change it.** Raise it when long conversations lose detail you needed. Lower it when the digest itself is eating the context you wanted for live turns.
+
+**Managing it.** Default 800 tokens. Because each pass rewrites the whole digest, raising this raises both the summarisation cost and the standing per-turn cost of carrying it.
+
+### `session.rolling_summary.model`
+
+*Which model writes the compaction summaries.*
+
+**Default:** *(empty)* · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** The model used to fold aged-out turns into the digest.
+
+**How it works.** Empty follows the Summarizer role, which is the recommended setting — set the role once and every summarising job follows it. An explicit value overrides the role for this job only.
+
+**When to change it.** Override it when compaction specifically is too slow or too lossy, and you want a different trade-off here than for other summarising work.
+
+**Managing it.** Readers floor this to a small fast model regardless; compaction runs often and rarely benefits from a large one.
+
+### `trajectory_compression.enabled`
+
+*Compress earlier tool rounds during a long turn.*
+
+**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** In-turn compression of the trajectory — the accumulated tool calls and results within a single turn.
+
+**How it works.** When a turn's context crosses the trigger threshold, earlier rounds are replaced by a compact knowledge block, keeping the most recent rounds intact.
+
+**When to change it.** Leave it on for agents that use tools heavily; a research or multi-step turn can otherwise fill the window with intermediate results before it reaches an answer. Off, long tool loops hit the ceiling sooner.
+
+**Managing it.** Distinct from tool-output compression, which shrinks one oversized result.
+
+### `trajectory_compression.max_knowledge_chars`
+
+*How large the compressed knowledge block may be.*
+
+**Default:** `3000` · **Range:** 500 to 10000, characters · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** The size cap on the block that replaces compressed tool rounds.
+
+**How it works.** The compressor writes within this budget; the block persists for the rest of the turn.
+
+**When to change it.** Raise it when compression is dropping details the agent then has to re-fetch — re-running a tool costs more than carrying a few hundred extra characters. Lower it when the block itself is crowding the turn.
+
+**Managing it.** Default 3000 characters. Weigh against the cost of the tool call it saves.
+
+### `trajectory_compression.model`
+
+*Which model compresses tool rounds mid-turn.*
+
+**Default:** *(empty)* · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+
+**What it is.** The model that writes the knowledge block replacing earlier rounds.
+
+**How it works.** Empty follows the Summarizer role; an explicit value overrides it here only.
+
+**When to change it.** Override when in-turn compression is adding noticeable latency — this one runs inside the turn, so its speed is felt directly.
+
+**Managing it.** Readers floor to a small fast model; latency matters more than nuance here.
+
+### `trajectory_compression.preserve_recent_rounds`
+
+*How many recent tool rounds survive compression untouched.*
+
+**Default:** `2` · **Range:** 1 to 5, rounds · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** The number of most-recent tool-call rounds always kept in full.
+
+**How it works.** Compression works forward from the oldest round and stops here.
+
+**When to change it.** Raise it if the agent loses track of what a tool just returned. Lower it to reclaim more room when rounds are large.
+
+**Managing it.** Two rounds is usually enough to keep the immediate call-and-result pair intact. This is a floor, like `context.recent_floor` but within a turn.
+
+### `trajectory_compression.threshold_ratio`
+
+*How full a turn gets before earlier tool rounds are compressed.*
+
+**Default:** `0.75` · **Range:** 0.5 to 0.95, of the turn budget · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+
+**What it is.** The fraction of the turn's budget that triggers in-turn compression.
+
+**How it works.** Crossing it compresses all but the most recent rounds into a knowledge block.
+
+**When to change it.** Lower it for agents that routinely run long tool loops — compressing earlier keeps more headroom for the rounds that matter. Raise it to keep raw tool output visible longer, at the cost of hitting the ceiling sooner.
+
+**Managing it.** Default 0.75. Below about 0.5 you compress work that had room to breathe.
+
 ### `cross_encoder_enabled`
 
 *Re-score the shortlist with a slower, more accurate model before answering.*
@@ -482,8 +762,6 @@ Every remaining setting, by the screen it appears on. A blank write route means 
 | `context.verbatim_budget_ratio` | float | `0.9` | config | `/api/config/update` |
 
 | `memory.episodic_leads_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `memory.project_channels` | bool | `true` | config | `/api/config/update` |
 
 | `session.rolling_summary.enabled` | bool | `true` | config | `/api/config/update` |
 
@@ -1026,6 +1304,8 @@ COMPOSITI…` | config | `/api/config/update` |
 | `max_results_per_conversation` | int | `3` | memory | read-only |
 
 | `max_working_memory_items` | int | `50` | memory | read-only |
+
+| `memory.project_channels` | bool | `true` | config | `/api/config/update` |
 
 | `neo4j_max_connection_lifetime` | int | `300` | memory | read-only |
 

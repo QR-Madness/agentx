@@ -21,6 +21,7 @@ import { useSettingsAutosave } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { SectionHeader } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
+import { sectionBinder, useSettingsManifest } from '../SettingsManifestContext';
 import {
   NumberField,
   SaveStatusChip,
@@ -59,8 +60,37 @@ interface ContextSettings extends Record<string, unknown> {
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
+/**
+ * Local field name → the manifest entry behind it. This section's flat names
+ * span five config roots, so the mapping has to be explicit; it's also what
+ * lets search and the Overview digest land on the right control here.
+ */
+const KEYS: Partial<Record<keyof ContextSettings & string, string>> = {
+  verbatim_budget_ratio: 'config:context.verbatim_budget_ratio',
+  summary_trigger_ratio: 'config:context.summary_trigger_ratio',
+  recent_floor: 'config:context.recent_floor',
+  preassembly_summary_enabled: 'config:context.preassembly_summary_enabled',
+  conversation_state_enabled: 'config:context.conversation_state_enabled',
+  conversation_state_compaction_enabled: 'config:context.conversation_state_compaction_enabled',
+  rehydrate_max_turns: 'config:context.rehydrate_max_turns',
+  max_input_tokens: 'config:context.max_input_tokens',
+  compaction_enabled: 'config:session.rolling_summary.enabled',
+  compaction_model: 'config:session.rolling_summary.model',
+  compaction_max_tokens: 'config:session.rolling_summary.max_tokens',
+  trajectory_enabled: 'config:trajectory_compression.enabled',
+  trajectory_threshold_ratio: 'config:trajectory_compression.threshold_ratio',
+  trajectory_preserve_recent_rounds: 'config:trajectory_compression.preserve_recent_rounds',
+  trajectory_model: 'config:trajectory_compression.model',
+  trajectory_max_knowledge_chars: 'config:trajectory_compression.max_knowledge_chars',
+  tool_output_enabled: 'config:compression.enabled',
+  tool_output_model: 'config:compression.model',
+  tool_output_max_summary_chars: 'config:compression.max_summary_chars',
+  episodic_leads_enabled: 'config:memory.episodic_leads_enabled',
+};
+
 export default function ContextSection() {
   const { notifyError } = useNotify();
+  const manifest = useSettingsManifest();
 
   const { settings, loading, status, update } = useSettingsAutosave<ContextSettings>({
     load: async () => {
@@ -126,6 +156,8 @@ export default function ContextSection() {
     onError: err => notifyError(err, 'Conversation Context settings'),
   });
 
+  const bind = sectionBinder<ContextSettings>(manifest, KEYS, settings, update);
+
   return (
     <div className="settings-section fade-in">
       <SectionHeader
@@ -154,6 +186,7 @@ export default function ContextSection() {
                 max={0.98}
                 step={0.01}
                 onChange={v => update({ verbatim_budget_ratio: v })}
+                {...bind('verbatim_budget_ratio')}
                 format={pct}
                 hint="Fraction of the model's context window the verbatim transcript may use."
               />
@@ -164,6 +197,7 @@ export default function ContextSection() {
                 max={0.98}
                 step={0.01}
                 onChange={v => update({ summary_trigger_ratio: v })}
+                {...bind('summary_trigger_ratio')}
                 format={pct}
                 hint="Fraction of the turn's history budget at which the post-turn pre-warm folds older turns into the digest — slightly below the verbatim ceiling so the digest is ready before it's needed."
               />
@@ -174,11 +208,13 @@ export default function ContextSection() {
                 max={50}
                 fallback={4}
                 onChange={v => update({ recent_floor: v })}
+                {...bind('recent_floor')}
                 title="Floor of most-recent turns that never age out, even under pressure."
               />
               <ToggleField
                 checked={settings.preassembly_summary_enabled}
                 onChange={v => update({ preassembly_summary_enabled: v })}
+                {...bind('preassembly_summary_enabled')}
                 label="Just-in-time coverage backstop"
                 hint="Before assembling an over-budget turn, refresh the digest so the turns about to leave view are covered first (no silent context loss). A deterministic fallback digest stands in if the summarizer is unavailable."
               />
@@ -193,12 +229,14 @@ export default function ContextSection() {
               <ToggleField
                 checked={settings.conversation_state_enabled}
                 onChange={v => update({ conversation_state_enabled: v })}
+                {...bind('conversation_state_enabled')}
                 label="Enable conversation state"
                 hint="Off hides the state block and the agent's update_conversation_state tool."
               />
               <ToggleField
                 checked={settings.conversation_state_compaction_enabled}
                 onChange={v => update({ conversation_state_compaction_enabled: v })}
+                {...bind('conversation_state_compaction_enabled')}
                 label="Compact into the state digest"
                 hint="Default: aged-out turns roll into the state object's digest. Off falls back to the legacy free-prose rolling summary."
               />
@@ -213,6 +251,7 @@ export default function ContextSection() {
               <ToggleField
                 checked={settings.compaction_enabled}
                 onChange={v => update({ compaction_enabled: v })}
+                {...bind('compaction_enabled')}
                 label="Automatic compaction"
                 hint="Master switch for both compaction targets. Off means turns past the budget drop with no coverage — not recommended."
               />
@@ -232,6 +271,7 @@ export default function ContextSection() {
               max={4000}
               fallback={800}
               onChange={v => update({ compaction_max_tokens: v })}
+            {...bind('compaction_max_tokens')}
             />
             </div>
           </SettingsSection>
@@ -244,6 +284,7 @@ export default function ContextSection() {
               <ToggleField
                 checked={settings.trajectory_enabled}
                 onChange={v => update({ trajectory_enabled: v })}
+                {...bind('trajectory_enabled')}
                 label="Enable trajectory compression"
               />
               <SliderField
@@ -253,6 +294,7 @@ export default function ContextSection() {
                 max={0.95}
                 step={0.05}
                 onChange={v => update({ trajectory_threshold_ratio: v })}
+                {...bind('trajectory_threshold_ratio')}
                 format={pct}
                 hint="Fires when the in-turn context crosses this fraction of its ceiling."
               />
@@ -263,6 +305,7 @@ export default function ContextSection() {
                 max={5}
                 fallback={2}
                 onChange={v => update({ trajectory_preserve_recent_rounds: v })}
+              {...bind('trajectory_preserve_recent_rounds')}
               />
               <div className="setting-row">
                 <ModelPickerField
@@ -280,6 +323,7 @@ export default function ContextSection() {
               max={10000}
               fallback={3000}
               onChange={v => update({ trajectory_max_knowledge_chars: v })}
+            {...bind('trajectory_max_knowledge_chars')}
             />
             </div>
           </SettingsSection>
@@ -292,6 +336,7 @@ export default function ContextSection() {
               <ToggleField
                 checked={settings.tool_output_enabled}
                 onChange={v => update({ tool_output_enabled: v })}
+                {...bind('tool_output_enabled')}
                 label="Enable tool-output compression"
               />
               <div className="setting-row">
@@ -310,6 +355,7 @@ export default function ContextSection() {
               max={10000}
               fallback={2000}
               onChange={v => update({ tool_output_max_summary_chars: v })}
+            {...bind('tool_output_max_summary_chars')}
             />
             </div>
           </SettingsSection>
@@ -322,6 +368,7 @@ export default function ContextSection() {
               <ToggleField
                 checked={settings.episodic_leads_enabled}
                 onChange={v => update({ episodic_leads_enabled: v })}
+                {...bind('episodic_leads_enabled')}
                 label="Episodic thread leads"
                 hint='On phrasing like "when did we…", offer lightweight pointers into past conversations that the agent can expand on demand (read_thread) — never full transcripts.'
               />
@@ -332,6 +379,7 @@ export default function ContextSection() {
                 max={2000}
                 fallback={400}
                 onChange={v => update({ rehydrate_max_turns: v })}
+                {...bind('rehydrate_max_turns')}
                 title="Max turns reloaded from durable history when a conversation resumes cold. Beyond it, an in-prompt notice points the agent at memory recall."
               />
               <NumberField
@@ -341,6 +389,7 @@ export default function ContextSection() {
                 max={1000000}
                 fallback={0}
                 onChange={v => update({ max_input_tokens: v })}
+                {...bind('max_input_tokens')}
                 title="Optional spend guard: caps the in-turn context ceiling below the model window. Leave 0 to let agents use the model's full length."
               />
             </div>
