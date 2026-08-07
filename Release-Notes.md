@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.267 -->
+<!-- release-version: 0.21.268 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -22,7 +22,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 ### Highlights
 
 - **Settings you can navigate** — search finds individual settings, not just section names, and jumps to the control. The new **Overview** searches from where you land, says what to set up first, and describes every screen with a count of what you've changed there.
-- **Settings that explain themselves** — **Recall**, **Conversation Context**, **Web Search** and **Research Mode** say what each knob does, what it costs, and when to leave it alone; the same words appear in the new Settings Reference.
+- **Settings that explain themselves** — half the settings area now says what each knob does, what it costs, and when to leave it alone; the same words appear in the new Settings Reference.
 - **Link your OpenRouter account in one click** — sign in once, no key pasting; the card shows balance and spend, and repairs models OpenRouter renamed (their real context read as 8k, compacting turns far too early).
 - **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint (Groq, DeepSeek, Ollama, your own) as `yourid:model`. Backends show if they're reachable, and a **supply line** states where turns really go: the resolving provider, its context and price, the fallback.
 - **Extract: move memory out, safely** — evict a channel to the server vault with verified deletion: export → verify → wipe → receipt, and nothing deletes unless it verifies.

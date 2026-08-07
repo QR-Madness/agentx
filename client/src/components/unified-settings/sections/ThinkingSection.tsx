@@ -19,6 +19,24 @@ import {
   SettingsSection,
   ToggleField,
 } from '../../settings/fields';
+import { sectionBinder, useSettingsManifest } from '../SettingsManifestContext';
+
+/** Local field name → `store:key`. Every knob here lives under `reasoning.*`. */
+const KEYS: Partial<Record<keyof ThinkingSettings & string, string>> = {
+  chat_patterns_enabled: 'config:reasoning.chat_patterns_enabled',
+  auto_classifier_enabled: 'config:reasoning.auto_classifier_enabled',
+  classifier_model: 'config:reasoning.classifier_model',
+  classifier_min_chars: 'config:reasoning.classifier_min_chars',
+  step_back_model: 'config:reasoning.step_back_model',
+  step_back_timeout_seconds: 'config:reasoning.step_back_timeout_seconds',
+  cot_enabled: 'config:reasoning.cot_enabled',
+  step_back_enabled: 'config:reasoning.step_back_enabled',
+  reflection_enabled: 'config:reasoning.reflection_enabled',
+  self_consistency_enabled: 'config:reasoning.self_consistency_enabled',
+  sc_model: 'config:reasoning.sc_model',
+  sc_k: 'config:reasoning.sc_k',
+  min_output_tokens: 'config:reasoning.min_output_tokens',
+};
 
 interface ThinkingSettings extends Record<string, unknown> {
   chat_patterns_enabled: boolean;
@@ -26,6 +44,7 @@ interface ThinkingSettings extends Record<string, unknown> {
   classifier_model: string;
   classifier_min_chars: number;
   step_back_model: string;
+  step_back_timeout_seconds: number;
   cot_enabled: boolean;
   step_back_enabled: boolean;
   reflection_enabled: boolean;
@@ -37,6 +56,7 @@ interface ThinkingSettings extends Record<string, unknown> {
 
 export default function ThinkingSection() {
   const { notifyError } = useNotify();
+  const manifest = useSettingsManifest();
 
   const { settings, loading, status, update } = useSettingsAutosave<ThinkingSettings>({
     load: async () => {
@@ -48,6 +68,7 @@ export default function ThinkingSection() {
         classifier_model: (r.classifier_model as string) || '',
         classifier_min_chars: (r.classifier_min_chars as number) ?? 240,
         step_back_model: (r.step_back_model as string) || '',
+        step_back_timeout_seconds: (r.step_back_timeout_seconds as number) ?? 20,
         cot_enabled: (r.cot_enabled as boolean) ?? true,
         step_back_enabled: (r.step_back_enabled as boolean) ?? true,
         reflection_enabled: (r.reflection_enabled as boolean) ?? true,
@@ -62,6 +83,8 @@ export default function ThinkingSection() {
     },
     onError: err => notifyError(err, 'Thinking Patterns settings'),
   });
+
+  const bind = sectionBinder<ThinkingSettings>(manifest, KEYS, settings, update);
 
   return (
     <div className="settings-section fade-in">
@@ -89,29 +112,34 @@ export default function ThinkingSection() {
                 onChange={v => update({ chat_patterns_enabled: v })}
                 label="Enable thinking patterns"
                 hint="Master switch — off restores plain turns (native model thinking still streams)."
+                {...bind('chat_patterns_enabled')}
               />
               <ToggleField
                 checked={settings.cot_enabled}
                 onChange={v => update({ cot_enabled: v })}
                 label="Step-by-step (chain of thought)"
+                {...bind('cot_enabled')}
               />
               <ToggleField
                 checked={settings.step_back_enabled}
                 onChange={v => update({ step_back_enabled: v })}
                 label="Step-back (principles first)"
                 hint="One small hidden pre-call distills governing principles before the turn."
+                {...bind('step_back_enabled')}
               />
               <ToggleField
                 checked={settings.reflection_enabled}
                 onChange={v => update({ reflection_enabled: v })}
                 label="Reflection (draft → critique → improve)"
                 hint="Also gates the multi-pass Reflect deeply pattern."
+                {...bind('reflection_enabled')}
               />
               <ToggleField
                 checked={settings.self_consistency_enabled}
                 onChange={v => update({ self_consistency_enabled: v })}
                 label="Consensus (self-consistency sampling)"
                 hint="Auto only picks it for short calculation/logic turns with no tools."
+                {...bind('self_consistency_enabled')}
               />
             </div>
           </SettingsSection>
@@ -126,16 +154,16 @@ export default function ThinkingSection() {
                 onChange={v => update({ auto_classifier_enabled: v })}
                 label="LLM tiebreak"
                 hint="One tiny classification call (≤150 tokens, 5s cap) when heuristics are unconfident."
+                {...bind('auto_classifier_enabled')}
               />
-              <div className="setting-row">
-                <ModelPickerField
-                  label="Classifier model"
-                  value={settings.classifier_model}
-                  onChange={v => update({ classifier_model: v })}
-                  placeholder="Fast Utility role"
-                  hint="Empty follows the Fast Utility model role."
-                />
-              </div>
+              <ModelPickerField
+                label="Classifier model"
+                value={settings.classifier_model}
+                onChange={v => update({ classifier_model: v })}
+                placeholder="Fast Utility role"
+                hint="Empty follows the Fast Utility model role."
+                {...bind('classifier_model')}
+              />
               <NumberField
                 label="Tiebreak minimum message length (chars)"
                 value={settings.classifier_min_chars}
@@ -144,6 +172,7 @@ export default function ThinkingSection() {
                 fallback={240}
                 onChange={v => update({ classifier_min_chars: v })}
                 title="Below this the tiebreak never fires — trivial messages stay zero-cost."
+                {...bind('classifier_min_chars')}
               />
             </div>
           </SettingsSection>
@@ -153,24 +182,32 @@ export default function ThinkingSection() {
             description="The extra-call patterns run on the active turn model unless overridden here."
           >
             <div className="settings-grid">
-              <div className="setting-row">
-                <ModelPickerField
-                  label="Step-back model"
-                  value={settings.step_back_model}
-                  onChange={v => update({ step_back_model: v })}
-                  placeholder="Active turn model"
-                  hint="Empty uses the conversation's own model for the principles pre-call."
-                />
-              </div>
-              <div className="setting-row">
-                <ModelPickerField
-                  label="Consensus sampling model"
-                  value={settings.sc_model}
-                  onChange={v => update({ sc_model: v })}
-                  placeholder="Active turn model"
-                  hint="Samples are the k× cost — point them at a cheaper model if needed."
-                />
-              </div>
+              <ModelPickerField
+                label="Step-back model"
+                value={settings.step_back_model}
+                onChange={v => update({ step_back_model: v })}
+                placeholder="Active turn model"
+                hint="Empty uses the conversation's own model for the principles pre-call."
+                {...bind('step_back_model')}
+              />
+              <NumberField
+                label="Step-back timeout (seconds)"
+                value={settings.step_back_timeout_seconds}
+                min={5}
+                max={120}
+                fallback={20}
+                onChange={v => update({ step_back_timeout_seconds: v })}
+                title="On timeout the turn proceeds without the principles — so too low reads as step-back doing nothing, not as an error."
+                {...bind('step_back_timeout_seconds')}
+              />
+              <ModelPickerField
+                label="Consensus sampling model"
+                value={settings.sc_model}
+                onChange={v => update({ sc_model: v })}
+                placeholder="Active turn model"
+                hint="Samples are the k× cost — point them at a cheaper model if needed."
+                {...bind('sc_model')}
+              />
               <NumberField
                 label="Consensus samples (k)"
                 value={settings.sc_k}
@@ -178,6 +215,7 @@ export default function ThinkingSection() {
                 max={5}
                 fallback={3}
                 onChange={v => update({ sc_k: v })}
+                {...bind('sc_k')}
               />
               <NumberField
                 label="Thinking output floor (tokens, 0 = auto)"
@@ -187,6 +225,7 @@ export default function ThinkingSection() {
                 fallback={0}
                 onChange={v => update({ min_output_tokens: v })}
                 title="Thinking spends output tokens before the visible answer. 0 floors automatically when a pattern is active or the model reasons natively."
+                {...bind('min_output_tokens')}
               />
             </div>
           </SettingsSection>

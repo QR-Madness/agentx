@@ -13355,6 +13355,9 @@ class SettingsHelpTest(TestCase):
         ("config", "context", "Memory → Conversation Context"),
         ("config", "search", "Infrastructure → Web Search"),
         ("config", "research", "Intelligence → Research Mode"),
+        ("config", "thinking", "Intelligence → Thinking Patterns"),
+        ("config", "planner", "Intelligence → Task Planner"),
+        ("config", "alloy", "Intelligence → Agent Teams"),
     )
 
     def _keys_for(self, store, group):

@@ -118,9 +118,19 @@
           over the API with no control anywhere (`brave_context_max_tokens_per_url` plus the
           whole deep-research tuning group, including the budget weight the budget help points
           at).
-    - [ ] Thinking Patterns (13) + Task Planner (7) + Agent Teams (6) · Consolidation (50) ·
-          Ambassador (18) + Images & Audio (6) · Model Providers (12) + Model Limits (8) +
-          Model Roles (3) + Prompt Enhancement (5) + the 4 strays.
+    - [x] **How the agent thinks** `[v0.21.268]` — 26 keys across Thinking Patterns, Task
+          Planner and Agent Teams, written around what each pattern *costs*: chain-of-thought
+          rides in the same call, step-back adds a pre-call before anything streams,
+          reflection spends tokens on a draft you never read, and consensus multiplies by k.
+          Two more mis-sections fixed — `planner.prompt_override` and
+          `prompt_enhancement.system_prompt` are edited on **Feature Prompts**, so that screen
+          moved out of the "owns no settings" list — plus a wrong `empty_means`:
+          `step_back_model`/`sc_model` fall back to the conversation's own model, not a role.
+          Surfaced 3 more control-less keys (`step_back_timeout_seconds`, `max_subtasks`,
+          `non_blocking_delegations`). **102 of 208 documented.**
+    - [ ] Consolidation (50) · Ambassador (18) + Images & Audio (6) · Model Providers (12) +
+          Model Limits (8) + Model Roles (3) + Prompt Enhancement (4) + Feature Prompts (2)
+          + the 4 strays.
     - [ ] Sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
     - [ ] **Invert the coverage gate** (the closing move) — `DOCUMENTED_SECTIONS` becomes an
           `UNDOCUMENTED_ALLOWLIST` that must be empty, so a new setting can't ship without
