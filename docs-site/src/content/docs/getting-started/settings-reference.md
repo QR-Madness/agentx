@@ -13,6 +13,11 @@ Every setting the app exposes, generated from the same declarations the settings
 screen reads. If a setting is described here, that description is the one you'll
 see beside the control; if it isn't listed here, the app doesn't offer it.
 
+**How this page is laid out.** One heading per settings screen, in nav order, so
+this reads the way the app does. Settings written up in full appear under their
+screen; the rest are tabulated beneath them and are being written up screen by
+screen.
+
 **Where things are stored.** `config` settings live in `data/config.json` and are
 written through `POST /api/config/update`. `memory` settings live in
 `data/memory_settings.json` and are written through the two `/api/memory/*`
@@ -23,15 +28,273 @@ set it in `.env` or the settings file directly, and restart.
 leaves you on a working configuration; the settings screen marks anything you've
 moved and offers to put it back.
 
-## Documented settings
+## Infrastructure → Model Providers
 
-These carry the full write-up. The rest of the catalogue is tabulated below, and is being written up section by section.
+*Where AgentX gets its intelligence.*
+
+Connections to the model backends: the five built-ins (Anthropic, OpenAI, OpenRouter, Vercel, LM Studio) plus any OpenAI-compatible endpoint you register yourself, which then addresses its models as `yourid:model`.
+
+The first thing to configure on a new install — nothing else works without at least one reachable provider. Come back when a backend stops responding, when you're adding a local or self-hosted endpoint, or to read the supply line: which provider a turn actually resolves to, and what it costs.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `providers.anthropic.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
+| `providers.anthropic.base_url` | NoneType | — | config | `/api/config/update` |
+| `providers.custom` | dict | *(empty)* | config | `/api/config/update` |
+| `providers.lmstudio.base_url` | NoneType | — | config | `/api/config/update` |
+| `providers.lmstudio.timeout` | int | `300` | config | `/api/config/update` |
+| `providers.openai.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
+| `providers.openai.base_url` | NoneType | — | config | `/api/config/update` |
+| `providers.openrouter.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
+| `providers.openrouter.app_name` | NoneType | — | config | `/api/config/update` |
+| `providers.openrouter.site_url` | NoneType | — | config | `/api/config/update` |
+| `providers.vercel.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
+| `providers.vercel.base_url` | NoneType | — | config | `/api/config/update` |
+
+## Infrastructure → Model Limits
+
+*How much context each model really has, and the sampling defaults.*
+
+Two things a provider often gets wrong on your behalf: the token window a model actually offers, and the sampling parameters — temperature, max tokens, top-p, penalties — used when a profile doesn't set its own.
+
+Override a window when a model's declared one is wrong. An understated window makes conversations compact far earlier than they need to, which you experience as the agent forgetting things it should still be able to see.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `context_limits.lmstudio.context_window` | int | `32768` | config | `/api/config/update` |
+| `context_limits.lmstudio.max_output_tokens` | int | `8192` | config | `/api/config/update` |
+| `context_limits.models` | dict | *(empty)* | config | `/api/config/update` |
+| `llm_settings.default_max_tokens` | int | `4096` | config | `/api/config/update` |
+| `llm_settings.default_temperature` | float | `0.7` | config | `/api/config/update` |
+| `llm_settings.frequency_penalty` | float | `0.0` | config | `/api/config/update` |
+| `llm_settings.presence_penalty` | float | `0.0` | config | `/api/config/update` |
+| `llm_settings.top_p` | float | `1.0` | config | `/api/config/update` |
+
+## Infrastructure → Model Roles
+
+*One model per workload, so features don't each need their own.*
+
+Three roles — fast utility, deep reasoning, and summarizer — that features point at instead of naming a model. A feature left on its default follows its role; a model chosen explicitly on the feature always wins.
+
+Set these once and most of the platform is configured. Change a role to move every background task onto a cheaper or faster model without visiting a dozen sections to do it.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `models.defaults.chat` | NoneType | — | config | read-only |
+| `models.defaults.extraction` | NoneType | — | config | read-only |
+| `models.defaults.reasoning` | NoneType | — | config | read-only |
+| `models.fallback_enabled` | bool | `true` | config | read-only |
+| `models.overrides` | dict | *(empty)* | config | read-only |
+| `models.roles.deep_reasoning` | str | *(empty)* | config | `/api/config/update` |
+| `models.roles.fast_utility` | str | *(empty)* | config | `/api/config/update` |
+| `models.roles.summarizer` | str | *(empty)* | config | `/api/config/update` |
+
+## Infrastructure → Web Search
+
+*How the agent searches the web — and what that's allowed to cost.*
+
+The search backend and its defaults, plus two budgets: how many searches an ordinary turn may run and how many a research turn may, each with an optional dollar ceiling. A source policy of preferred and blocked domains applies to every result.
+
+Come here to change backends, to cap spend, or to stop the agent reading a domain you don't trust. The budgets are the part worth understanding: they are per *turn*, not per day, and research turns draw on their own much larger allowance.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `search.backend` | str | `tavily` | config | `/api/config/update` |
+| `search.brave_answers_cost_per_request_usd` | float | `0.004` | config | read-only |
+| `search.brave_answers_enabled` | bool | `false` | config | `/api/config/update` |
+| `search.brave_api_key` | NoneType | *(secret)* | config | `/api/config/update` |
+| `search.brave_context_max_snippets` | int | `50` | config | read-only |
+| `search.brave_context_max_tokens` | int | `4096` | config | `/api/config/update` |
+| `search.brave_context_max_tokens_per_url` | int | `1024` | config | `/api/config/update` |
+| `search.brave_context_threshold` | str | `balanced` | config | `/api/config/update` |
+| `search.brave_cost_per_request_usd` | float | `0.005` | config | read-only |
+| `search.brave_grounding_default` | bool | `true` | config | `/api/config/update` |
+| `search.brave_research_tiers.auto.iterations` | int | `3` | config | read-only |
+| `search.brave_research_tiers.auto.queries` | int | `20` | config | read-only |
+| `search.brave_research_tiers.auto.seconds` | int | `180` | config | read-only |
+| `search.brave_research_tiers.mini.iterations` | int | `2` | config | read-only |
+| `search.brave_research_tiers.mini.queries` | int | `8` | config | read-only |
+| `search.brave_research_tiers.mini.seconds` | int | `90` | config | read-only |
+| `search.brave_research_tiers.pro.iterations` | int | `5` | config | read-only |
+| `search.brave_research_tiers.pro.queries` | int | `40` | config | read-only |
+| `search.brave_research_tiers.pro.seconds` | int | `300` | config | read-only |
+| `search.cache_ttl_seconds` | int | `300` | config | `/api/config/update` |
+| `search.cost_per_credit_usd` | float | `0.008` | config | read-only |
+| `search.country` | str | *(empty)* | config | `/api/config/update` |
+| `search.default_chunks_per_source` | int | `0` | config | `/api/config/update` |
+| `search.default_search_depth` | str | *(empty)* | config | `/api/config/update` |
+| `search.fallback_enabled` | bool | `true` | config | `/api/config/update` |
+| `search.max_results` | int | `5` | config | `/api/config/update` |
+| `search.per_turn_cost_usd` | float | `0.0` | config | `/api/config/update` |
+| `search.per_turn_limit` | int | `8` | config | `/api/config/update` |
+| `search.research_per_turn_cost_usd` | float | `0.0` | config | `/api/config/update` |
+| `search.research_per_turn_limit` | int | `40` | config | `/api/config/update` |
+| `search.safesearch` | str | *(empty)* | config | `/api/config/update` |
+| `search.search_lang` | str | *(empty)* | config | `/api/config/update` |
+| `search.source_policy` | dict | *(structured)* | config | `/api/config/update` |
+| `search.tavily_api_key` | NoneType | *(secret)* | config | `/api/config/update` |
+| `search.timeout` | int | `15` | config | `/api/config/update` |
+
+## Infrastructure → Images & Audio
+
+*Generating pictures and speech, and re-reading the ones you send.*
+
+Image generation for conversations and profile avatars, speech synthesis and transcription, and vision — whether images you attach are shown to the model again on later turns.
+
+Change the models when output quality or cost matters. The vision re-feed is the subtle one: showing an image on more turns keeps the agent able to refer back to it, and spends tokens every time it does.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `images.avatar_model` | str | `openrouter:microsoft/mai-image-2.5` | config | `/api/config/update` |
+| `images.avatar_style_prompt` | str | `Create one square avatar portrait.
+
+COMPOSITI…` | config | `/api/config/update` |
+| `images.default_model` | str | `openrouter:black-forest-labs/flux.2-klein-4b` | config | `/api/config/update` |
+| `images.enabled` | bool | `true` | config | `/api/config/update` |
+| `vision.enabled` | bool | `true` | config | `/api/config/update` |
+| `vision.refeed_recent_turns` | int | `2` | config | `/api/config/update` |
+
+## Intelligence → Task Planner
+
+*Whether the agent plans before it acts, and how far ahead.*
+
+Task decomposition — breaking a request into subtasks before execution rather than working straight through it. A complexity threshold decides which requests are worth planning at all.
+
+Raise the threshold if simple requests are being over-planned; lower it if the agent charges into multi-step work with no structure and loses the thread halfway.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `planner.complexity_threshold` | str | `complex` | config | `/api/config/update` |
+| `planner.enabled` | bool | `true` | config | `/api/config/update` |
+| `planner.max_subtasks` | int | `6` | config | `/api/config/update` |
+| `planner.max_tokens` | int | `1000` | config | `/api/config/update` |
+| `planner.model` | NoneType | — | config | `/api/config/update` |
+| `planner.prompt_override` | str | *(empty)* | config | `/api/config/update` |
+| `planner.temperature` | float | `0.3` | config | `/api/config/update` |
+
+## Intelligence → Thinking Patterns
+
+*How agents reason in chat — scaffolds, critique, and consensus.*
+
+The reasoning patterns compiled into a live streamed turn: step-by-step chains, principles-first step-back, self-critiquing reflection, and consensus sampling. A classifier picks one per turn unless you pin it.
+
+Turn individual patterns off when they cost more time than they earn on your kind of work. These are the global fallbacks — per-agent defaults live on the profile, and the composer chip overrides for one conversation.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `reasoning.auto_classifier_enabled` | bool | `true` | config | `/api/config/update` |
+| `reasoning.chat_patterns_enabled` | bool | `true` | config | `/api/config/update` |
+| `reasoning.classifier_min_chars` | int | `240` | config | `/api/config/update` |
+| `reasoning.classifier_model` | str | *(empty)* | config | `/api/config/update` |
+| `reasoning.cot_enabled` | bool | `true` | config | `/api/config/update` |
+| `reasoning.min_output_tokens` | int | `0` | config | `/api/config/update` |
+| `reasoning.reflection_enabled` | bool | `true` | config | `/api/config/update` |
+| `reasoning.sc_k` | int | `3` | config | `/api/config/update` |
+| `reasoning.sc_model` | str | *(empty)* | config | `/api/config/update` |
+| `reasoning.self_consistency_enabled` | bool | `true` | config | `/api/config/update` |
+| `reasoning.step_back_enabled` | bool | `true` | config | `/api/config/update` |
+| `reasoning.step_back_model` | str | *(empty)* | config | `/api/config/update` |
+| `reasoning.step_back_timeout_seconds` | int | `20` | config | `/api/config/update` |
+
+## Intelligence → Agent Teams
+
+*Letting agents hand work to each other.*
+
+Delegation: an agent dispatching a subtask to another agent, either ad-hoc from the roster or through a team you've defined. Depth, parallelism, and timeout bound how far a chain of that can run.
+
+Lower the depth or parallelism when delegation is running away with cost. Turn ad-hoc delegation off entirely if you want agents to work alone unless a team explicitly says otherwise.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `alloy.allow_adhoc_delegation` | bool | `true` | config | `/api/config/update` |
+| `alloy.chain_of_command` | bool | `true` | config | `/api/config/update` |
+| `alloy.delegation_timeout_seconds` | int | `300` | config | `/api/config/update` |
+| `alloy.effort_tiers.deep` | int | `60` | config | read-only |
+| `alloy.effort_tiers.marathon` | int | `100` | config | read-only |
+| `alloy.effort_tiers.quick` | int | `8` | config | read-only |
+| `alloy.effort_tiers.standard` | int | `30` | config | read-only |
+| `alloy.max_delegation_depth` | int | `3` | config | `/api/config/update` |
+| `alloy.max_parallel_delegations` | int | `3` | config | `/api/config/update` |
+| `alloy.non_blocking_delegations` | bool | `true` | config | `/api/config/update` |
+
+## Intelligence → Ambassador
+
+*A parallel agent that briefs you without entering the conversation.*
+
+A dedicated operator running alongside a conversation: it reads the transcript, answers questions about it, and can propose actions — but its tool belt never executes a write. Reads run automatically; anything that would change state comes back as a proposal for you to confirm.
+
+Change the model or context depth when briefings are too shallow or too expensive. The aide settings tune the parallel read fan-out behind it and rarely need touching.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `ambassador.aide.cache_ttl_seconds` | int | `1800` | config | `/api/config/update` |
+| `ambassador.aide.enabled` | bool | `true` | config | `/api/config/update` |
+| `ambassador.aide.max_input_chars` | int | `6000` | config | `/api/config/update` |
+| `ambassador.aide.max_parallel` | int | `4` | config | `/api/config/update` |
+| `ambassador.aide.max_per_survey` | int | `8` | config | `/api/config/update` |
+| `ambassador.aide.max_tokens` | int | `220` | config | `/api/config/update` |
+| `ambassador.aide.model` | str | *(empty)* | config | `/api/config/update` |
+| `ambassador.aide.temperature` | float | `0.2` | config | `/api/config/update` |
+| `ambassador.aide.timeout_seconds` | int | `20` | config | `/api/config/update` |
+| `ambassador.dispatch.enabled` | bool | `true` | config | `/api/config/update` |
+| `ambassador.enabled` | bool | `true` | config | `/api/config/update` |
+| `ambassador.max_context_turns` | int | `8` | config | `/api/config/update` |
+| `ambassador.max_tokens` | int | `600` | config | `/api/config/update` |
+| `ambassador.model` | NoneType | — | config | `/api/config/update` |
+| `ambassador.profile_id` | NoneType | — | config | `/api/config/update` |
+| `ambassador.speech_model` | NoneType | — | config | `/api/config/update` |
+| `ambassador.transcription_model` | NoneType | — | config | `/api/config/update` |
+| `ambassador.voice` | NoneType | — | config | `/api/config/update` |
+
+## Intelligence → Research Mode
+
+*Deep, cited research with a much larger budget than a normal turn.*
+
+A per-conversation mode that raises the tool-round and search budgets, runs sub-questions in batches, and produces a report that reviews its own citations before it returns.
+
+Raise the round limit for genuinely broad questions; lower it to stop research becoming an expensive default. The minimum output budget matters more than it looks — a report starved of tokens returns early and half-formed rather than failing outright.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `research.default_depth` | str | `auto` | config | `/api/config/update` |
+| `research.enabled` | bool | `true` | config | `/api/config/update` |
+| `research.max_tool_rounds` | int | `40` | config | `/api/config/update` |
+| `research.min_max_tokens` | int | `16384` | config | `/api/config/update` |
+| `web_research.budget_weight` | int | `3` | config | `/api/config/update` |
+| `web_research.cache_ttl_seconds` | int | `1800` | config | `/api/config/update` |
+| `web_research.enabled` | bool | `true` | config | `/api/config/update` |
+| `web_research.poll_interval_seconds` | int | `5` | config | `/api/config/update` |
+| `web_research.poll_timeout_seconds` | int | `240` | config | `/api/config/update` |
+
+## Prompts → Prompt Enhancement
+
+*Rewriting your prompt into a fuller one before it runs.*
+
+An optional pass that expands what you typed into a more complete instruction, using its own model and temperature so it doesn't draw on the conversation's budget.
+
+Useful when you type quickly and want intent inferred. Turn it off when you need your exact wording to survive — it rewrites, and a rewrite can drop a constraint you meant literally.
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `prompt_enhancement.enabled` | bool | `true` | config | `/api/config/update` |
+| `prompt_enhancement.max_tokens` | int | `1000` | config | `/api/config/update` |
+| `prompt_enhancement.model` | str | *(empty)* | config | `/api/config/update` |
+| `prompt_enhancement.system_prompt` | str | *(empty)* | config | `/api/config/update` |
+| `prompt_enhancement.temperature` | float | `0.7` | config | `/api/config/update` |
+
+## Memory → Conversation Context
+
+*How much of the conversation the model sees, word for word.*
+
+Per-turn context assembly — how much of the window recent turns may fill verbatim, when older turns fold into a running digest, and how tool output and long tool loops are compressed on the way in.
+
+The section to visit when a conversation starts losing detail, or when a long tool run is eating the window. With a correctly declared model window, most conversations never compact at all.
 
 ### `compression.enabled`
 
 *Summarise a single tool result that comes back too large.*
 
-**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** `true` · **Set via:** `/api/config/update`
 
 **What it is.** Compression of one oversized tool output, before it enters the turn.
 
@@ -45,7 +308,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How much of an oversized tool result survives compression.*
 
-**Default:** `2000` · **Range:** 500 to 10000, characters · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `2000` · **Range:** 500 to 10000, characters · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** The size budget for the summary that replaces a too-large result.
 
@@ -59,7 +322,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Which model summarises oversized tool results.*
 
-**Default:** *(empty)* · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** *(empty)* · **Set via:** `/api/config/update`
 
 **What it is.** The model used for task-aware compression of a single result.
 
@@ -73,7 +336,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Fold aged-out turns into the structured digest instead of free prose.*
 
-**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `true` · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** Which of the two summary mechanisms receives compacted history.
 
@@ -87,7 +350,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Keep a structured working memory for the conversation.*
 
-**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** `true` · **Set via:** `/api/config/update`
 
 **What it is.** A per-conversation record of goals, decisions, open threads and artifacts — plus the rolling digest of aged-out turns.
 
@@ -101,7 +364,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Optional hard ceiling on what one turn may spend on input.*
 
-**Default:** `0` · **Range:** 0 to 1000000, tokens · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `0` · **Range:** 0 to 1000000, tokens · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** A per-turn spend guard for the tool loop, in tokens. 0 turns it off.
 
@@ -115,7 +378,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Refresh the digest mid-turn rather than let anything drop uncovered.*
 
-**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `true` · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** The backstop that guarantees nothing leaves the model's view without being summarised first.
 
@@ -129,7 +392,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How many recent turns are never summarised, whatever the pressure.*
 
-**Default:** `4` · **Range:** 1 to 50, turns · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** `4` · **Range:** 1 to 50, turns · **Set via:** `/api/config/update`
 
 **What it is.** The number of most-recent turns that always stay word-for-word.
 
@@ -143,7 +406,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How far back to read when reopening a cold conversation.*
 
-**Default:** `400` · **Range:** 20 to 2000, turns · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `400` · **Range:** 20 to 2000, turns · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** The cap on turns pulled from durable history when a session is resumed.
 
@@ -157,7 +420,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *When to prepare the digest, ahead of actually needing it.*
 
-**Default:** `0.85` · **Range:** 0.5 to 0.98, of the history budget · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** `0.85` · **Range:** 0.5 to 0.98, of the history budget · **Set via:** `/api/config/update`
 
 **What it is.** The point at which compaction runs *after* a turn, so the digest is already fresh the next time older turns need to leave the verbatim window.
 
@@ -171,7 +434,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How much of the model's context window the word-for-word transcript may fill.*
 
-**Default:** `0.9` · **Range:** 0.5 to 0.98, of the context window · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** `0.9` · **Range:** 0.5 to 0.98, of the context window · **Set via:** `/api/config/update`
 
 **What it is.** The ceiling on the verbatim window — the stretch of recent conversation the model sees exactly as it happened, rather than as a summary.
 
@@ -185,7 +448,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Offer pointers to earlier conversations that look related.*
 
-**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `true` · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** Short leads drawn from episodic memory — "we discussed this on…" — rather than full recalled content.
 
@@ -199,7 +462,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Whether conversations compact automatically at all.*
 
-**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** `true` · **Set via:** `/api/config/update`
 
 **What it is.** The master switch for automatic compaction, whichever target it writes to.
 
@@ -213,7 +476,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How long one compaction pass may make the digest.*
 
-**Default:** `800` · **Range:** 200 to 4000, tokens · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `800` · **Range:** 200 to 4000, tokens · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** The output budget for a single summarisation pass.
 
@@ -227,7 +490,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Which model writes the compaction summaries.*
 
-**Default:** *(empty)* · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** *(empty)* · **Set via:** `/api/config/update`
 
 **What it is.** The model used to fold aged-out turns into the digest.
 
@@ -241,7 +504,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Compress earlier tool rounds during a long turn.*
 
-**Default:** `true` · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** `true` · **Set via:** `/api/config/update`
 
 **What it is.** In-turn compression of the trajectory — the accumulated tool calls and results within a single turn.
 
@@ -255,7 +518,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How large the compressed knowledge block may be.*
 
-**Default:** `3000` · **Range:** 500 to 10000, characters · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `3000` · **Range:** 500 to 10000, characters · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** The size cap on the block that replaces compressed tool rounds.
 
@@ -269,7 +532,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Which model compresses tool rounds mid-turn.*
 
-**Default:** *(empty)* · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update`
+**Default:** *(empty)* · **Set via:** `/api/config/update`
 
 **What it is.** The model that writes the knowledge block replacing earlier rounds.
 
@@ -283,7 +546,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How many recent tool rounds survive compression untouched.*
 
-**Default:** `2` · **Range:** 1 to 5, rounds · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `2` · **Range:** 1 to 5, rounds · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** The number of most-recent tool-call rounds always kept in full.
 
@@ -297,7 +560,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How full a turn gets before earlier tool rounds are compressed.*
 
-**Default:** `0.75` · **Range:** 0.5 to 0.95, of the turn budget · **Found in:** Memory → Conversation Context · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
+**Default:** `0.75` · **Range:** 0.5 to 0.95, of the turn budget · **Set via:** `/api/config/update` · Advanced — behind the disclosure in Settings.
 
 **What it is.** The fraction of the turn's budget that triggers in-turn compression.
 
@@ -307,11 +570,28 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 **Managing it.** Default 0.75. Below about 0.5 you compress work that had room to breathe.
 
+**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+
+| Setting | Type | Default | Store | Set via |
+| --- | --- | --- | --- | --- |
+| `compression.max_tokens` | int | `1000` | config | read-only |
+| `compression.temperature` | float | `0.2` | config | read-only |
+| `trajectory_compression.max_tokens` | int | `1500` | config | read-only |
+| `trajectory_compression.temperature` | float | `0.2` | config | read-only |
+
+## Memory → Recall
+
+*How the agent searches its own memory for a turn.*
+
+Five retrieval techniques over stored memory — hybrid keyword-and-meaning search, entity-centric expansion, query expansion, HyDE, and self-query — followed by a cross-encoder that re-ranks whatever they found.
+
+Turn techniques on for recall quality and off for latency and cost: each is another pass over the same memory. Every knob here belongs to exactly one technique, so a technique you've turned off costs nothing anywhere else.
+
 ### `cross_encoder_enabled`
 
 *Re-score the shortlist with a slower, more accurate model before answering.*
 
-**Default:** `true` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `true` · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The second stage of retrieval. The fast searches propose a pool of candidates; a cross-encoder then reads each candidate together with the query and re-orders them. Worth about +20pp MRR on the golden recall set.
 
@@ -325,7 +605,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *The Hugging Face cross-encoder that re-scores candidates.*
 
-**Default:** `cross-encoder/ms-marco-MiniLM-L-6-v2` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `cross-encoder/ms-marco-MiniLM-L-6-v2` · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** A local sentence-transformers cross-encoder identifier, loaded on first recall.
 
@@ -339,7 +619,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How many candidates the reranker gets to look at.*
 
-**Default:** `50` · **Range:** 10 to 200, candidates · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `50` · **Range:** 10 to 200, candidates · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The size of the shortlist stage 1 hands to stage 2. Deliberately much larger than the number of facts that end up in the prompt.
 
@@ -353,7 +633,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How far the reranker may push a candidate down — a hedge against its blind spots.*
 
-**Default:** `2` · **Range:** 0 to 20, places · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `2` · **Range:** 0 to 20, places · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** A cap on the reranker's pessimism. It may promote a candidate as far as it likes, but it may only demote one this many positions below where fusion placed it.
 
@@ -367,7 +647,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Find facts by walking the entity graph instead of matching text.*
 
-**Default:** `true` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `true` · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** A retrieval path that goes through *things* rather than words. When a query names an entity the agent already knows, its facts are pulled directly from the graph.
 
@@ -381,7 +661,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Search memory by keyword and by meaning at once, then fuse the two rankings.*
 
-**Default:** `true` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `true` · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The default way memory is searched. Two searches run over the same facts: BM25 keyword matching (does this text contain these words?) and vector similarity (does this text mean something close?). Their rankings are then merged.
 
@@ -395,7 +675,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Imagine the answer first, then search for facts that look like it.*
 
-**Default:** `false` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `false` · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** Hypothetical Document Embedding. Instead of searching with the question, the agent drafts a plausible answer and searches with *that* — because a made-up answer sits much closer in vector space to the real one than the question does.
 
@@ -409,7 +689,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Rewrite the question a few ways before searching, so phrasing matters less.*
 
-**Default:** `true` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `true` · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** A pre-search step that generates alternative phrasings of the query and searches with all of them, so a stored fact worded differently from the question still surfaces.
 
@@ -423,7 +703,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Pull filters out of the question — dates, names — and search within them.*
 
-**Default:** `false` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `false` · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** A step that reads structured constraints out of natural language, so "what did we decide last week" becomes a search restricted to last week rather than a text search containing the words "last week".
 
@@ -437,7 +717,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How many relationship hops out from a matched entity to gather facts.*
 
-**Default:** `1` · **Range:** 1 to 5, hops · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings` · Advanced — behind the disclosure in Settings.
+**Default:** `1` · **Range:** 1 to 5, hops · **Set via:** `/api/memory/recall-settings` · Advanced — behind the disclosure in Settings.
 
 **What it is.** The traversal radius in the entity graph. Depth 1 means the entity's own facts; depth 2 also means facts about everything it is directly related to.
 
@@ -451,7 +731,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How many entities one query may pull facts from.*
 
-**Default:** `5` · **Range:** 1 to 20, entities · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `5` · **Range:** 1 to 20, entities · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** A ceiling on entity fan-out per recall.
 
@@ -465,7 +745,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How confident the match must be before a query is linked to a known entity.*
 
-**Default:** `0.65` · **Range:** 0.3 to 0.95 · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `0.65` · **Range:** 0.3 to 0.95 · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The minimum similarity for text in the query to be treated as naming an entity.
 
@@ -479,7 +759,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How many alternative phrasings of the question to search with.*
 
-**Default:** `3` · **Range:** 1 to 10, variants · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `3` · **Range:** 1 to 10, variants · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The cap on generated query variants per recall.
 
@@ -493,7 +773,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Penalise facts whose subject is ambiguous between the user and the agent.*
 
-**Default:** `false` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings` · Experimental — unproven; may change or be withdrawn.
+**Default:** `false` · **Set via:** `/api/memory/recall-settings` · Experimental — unproven; may change or be withdrawn.
 
 **What it is.** An experimental attribution guard. It down-weights facts where "I" or "my" makes it unclear whether the statement is about the user or about the agent itself.
 
@@ -507,7 +787,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How hard the attribution guard penalises an ambiguous fact.*
 
-**Default:** `0.5` · **Range:** 0 to 1 · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings` · Experimental — unproven; may change or be withdrawn.
+**Default:** `0.5` · **Range:** 0 to 1 · **Set via:** `/api/memory/recall-settings` · Experimental — unproven; may change or be withdrawn.
 
 **What it is.** The score reduction applied to first-person-ambiguous candidates.
 
@@ -521,7 +801,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How much keyword matching counts when fusing the two searches.*
 
-**Default:** `0.3` · **Range:** 0 to 1 · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `0.3` · **Range:** 0 to 1 · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The weight given to the BM25 (exact-token) ranking during fusion.
 
@@ -535,7 +815,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How sharply top ranks are favoured when merging the two result lists.*
 
-**Default:** `60` · **Range:** 1 to 200 · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings` · Advanced — behind the disclosure in Settings.
+**Default:** `60` · **Range:** 1 to 200 · **Set via:** `/api/memory/recall-settings` · Advanced — behind the disclosure in Settings.
 
 **What it is.** The Reciprocal Rank Fusion constant. Each list contributes 1/(k + rank), so k sets how steeply the reward falls off with position.
 
@@ -549,7 +829,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How much semantic similarity counts when fusing the two searches.*
 
-**Default:** `0.7` · **Range:** 0 to 1 · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `0.7` · **Range:** 0 to 1 · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The weight given to the vector (meaning) ranking during fusion.
 
@@ -563,7 +843,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Length cap on the hypothetical answer.*
 
-**Default:** `150` · **Range:** 50 to 2000, tokens · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `150` · **Range:** 50 to 2000, tokens · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The token ceiling for the drafted answer before it is embedded.
 
@@ -577,7 +857,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *The model that drafts the hypothetical answer. Empty follows the Fast Utility role.*
 
-**Default:** `inherit` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `inherit` · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The small, fast model used to invent a plausible answer for HyDE to search with. Never writes anything the user sees.
 
@@ -591,7 +871,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How varied the hypothetical answer is allowed to be.*
 
-**Default:** `0.7` · **Range:** 0 to 1 · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `0.7` · **Range:** 0 to 1 · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** Sampling temperature for the HyDE draft.
 
@@ -605,7 +885,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *The score a fact must reach before it may enter the prompt at all.*
 
-**Default:** `0.5` · **Range:** 0 to 1 · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings` · Advanced — behind the disclosure in Settings.
+**Default:** `0.5` · **Range:** 0 to 1 · **Set via:** `/api/memory/recall-settings` · Advanced — behind the disclosure in Settings.
 
 **What it is.** A floor applied after all techniques and reranking have run. Anything below it is dropped rather than ranked.
 
@@ -619,7 +899,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *Length cap on the extracted filter set.*
 
-**Default:** `200` · **Range:** 50 to 2000, tokens · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `200` · **Range:** 50 to 2000, tokens · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The token ceiling for the structured filter output.
 
@@ -633,7 +913,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *The model that extracts filters from the question. Empty follows the Fast Utility role.*
 
-**Default:** `inherit` · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `inherit` · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** The small model that reads dates, names, and keywords out of natural language.
 
@@ -647,7 +927,7 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 *How deterministic filter extraction is. Keep it low.*
 
-**Default:** `0.2` · **Range:** 0 to 1 · **Found in:** Memory → Recall · **Set via:** `/api/memory/recall-settings`
+**Default:** `0.2` · **Range:** 0 to 1 · **Set via:** `/api/memory/recall-settings`
 
 **What it is.** Sampling temperature for the extraction call.
 
@@ -657,762 +937,173 @@ These carry the full write-up. The rest of the catalogue is tabulated below, and
 
 **Managing it.** If self-query produces odd filters, lower this before changing the model.
 
-## Full catalogue
+## Memory → Consolidation
 
-Every remaining setting, by the screen it appears on. A blank write route means the value is read-only over the API.
+*Turning finished conversations into facts, entities, and procedures.*
 
-### Intelligence → Agent Teams
+The background pipeline that reads completed turns and keeps what's worth keeping: facts and their confidence, entities and the links between them, contradictions and corrections against what is already stored, and distilled "how we work" procedures.
 
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `alloy.allow_adhoc_delegation` | bool | `true` | config | `/api/config/update` |
-
-| `alloy.chain_of_command` | bool | `true` | config | `/api/config/update` |
-
-| `alloy.delegation_timeout_seconds` | int | `300` | config | `/api/config/update` |
-
-| `alloy.effort_tiers.deep` | int | `60` | config | read-only |
-
-| `alloy.effort_tiers.marathon` | int | `100` | config | read-only |
-
-| `alloy.effort_tiers.quick` | int | `8` | config | read-only |
-
-| `alloy.effort_tiers.standard` | int | `30` | config | read-only |
-
-| `alloy.max_delegation_depth` | int | `3` | config | `/api/config/update` |
-
-| `alloy.max_parallel_delegations` | int | `3` | config | `/api/config/update` |
-
-| `alloy.non_blocking_delegations` | bool | `true` | config | `/api/config/update` |
-
-### Intelligence → Ambassador
+Raise the confidence thresholds when memory accumulates things that aren't true; lower them when it drops things you said plainly. The job intervals decide how quickly a conversation becomes memory at all.
 
 | Setting | Type | Default | Store | Set via |
-
 | --- | --- | --- | --- | --- |
-
-| `ambassador.aide.cache_ttl_seconds` | int | `1800` | config | `/api/config/update` |
-
-| `ambassador.aide.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `ambassador.aide.max_input_chars` | int | `6000` | config | `/api/config/update` |
-
-| `ambassador.aide.max_parallel` | int | `4` | config | `/api/config/update` |
-
-| `ambassador.aide.max_per_survey` | int | `8` | config | `/api/config/update` |
-
-| `ambassador.aide.max_tokens` | int | `220` | config | `/api/config/update` |
-
-| `ambassador.aide.model` | str | *(empty)* | config | `/api/config/update` |
-
-| `ambassador.aide.temperature` | float | `0.2` | config | `/api/config/update` |
-
-| `ambassador.aide.timeout_seconds` | int | `20` | config | `/api/config/update` |
-
-| `ambassador.dispatch.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `ambassador.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `ambassador.max_context_turns` | int | `8` | config | `/api/config/update` |
-
-| `ambassador.max_tokens` | int | `600` | config | `/api/config/update` |
-
-| `ambassador.model` | NoneType | — | config | `/api/config/update` |
-
-| `ambassador.profile_id` | NoneType | — | config | `/api/config/update` |
-
-| `ambassador.speech_model` | NoneType | — | config | `/api/config/update` |
-
-| `ambassador.transcription_model` | NoneType | — | config | `/api/config/update` |
-
-| `ambassador.voice` | NoneType | — | config | `/api/config/update` |
-
-### Memory → Conversation Context
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `compression.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `compression.max_summary_chars` | int | `2000` | config | `/api/config/update` |
-
-| `compression.max_tokens` | int | `1000` | config | read-only |
-
-| `compression.model` | str | *(empty)* | config | `/api/config/update` |
-
-| `compression.temperature` | float | `0.2` | config | read-only |
-
-| `context.conversation_state_compaction_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `context.conversation_state_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `context.max_input_tokens` | int | `0` | config | `/api/config/update` |
-
-| `context.preassembly_summary_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `context.recent_floor` | int | `4` | config | `/api/config/update` |
-
-| `context.rehydrate_max_turns` | int | `400` | config | `/api/config/update` |
-
-| `context.summary_trigger_ratio` | float | `0.85` | config | `/api/config/update` |
-
-| `context.verbatim_budget_ratio` | float | `0.9` | config | `/api/config/update` |
-
-| `memory.episodic_leads_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `session.rolling_summary.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `session.rolling_summary.max_tokens` | int | `800` | config | `/api/config/update` |
-
-| `session.rolling_summary.model` | str | *(empty)* | config | `/api/config/update` |
-
-| `trajectory_compression.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `trajectory_compression.max_knowledge_chars` | int | `3000` | config | `/api/config/update` |
-
-| `trajectory_compression.max_tokens` | int | `1500` | config | read-only |
-
-| `trajectory_compression.model` | str | *(empty)* | config | `/api/config/update` |
-
-| `trajectory_compression.preserve_recent_rounds` | int | `2` | config | `/api/config/update` |
-
-| `trajectory_compression.temperature` | float | `0.2` | config | read-only |
-
-| `trajectory_compression.threshold_ratio` | float | `0.75` | config | `/api/config/update` |
-
-### Infrastructure → Images & Audio
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `images.avatar_model` | str | `openrouter:microsoft/mai-image-2.5` | config | `/api/config/update` |
-
-| `images.avatar_style_prompt` | str | `Create one square avatar portrait.
-
-COMPOSITI…` | config | `/api/config/update` |
-
-| `images.default_model` | str | `openrouter:black-forest-labs/flux.2-klein-4b` | config | `/api/config/update` |
-
-| `images.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `vision.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `vision.refeed_recent_turns` | int | `2` | config | `/api/config/update` |
-
-### Memory → Consolidation
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
 | `combined_extraction_max_tokens` | int | `2000` | memory | `/api/memory/settings` |
-
 | `combined_extraction_model` | str | `inherit` | memory | `/api/memory/settings` |
-
 | `combined_extraction_temperature` | float | `0.3` | memory | `/api/memory/settings` |
-
 | `contradiction_detection_enabled` | bool | `true` | memory | `/api/memory/settings` |
-
 | `contradiction_max_candidates` | int | `10` | memory | `/api/memory/settings` |
-
 | `contradiction_max_tokens` | int | `500` | memory | `/api/memory/settings` |
-
 | `contradiction_model` | str | `inherit` | memory | `/api/memory/settings` |
-
 | `contradiction_similarity_threshold` | float | `0.5` | memory | `/api/memory/settings` |
-
 | `contradiction_temperature` | float | `0.2` | memory | `/api/memory/settings` |
-
 | `correction_detection_enabled` | bool | `true` | memory | `/api/memory/settings` |
-
 | `correction_max_tokens` | int | `500` | memory | `/api/memory/settings` |
-
 | `correction_model` | str | `inherit` | memory | `/api/memory/settings` |
-
 | `correction_temperature` | float | `0.2` | memory | `/api/memory/settings` |
-
 | `entity_linking_enabled` | bool | `true` | memory | `/api/memory/settings` |
-
 | `entity_linking_max_facts` | int | `5000` | memory | `/api/memory/settings` |
-
 | `entity_linking_max_ngram` | int | `4` | memory | `/api/memory/settings` |
-
 | `entity_linking_model` | str | `inherit` | memory | `/api/memory/settings` |
-
 | `entity_linking_similarity_threshold` | float | `0.75` | memory | `/api/memory/settings` |
-
 | `entity_linking_use_llm_disambiguation` | bool | `false` | memory | `/api/memory/settings` |
-
 | `extraction_condense_facts` | bool | `true` | memory | `/api/memory/settings` |
-
 | `extraction_enabled` | bool | `true` | memory | `/api/memory/settings` |
-
 | `extraction_max_tokens` | int | `2000` | memory | `/api/memory/settings` |
-
 | `extraction_model` | str | `inherit` | memory | `/api/memory/settings` |
-
 | `extraction_system_prompt` | str | *(empty)* | memory | `/api/memory/settings` |
-
 | `extraction_temperature` | float | `0.2` | memory | `/api/memory/settings` |
-
 | `fact_confidence_threshold` | float | `0.7` | memory | `/api/memory/settings` |
-
 | `feature_default_model` | str | *(empty)* | memory | `/api/memory/settings` |
-
 | `job_consolidate_interval` | int | `15` | memory | `/api/memory/settings` |
-
 | `job_distill_procedures_interval` | int | `30` | memory | `/api/memory/settings` |
-
 | `job_entity_linking_interval` | int | `30` | memory | `/api/memory/settings` |
-
 | `job_promote_interval` | int | `60` | memory | `/api/memory/settings` |
-
 | `link_autocreate_stub_entities` | bool | `true` | memory | `/api/memory/settings` |
-
 | `procedural_dedupe_threshold` | float | `0.85` | memory | `/api/memory/settings` |
-
 | `procedural_distill_batch_limit` | int | `100` | memory | `/api/memory/settings` |
-
 | `procedural_distill_max_tokens` | int | `1000` | memory | `/api/memory/settings` |
-
 | `procedural_distill_model` | str | `inherit` | memory | `/api/memory/settings` |
-
 | `procedural_distill_temperature` | float | `0.2` | memory | `/api/memory/settings` |
-
 | `procedural_distill_timeout_s` | int | `90` | memory | `/api/memory/settings` |
-
 | `promotion_min_confidence` | float | `0.85` | memory | `/api/memory/settings` |
-
 | `reflex_core_enabled` | bool | `true` | memory | `/api/memory/settings` |
-
 | `reflex_core_limit` | int | `5` | memory | `/api/memory/settings` |
-
 | `relevance_filter_enabled` | bool | `true` | memory | `/api/memory/settings` |
-
 | `relevance_filter_max_tokens` | int | `500` | memory | `/api/memory/settings` |
-
 | `relevance_filter_model` | str | `inherit` | memory | `/api/memory/settings` |
-
 | `relevance_filter_prompt` | str | *(empty)* | memory | `/api/memory/settings` |
-
 | `relevance_filter_temperature` | float | `0.1` | memory | `/api/memory/settings` |
-
 | `salient_core_enabled` | bool | `true` | memory | `/api/memory/settings` |
-
 | `salient_core_limit` | int | `8` | memory | `/api/memory/settings` |
-
 | `salient_core_min_salience` | float | `0.6` | memory | `/api/memory/settings` |
-
 | `semantic_duplicate_threshold` | float | `0.92` | memory | `/api/memory/settings` |
 
-### Memory → Recall
+## Not shown in Settings
+
+Read-only plumbing, plus a few values set elsewhere in the app rather than on a settings screen.
 
 | Setting | Type | Default | Store | Set via |
-
 | --- | --- | --- | --- | --- |
-
-| `cross_encoder_enabled` | bool | `true` | memory | `/api/memory/recall-settings` |
-
-| `cross_encoder_model` | str | `cross-encoder/ms-marco-MiniLM-L-6-v2` | memory | `/api/memory/recall-settings` |
-
-| `recall_candidate_pool` | int | `50` | memory | `/api/memory/recall-settings` |
-
-| `recall_ce_max_demotion` | int | `2` | memory | `/api/memory/recall-settings` |
-
-| `recall_enable_entity_centric` | bool | `true` | memory | `/api/memory/recall-settings` |
-
-| `recall_enable_hybrid` | bool | `true` | memory | `/api/memory/recall-settings` |
-
-| `recall_enable_hyde` | bool | `false` | memory | `/api/memory/recall-settings` |
-
-| `recall_enable_query_expansion` | bool | `true` | memory | `/api/memory/recall-settings` |
-
-| `recall_enable_self_query` | bool | `false` | memory | `/api/memory/recall-settings` |
-
-| `recall_entity_graph_depth` | int | `1` | memory | `/api/memory/recall-settings` |
-
-| `recall_entity_max_entities` | int | `5` | memory | `/api/memory/recall-settings` |
-
-| `recall_entity_similarity_threshold` | float | `0.65` | memory | `/api/memory/recall-settings` |
-
-| `recall_expansion_max_variants` | int | `3` | memory | `/api/memory/recall-settings` |
-
-| `recall_first_person_guard` | bool | `false` | memory | `/api/memory/recall-settings` |
-
-| `recall_first_person_penalty` | float | `0.5` | memory | `/api/memory/recall-settings` |
-
-| `recall_hybrid_bm25_weight` | float | `0.3` | memory | `/api/memory/recall-settings` |
-
-| `recall_hybrid_rrf_k` | int | `60` | memory | `/api/memory/recall-settings` |
-
-| `recall_hybrid_vector_weight` | float | `0.7` | memory | `/api/memory/recall-settings` |
-
-| `recall_hyde_max_tokens` | int | `150` | memory | `/api/memory/recall-settings` |
-
-| `recall_hyde_model` | str | `inherit` | memory | `/api/memory/recall-settings` |
-
-| `recall_hyde_temperature` | float | `0.7` | memory | `/api/memory/recall-settings` |
-
-| `recall_min_confidence` | float | `0.5` | memory | `/api/memory/recall-settings` |
-
-| `recall_self_query_max_tokens` | int | `200` | memory | `/api/memory/recall-settings` |
-
-| `recall_self_query_model` | str | `inherit` | memory | `/api/memory/recall-settings` |
-
-| `recall_self_query_temperature` | float | `0.2` | memory | `/api/memory/recall-settings` |
-
-### Infrastructure → Model Roles
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `models.defaults.chat` | NoneType | — | config | read-only |
-
-| `models.defaults.extraction` | NoneType | — | config | read-only |
-
-| `models.defaults.reasoning` | NoneType | — | config | read-only |
-
-| `models.fallback_enabled` | bool | `true` | config | read-only |
-
-| `models.overrides` | dict | *(empty)* | config | read-only |
-
-| `models.roles.deep_reasoning` | str | *(empty)* | config | `/api/config/update` |
-
-| `models.roles.fast_utility` | str | *(empty)* | config | `/api/config/update` |
-
-| `models.roles.summarizer` | str | *(empty)* | config | `/api/config/update` |
-
-### Infrastructure → Model Limits
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `context_limits.lmstudio.context_window` | int | `32768` | config | `/api/config/update` |
-
-| `context_limits.lmstudio.max_output_tokens` | int | `8192` | config | `/api/config/update` |
-
-| `context_limits.models` | dict | *(empty)* | config | `/api/config/update` |
-
-| `llm_settings.default_max_tokens` | int | `4096` | config | `/api/config/update` |
-
-| `llm_settings.default_temperature` | float | `0.7` | config | `/api/config/update` |
-
-| `llm_settings.frequency_penalty` | float | `0.0` | config | `/api/config/update` |
-
-| `llm_settings.presence_penalty` | float | `0.0` | config | `/api/config/update` |
-
-| `llm_settings.top_p` | float | `1.0` | config | `/api/config/update` |
-
-### Intelligence → Task Planner
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `planner.complexity_threshold` | str | `complex` | config | `/api/config/update` |
-
-| `planner.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `planner.max_subtasks` | int | `6` | config | `/api/config/update` |
-
-| `planner.max_tokens` | int | `1000` | config | `/api/config/update` |
-
-| `planner.model` | NoneType | — | config | `/api/config/update` |
-
-| `planner.prompt_override` | str | *(empty)* | config | `/api/config/update` |
-
-| `planner.temperature` | float | `0.3` | config | `/api/config/update` |
-
-### Prompts → Prompt Enhancement
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `prompt_enhancement.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `prompt_enhancement.max_tokens` | int | `1000` | config | `/api/config/update` |
-
-| `prompt_enhancement.model` | str | *(empty)* | config | `/api/config/update` |
-
-| `prompt_enhancement.system_prompt` | str | *(empty)* | config | `/api/config/update` |
-
-| `prompt_enhancement.temperature` | float | `0.7` | config | `/api/config/update` |
-
-### Infrastructure → Model Providers
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `providers.anthropic.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-
-| `providers.anthropic.base_url` | NoneType | — | config | `/api/config/update` |
-
-| `providers.custom` | dict | *(empty)* | config | `/api/config/update` |
-
-| `providers.lmstudio.base_url` | NoneType | — | config | `/api/config/update` |
-
-| `providers.lmstudio.timeout` | int | `300` | config | `/api/config/update` |
-
-| `providers.openai.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-
-| `providers.openai.base_url` | NoneType | — | config | `/api/config/update` |
-
-| `providers.openrouter.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-
-| `providers.openrouter.app_name` | NoneType | — | config | `/api/config/update` |
-
-| `providers.openrouter.site_url` | NoneType | — | config | `/api/config/update` |
-
-| `providers.vercel.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-
-| `providers.vercel.base_url` | NoneType | — | config | `/api/config/update` |
-
-### Intelligence → Research Mode
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `research.default_depth` | str | `auto` | config | `/api/config/update` |
-
-| `research.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `research.max_tool_rounds` | int | `40` | config | `/api/config/update` |
-
-| `research.min_max_tokens` | int | `16384` | config | `/api/config/update` |
-
-| `web_research.budget_weight` | int | `3` | config | `/api/config/update` |
-
-| `web_research.cache_ttl_seconds` | int | `1800` | config | `/api/config/update` |
-
-| `web_research.enabled` | bool | `true` | config | `/api/config/update` |
-
-| `web_research.poll_interval_seconds` | int | `5` | config | `/api/config/update` |
-
-| `web_research.poll_timeout_seconds` | int | `240` | config | `/api/config/update` |
-
-### Infrastructure → Web Search
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `search.backend` | str | `tavily` | config | `/api/config/update` |
-
-| `search.brave_answers_cost_per_request_usd` | float | `0.004` | config | read-only |
-
-| `search.brave_answers_enabled` | bool | `false` | config | `/api/config/update` |
-
-| `search.brave_api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-
-| `search.brave_context_max_snippets` | int | `50` | config | read-only |
-
-| `search.brave_context_max_tokens` | int | `4096` | config | `/api/config/update` |
-
-| `search.brave_context_max_tokens_per_url` | int | `1024` | config | `/api/config/update` |
-
-| `search.brave_context_threshold` | str | `balanced` | config | `/api/config/update` |
-
-| `search.brave_cost_per_request_usd` | float | `0.005` | config | read-only |
-
-| `search.brave_grounding_default` | bool | `true` | config | `/api/config/update` |
-
-| `search.brave_research_tiers.auto.iterations` | int | `3` | config | read-only |
-
-| `search.brave_research_tiers.auto.queries` | int | `20` | config | read-only |
-
-| `search.brave_research_tiers.auto.seconds` | int | `180` | config | read-only |
-
-| `search.brave_research_tiers.mini.iterations` | int | `2` | config | read-only |
-
-| `search.brave_research_tiers.mini.queries` | int | `8` | config | read-only |
-
-| `search.brave_research_tiers.mini.seconds` | int | `90` | config | read-only |
-
-| `search.brave_research_tiers.pro.iterations` | int | `5` | config | read-only |
-
-| `search.brave_research_tiers.pro.queries` | int | `40` | config | read-only |
-
-| `search.brave_research_tiers.pro.seconds` | int | `300` | config | read-only |
-
-| `search.cache_ttl_seconds` | int | `300` | config | `/api/config/update` |
-
-| `search.cost_per_credit_usd` | float | `0.008` | config | read-only |
-
-| `search.country` | str | *(empty)* | config | `/api/config/update` |
-
-| `search.default_chunks_per_source` | int | `0` | config | `/api/config/update` |
-
-| `search.default_search_depth` | str | *(empty)* | config | `/api/config/update` |
-
-| `search.fallback_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `search.max_results` | int | `5` | config | `/api/config/update` |
-
-| `search.per_turn_cost_usd` | float | `0.0` | config | `/api/config/update` |
-
-| `search.per_turn_limit` | int | `8` | config | `/api/config/update` |
-
-| `search.research_per_turn_cost_usd` | float | `0.0` | config | `/api/config/update` |
-
-| `search.research_per_turn_limit` | int | `40` | config | `/api/config/update` |
-
-| `search.safesearch` | str | *(empty)* | config | `/api/config/update` |
-
-| `search.search_lang` | str | *(empty)* | config | `/api/config/update` |
-
-| `search.source_policy` | dict | *(structured)* | config | `/api/config/update` |
-
-| `search.tavily_api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-
-| `search.timeout` | int | `15` | config | `/api/config/update` |
-
-### Intelligence → Thinking Patterns
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
-| `reasoning.auto_classifier_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `reasoning.chat_patterns_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `reasoning.classifier_min_chars` | int | `240` | config | `/api/config/update` |
-
-| `reasoning.classifier_model` | str | *(empty)* | config | `/api/config/update` |
-
-| `reasoning.cot_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `reasoning.min_output_tokens` | int | `0` | config | `/api/config/update` |
-
-| `reasoning.reflection_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `reasoning.sc_k` | int | `3` | config | `/api/config/update` |
-
-| `reasoning.sc_model` | str | *(empty)* | config | `/api/config/update` |
-
-| `reasoning.self_consistency_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `reasoning.step_back_enabled` | bool | `true` | config | `/api/config/update` |
-
-| `reasoning.step_back_model` | str | *(empty)* | config | `/api/config/update` |
-
-| `reasoning.step_back_timeout_seconds` | int | `20` | config | `/api/config/update` |
-
-### Not shown in Settings
-
-| Setting | Type | Default | Store | Set via |
-
-| --- | --- | --- | --- | --- |
-
 | `always_include_recent_turns` | int | `3` | memory | read-only |
-
 | `audit_log_level` | str | `writes` | memory | read-only |
-
 | `audit_partition_ahead_days` | int | `7` | memory | read-only |
-
 | `audit_retention_days` | int | `30` | memory | read-only |
-
 | `audit_sample_rate` | float | `1.0` | memory | read-only |
-
 | `channel_active_boost` | float | `1.2` | memory | read-only |
-
 | `confidence_explicit` | float | `0.95` | memory | read-only |
-
 | `confidence_implied` | float | `0.85` | memory | read-only |
-
 | `confidence_inferred` | float | `0.7` | memory | read-only |
-
 | `confidence_uncertain` | float | `0.5` | memory | read-only |
-
 | `connection_timeout` | int | `5` | memory | read-only |
-
 | `default_top_k` | int | `10` | memory | read-only |
-
 | `embedding_api_key` | str | *(secret)* | memory | read-only |
-
 | `embedding_base_url` | str | *(empty)* | memory | read-only |
-
 | `embedding_batch_max_size` | int | `32` | memory | read-only |
-
 | `embedding_batch_window_ms` | int | `5` | memory | read-only |
-
 | `embedding_cache_enabled` | bool | `true` | memory | read-only |
-
 | `embedding_cache_max_size` | int | `2048` | memory | read-only |
-
 | `embedding_cache_ttl_seconds` | float | `900.0` | memory | read-only |
-
 | `embedding_dimensions` | int | `1024` | memory | read-only |
-
 | `embedding_max_retries` | int | `3` | memory | read-only |
-
 | `embedding_model` | str | `text-embedding-3-small` | memory | read-only |
-
 | `embedding_provider` | str | `local` | memory | read-only |
-
 | `embedding_queue_enabled` | bool | `true` | memory | read-only |
-
 | `embedding_queue_max_size` | int | `1024` | memory | read-only |
-
 | `embedding_remote_max_inputs` | int | `2048` | memory | read-only |
-
 | `embedding_request_timeout` | float | `30.0` | memory | read-only |
-
 | `entity_embedding_backfill_batch` | int | `200` | memory | read-only |
-
 | `entity_linking_auto_threshold` | float | `0.9` | memory | read-only |
-
 | `entity_types` | list | *(structured)* | memory | read-only |
-
 | `episodic_retention_days` | int | `90` | memory | read-only |
-
 | `extraction_registry_max_entities` | int | `15` | memory | read-only |
-
 | `extraction_registry_max_facts` | int | `20` | memory | read-only |
-
 | `extraction_timeout` | float | `30.0` | memory | read-only |
-
 | `extraction_window_max_output_tokens` | int | `3000` | memory | read-only |
-
 | `extraction_window_max_tokens` | int | `1200` | memory | read-only |
-
 | `extraction_window_max_turns` | int | `6` | memory | read-only |
-
 | `extraction_windowing_enabled` | bool | `true` | memory | read-only |
-
 | `job_audit_partitions_interval` | int | `1440` | memory | read-only |
-
 | `job_cleanup_interval` | int | `1440` | memory | read-only |
-
 | `job_decay_interval` | int | `1440` | memory | read-only |
-
 | `job_patterns_interval` | int | `60` | memory | read-only |
-
 | `local_embedding_model` | str | `BAAI/bge-m3` | memory | read-only |
-
 | `max_query_length` | int | `10000` | memory | read-only |
-
 | `max_results_per_conversation` | int | `3` | memory | read-only |
-
 | `max_working_memory_items` | int | `50` | memory | read-only |
-
 | `memory.project_channels` | bool | `true` | config | `/api/config/update` |
-
 | `neo4j_max_connection_lifetime` | int | `300` | memory | read-only |
-
 | `neo4j_password` | str | *(secret)* | memory | read-only |
-
 | `neo4j_uri` | str | *(secret)* | memory | read-only |
-
 | `neo4j_user` | str | `neo4j` | memory | read-only |
-
 | `openai_api_key` | str | *(secret)* | memory | read-only |
-
 | `postgres_pool_max_overflow` | int | `20` | memory | read-only |
-
 | `postgres_pool_size` | int | `10` | memory | read-only |
-
 | `postgres_uri` | str | *(secret)* | memory | read-only |
-
 | `preferences.default_model` | NoneType | — | config | `/api/config/update` |
-
 | `preferences.default_reasoning_strategy` | str | `auto` | config | `/api/config/update` |
-
 | `preferences.enable_memory_by_default` | bool | `true` | config | `/api/config/update` |
-
 | `pricing.audio` | dict | *(empty)* | config | read-only |
-
 | `pricing.images` | dict | *(empty)* | config | read-only |
-
 | `promotion_min_access_count` | int | `5` | memory | read-only |
-
 | `promotion_min_conversations` | int | `2` | memory | read-only |
-
 | `redis_uri` | str | *(secret)* | memory | read-only |
-
 | `relationship_types` | list | *(structured)* | memory | read-only |
-
 | `reranking_enabled` | bool | `true` | memory | read-only |
-
 | `retrieval_cache_enabled` | bool | `true` | memory | read-only |
-
 | `retrieval_cache_key_prefix` | str | *(secret)* | memory | read-only |
-
 | `retrieval_cache_ttl_seconds` | int | `60` | memory | read-only |
-
 | `retrieval_weight_episodic` | float | `0.3` | memory | read-only |
-
 | `retrieval_weight_procedural` | float | `0.15` | memory | read-only |
-
 | `retrieval_weight_recency` | float | `0.1` | memory | read-only |
-
 | `retrieval_weight_semantic_entities` | float | `0.2` | memory | read-only |
-
 | `retrieval_weight_semantic_facts` | float | `0.25` | memory | read-only |
-
 | `salience_decay_rate` | float | `0.95` | memory | read-only |
-
 | `semantic_entity_linking_enabled` | bool | `true` | memory | read-only |
-
 | `shell.allow_network` | bool | `false` | config | read-only |
-
 | `shell.allow_unsandboxed` | bool | `false` | config | read-only |
-
 | `shell.deny_patterns` | list | *(empty)* | config | read-only |
-
 | `shell.docker.cpus` | str | `2` | config | read-only |
-
 | `shell.docker.enabled` | bool | `false` | config | read-only |
-
 | `shell.docker.idle_ttl_days` | int | `7` | config | read-only |
-
 | `shell.docker.image` | str | `python:3.14-slim` | config | read-only |
-
 | `shell.docker.memory` | str | `2g` | config | read-only |
-
 | `shell.docker.network` | str | `agentx-shell-net` | config | read-only |
-
 | `shell.docker.pids_limit` | int | `512` | config | read-only |
-
 | `shell.max_materialize_bytes` | int | `134217728` | config | read-only |
-
 | `shell.max_output_chars` | int | `20000` | config | read-only |
-
 | `shell.require_confirmation` | bool | `false` | config | read-only |
-
 | `shell.timeout_seconds` | int | `20` | config | read-only |
-
 | `shell.workdir_cleanup_days` | int | `7` | config | read-only |
-
 | `user_recap_enabled` | bool | `true` | memory | read-only |
-
 | `worker_heartbeat_interval` | int | `30` | memory | read-only |
-
 | `worker_heartbeat_ttl` | int | `90` | memory | read-only |
-
 | `workspace_agent_writable_extensions` | list | *(structured)* | memory | read-only |
-
 | `workspace_agent_write_tools` | bool | `true` | memory | read-only |
-
 | `workspace_allowed_extensions` | list | *(structured)* | memory | read-only |
-
 | `workspace_chunk_overlap` | int | `150` | memory | read-only |
-
 | `workspace_chunk_size` | int | `1000` | memory | read-only |
-
 | `workspace_max_file_bytes` | int | `52428800` | memory | read-only |
-
 | `workspace_quota_bytes` | int | `536870912` | memory | read-only |
-
 | `workspace_summary_model` | str | *(empty)* | memory | read-only |
 
 ## Related

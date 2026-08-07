@@ -1837,6 +1837,8 @@ Canonical machine-readable registry of every user-tunable setting across both st
 
 **Version 2** adds the declaration axes, each present only on keys that declare it: `constraints` (`min`/`max`/`step`/`enum`/`unit`), `tier` (`essential` | `advanced` | `experimental`), `ui_section` (which settings screen it appears on), `write_mode: "whole"` (the dict is written atomically — patching one leaf would drop its siblings), `nullable` (an explicit null is a real write), and `empty_means` (where `""` is a meaningful value, such as `follow_role`). Keys with authored documentation also carry `help` (`summary`/`what`/`how`/`why`/`manage`) from `settings_help.yaml`.
 
+**Version 3** adds a top-level `sections` array — one entry per settings screen, in nav order: `id` (what an entry's `ui_section` points at), `label`, `writable_count` (writable keys the screen owns; `0` for screens that configure their own subsystem, like themes or the template library), and `help` (`summary`/`what`/`why`). Counts are derived from the entries in the same response, so a screen's total moves the moment a key joins or leaves it.
+
 The settings UI reads this to show each control's shipped default, mark what you've changed, and render help; the docs-site [Settings Reference](../getting-started/settings-reference.md) is generated from the same source, so the two cannot drift.
 
 ### Update Config
