@@ -89,8 +89,17 @@
         chain carries `initialSection`/`focusSetting` end-to-end (fixed `stubs.tsx`, `surfaces`,
         `open()` arity, and RootLayout's duplicated ⌘, descriptor); registry-driven `Settings: <x>`
         palette commands, `searchOnly` so they don't bury the resting list.
-  - [ ] **Wave 3 — help cadence**: write up the remaining sections to the golden standard, section by
-        section; sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
+  - [ ] **Wave 3 — help cadence** (in progress): write up the remaining sections to the golden
+        standard, section by section, binding each to the manifest as it goes. A section joins
+        `SettingsHelpTest.DOCUMENTED_SECTIONS` when refit, which then holds its coverage.
+    - [x] **Memory → Recall** `[v0.21.263]` — the golden section; 24 keys.
+    - [x] **Memory → Conversation Context** `[v0.21.265]` — 20 keys across five config roots
+          (`context`, `session.rolling_summary`, `trajectory_compression`, `compression`,
+          `memory`); constraints + tiers declared, all 17 controls manifest-bound.
+    - [ ] Web Search (~20 keys) · Thinking Patterns (~13) · Consolidation (~45) · Research ·
+          Images & Audio · Ambassador · Agent Teams · Task Planner · Model Limits ·
+          Prompt Enhancement.
+    - [ ] Sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
   - [ ] **Dead-knob flags** — declared-but-unread keys. `scripts/check_config_keys.py` already has the
         inventory half; the registry makes its output authoritative enough to gate on.
 - [ ] **`@Settings` Advisor agent** — a built-in agent profile addressed via the shipped @-mention

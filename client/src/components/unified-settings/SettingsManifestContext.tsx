@@ -167,3 +167,47 @@ export function useSettingEntry(
     [manifest, store, key, currentValue],
   );
 }
+
+/** What a field spreads to get its chrome: `<SliderField {...bind('recent_floor')} …>`. */
+export interface FieldBinding {
+  binding: SettingBinding | null;
+  onReset?: () => void;
+}
+
+/**
+ * Bind a whole section in one call.
+ *
+ * Sections keep flat local field names that don't match the config paths behind
+ * them — `trajectory_enabled` is `trajectory_compression.enabled`, and one
+ * section can span five config roots — so callers supply a map from the local
+ * name to `store:key`. Anything absent from the map (or from the manifest) just
+ * yields an empty binding, and the field renders as it always did.
+ *
+ * Reset writes the shipped default through the section's own `update`, so it
+ * rides the normal autosave path: same debounce, same save chip, no special
+ * case in the save handler.
+ */
+export function sectionBinder<T extends Record<string, unknown>>(
+  manifest: SettingsManifestValue | null,
+  keyMap: Partial<Record<keyof T & string, string>>,
+  values: T | null,
+  update: (patch: Partial<T>) => void,
+): (localKey: keyof T & string) => FieldBinding {
+  return (localKey) => {
+    const target = keyMap[localKey];
+    if (!target) return { binding: null };
+    const [store, ...rest] = target.split(':');
+    const binding = bindSetting(
+      manifest,
+      store as SettingsStore,
+      rest.join(':'),
+      values?.[localKey],
+    );
+    return {
+      binding,
+      onReset: binding
+        ? () => update({ [localKey]: binding.defaultValue } as Partial<T>)
+        : undefined,
+    };
+  };
+}
