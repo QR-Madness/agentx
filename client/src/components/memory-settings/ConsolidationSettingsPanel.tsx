@@ -7,6 +7,7 @@ import { useNotify } from '../../contexts/NotificationContext';
 import { Badge, Button, Checkbox, Label } from '../ui';
 import { useConfirm } from '../ui/ConfirmDialog';
 import { SettingsSection, SliderField, NumberField, ToggleField, SaveStatusChip } from '../settings/fields';
+import { bindSetting, useSettingsManifest } from '../unified-settings/SettingsManifestContext';
 
 const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
 
@@ -65,6 +66,7 @@ export function ConsolidationSettingsPanel({
 }) {
   const { notifySuccess, notifyError } = useNotify();
   const confirm = useConfirm();
+  const manifest = useSettingsManifest();
   const [consolidating, setConsolidating] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [consolidateJobs, setConsolidateJobs] = useState<string[]>(['consolidate']);
@@ -90,6 +92,21 @@ export function ConsolidationSettingsPanel({
     value: ConsolidationSettings[K]
   ) => {
     update({ [key]: value } as Partial<ConsolidationDraft>);
+  };
+
+  /**
+   * Manifest chrome for one control: shipped default, declared bounds, authored
+   * help, and the `data-setting` anchor search lands on. Every key here is a
+   * flat field in the memory store, so the mapping is the key itself.
+   */
+  const bind = <K extends keyof ConsolidationSettings>(key: K) => {
+    const entry = bindSetting(manifest, 'memory', key as string, settings?.[key]);
+    return {
+      binding: entry,
+      onReset: entry
+        ? () => handleChange(key, entry.defaultValue as ConsolidationSettings[K])
+        : undefined,
+    };
   };
 
   // The stage models that inherit `feature_default_model` when left empty.
@@ -258,6 +275,7 @@ export function ConsolidationSettingsPanel({
               value={settings.feature_default_model || ''}
               onChange={v => handleChange('feature_default_model', v)}
               showDefault={false}
+              {...bind('feature_default_model')}
             />
           </div>
           <p className="setting-hint">
@@ -287,6 +305,7 @@ export function ConsolidationSettingsPanel({
               value={settings.extraction_model || ''}
               onChange={v => handleChange('extraction_model', v)}
               showDefault={false}
+              {...bind('extraction_model')}
             />
             <StageRoleChip members={roleMembers} member="extraction" />
           </div>
@@ -295,17 +314,20 @@ export function ConsolidationSettingsPanel({
             value={settings.extraction_temperature ?? 0.2}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('extraction_temperature', v)}
+            {...bind('extraction_temperature')}
           />
           <NumberField
             label="Max Tokens"
             value={settings.extraction_max_tokens ?? 2000}
             min={100} max={8000} fallback={2000}
             onChange={v => handleChange('extraction_max_tokens', v)}
+            {...bind('extraction_max_tokens')}
           />
           <ToggleField
             label="Condense facts into atomic statements"
             checked={settings.extraction_condense_facts ?? true}
             onChange={v => handleChange('extraction_condense_facts', v)}
+            {...bind('extraction_condense_facts')}
           />
         </div>
         <p className="setting-hint">
@@ -319,6 +341,7 @@ export function ConsolidationSettingsPanel({
             label="Enable relevance filter (skip non-informative turns)"
             checked={settings.relevance_filter_enabled ?? true}
             onChange={v => handleChange('relevance_filter_enabled', v)}
+            {...bind('relevance_filter_enabled')}
           />
           <div className="setting-row">
             <ModelPickerField
@@ -326,6 +349,7 @@ export function ConsolidationSettingsPanel({
               value={settings.relevance_filter_model || ''}
               onChange={v => handleChange('relevance_filter_model', v)}
               showDefault={false}
+              {...bind('relevance_filter_model')}
             />
             <StageRoleChip members={roleMembers} member="relevance_filter" />
           </div>
@@ -334,6 +358,7 @@ export function ConsolidationSettingsPanel({
             value={settings.relevance_filter_temperature ?? 0.1}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('relevance_filter_temperature', v)}
+            {...bind('relevance_filter_temperature')}
           />
           <NumberField
             label="Max Tokens"
@@ -341,6 +366,7 @@ export function ConsolidationSettingsPanel({
             min={10} max={2000} fallback={500}
             title="Reasoning models need more tokens (500+)"
             onChange={v => handleChange('relevance_filter_max_tokens', v)}
+            {...bind('relevance_filter_max_tokens')}
           />
         </div>
         <p className="setting-hint">
@@ -367,6 +393,7 @@ export function ConsolidationSettingsPanel({
               value={settings.combined_extraction_model || ''}
               onChange={v => handleChange('combined_extraction_model', v)}
               showDefault={false}
+              {...bind('combined_extraction_model')}
             />
             <Button
               variant="ghost"
@@ -386,12 +413,14 @@ export function ConsolidationSettingsPanel({
             value={settings.combined_extraction_temperature ?? 0.3}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('combined_extraction_temperature', v)}
+            {...bind('combined_extraction_temperature')}
           />
           <NumberField
             label="Max Tokens"
             value={settings.combined_extraction_max_tokens ?? 2000}
             min={100} max={8000} fallback={2000}
             onChange={v => handleChange('combined_extraction_max_tokens', v)}
+            {...bind('combined_extraction_max_tokens')}
           />
         </div>
       </SettingsSection>
@@ -407,6 +436,7 @@ export function ConsolidationSettingsPanel({
             label="Enable entity linking (connect facts to entities)"
             checked={settings.entity_linking_enabled ?? true}
             onChange={v => handleChange('entity_linking_enabled', v)}
+            {...bind('entity_linking_enabled')}
           />
           <SliderField
             label="Similarity Threshold"
@@ -414,11 +444,13 @@ export function ConsolidationSettingsPanel({
             min={0.5} max={1} step={0.05}
             format={pct}
             onChange={v => handleChange('entity_linking_similarity_threshold', v)}
+            {...bind('entity_linking_similarity_threshold')}
           />
           <ToggleField
             label="Use LLM for ambiguous matches"
             checked={settings.entity_linking_use_llm_disambiguation ?? false}
             onChange={v => handleChange('entity_linking_use_llm_disambiguation', v)}
+            {...bind('entity_linking_use_llm_disambiguation')}
           />
           {settings.entity_linking_use_llm_disambiguation && (
             <div className="setting-row">
@@ -427,6 +459,7 @@ export function ConsolidationSettingsPanel({
                 value={settings.entity_linking_model || ''}
                 onChange={v => handleChange('entity_linking_model', v)}
                 showDefault={false}
+                {...bind('entity_linking_model')}
               />
               <StageRoleChip members={roleMembers} member="entity_linking" />
             </div>
@@ -442,6 +475,7 @@ export function ConsolidationSettingsPanel({
             min={0} max={1} step={0.05}
             format={pct}
             onChange={v => handleChange('fact_confidence_threshold', v)}
+            {...bind('fact_confidence_threshold')}
           />
           <SliderField
             label="Min Promotion Confidence"
@@ -449,6 +483,7 @@ export function ConsolidationSettingsPanel({
             min={0} max={1} step={0.05}
             format={pct}
             onChange={v => handleChange('promotion_min_confidence', v)}
+            {...bind('promotion_min_confidence')}
           />
         </div>
       </SettingsSection>
@@ -460,18 +495,21 @@ export function ConsolidationSettingsPanel({
             value={settings.job_consolidate_interval ?? 15}
             min={1} fallback={15}
             onChange={v => handleChange('job_consolidate_interval', v)}
+            {...bind('job_consolidate_interval')}
           />
           <NumberField
             label="Promotion"
             value={settings.job_promote_interval ?? 60}
             min={1} fallback={60}
             onChange={v => handleChange('job_promote_interval', v)}
+            {...bind('job_promote_interval')}
           />
           <NumberField
             label="Entity Linking"
             value={settings.job_entity_linking_interval ?? 30}
             min={1} fallback={30}
             onChange={v => handleChange('job_entity_linking_interval', v)}
+            {...bind('job_entity_linking_interval')}
           />
         </div>
       </SettingsSection>
@@ -483,6 +521,7 @@ export function ConsolidationSettingsPanel({
             label="Enable contradiction detection"
             checked={settings.contradiction_detection_enabled ?? false}
             onChange={v => handleChange('contradiction_detection_enabled', v)}
+            {...bind('contradiction_detection_enabled')}
           />
           {settings.contradiction_detection_enabled && (
             <>
@@ -492,6 +531,7 @@ export function ConsolidationSettingsPanel({
                   value={settings.contradiction_model || ''}
                   onChange={v => handleChange('contradiction_model', v)}
                   showDefault={false}
+                  {...bind('contradiction_model')}
                 />
                 <StageRoleChip members={roleMembers} member="contradiction" />
               </div>
@@ -500,12 +540,14 @@ export function ConsolidationSettingsPanel({
                 value={settings.contradiction_temperature ?? 0.2}
                 min={0} max={1} step={0.05}
                 onChange={v => handleChange('contradiction_temperature', v)}
+                {...bind('contradiction_temperature')}
               />
               <NumberField
                 label="Max Tokens"
                 value={settings.contradiction_max_tokens ?? 500}
                 min={100} max={4000} fallback={500}
                 onChange={v => handleChange('contradiction_max_tokens', v)}
+                {...bind('contradiction_max_tokens')}
               />
             </>
           )}
@@ -513,6 +555,7 @@ export function ConsolidationSettingsPanel({
             label="Enable user correction handling"
             checked={settings.correction_detection_enabled ?? false}
             onChange={v => handleChange('correction_detection_enabled', v)}
+            {...bind('correction_detection_enabled')}
           />
           {settings.correction_detection_enabled && (
             <>
@@ -522,6 +565,7 @@ export function ConsolidationSettingsPanel({
                   value={settings.correction_model || ''}
                   onChange={v => handleChange('correction_model', v)}
                   showDefault={false}
+                  {...bind('correction_model')}
                 />
                 <StageRoleChip members={roleMembers} member="correction" />
               </div>
@@ -530,12 +574,14 @@ export function ConsolidationSettingsPanel({
                 value={settings.correction_temperature ?? 0.2}
                 min={0} max={1} step={0.05}
                 onChange={v => handleChange('correction_temperature', v)}
+                {...bind('correction_temperature')}
               />
               <NumberField
                 label="Max Tokens"
                 value={settings.correction_max_tokens ?? 500}
                 min={100} max={4000} fallback={500}
                 onChange={v => handleChange('correction_max_tokens', v)}
+                {...bind('correction_max_tokens')}
               />
             </>
           )}

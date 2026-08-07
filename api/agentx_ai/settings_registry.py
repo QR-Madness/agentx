@@ -637,6 +637,118 @@ MEMORY_KEY_SPECS: dict[str, KeySpec] = {
     # -- Experimental --------------------------------------------------------
     "recall_first_person_guard": KeySpec(tier="experimental"),
     "recall_first_person_penalty": KeySpec(min=0, max=1, step=0.05, tier="experimental"),
+
+    # ========================================================================
+    # Consolidation — the background pipeline that turns finished turns into
+    # facts, entities and procedures. Stage models take "inherit", which walks
+    # a chain rather than meaning one thing, so none of them declare bounds.
+    # ========================================================================
+
+    # -- The bulk default every stage falls back to --------------------------
+    "feature_default_model": KeySpec(empty_means="follow_default_model",
+                                     tier="essential"),
+
+    # -- Extraction ----------------------------------------------------------
+    "extraction_enabled": KeySpec(tier="essential"),
+    "extraction_model": KeySpec(empty_means="inherit", tier="essential"),
+    "extraction_temperature": KeySpec(min=0, max=1, step=0.05, tier="advanced"),
+    "extraction_max_tokens": KeySpec(min=200, max=8000, step=50,
+                                     unit="tokens", tier="advanced"),
+    "extraction_condense_facts": KeySpec(tier="advanced"),
+    # Edited on Feature Prompts with the other feature prompts, not here.
+    "extraction_system_prompt": KeySpec(empty_means="built_in_prompt",
+                                        tier="advanced",
+                                        ui_section="feature-prompts"),
+
+    # -- Relevance filter ----------------------------------------------------
+    "relevance_filter_enabled": KeySpec(tier="essential"),
+    "relevance_filter_model": KeySpec(empty_means="inherit", tier="advanced"),
+    "relevance_filter_temperature": KeySpec(min=0, max=1, step=0.05, tier="advanced"),
+    "relevance_filter_max_tokens": KeySpec(min=100, max=4000, step=50,
+                                           unit="tokens", tier="advanced"),
+    "relevance_filter_prompt": KeySpec(empty_means="built_in_prompt",
+                                       tier="advanced",
+                                       ui_section="feature-prompts"),
+
+    # -- Contradiction detection ---------------------------------------------
+    "contradiction_detection_enabled": KeySpec(tier="essential"),
+    "contradiction_model": KeySpec(empty_means="inherit", tier="advanced"),
+    "contradiction_temperature": KeySpec(min=0, max=1, step=0.05, tier="advanced"),
+    "contradiction_max_tokens": KeySpec(min=100, max=4000, step=50,
+                                        unit="tokens", tier="advanced"),
+    "semantic_duplicate_threshold": KeySpec(min=0.5, max=1.0, step=0.01,
+                                            unit="cosine similarity",
+                                            tier="advanced"),
+    "contradiction_similarity_threshold": KeySpec(min=0.1, max=1.0, step=0.05,
+                                                  unit="cosine similarity",
+                                                  tier="advanced"),
+    "contradiction_max_candidates": KeySpec(min=1, max=50, step=1,
+                                            unit="candidates", tier="advanced"),
+
+    # -- Fact → entity linking at write time ---------------------------------
+    "link_autocreate_stub_entities": KeySpec(tier="advanced"),
+
+    # -- Correction handling -------------------------------------------------
+    "correction_detection_enabled": KeySpec(tier="essential"),
+    "correction_model": KeySpec(empty_means="inherit", tier="advanced"),
+    "correction_temperature": KeySpec(min=0, max=1, step=0.05, tier="advanced"),
+    "correction_max_tokens": KeySpec(min=100, max=4000, step=50,
+                                     unit="tokens", tier="advanced"),
+
+    # -- Combined relevance + extraction -------------------------------------
+    "combined_extraction_model": KeySpec(empty_means="inherit", tier="essential"),
+    "combined_extraction_temperature": KeySpec(min=0, max=1, step=0.05, tier="advanced"),
+    "combined_extraction_max_tokens": KeySpec(min=200, max=8000, step=50,
+                                              unit="tokens", tier="advanced"),
+
+    # -- Procedural distillation ---------------------------------------------
+    "procedural_distill_model": KeySpec(empty_means="inherit", tier="advanced"),
+    "procedural_distill_temperature": KeySpec(min=0, max=1, step=0.05, tier="advanced"),
+    "procedural_distill_max_tokens": KeySpec(min=200, max=8000, step=50,
+                                             unit="tokens", tier="advanced"),
+    "procedural_distill_timeout_s": KeySpec(min=10, max=600, step=1,
+                                            unit="seconds", tier="advanced"),
+    "procedural_dedupe_threshold": KeySpec(min=0.5, max=1.0, step=0.01,
+                                           unit="cosine similarity", tier="advanced"),
+    "procedural_distill_batch_limit": KeySpec(min=10, max=1000, step=10,
+                                              unit="candidates per run",
+                                              tier="advanced"),
+
+    # -- Always-on cores -----------------------------------------------------
+    "reflex_core_enabled": KeySpec(tier="essential"),
+    "reflex_core_limit": KeySpec(min=0, max=20, step=1, unit="procedures",
+                                 tier="advanced"),
+    "salient_core_enabled": KeySpec(tier="essential"),
+    # Capped at 10 to match the render cap in `to_context_string`.
+    "salient_core_limit": KeySpec(min=0, max=10, step=1, unit="facts",
+                                  tier="advanced"),
+    "salient_core_min_salience": KeySpec(min=0, max=1, step=0.05, tier="advanced"),
+
+    # -- Entity linking backfill ---------------------------------------------
+    "entity_linking_enabled": KeySpec(tier="essential"),
+    "entity_linking_similarity_threshold": KeySpec(min=0.3, max=1.0, step=0.01,
+                                                   unit="cosine similarity",
+                                                   tier="advanced"),
+    "entity_linking_use_llm_disambiguation": KeySpec(tier="advanced"),
+    "entity_linking_model": KeySpec(empty_means="inherit", tier="advanced"),
+    "entity_linking_max_facts": KeySpec(min=100, max=100_000, step=100,
+                                        unit="facts per run", tier="advanced"),
+    "entity_linking_max_ngram": KeySpec(min=1, max=8, step=1, unit="words",
+                                        tier="advanced"),
+
+    # -- Quality thresholds --------------------------------------------------
+    "fact_confidence_threshold": KeySpec(min=0, max=1, step=0.05, tier="essential"),
+    "promotion_min_confidence": KeySpec(min=0, max=1, step=0.05, tier="advanced"),
+
+    # -- Job intervals (minutes) ---------------------------------------------
+    "job_consolidate_interval": KeySpec(min=1, max=1440, step=1, unit="minutes",
+                                        tier="essential"),
+    "job_promote_interval": KeySpec(min=1, max=1440, step=1, unit="minutes",
+                                    tier="advanced"),
+    "job_entity_linking_interval": KeySpec(min=1, max=1440, step=1, unit="minutes",
+                                           tier="advanced"),
+    "job_distill_procedures_interval": KeySpec(min=1, max=1440, step=1,
+                                               unit="minutes", tier="advanced"),
 }
 
 

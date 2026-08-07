@@ -1011,6 +1011,20 @@ The prompts behind extraction, relevance filtering, planning, and prompt enhance
 
 Worth touching only when a feature misbehaves in a way you can trace to its wording. Left on their defaults, these improve when the defaults do — an override opts that key out of future improvements.
 
+### `extraction_system_prompt`
+
+*Replace the built-in instruction the extractor works from.*
+
+**Default:** *(empty)* · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The prompt that tells extraction what counts as a fact worth keeping, how to phrase it, and how to attribute it. Empty uses the shipped prompt, which is the normal state.
+
+**How it works.** An override replaces the built-in prompt entirely rather than adding to it, so anything the shipped prompt established — the output structure, the confidence calibration, the attribution rules — has to be restated or it is simply gone.
+
+**When to change it.** The last thing to reach for, not the first. If extraction is storing the wrong things, the model and the temperature are far more often the cause. A domain with genuinely unusual notions of what is worth remembering is the case that justifies an override.
+
+**Managing it.** Edited on **Prompts → Feature Prompts**, which shows a diff against the shipped prompt. Leaving it empty means extraction improves when the default does; an override opts out of that permanently.
+
 ### `planner.prompt_override`
 
 *Replace the built-in planning prompt with your own.*
@@ -1024,6 +1038,20 @@ Worth touching only when a feature misbehaves in a way you can trace to its word
 **When to change it.** Worth touching only when you can trace a planning failure to the wording — for instance a domain where the default decomposition style is wrong. For per-agent behaviour, the agent's profile is a better place than a global override.
 
 **Managing it.** Leaving this empty means the prompt improves when the shipped one does; an override opts out of that permanently. Clear it to return to the default.
+
+### `relevance_filter_prompt`
+
+*Replace the built-in instruction the relevance gate works from.*
+
+**Default:** *(empty)* · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The prompt behind the yes/no judgement on whether a turn is worth extracting. Empty uses the shipped prompt.
+
+**How it works.** As with extraction, an override replaces rather than extends — including the part that makes the answer parseable, so a rewrite that changes the output format silently breaks the gate.
+
+**When to change it.** Worth touching when your conversations carry value the default definition of "worth remembering" misses — a domain where short confirmations are meaningful, say. Otherwise leave it: this prompt runs on every turn, so a subtly worse one is a cost paid continuously.
+
+**Managing it.** Edited on **Prompts → Feature Prompts** with a diff against the default. Test any override by watching whether turns you expect to be stored still are — a broken gate fails quietly, by dropping things.
 
 **Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
 
@@ -1694,58 +1722,677 @@ The background pipeline that reads completed turns and keeps what's worth keepin
 
 Raise the confidence thresholds when memory accumulates things that aren't true; lower them when it drops things you said plainly. The job intervals decide how quickly a conversation becomes memory at all.
 
-| Setting | Type | Default | Store | Set via |
-| --- | --- | --- | --- | --- |
-| `combined_extraction_max_tokens` | int | `2000` | memory | `/api/memory/settings` |
-| `combined_extraction_model` | str | `inherit` | memory | `/api/memory/settings` |
-| `combined_extraction_temperature` | float | `0.3` | memory | `/api/memory/settings` |
-| `contradiction_detection_enabled` | bool | `true` | memory | `/api/memory/settings` |
-| `contradiction_max_candidates` | int | `10` | memory | `/api/memory/settings` |
-| `contradiction_max_tokens` | int | `500` | memory | `/api/memory/settings` |
-| `contradiction_model` | str | `inherit` | memory | `/api/memory/settings` |
-| `contradiction_similarity_threshold` | float | `0.5` | memory | `/api/memory/settings` |
-| `contradiction_temperature` | float | `0.2` | memory | `/api/memory/settings` |
-| `correction_detection_enabled` | bool | `true` | memory | `/api/memory/settings` |
-| `correction_max_tokens` | int | `500` | memory | `/api/memory/settings` |
-| `correction_model` | str | `inherit` | memory | `/api/memory/settings` |
-| `correction_temperature` | float | `0.2` | memory | `/api/memory/settings` |
-| `entity_linking_enabled` | bool | `true` | memory | `/api/memory/settings` |
-| `entity_linking_max_facts` | int | `5000` | memory | `/api/memory/settings` |
-| `entity_linking_max_ngram` | int | `4` | memory | `/api/memory/settings` |
-| `entity_linking_model` | str | `inherit` | memory | `/api/memory/settings` |
-| `entity_linking_similarity_threshold` | float | `0.75` | memory | `/api/memory/settings` |
-| `entity_linking_use_llm_disambiguation` | bool | `false` | memory | `/api/memory/settings` |
-| `extraction_condense_facts` | bool | `true` | memory | `/api/memory/settings` |
-| `extraction_enabled` | bool | `true` | memory | `/api/memory/settings` |
-| `extraction_max_tokens` | int | `2000` | memory | `/api/memory/settings` |
-| `extraction_model` | str | `inherit` | memory | `/api/memory/settings` |
-| `extraction_system_prompt` | str | *(empty)* | memory | `/api/memory/settings` |
-| `extraction_temperature` | float | `0.2` | memory | `/api/memory/settings` |
-| `fact_confidence_threshold` | float | `0.7` | memory | `/api/memory/settings` |
-| `feature_default_model` | str | *(empty)* | memory | `/api/memory/settings` |
-| `job_consolidate_interval` | int | `15` | memory | `/api/memory/settings` |
-| `job_distill_procedures_interval` | int | `30` | memory | `/api/memory/settings` |
-| `job_entity_linking_interval` | int | `30` | memory | `/api/memory/settings` |
-| `job_promote_interval` | int | `60` | memory | `/api/memory/settings` |
-| `link_autocreate_stub_entities` | bool | `true` | memory | `/api/memory/settings` |
-| `procedural_dedupe_threshold` | float | `0.85` | memory | `/api/memory/settings` |
-| `procedural_distill_batch_limit` | int | `100` | memory | `/api/memory/settings` |
-| `procedural_distill_max_tokens` | int | `1000` | memory | `/api/memory/settings` |
-| `procedural_distill_model` | str | `inherit` | memory | `/api/memory/settings` |
-| `procedural_distill_temperature` | float | `0.2` | memory | `/api/memory/settings` |
-| `procedural_distill_timeout_s` | int | `90` | memory | `/api/memory/settings` |
-| `promotion_min_confidence` | float | `0.85` | memory | `/api/memory/settings` |
-| `reflex_core_enabled` | bool | `true` | memory | `/api/memory/settings` |
-| `reflex_core_limit` | int | `5` | memory | `/api/memory/settings` |
-| `relevance_filter_enabled` | bool | `true` | memory | `/api/memory/settings` |
-| `relevance_filter_max_tokens` | int | `500` | memory | `/api/memory/settings` |
-| `relevance_filter_model` | str | `inherit` | memory | `/api/memory/settings` |
-| `relevance_filter_prompt` | str | *(empty)* | memory | `/api/memory/settings` |
-| `relevance_filter_temperature` | float | `0.1` | memory | `/api/memory/settings` |
-| `salient_core_enabled` | bool | `true` | memory | `/api/memory/settings` |
-| `salient_core_limit` | int | `8` | memory | `/api/memory/settings` |
-| `salient_core_min_salience` | float | `0.6` | memory | `/api/memory/settings` |
-| `semantic_duplicate_threshold` | float | `0.92` | memory | `/api/memory/settings` |
+### `combined_extraction_max_tokens`
+
+*How much the combined pass may return.*
+
+**Default:** `2000` · **Range:** 200 to 8000, tokens · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget for the merged call.
+
+**How it works.** It carries both the relevance verdict and the extracted facts, so it needs at least what extraction alone would.
+
+**When to change it.** Raise it if dense windows lose their later facts. Lower it only to control cost, accepting truncation.
+
+**Managing it.** Default 2000, matching plain extraction.
+
+### `combined_extraction_model`
+
+*Which model runs relevance and extraction as one call.*
+
+**Default:** `inherit` · **Set via:** `/api/memory/settings`
+
+**What it is.** A merged path that answers "is this worth storing" and "what is in it" in a single call rather than two.
+
+**How it works.** `inherit` follows the bulk default, then the **Deep Reasoning** role — the only memory stage that does, because doing both jobs at once is harder than either alone and quality here pays for itself.
+
+**When to change it.** Combining cuts memory's LLM calls by roughly three quarters, which is the single largest saving in the system. That is worth a better model than the individual stages would need.
+
+**Managing it.** This is the reason memory's cost does not scale the way the stage list suggests. If you point it at a weak model to save money you may lose more to bad extraction than you save on the call.
+
+### `combined_extraction_temperature`
+
+*How literally the combined pass reads.*
+
+**Default:** `0.3` · **Range:** 0 to 1 · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** Sampling temperature for the merged relevance-plus-extraction call.
+
+**How it works.** Slightly above the plain extraction default, because the combined call is doing a judgement as well as a reading.
+
+**When to change it.** Keep it low. The same rule applies as for extraction: creativity here means facts nobody stated.
+
+**Managing it.** Default 0.3, against extraction's 0.2 — a deliberate difference, not drift.
+
+### `contradiction_detection_enabled`
+
+*Notice when a new fact conflicts with one already stored.*
+
+**Default:** `true` · **Set via:** `/api/memory/settings`
+
+**What it is.** A check that runs as facts are written: does this contradict something memory already believes?
+
+**How it works.** Three layers, cheapest first. A fast gate discards near-identical duplicates; a semantic search pulls a handful of possibly-conflicting facts; only then does an LLM judge whether there is a real contradiction. Most new facts never reach the third layer.
+
+**When to change it.** Leave it on. Without it, memory accumulates both "she drives a Volvo" and "she drives a Škoda" and retrieval will happily return either, with no indication that one superseded the other. That failure is invisible until it produces a confidently wrong answer.
+
+**Managing it.** Costs an LLM call only for facts that survive the first two layers, so the typical per-fact cost is far below what a per-fact LLM check would imply.
+
+### `contradiction_max_candidates`
+
+*How many possible conflicts are judged per new fact.*
+
+**Default:** `10` · **Range:** 1 to 50, candidates · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** A cap on the candidates from the semantic search that reach the LLM.
+
+**How it works.** Candidates are taken in similarity order, so the cap drops the least similar. It bounds the worst-case cost of storing one fact.
+
+**When to change it.** Raise it when memory is large and contradictions are being missed because the real conflict ranked eleventh. Lower it to bound cost on a busy install.
+
+**Managing it.** Default 10. This multiplies against the contradiction model's price on every fact that reaches layer three, so it is the main cost lever here.
+
+### `contradiction_max_tokens`
+
+*How much room the contradiction judgement has.*
+
+**Default:** `500` · **Range:** 100 to 4000, tokens · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget for the contradiction call.
+
+**How it works.** As with the relevance gate, the verdict is short but a reasoning model needs room to reach it.
+
+**When to change it.** Raise it if contradictions are going undetected on a reasoning model. Otherwise leave it alone.
+
+**Managing it.** Default 500. Unused budget costs nothing.
+
+### `contradiction_model`
+
+*Which model judges whether two facts really conflict.*
+
+**Default:** `inherit` · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The model used for the third and final layer of contradiction detection.
+
+**How it works.** `inherit` follows the bulk default, then the **Fast Utility** role. It only sees candidates the cheaper layers could not resolve.
+
+**When to change it.** Worth a capable model precisely because it runs rarely. Deciding that "lives in Berlin" and "moved to Munich" conflict, while "likes coffee" and "drinks tea" do not, is a genuine judgement.
+
+**Managing it.** If memory is flagging contradictions between facts that are merely different, this model — not the thresholds — is usually the cause.
+
+### `contradiction_similarity_threshold`
+
+*How related a stored fact must be to be checked for conflict.*
+
+**Default:** `0.5` · **Range:** 0.1 to 1.0, cosine similarity · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The second layer: how wide a net to cast when searching for facts that might contradict a new one.
+
+**How it works.** Stored facts above this similarity become candidates for the LLM judgement. A lower bar means more candidates, which means more of the expensive third layer runs.
+
+**When to change it.** Raise it to cut contradiction-checking cost, accepting that conflicts between loosely-worded facts get missed. Lower it if you know contradictions are slipping through — the pair that conflicts may simply not be similar enough in wording to have been compared.
+
+**Managing it.** Default 0.5, much lower than the duplicate bar, because contradicting facts often share little vocabulary — "she moved to Munich" and "lives in Berlin" conflict without sounding alike.
+
+### `contradiction_temperature`
+
+*How consistent the contradiction judgement is.*
+
+**Default:** `0.2` · **Range:** 0 to 1 · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** Sampling temperature for the contradiction call.
+
+**How it works.** Low values make the same pair of facts get the same verdict each time.
+
+**When to change it.** Keep it low. An inconsistent verdict here means the same conflict is sometimes resolved and sometimes left in memory, which is worse than either behaviour applied consistently.
+
+**Managing it.** Default 0.2, matching the other judgement stages.
+
+### `correction_detection_enabled`
+
+*Catch "actually, I meant…" and fix what was stored.*
+
+**Default:** `true` · **Set via:** `/api/memory/settings`
+
+**What it is.** Detection of implicit corrections: you restating something you said earlier, differently.
+
+**How it works.** Runs at extraction time, so a correction in the same conversation is caught as the conversation is consolidated rather than surfacing later as a contradiction between two stored facts.
+
+**When to change it.** Leave it on. Without it, "no, her birthday is in March" becomes a *second* fact rather than a replacement, and both are retrievable. Contradiction detection would eventually notice, but only after both are already stored.
+
+**Managing it.** This and contradiction detection cover the same failure from two sides: this one catches corrections as they happen, that one catches conflicts that got through. Both on is the intended state.
+
+### `correction_max_tokens`
+
+*How much room correction detection has to answer.*
+
+**Default:** `500` · **Range:** 100 to 4000, tokens · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget for the correction call.
+
+**How it works.** Short answer, but reasoning models need room to reach it.
+
+**When to change it.** Raise it only if corrections are being missed on a reasoning model.
+
+**Managing it.** Default 500.
+
+### `correction_model`
+
+*Which model spots a correction.*
+
+**Default:** `inherit` · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The model used to decide whether a statement corrects an earlier one.
+
+**How it works.** `inherit` follows the bulk default, then the **Fast Utility** role.
+
+**When to change it.** A cheap model is usually fine — corrections are linguistically marked ("actually", "no", "I meant") and easy to spot. Raise it only if implicit corrections without those markers are being missed.
+
+**Managing it.** Shares its shape with the other judgement stages; if you are setting one of them explicitly, set them together or use the bulk default.
+
+### `correction_temperature`
+
+*How consistent correction detection is.*
+
+**Default:** `0.2` · **Range:** 0 to 1 · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** Sampling temperature for the correction call.
+
+**How it works.** Low values keep the same phrasing getting the same verdict.
+
+**When to change it.** Keep it low, for the same reason as the other judgement stages: an inconsistent verdict means the same correction is sometimes applied and sometimes not.
+
+**Managing it.** Default 0.2.
+
+### `entity_linking_enabled`
+
+*Reconnect facts to the entities they are about, after the fact.*
+
+**Default:** `true` · **Set via:** `/api/memory/settings`
+
+**What it is.** A background pass that finds facts whose subject was never linked to a real entity and attaches them where they belong.
+
+**How it works.** Runs after consolidation, over history rather than just new material — which is how a person first mentioned in passing months ago gets their earlier facts attached once the system properly knows who they are.
+
+**When to change it.** Leave it on. Entity-centric recall — the technique that answers "what do we know about X" — can only return facts that are actually attached to X. An orphaned fact is invisible to it however true it is.
+
+**Managing it.** This is the repair pass, not the write path: facts are linked at write time too. It exists because write-time linking cannot know about an entity that does not exist yet.
+
+### `entity_linking_max_facts`
+
+*How many orphaned facts one backfill run may examine.*
+
+**Default:** `5000` · **Range:** 100 to 100000, facts per run · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** A cap on the facts scanned per run, bounding both time and memory use.
+
+**How it works.** The run stops at the cap; the remainder is picked up next time, so a large backlog drains across several runs.
+
+**When to change it.** Raise it to clear a big history faster — most relevant just after enabling linking on an install with a lot of accumulated memory. Lower it if the backfill job is competing for resources with live work.
+
+**Managing it.** Default 5000. Read together with the run interval below: the two decide how long a backlog takes to clear.
+
+### `entity_linking_max_ngram`
+
+*The longest entity name, in words, the matcher will look for.*
+
+**Default:** `4` · **Range:** 1 to 8, words · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** How many consecutive words are considered as a possible entity name when scanning a fact's text.
+
+**How it works.** The matcher tries spans up to this length. Longer spans mean more combinations to check on every fact.
+
+**When to change it.** Raise it if you work with long proper names — organisations, product lines, paper titles — that are being missed because they exceed the span. Lower it to speed up scanning where names are short.
+
+**Managing it.** Default 4 words, which covers most personal and product names. The cost grows with the setting on every fact scanned, so raise it deliberately.
+
+### `entity_linking_model`
+
+*Which model resolves ambiguous entity matches.*
+
+**Default:** `inherit` · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The model used when LLM disambiguation is on.
+
+**How it works.** `inherit` follows the bulk default, then the **Fast Utility** role. It does nothing unless disambiguation is enabled above.
+
+**When to change it.** Set it only if you have turned disambiguation on and it is choosing wrongly. Distinguishing two people with the same name from context is a real judgement and rewards a better model.
+
+**Managing it.** Leaving disambiguation off makes this setting inert — worth checking before concluding that a model change here did nothing.
+
+### `entity_linking_similarity_threshold`
+
+*How confident a match must be before it is even considered.*
+
+**Default:** `0.75` · **Range:** 0.3 to 1.0, cosine similarity · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The lower bound of the band in which a possible entity match is *recorded* but never acted on automatically.
+
+**How it works.** Matches at or above this bar, but below the separate auto-merge bar, are **logged only** — a grey zone kept as evidence for later adjudication, deliberately not merged. Below this bar, nothing is recorded at all.
+
+**When to change it.** Lower it to widen the grey zone and gather more borderline cases; raise it to keep the log clean. Neither direction causes a merge on its own, which is what makes this safe to move.
+
+**Managing it.** Default 0.75. The important property: this setting cannot cause two entities to be wrongly merged, because everything in its band is observation rather than action.
+
+### `entity_linking_use_llm_disambiguation`
+
+*Ask a model when the name is genuinely ambiguous.*
+
+**Default:** `false` · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** Whether ambiguous matches — two plausible entities with the same name — get an LLM judgement rather than being left alone.
+
+**How it works.** Off by default. On, ambiguous cases cost a model call each during the backfill run.
+
+**When to change it.** Turn it on if you accumulate people or projects with similar names and facts keep landing on the wrong one. It ships off because the failure it prevents is rarer than the cost it adds on a large history.
+
+**Managing it.** Cost scales with how ambiguous your entity graph is, not with its size — an install with distinctive names will barely notice it.
+
+### `extraction_condense_facts`
+
+*Store atomic facts rather than whole sentences.*
+
+**Default:** `true` · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** A post-step that reduces verbose statements to single, self-contained facts.
+
+**How it works.** "I think I mentioned that my sister Anna lives in Berlin now" becomes the fact rather than the sentence. Atomic facts retrieve better because each one matches on its own terms instead of being buried in context.
+
+**When to change it.** Leave it on. Retrieval works on units of meaning; a paragraph stored whole matches poorly and returns a lot of irrelevant text when it does match. Turn it off only if you specifically want the original phrasing preserved.
+
+**Managing it.** Condensing loses hedging and tone. If you rely on memory recording *how* something was said rather than what, this is the setting that removes it.
+
+### `extraction_enabled`
+
+*Whether finished conversations become memory at all.*
+
+**Default:** `true` · **Set via:** `/api/memory/settings`
+
+**What it is.** The stage that reads completed turns and pulls out facts, entities and the relationships between them.
+
+**How it works.** Runs in the background on a schedule, not during your turn — nothing here slows a conversation down. By default it works over *windows* of several turns at once, so a person mentioned across three messages resolves to one entity rather than three.
+
+**When to change it.** Leave it on; with it off, memory only ever contains what you stored by hand and recall has nothing to find. Turn it off to stop accumulating new memory without deleting what is already there — useful while diagnosing whether bad recall is a storage problem or a retrieval one.
+
+**Managing it.** This is the head of the pipeline: with it off, contradiction detection, correction handling and entity linking have no new material to work on.
+
+### `extraction_max_tokens`
+
+*How much extracted material one pass may return.*
+
+**Default:** `2000` · **Range:** 200 to 8000, tokens · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget for a single extraction call.
+
+**How it works.** Extraction returns structured output; a budget too small truncates it, which loses whatever came last rather than failing outright.
+
+**When to change it.** Raise it if dense conversations seem to lose their tail — the later facts in a long window are the ones that go missing. Lower it only to control cost on an expensive extraction model.
+
+**Managing it.** Default 2000, sized for the shipped window. Reasoning models need noticeably more, since their thinking comes out of the same budget.
+
+### `extraction_model`
+
+*Which model reads conversations and pulls out the facts.*
+
+**Default:** `inherit` · **Set via:** `/api/memory/settings`
+
+**What it is.** The model used for the extraction pass — a structured reading task, not a creative one.
+
+**How it works.** `inherit` follows the chain: the bulk default above, then the **Fast Utility** role, then the default chat model. Fresh installs leave it on `inherit` so the role drives memory rather than a model chosen years ago.
+
+**When to change it.** Extraction quality is what everything downstream inherits: a fact recorded wrongly is retrieved wrongly forever. Point it at a stronger model if you find memory storing things you did not say; point it cheaper if volume is the concern and quality is already fine.
+
+**Managing it.** An existing install keeps whatever model it saved. **Adopt roles for all stages** clears concrete overrides back to `inherit` in one action, which is usually what you want after setting up model roles.
+
+### `extraction_temperature`
+
+*How literally the extractor reads.*
+
+**Default:** `0.2` · **Range:** 0 to 1 · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** Sampling temperature for the extraction call.
+
+**How it works.** Low values keep extraction close to what was actually said; higher values let the model paraphrase and infer more freely.
+
+**When to change it.** Keep it low. This is a reading task, and creativity here means invented facts — the most expensive kind of error memory can make, because nothing downstream can tell an invented fact from a real one.
+
+**Managing it.** Default 0.2. If memory contains plausible-sounding things nobody said, this is the first place to look, before the prompt or the model.
+
+### `fact_confidence_threshold`
+
+*How sure the extractor must be before a fact is kept.*
+
+**Default:** `0.7` · **Range:** 0 to 1 · **Set via:** `/api/memory/settings`
+
+**What it is.** The confidence floor a newly extracted fact must clear to be stored at all.
+
+**How it works.** Extraction assigns each fact a calibrated confidence by how it was expressed: roughly 0.95 for something you stated outright, 0.85 for something strongly implied, 0.70 for a reasonable inference, and 0.50 for anything hedged or ambiguous.
+
+**When to change it.** Those numbers make the setting concrete. At the default of 0.7 memory keeps inferences but drops guesses. Raise it toward 0.85 to store only what was implied or said — a much stricter memory that forgets more. Lower it toward 0.5 to keep the guesses too, and accept that some of them are wrong.
+
+**Managing it.** The single most consequential number on this screen: it decides what memory contains, and everything downstream can only work with what got past it.
+
+### `feature_default_model`
+
+*One model for every memory stage, unless a stage says otherwise.*
+
+**Default:** *(empty)* · **Set via:** `/api/memory/settings`
+
+**What it is.** A bulk default sitting between the individual stage models and the global default. Every stage below left on `inherit` resolves through here.
+
+**How it works.** The chain is: the stage's own setting → this → the default chat model. Set this and all of memory moves at once; override individual stages only where you want something different.
+
+**When to change it.** The single most useful setting on this screen. Memory work is high-volume and mostly mechanical, so pointing it all at one cheap, fast model is usually right — and doing it here is one edit instead of nine.
+
+**Managing it.** Empty means each stage falls through to its role or the default chat model. Note that not every stage inherits the same way: most follow **Fast Utility**, combined extraction follows **Deep Reasoning** because quality there is worth more, and procedural distillation follows this setting.
+
+### `job_consolidate_interval`
+
+*How often finished conversations are turned into memory.*
+
+**Default:** `15` · **Range:** 1 to 1440, minutes · **Set via:** `/api/memory/settings`
+
+**What it is.** The gap between consolidation sweeps, in minutes.
+
+**How it works.** Each sweep picks up turns not yet consolidated and marks them as it goes, so runs never redo work and a sweep that finds nothing new costs nothing. Recent conversations are consolidated incrementally, which is why a sweep may process only a turn or two.
+
+**When to change it.** Shorten it if you want something said now to be recallable in the next conversation a few minutes later. Lengthen it to batch more turns per run, which is slightly cheaper because extraction windows fill better.
+
+**Managing it.** Default 15 minutes. If memory seems not to be updating, check this interval before suspecting extraction — the most common answer is that the sweep has simply not run yet.
+
+### `job_distill_procedures_interval`
+
+*How often repeated behaviour is distilled into procedures.*
+
+**Default:** `30` · **Range:** 1 to 1440, minutes · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The gap between procedural distillation runs, in minutes.
+
+**How it works.** Each run takes up to the batch limit of pending candidates and turns them into procedures.
+
+**When to change it.** Shorten it to make the agent pick up working habits faster — useful early on, when there is a backlog and nothing has been distilled yet. Lengthen it once procedures are stable; distillation is the least urgent of the jobs.
+
+**Managing it.** Default 30 minutes. Procedures need repeated evidence before they are distilled at all, so running this more often does not by itself produce more of them.
+
+### `job_entity_linking_interval`
+
+*How often orphaned facts are reconnected to entities.*
+
+**Default:** `30` · **Range:** 1 to 1440, minutes · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The gap between entity-linking backfill runs, in minutes.
+
+**How it works.** Scheduled to follow consolidation, so newly extracted facts get their linking pass shortly after being written.
+
+**When to change it.** Shorten it while clearing a backlog after enabling linking. Lengthen it once memory is steady — on an install with little new material, most runs find nothing to do.
+
+**Managing it.** Default 30 minutes, twice the consolidation interval. Read with the per-run fact cap: interval times cap is how fast a backlog drains.
+
+### `job_promote_interval`
+
+*How often facts are considered for promotion between channels.*
+
+**Default:** `60` · **Range:** 1 to 1440, minutes · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The gap between promotion passes, in minutes.
+
+**How it works.** Each pass looks for facts that now meet the promotion conditions and lifts them so other conversations can see them.
+
+**When to change it.** Shorten it if knowledge should spread between projects quickly. Lengthen it on an install where channels are meant to stay largely separate — a slower pass is a softer boundary than turning promotion off entirely.
+
+**Managing it.** Default 60 minutes. Promotion depends on repeated access, so a fact usually needs several passes to qualify regardless of how often they run.
+
+### `link_autocreate_stub_entities`
+
+*Create a placeholder rather than orphan a fact about an unknown thing.*
+
+**Default:** `true` · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** What happens when a fact mentions something memory has never heard of: a minimal placeholder entity is created so the fact has somewhere to attach.
+
+**How it works.** Off, the fact is dropped unless an existing entity can be recovered — it is still counted in the metrics, but it is not stored.
+
+**When to change it.** Leave it on. A fact about a person the system has not met yet is exactly the kind of thing worth remembering, and the placeholder fills in the first time that name appears properly.
+
+**Managing it.** Turning it off keeps the entity graph tidier at the cost of losing early facts about anything new — usually the wrong trade for a memory system.
+
+### `procedural_dedupe_threshold`
+
+*How similar a new procedure must be to reinforce an old one instead.*
+
+**Default:** `0.85` · **Range:** 0.5 to 1.0, cosine similarity · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The bar above which a distilled procedure is treated as the same rule you already have, and strengthens it rather than joining it.
+
+**How it works.** Cosine similarity between the new procedure and existing ones. Above the bar, the existing procedure is reinforced; below, a new one is created.
+
+**When to change it.** Lower it if you accumulate several procedures that say the same thing in different words — each one costs prompt space on every turn. Raise it if genuinely distinct rules are being merged into one vague rule.
+
+**Managing it.** Default 0.85, lower than the fact duplicate bar, because two procedures can mean the same thing while sharing little wording.
+
+### `procedural_distill_batch_limit`
+
+*How many pending candidates one distillation run may chew through.*
+
+**Default:** `100` · **Range:** 10 to 1000, candidates per run · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** A cap on candidates processed per run, bounding how long a single run takes and how much it costs.
+
+**How it works.** Excess candidates stay pending and are picked up by the next run, so a backlog drains over several runs rather than in one expensive pass.
+
+**When to change it.** Raise it to clear a large backlog faster — useful after enabling distillation on an install with a lot of history. Lower it to keep any single run small and predictable.
+
+**Managing it.** Default 100. Read together with the run interval below: the two decide how quickly a backlog clears.
+
+### `procedural_distill_max_tokens`
+
+*How long the distilled procedures may be.*
+
+**Default:** `1000` · **Range:** 200 to 8000, tokens · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget for one distillation run.
+
+**How it works.** A run produces several procedures at once, so the budget is shared across them.
+
+**When to change it.** Raise it if procedures arrive truncated. Lower it to force terser rules — which is not a bad outcome, since procedures are injected into prompts and short ones cost less on every turn thereafter.
+
+**Managing it.** Default 1000. Remember that what is written here is paid for again on every turn that carries it.
+
+### `procedural_distill_model`
+
+*Which model turns repeated behaviour into a stated rule.*
+
+**Default:** `inherit` · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The model that reads accumulated candidates — things that keep happening — and distils them into procedures: durable "how we work" rules.
+
+**How it works.** `inherit` follows the bulk default, then the global default. Runs as a background job, never inside a turn.
+
+**When to change it.** This is the stage that turns memory from a record into a habit. A stronger model writes rules that generalise; a weaker one writes rules that restate one incident.
+
+**Managing it.** Distillation is infrequent and batched, so a better model here costs little in aggregate — a rare case on this screen where quality is nearly free.
+
+### `procedural_distill_temperature`
+
+*How much latitude the rule-writer has.*
+
+**Default:** `0.2` · **Range:** 0 to 1 · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** Sampling temperature for the distillation call.
+
+**How it works.** Low values keep procedures close to the observed behaviour; higher values let the model generalise further from it.
+
+**When to change it.** Keep it low. An over-generalised procedure is worse than none — it rides in every prompt, so a wrong rule is wrong continuously rather than once.
+
+**Managing it.** Default 0.2.
+
+### `procedural_distill_timeout_s`
+
+*How long a distillation run may hang before it is abandoned.*
+
+**Default:** `90` · **Range:** 10 to 600, seconds · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** A wall-clock cap on the distillation LLM call.
+
+**How it works.** Bounds the background job so an unresponsive provider cannot stall it indefinitely. On timeout the run ends and its candidates stay pending for the next one — nothing is lost.
+
+**When to change it.** Raise it if you have pointed distillation at a slow model and runs are timing out. There is little reason to lower it: this is a background job, so its latency costs you nothing directly.
+
+**Managing it.** Default 90 seconds. Since candidates survive a timeout, the failure mode is "procedures appear later", not "procedures are lost".
+
+### `promotion_min_confidence`
+
+*How sure a fact must be before it can travel between channels.*
+
+**Default:** `0.85` · **Range:** 0 to 1 · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The bar for promoting a fact out of the channel it was learned in, so other conversations can see it.
+
+**How it works.** Higher than the storage bar, because a fact crossing channels is asserted in contexts nobody checked it against.
+
+**When to change it.** Raise it if things learned in one project are turning up wrongly in another. Lower it if useful knowledge stays trapped in the conversation that produced it.
+
+**Managing it.** Default 0.85 against storage's 0.7 — a deliberate gap. Confidence is only one of the promotion conditions; access count and how many conversations a fact appears in also apply.
+
+### `reflex_core_enabled`
+
+*Put the most important procedures in every prompt.*
+
+**Default:** `true` · **Set via:** `/api/memory/settings`
+
+**What it is.** A small set of distilled procedures injected into the system prompt on every turn, rather than retrieved when they happen to match.
+
+**How it works.** Maintained, not searched: the core is chosen in the background and simply *is there*, so a rule about how you like work done applies even when nothing in your message would have retrieved it.
+
+**When to change it.** Leave it on. Rules about working style are precisely the ones that never match a query — you do not ask about them, you expect them to be followed. Retrieval cannot deliver that; only always-on can.
+
+**Managing it.** Everything in the core costs prompt tokens on every turn. That is the trade: reliability for a small permanent overhead.
+
+### `reflex_core_limit`
+
+*How many procedures ride in every prompt.*
+
+**Default:** `5` · **Range:** 0 to 20, procedures · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The size of the always-on procedure set.
+
+**How it works.** The highest-ranked procedures fill the slots; the rest remain retrievable but not automatic.
+
+**When to change it.** Raise it if the agent follows your stated preferences inconsistently — the relevant rule may simply be outside the core. Lower it to reclaim prompt space; 0 disables the core without disabling distillation.
+
+**Managing it.** Default 5. This is a per-turn cost on every conversation, so a large number here is one of the few settings that quietly raises the price of everything.
+
+### `relevance_filter_enabled`
+
+*Skip turns that contain nothing worth remembering.*
+
+**Default:** `true` · **Set via:** `/api/memory/settings`
+
+**What it is.** A cheap gate in front of extraction that answers one question: is there anything in this turn worth storing?
+
+**How it works.** A short yes/no call per turn. "Thanks", "ok", "try again" are filtered out before the much more expensive extraction pass ever runs.
+
+**When to change it.** Leave it on. Most turns in a real conversation carry nothing memorable, and this is what stops you paying extraction prices to discover that. Turning it off does not improve memory — it just extracts from turns that have nothing in them.
+
+**Managing it.** If it is filtering out turns you wanted stored, raise the extraction model's quality before disabling the gate: a filter that is wrong is usually a filter running on too weak a model.
+
+### `relevance_filter_max_tokens`
+
+*How much room the gate has to answer.*
+
+**Default:** `500` · **Range:** 100 to 4000, tokens · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget for the relevance call.
+
+**How it works.** The answer itself is a word, but a reasoning model spends tokens thinking before it gets there — and a reply truncated mid-thought is a lost verdict, not a fast one.
+
+**When to change it.** Raise it if you have pointed the filter at a reasoning model and turns are being dropped erratically. Otherwise leave it: the extra budget costs nothing when it goes unused.
+
+**Managing it.** Default 500, which looks generous for a yes/no and is not — that headroom exists precisely for reasoning models.
+
+### `relevance_filter_model`
+
+*Which model decides whether a turn is worth extracting.*
+
+**Default:** `inherit` · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The model used for the relevance gate — a binary judgement.
+
+**How it works.** `inherit` follows the bulk default, then the **Fast Utility** role. This is the highest-volume call in the whole memory system: it runs on every turn, where extraction runs only on the ones that pass.
+
+**When to change it.** Use the cheapest model that answers correctly. Because it runs on everything, a model choice here costs more in aggregate than anywhere else on this screen.
+
+**Managing it.** A model too weak to make the call reliably is worse than no filter, since it silently drops turns you wanted. If memory is missing obvious things, test by disabling the filter briefly rather than by guessing.
+
+### `relevance_filter_temperature`
+
+*How consistent the yes/no judgement is.*
+
+**Default:** `0.1` · **Range:** 0 to 1 · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** Sampling temperature for the relevance gate.
+
+**How it works.** Near zero makes the same turn get the same verdict every time; higher values make the gate inconsistent between otherwise identical turns.
+
+**When to change it.** Keep it at or near the default. There is no upside to a creative yes/no — the only effect of raising it is that the same kind of message is sometimes stored and sometimes not.
+
+**Managing it.** Default 0.1, the lowest on this screen, deliberately.
+
+### `salient_core_enabled`
+
+*Put the most important *facts* in every prompt.*
+
+**Default:** `true` · **Set via:** `/api/memory/settings`
+
+**What it is.** The fact-and-entity counterpart to the reflex core: a small set of high-salience items always present rather than retrieved.
+
+**How it works.** Also maintained rather than searched. These are the things it would be absurd for the agent to have to look up — who you are, what you are working on — rather than things it might need.
+
+**When to change it.** Leave it on. It is what stops the agent needing a successful retrieval before it can behave as though it knows you.
+
+**Managing it.** As with the reflex core, everything here is paid for on every turn.
+
+### `salient_core_limit`
+
+*How many facts ride in every prompt.*
+
+**Default:** `8` · **Range:** 0 to 10, facts · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The size of the always-on fact set.
+
+**How it works.** Filled by salience, highest first.
+
+**When to change it.** Raise it if the agent keeps failing to recall things that ought to be obvious about you. Lower it, or set 0, to reclaim per-turn prompt space.
+
+**Managing it.** Default 8, capped at 10 to match the renderer's own limit — values above that would be silently ignored, so the cap is honest rather than arbitrary.
+
+### `salient_core_min_salience`
+
+*How important a fact must be to earn a permanent slot.*
+
+**Default:** `0.6` · **Range:** 0 to 1 · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** A floor on salience for inclusion in the always-on set.
+
+**How it works.** Facts below the bar are excluded even when slots are free, so a thin memory does not pad the core with trivia.
+
+**When to change it.** Raise it if the core is filling with things that are true but unimportant. Lower it on a young install where nothing has accumulated enough salience to qualify and the core sits empty.
+
+**Managing it.** Default 0.6. Salience grows with reinforcement, so an empty core on a new install is expected and usually resolves itself rather than needing this lowered.
+
+### `semantic_duplicate_threshold`
+
+*How similar two facts must be to count as the same fact.*
+
+**Default:** `0.92` · **Range:** 0.5 to 1.0, cosine similarity · **Set via:** `/api/memory/settings` · Advanced — most installs never need to change this.
+
+**What it is.** The first and cheapest layer of contradiction detection: a similarity bar above which a new fact is treated as a duplicate of an existing one rather than as something new.
+
+**How it works.** Compared as cosine similarity between the two facts' embeddings, with no LLM involved. Above the bar, the new fact reinforces the old one instead of being stored again.
+
+**When to change it.** Lower it if memory fills with near-identical restatements of the same thing. Raise it if genuinely different facts are being collapsed together — which shows up as memory "forgetting" the more specific of two similar statements.
+
+**Managing it.** Default 0.92, deliberately high: at this bar only near-verbatim repeats merge. Below about 0.85 you begin merging facts that differ in ways that matter.
 
 ## Not shown in Settings
 
