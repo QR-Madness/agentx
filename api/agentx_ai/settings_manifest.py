@@ -221,12 +221,13 @@ def build_sections(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     from .settings_registry import ALL_SECTIONS
 
-    writable = [e for e in entries if e.get("writable_via")]
     counts: dict[str, int] = {}
-    for entry in writable:
-        section = entry.get("ui_section")
-        if section:
-            counts[section] = counts.get(section, 0) + 1
+    for entry in entries:
+        if not entry.get("writable_via"):
+            continue
+        owner = entry.get("ui_section")
+        if owner:
+            counts[owner] = counts.get(owner, 0) + 1
 
     sections: list[dict[str, Any]] = []
     for section_id, label in ALL_SECTIONS.items():

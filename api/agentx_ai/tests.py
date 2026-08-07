@@ -12973,12 +12973,35 @@ class SettingsManifestTest(TestCase):
 @override_settings(AGENTX_AUTH_ENABLED=False)
 class SettingsManifestEndpointTest(TestCase):
     def test_manifest_get_shape(self):
+        from agentx_ai.settings_manifest import MANIFEST_VERSION
+
         resp = self.client.get("/api/settings/manifest")
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
-        self.assertEqual(body["version"], 2)
+        # Pinned to the constant, not a literal: the shape assertions below are
+        # what this test is about, and a version bump is a deliberate act
+        # elsewhere rather than a reason for this to fail.
+        self.assertEqual(body["version"], MANIFEST_VERSION)
         self.assertIsInstance(body["entries"], list)
         self.assertEqual(body["counts"]["total"], len(body["entries"]))
+
+    def test_v3_sections_block(self):
+        """One entry per settings screen, so the Overview can describe a screen
+        and count its contents without doing either by hand."""
+        from agentx_ai.settings_registry import ALL_SECTIONS
+
+        body = self.client.get("/api/settings/manifest").json()
+        sections = body["sections"]
+        self.assertEqual([s["id"] for s in sections], list(ALL_SECTIONS))
+
+        by_id = {s["id"]: s for s in sections}
+        recall = by_id["memory-recall"]
+        self.assertTrue(recall["help"]["summary"])
+        self.assertEqual(
+            recall["writable_count"],
+            sum(1 for e in body["entries"]
+                if e.get("writable_via") and e.get("ui_section") == "memory-recall"),
+        )
 
     def test_v2_axes_present_on_declared_keys(self):
         """v2 adds constraints/tier/help/ui_section — emitted only where declared,

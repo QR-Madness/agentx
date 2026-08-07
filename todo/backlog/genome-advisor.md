@@ -92,14 +92,31 @@
   - [ ] **Wave 3 — help cadence** (in progress): write up the remaining sections to the golden
         standard, section by section, binding each to the manifest as it goes. A section joins
         `SettingsHelpTest.DOCUMENTED_SECTIONS` when refit, which then holds its coverage.
+        **208 writable settings; 45 documented at v0.21.265.** Sliced by subject, not by
+        section — several remaining screens are 5–9 keys and don't justify a PR each.
     - [x] **Memory → Recall** `[v0.21.263]` — the golden section; 24 keys.
     - [x] **Memory → Conversation Context** `[v0.21.265]` — 20 keys across five config roots
           (`context`, `session.rolling_summary`, `trajectory_compression`, `compression`,
           `memory`); constraints + tiers declared, all 17 controls manifest-bound.
-    - [ ] Web Search (~20 keys) · Thinking Patterns (~13) · Consolidation (~45) · Research ·
-          Images & Audio · Ambassador · Agent Teams · Task Planner · Model Limits ·
-          Prompt Enhancement.
+    - [x] **Where to start** `[v0.21.266]` — the two things every later slice needed, plus the
+          Overview. Section blurbs: a `sections` store in `settings_help.yaml` keyed by screen
+          id, all 21 authored, served by manifest **v3** (`sections` block: label, blurb,
+          writable count) and rendered on the Overview tiles, each screen's header, and as the
+          section intro in the generated reference — which is now laid out by screen in nav
+          order. `ModelPickerField` joined the field kit's chrome contract (it sat outside it,
+          so ~25 model-valued keys had no anchor and search could find them but not land on
+          them); Recall's and Conversation Context's five pickers backfilled. Overview gained
+          a search hero sharing the nav's query, a setup checklist read from the manifest, and
+          tiles carrying blurb + changed-count. Fixed: every table in the generated reference
+          rendered as literal pipe text; two humanizers named the same key differently.
+    - [ ] Web Search (22) + Research Mode (9) · Thinking Patterns (13) + Task Planner (7) +
+          Agent Teams (6) · Consolidation (50) · Ambassador (18) + Images & Audio (6) ·
+          Model Providers (12) + Model Limits (8) + Model Roles (3) + Prompt Enhancement (5)
+          + the 4 strays.
     - [ ] Sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
+    - [ ] **Invert the coverage gate** (the closing move) — `DOCUMENTED_SECTIONS` becomes an
+          `UNDOCUMENTED_ALLOWLIST` that must be empty, so a new setting can't ship without
+          help unless someone writes its key in and defends it in review.
   - [ ] **Dead-knob flags** — declared-but-unread keys. `scripts/check_config_keys.py` already has the
         inventory half; the registry makes its output authoritative enough to gate on.
 - [ ] **`@Settings` Advisor agent** — a built-in agent profile addressed via the shipped @-mention

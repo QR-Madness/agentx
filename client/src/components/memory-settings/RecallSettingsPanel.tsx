@@ -219,14 +219,13 @@ export function RecallSettingsPanel() {
           />
           {hydeOn && (
             <div className="settings-subgroup">
-              <div className="setting-row">
-                <ModelPickerField
-                  label="Model"
-                  value={val('recall_hyde_model', '')}
-                  onChange={v => handleChange('recall_hyde_model', v)}
-                  showDefault={false}
-                />
-              </div>
+              <ModelPickerField
+                label="Model"
+                value={val('recall_hyde_model', '')}
+                onChange={v => handleChange('recall_hyde_model', v)}
+                showDefault={false}
+                {...bind('recall_hyde_model')}
+              />
               <SliderField
                 label="Temperature"
                 value={val('recall_hyde_temperature', 0.7)}
@@ -254,14 +253,13 @@ export function RecallSettingsPanel() {
           />
           {selfQueryOn && (
             <div className="settings-subgroup">
-              <div className="setting-row">
-                <ModelPickerField
-                  label="Model"
-                  value={val('recall_self_query_model', '')}
-                  onChange={v => handleChange('recall_self_query_model', v)}
-                  showDefault={false}
-                />
-              </div>
+              <ModelPickerField
+                label="Model"
+                value={val('recall_self_query_model', '')}
+                onChange={v => handleChange('recall_self_query_model', v)}
+                showDefault={false}
+                {...bind('recall_self_query_model')}
+              />
               <SliderField
                 label="Temperature"
                 value={val('recall_self_query_temperature', 0.2)}
