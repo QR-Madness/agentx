@@ -5786,9 +5786,12 @@ paths:
         advertised surface and the accepted surface cannot disagree.
         Version 2 adds the declaration axes — `constraints`, `tier`,
         `ui_section`, `write_mode`, `nullable`, `empty_means` — and authored
-        `help`, each present only on keys that declare it. The settings UI reads
-        this to show defaults, mark what you've changed, and render help; the
-        generated Settings Reference renders the same source.
+        `help`, each present only on keys that declare it. Version 3 adds the
+        `sections` block: one entry per settings screen with its label, authored
+        blurb, and writable-key count, so a consumer can describe a screen
+        without counting its contents. The settings UI reads this to show
+        defaults, mark what you've changed, and render help; the generated
+        Settings Reference renders the same source.
       responses:
         '200':
           description: Manifest
@@ -5805,6 +5808,28 @@ paths:
                     type: object
                     additionalProperties:
                       type: integer
+                  sections:
+                    type: array
+                    description: >-
+                      Every settings screen, in nav order. Present from v3.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          description: Matches an entry's `ui_section`.
+                        label:
+                          type: string
+                        writable_count:
+                          type: integer
+                          description: >-
+                            Writable keys the screen owns; 0 for screens that
+                            configure their own subsystem (themes, templates).
+                        help:
+                          type: object
+                          description: Authored blurb — summary / what / why.
+                          additionalProperties:
+                            type: string
                   entries:
                     type: array
                     items:

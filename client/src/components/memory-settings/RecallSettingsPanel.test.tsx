@@ -10,9 +10,20 @@ vi.mock('../../contexts/NotificationContext', () => {
 });
 
 // The model pickers open a catalog modal; stand them in with a plain readout.
+// The stub forwards the manifest anchor, because whether the panel *passes* a
+// binding is exactly what the golden section got wrong: its two model pickers
+// shipped unbound, so search could find those keys and not land on them.
 vi.mock('../common/ModelPickerField', () => ({
-  ModelPickerField: ({ label, value }: { label: string; value: string }) => (
-    <div data-testid={`model-${label}`}>{value || 'inherit'}</div>
+  ModelPickerField: ({ label, value, binding }: {
+    label: string; value: string;
+    binding?: { entry: { store: string; key: string } } | null;
+  }) => (
+    <div
+      data-testid={`model-${label}`}
+      data-setting={binding ? `${binding.entry.store}:${binding.entry.key}` : undefined}
+    >
+      {value || 'inherit'}
+    </div>
   ),
 }));
 
@@ -171,5 +182,17 @@ describe('RecallSettingsPanel', () => {
 
     expect(await screen.findByRole('spinbutton', { name: 'Candidate Pool' })).toHaveValue(50);
     expect(screen.queryByRole('button', { name: /^About/ })).not.toBeInTheDocument();
+  });
+
+  it('binds its model pickers too — the golden section has no unanchored keys', async () => {
+    // HyDE and Self-Query each own a model. They shipped unbound because the
+    // picker sat outside the field kit; search could find them and then drop
+    // the user at the top of the section.
+    const { container } = renderPanel();
+    await screen.findByRole('spinbutton', { name: 'Candidate Pool' });
+
+    for (const key of ['recall_hyde_model', 'recall_self_query_model']) {
+      expect(container.querySelector(`[data-setting="memory:${key}"]`)).toBeInTheDocument();
+    }
   });
 });

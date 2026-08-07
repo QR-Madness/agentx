@@ -56,6 +56,11 @@ Every setting the app exposes, generated from the same declarations the settings
 screen reads. If a setting is described here, that description is the one you'll
 see beside the control; if it isn't listed here, the app doesn't offer it.
 
+**How this page is laid out.** One heading per settings screen, in nav order, so
+this reads the way the app does. Settings written up in full appear under their
+screen; the rest are tabulated beneath them and are being written up screen by
+screen.
+
 **Where things are stored.** `config` settings live in `data/config.json` and are
 written through `POST /api/config/update`. `memory` settings live in
 `data/memory_settings.json` and are written through the two `/api/memory/*`
@@ -109,6 +114,11 @@ def _constraint_text(entry: dict) -> str:
     return ", ".join(bits)
 
 
+#: The bucket for settings no screen renders — read-only plumbing, and keys set
+#: elsewhere in the app. Sorts last; a slug no reader would recognise otherwise.
+OTHER = "_other"
+
+
 def build_entries() -> list[dict]:
     """Every setting, with its declared metadata and authored help."""
     from agentx_ai.settings_manifest import build_reference_entries
@@ -116,67 +126,101 @@ def build_entries() -> list[dict]:
     return build_reference_entries()
 
 
+def _render_setting(entry: dict, parts: list[str]) -> None:
+    """The long form: one fully-authored setting."""
+    help_text = entry["help"]
+    parts.append(f"### `{entry['key']}`\n")
+    if help_text.get("summary"):
+        parts.append(f"*{help_text['summary']}*\n")
+
+    meta = [f"**Default:** {_fmt(entry['default'])}"]
+    if rng := _constraint_text(entry):
+        meta.append(f"**Range:** {rng}")
+    if entry.get("writable_via"):
+        meta.append(f"**Set via:** `{entry['writable_via']}`")
+    else:
+        meta.append("**Read-only** over the API")
+    if note := TIER_NOTE.get(entry.get("tier") or ""):
+        meta.append(note)
+    parts.append(" · ".join(meta) + "\n")
+
+    for field, heading in HELP_SECTIONS:
+        body = (help_text.get(field) or "").strip()
+        if body:
+            parts.append(f"**{heading}.** {body}\n")
+
+
+def _render_table(rows: list[dict], parts: list[str]) -> None:
+    """The whole table as ONE part.
+
+    Blocks are joined with a blank line between them, and a Markdown table needs
+    its rows contiguous — appending row-by-row rendered every row as a paragraph
+    of literal pipes. (It did, on the page this replaces.)
+    """
+    lines = ["| Setting | Type | Default | Store | Set via |",
+             "| --- | --- | --- | --- | --- |"]
+    for entry in sorted(rows, key=lambda e: e["key"]):
+        route = f"`{entry['writable_via']}`" if entry.get("writable_via") else "read-only"
+        default = "*(secret)*" if entry["secret"] else _fmt(entry["default"])
+        lines.append(
+            f"| `{entry['key']}` | {entry['type']} | {default} "
+            f"| {entry['store']} | {route} |"
+        )
+    parts.append("\n".join(lines))
+
+
 def render(entries: list[dict]) -> str:
-    from agentx_ai.settings_registry import ui_section_label
+    from agentx_ai.settings_manifest import build_sections
 
     by_section: dict[str, list[dict]] = {}
     for entry in entries:
-        by_section.setdefault(entry.get("ui_section") or "_other", []).append(entry)
+        by_section.setdefault(entry.get("ui_section") or OTHER, []).append(entry)
 
-    documented = [e for e in entries if e.get("help")]
     parts = [FRONTMATTER, BANNER, INTRO]
 
-    # Fully-documented settings get the long form; everything else is tabulated.
-    if documented:
-        parts.append(
-            "## Documented settings\n\n"
-            "These carry the full write-up. The rest of the catalogue is "
-            "tabulated below, and is being written up section by section."
-        )
-        for entry in sorted(documented, key=lambda e: (e.get("ui_section") or "", e["key"])):
-            help_text = entry["help"]
-            parts.append(f"### `{entry['key']}`\n")
-            if help_text.get("summary"):
-                parts.append(f"*{help_text['summary']}*\n")
+    # Screen order comes from the registry, so this page and the nav agree on
+    # both what the screens are and what they're called.
+    sections = build_sections(entries)
+    order = [s["id"] for s in sections if s["id"] in by_section] + [OTHER]
+    blurbs = {s["id"]: s for s in sections}
 
-            meta = [f"**Default:** {_fmt(entry['default'])}"]
-            if rng := _constraint_text(entry):
-                meta.append(f"**Range:** {rng}")
-            if entry.get("ui_section"):
-                meta.append(f"**Found in:** {ui_section_label(entry['ui_section'])}")
-            if entry.get("writable_via"):
-                meta.append(f"**Set via:** `{entry['writable_via']}`")
-            if note := TIER_NOTE.get(entry.get("tier") or ""):
-                meta.append(note)
-            parts.append(" · ".join(meta) + "\n")
-
-            for field, heading in HELP_SECTIONS:
-                body = (help_text.get(field) or "").strip()
-                if body:
-                    parts.append(f"**{heading}.** {body}\n")
-
-    parts.append("## Full catalogue\n")
-    parts.append(
-        "Every remaining setting, by the screen it appears on. A blank write "
-        "route means the value is read-only over the API."
-    )
-
-    # "_other" sorts first, which is wrong — the settings you can actually reach
-    # should lead, with the read-only plumbing last.
-    for section in sorted(by_section, key=lambda s: (s == "_other", s)):
-        rows = sorted(by_section[section], key=lambda e: e["key"])
-        title = ui_section_label(None if section == "_other" else section)
-        parts.append(f"### {title}\n")
-        parts.append("| Setting | Type | Default | Store | Set via |")
-        parts.append("| --- | --- | --- | --- | --- |")
-        for entry in rows:
-            route = f"`{entry['writable_via']}`" if entry.get("writable_via") else "read-only"
-            default = "*(secret)*" if entry["secret"] else _fmt(entry["default"])
+    for section_id in order:
+        rows = by_section.get(section_id)
+        if not rows:
+            continue
+        meta = blurbs.get(section_id)
+        if section_id == OTHER:
+            parts.append("## Not shown in Settings\n")
             parts.append(
-                f"| `{entry['key']}` | {entry['type']} | {default} "
-                f"| {entry['store']} | {route} |"
+                "Read-only plumbing, plus a few values set elsewhere in the app "
+                "rather than on a settings screen."
             )
-        parts.append("")
+        else:
+            parts.append(f"## {meta['label'] if meta else section_id}\n")
+            blurb = (meta or {}).get("help") or {}
+            if blurb.get("summary"):
+                parts.append(f"*{blurb['summary']}*\n")
+            for field in ("what", "why"):
+                if body := (blurb.get(field) or "").strip():
+                    parts.append(body + "\n")
+
+        documented = [e for e in rows if e.get("help")]
+        rest = [e for e in rows if not e.get("help")]
+
+        for entry in sorted(documented, key=lambda e: e["key"]):
+            _render_setting(entry, parts)
+
+        if rest:
+            if documented:
+                # Not always literally "on the screen": a section's config roots
+                # can hold read-only keys no control renders. Say what the row
+                # means rather than implying every one has a knob.
+                parts.append(
+                    "**Also in this area**, not yet written up. A `read-only` "
+                    "route means the value is set in `.env` or the settings file "
+                    "rather than through the API:\n"
+                )
+            _render_table(rest, parts)
 
     parts.append(
         "## Related\n\n"

@@ -14,6 +14,12 @@
 #       why:     Why and when you'd change it. Name the trade-off and the direction.
 #       manage:  How to manage it — what it interacts with, what to watch, safe ranges.
 #
+# Plus one store a level up — `sections`, keyed by settings-screen id, describing
+# the screen rather than a key. Three fields (summary / what / why), rendered on
+# the Overview tiles, in each screen's header, and as the section intro in the
+# generated reference. Every screen in the nav has one; the id set is asserted
+# against the client's SECTION_HIERARCHY, so a new screen can't ship without it.
+#
 # Register: write for someone competent who has never read this subsystem's code.
 # Prefer the concrete number over the adjective. Name the cost. Say when NOT to
 # touch it. Every field is optional; a key with only `summary` is a stub.
@@ -691,3 +697,241 @@ config:
     manage: >-
       Leads are pointers, not recall; the Recall layer is what fetches actual content.
       They ride at low priority and are the first thing dropped under pressure.
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Section blurbs — one per settings screen. See the header note for the shape.
+# ═══════════════════════════════════════════════════════════════════════════
+
+sections:
+  overview:
+    summary: What you've changed, and where everything lives.
+    what: >-
+      The landing page for settings. It reads the settings manifest — the same
+      declaration the API validates writes against — so the list of what you've
+      moved off its default is computed, never curated.
+    why: >-
+      Start here when you've inherited a configuration you didn't set up, or when
+      something behaves unexpectedly and you want to see what is not stock.
+
+  # ── Infrastructure ───────────────────────────────────────────────────────
+  providers:
+    summary: Where AgentX gets its intelligence.
+    what: >-
+      Connections to the model backends: the five built-ins (Anthropic, OpenAI,
+      OpenRouter, Vercel, LM Studio) plus any OpenAI-compatible endpoint you
+      register yourself, which then addresses its models as `yourid:model`.
+    why: >-
+      The first thing to configure on a new install — nothing else works without
+      at least one reachable provider. Come back when a backend stops responding,
+      when you're adding a local or self-hosted endpoint, or to read the supply
+      line: which provider a turn actually resolves to, and what it costs.
+
+  models:
+    summary: How much context each model really has, and the sampling defaults.
+    what: >-
+      Two things a provider often gets wrong on your behalf: the token window a
+      model actually offers, and the sampling parameters — temperature, max
+      tokens, top-p, penalties — used when a profile doesn't set its own.
+    why: >-
+      Override a window when a model's declared one is wrong. An understated
+      window makes conversations compact far earlier than they need to, which you
+      experience as the agent forgetting things it should still be able to see.
+
+  model-roles:
+    summary: One model per workload, so features don't each need their own.
+    what: >-
+      Three roles — fast utility, deep reasoning, and summarizer — that features
+      point at instead of naming a model. A feature left on its default follows
+      its role; a model chosen explicitly on the feature always wins.
+    why: >-
+      Set these once and most of the platform is configured. Change a role to
+      move every background task onto a cheaper or faster model without visiting
+      a dozen sections to do it.
+
+  search:
+    summary: How the agent searches the web — and what that's allowed to cost.
+    what: >-
+      The search backend and its defaults, plus two budgets: how many searches an
+      ordinary turn may run and how many a research turn may, each with an
+      optional dollar ceiling. A source policy of preferred and blocked domains
+      applies to every result.
+    why: >-
+      Come here to change backends, to cap spend, or to stop the agent reading a
+      domain you don't trust. The budgets are the part worth understanding: they
+      are per *turn*, not per day, and research turns draw on their own much
+      larger allowance.
+
+  images:
+    summary: Generating pictures and speech, and re-reading the ones you send.
+    what: >-
+      Image generation for conversations and profile avatars, speech synthesis
+      and transcription, and vision — whether images you attach are shown to the
+      model again on later turns.
+    why: >-
+      Change the models when output quality or cost matters. The vision re-feed
+      is the subtle one: showing an image on more turns keeps the agent able to
+      refer back to it, and spends tokens every time it does.
+
+  # ── Intelligence ─────────────────────────────────────────────────────────
+  planner:
+    summary: Whether the agent plans before it acts, and how far ahead.
+    what: >-
+      Task decomposition — breaking a request into subtasks before execution
+      rather than working straight through it. A complexity threshold decides
+      which requests are worth planning at all.
+    why: >-
+      Raise the threshold if simple requests are being over-planned; lower it if
+      the agent charges into multi-step work with no structure and loses the
+      thread halfway.
+
+  thinking:
+    summary: How agents reason in chat — scaffolds, critique, and consensus.
+    what: >-
+      The reasoning patterns compiled into a live streamed turn: step-by-step
+      chains, principles-first step-back, self-critiquing reflection, and
+      consensus sampling. A classifier picks one per turn unless you pin it.
+    why: >-
+      Turn individual patterns off when they cost more time than they earn on
+      your kind of work. These are the global fallbacks — per-agent defaults live
+      on the profile, and the composer chip overrides for one conversation.
+
+  alloy:
+    summary: Letting agents hand work to each other.
+    what: >-
+      Delegation: an agent dispatching a subtask to another agent, either ad-hoc
+      from the roster or through a team you've defined. Depth, parallelism, and
+      timeout bound how far a chain of that can run.
+    why: >-
+      Lower the depth or parallelism when delegation is running away with cost.
+      Turn ad-hoc delegation off entirely if you want agents to work alone unless
+      a team explicitly says otherwise.
+
+  ambassador:
+    summary: A parallel agent that briefs you without entering the conversation.
+    what: >-
+      A dedicated operator running alongside a conversation: it reads the
+      transcript, answers questions about it, and can propose actions — but its
+      tool belt never executes a write. Reads run automatically; anything that
+      would change state comes back as a proposal for you to confirm.
+    why: >-
+      Change the model or context depth when briefings are too shallow or too
+      expensive. The aide settings tune the parallel read fan-out behind it and
+      rarely need touching.
+
+  research:
+    summary: Deep, cited research with a much larger budget than a normal turn.
+    what: >-
+      A per-conversation mode that raises the tool-round and search budgets, runs
+      sub-questions in batches, and produces a report that reviews its own
+      citations before it returns.
+    why: >-
+      Raise the round limit for genuinely broad questions; lower it to stop
+      research becoming an expensive default. The minimum output budget matters
+      more than it looks — a report starved of tokens returns early and
+      half-formed rather than failing outright.
+
+  # ── Prompts ──────────────────────────────────────────────────────────────
+  prompt-stack:
+    summary: The layered system prompt every agent starts from.
+    what: >-
+      A durable stack of prompt layers composed into the global system prompt.
+      Agent names are not part of it — those are injected from the profile at
+      composition time.
+    why: >-
+      Edit here to change behaviour across every agent at once. Anything that
+      should apply to one agent belongs on that agent's profile instead.
+
+  prompts:
+    summary: Rewriting your prompt into a fuller one before it runs.
+    what: >-
+      An optional pass that expands what you typed into a more complete
+      instruction, using its own model and temperature so it doesn't draw on the
+      conversation's budget.
+    why: >-
+      Useful when you type quickly and want intent inferred. Turn it off when you
+      need your exact wording to survive — it rewrites, and a rewrite can drop a
+      constraint you meant literally.
+
+  prompt-templates:
+    summary: Reusable prompts, available in chat and the profile editor.
+    what: >-
+      A library of saved prompts you browse, create, and edit here; inserting one
+      happens in chat, not on this screen.
+    why: >-
+      Build it up as you find phrasings that work. Nothing here changes agent
+      behaviour on its own — a template does something only when you use it.
+
+  feature-prompts:
+    summary: Override the built-in prompts that features use internally.
+    what: >-
+      The prompts behind extraction, relevance filtering, planning, and prompt
+      enhancement. Each ships with a default; an override replaces it, and a diff
+      shows exactly what you changed.
+    why: >-
+      Worth touching only when a feature misbehaves in a way you can trace to its
+      wording. Left on their defaults, these improve when the defaults do — an
+      override opts that key out of future improvements.
+
+  # ── Memory ───────────────────────────────────────────────────────────────
+  memory-overview:
+    summary: What the agent has remembered, and where it lives.
+    what: >-
+      Counts for what memory currently holds — entities, facts, turns, strategies
+      — and which store each layer sits in.
+    why: >-
+      Check here before concluding that recall is broken. Most "the agent doesn't
+      remember" reports are answered by this page rather than by Recall: memory
+      that was never stored cannot be retrieved.
+
+  context:
+    summary: How much of the conversation the model sees, word for word.
+    what: >-
+      Per-turn context assembly — how much of the window recent turns may fill
+      verbatim, when older turns fold into a running digest, and how tool output
+      and long tool loops are compressed on the way in.
+    why: >-
+      The section to visit when a conversation starts losing detail, or when a
+      long tool run is eating the window. With a correctly declared model window,
+      most conversations never compact at all.
+
+  memory-recall:
+    summary: How the agent searches its own memory for a turn.
+    what: >-
+      Five retrieval techniques over stored memory — hybrid keyword-and-meaning
+      search, entity-centric expansion, query expansion, HyDE, and self-query —
+      followed by a cross-encoder that re-ranks whatever they found.
+    why: >-
+      Turn techniques on for recall quality and off for latency and cost: each is
+      another pass over the same memory. Every knob here belongs to exactly one
+      technique, so a technique you've turned off costs nothing anywhere else.
+
+  memory-consolidation:
+    summary: Turning finished conversations into facts, entities, and procedures.
+    what: >-
+      The background pipeline that reads completed turns and keeps what's worth
+      keeping: facts and their confidence, entities and the links between them,
+      contradictions and corrections against what is already stored, and
+      distilled "how we work" procedures.
+    why: >-
+      Raise the confidence thresholds when memory accumulates things that aren't
+      true; lower them when it drops things you said plainly. The job intervals
+      decide how quickly a conversation becomes memory at all.
+
+  # ── Tools & Interface ────────────────────────────────────────────────────
+  translation:
+    summary: Local translation across 200+ languages.
+    what: >-
+      An on-device NLLB-200 model with language detection. It runs locally, so
+      nothing being translated leaves the machine.
+    why: >-
+      Nothing here needs configuring for normal use. Worth knowing about because
+      the model loads eagerly — it is the largest thing the server pulls on a
+      first request.
+
+  appearance:
+    summary: How the app looks.
+    what: >-
+      Theme selection. Each theme is a complete token set, so switching one
+      changes the whole surface rather than a single colour.
+    why: >-
+      Personal preference; nothing here affects how agents behave.

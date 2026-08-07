@@ -1,5 +1,5 @@
 """
-Settings Manifest v2 — canonical, machine-readable registry of every
+Settings Manifest v3 — canonical, machine-readable registry of every
 user-tunable setting across the platform's stores.
 
 One endpoint that answers, for any setting: what exists, where it lives, its
@@ -23,18 +23,21 @@ that the write path drops, or vice versa. Prose comes from
 
 v1 shipped registry-only and deferred prose descriptions to the docs-site plus
 validation ranges to the UI. v2 reverses that: the manifest is the source and
-both surfaces render from it.
+both surfaces render from it. v3 adds a ``sections`` block — one entry per
+settings screen, with its authored blurb and how many settings it holds — so the
+Overview and the generated reference can describe a screen without either of
+them counting its contents by hand.
 """
 
 import logging
 from datetime import datetime, UTC
 from typing import Any
 
-from .settings_help import get_help
+from .settings_help import get_help, get_section_help
 
 logger = logging.getLogger(__name__)
 
-MANIFEST_VERSION = 2
+MANIFEST_VERSION = 3
 
 def _is_secret(name: str) -> bool:
     from .settings_registry import is_secret_path
@@ -206,6 +209,40 @@ def _config_entries() -> list[dict[str, Any]]:
     return entries
 
 
+def build_sections(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One entry per settings screen: its label, its authored blurb, and how
+    many settings it holds.
+
+    Counts are derived from the entries just built, never tallied by hand, so a
+    screen's "22 settings" moves the moment a key joins or leaves it. Screens
+    that own nothing (the template library, themes) report zero rather than
+    being omitted — the Overview lists every screen, and a missing count would
+    read as a load failure rather than as "this one has no knobs".
+    """
+    from .settings_registry import ALL_SECTIONS
+
+    counts: dict[str, int] = {}
+    for entry in entries:
+        if not entry.get("writable_via"):
+            continue
+        owner = entry.get("ui_section")
+        if owner:
+            counts[owner] = counts.get(owner, 0) + 1
+
+    sections: list[dict[str, Any]] = []
+    for section_id, label in ALL_SECTIONS.items():
+        section: dict[str, Any] = {
+            "id": section_id,
+            "label": label,
+            "writable_count": counts.get(section_id, 0),
+        }
+        blurb = get_section_help(section_id)
+        if blurb:
+            section["help"] = blurb
+        sections.append(section)
+    return sections
+
+
 def build_manifest() -> dict[str, Any]:
     """Assemble the full manifest. Never raises — a store that fails to
     introspect is reported in `errors` instead of breaking the endpoint."""
@@ -225,6 +262,7 @@ def build_manifest() -> dict[str, Any]:
         "version": MANIFEST_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
         "counts": counts,
+        "sections": build_sections(entries),
         "entries": entries,
     }
     if errors:

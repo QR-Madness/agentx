@@ -1804,10 +1804,28 @@ export interface SettingsManifestEntry {
   help?: SettingHelp;
 }
 
+/**
+ * A settings screen, as the server sees it (manifest v3). One per entry in the
+ * client's SECTION_HIERARCHY — a backend test asserts the id sets match, so
+ * neither side can add a screen the other doesn't know about.
+ */
+export interface SettingsManifestSection {
+  /** Matches an entry's `ui_section`. */
+  id: string;
+  /** "Memory → Recall" — the screen's home, for prose that has to name it. */
+  label: string;
+  /** Writable keys this screen owns. 0 for screens with their own subsystem. */
+  writable_count: number;
+  /** Authored blurb: summary / what / why (no `how`/`manage` at this level). */
+  help?: SettingHelp;
+}
+
 export interface SettingsManifest {
   version: number;
   generated_at: string;
   counts: Record<string, number>;
+  /** Present from v3; older servers omit it and consumers fall back. */
+  sections?: SettingsManifestSection[];
   entries: SettingsManifestEntry[];
   /** A store that failed to introspect is reported rather than breaking the endpoint. */
   errors?: string[];

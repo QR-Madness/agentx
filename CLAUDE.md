@@ -26,7 +26,7 @@ Find the right doc before diving in:
 
 - The client is cross-platform — UI must be highly responsive with comfortable hit-regions.
 - Post-v0.20, all changes must be migratable for existing platforms (`versions.yaml` is authoritative).
-- **Version + notes travel with the work.** Any notable change bumps both **in the same commit**: `versions.yaml` via `task versions:sync` (propagates manifests + lockfiles), and root `Release-Notes.md` — its `<!-- release-version -->` marker *and* body (always the *next* release). A continuous habit, not a release step; `task release:check` asserts it. See [Build & Release](#build--release).
+- **Version + notes travel with the work.** Any notable change bumps both **in the same commit**: `versions.yaml` via `task versions:sync` (propagates manifests + lockfiles), and root `Release-Notes.md` — its `<!-- release-version -->` marker *and* body (always the *next* release). A habit, not a release step; `task release:check` asserts it. See [Build & Release](#build--release).
 
 ## Hard-Won Working Rules
 
@@ -35,7 +35,8 @@ Landmines that cost real debugging time:
 0. **Adding a setting:** declare it in `settings_registry` + help in
    `settings_help.yaml`, then `task docs:gen:settings`. Undeclared = read-only by
    design (first place to look when a save "does nothing"). Never hand-write a
-   `config_update` handler. ADR-17 ★
+   `config_update` handler. A new settings *screen* also needs an `ALL_SECTIONS`
+   entry + a `sections:` blurb — gated, not optional. ADR-17 ★
 1. **Settings overrides:** the memory kit reads settings **live** (zero module snapshots,
    ratchet 0). Temporary overrides use ONE mechanism:
    `with pin_memory_settings(override):` — never `save_memory_settings()` (it writes
@@ -88,9 +89,9 @@ Tauri Client (React 19 + Vite)          Django API (port 12319)
 One-liners for orientation; ★ = deep internals in [`Development-Notes.md`](Development-Notes.md).
 
 - `kit/translation.py` — `TranslationKit` (NLLB-200) + `LanguageLexicon` (ISO 639 code bridging)
-- `kit/agent_memory/` — memory system, lazy-loaded connections (`interface.py` → `connections.py` → impls); `RecallLayer` = 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query) + a cross-encoder rerank stage (default-ON). ★
+- `kit/agent_memory/` — memory system, lazy connections (`interface.py` → `connections.py` → impls); `RecallLayer` = 5 retrieval techniques (hybrid, entity-centric, query expansion, HyDE, self-query) + a cross-encoder rerank stage (default-ON). ★
 - `kit/shell/` — Agent Shells: **opt-in per-workspace** (`workspaces.allow_shell`, off by default) sandboxed command execution — bubblewrap jail default, Docker-container backend optional. Internals + threat model ★. e2e: `scripts/shell_e2e.py`.
-- `kit/workspaces/` — File Workspaces & Document RAG, surfaced as **Projects** (instructions ride every turn; durable conversation membership; `_project_{ws_id}` memory channels; `ws_home` is never a project). Read + write agent tools (partial edits take an `expected_sha256` soft write-lock); full roster + internals ★. e2e: `scripts/rag_e2e.py`.
+- `kit/workspaces/` — File Workspaces & Document RAG, surfaced as **Projects** (instructions ride every turn; durable conversation membership; `_project_{ws_id}` memory channels; `ws_home` is never a project). Read + write agent tools (partial edits take an `expected_sha256` soft write-lock); roster + internals ★. e2e: `scripts/rag_e2e.py`.
 - `mcp/` — MCP client manager, server registry, tool executor, transports, remote OAuth 2.1, registry-search proxy; `mcp_servers.json`; `media_passthrough.py` surfaces returned image/audio blocks as exhibits (capped, untrusted). Client surface: **Connectors & Tools** (internally `toolkit`). ★
 - `content_blocks.py` — multi-modal payload vocabulary mirroring MCP/ACP ContentBlocks; the seam shared by providers (`StreamChunk.media`), the MCP executor, and exhibits. Audio in/out rides it (`agent/audio_gen.py` = the audio twin of `image_gen.py`). ★
 - `kit/speech.py` — neutral TTS/STT seam; the Ambassador keeps only profile-precedence wrappers, chat consumes directly. **ADR-11**: capabilities live in neutral modules, surfaces consume — enforced by `tests.CapabilitySeamBoundaryTest`. `providers/capabilities.py` = the one warm-once modality probe.
@@ -102,13 +103,13 @@ One-liners for orientation; ★ = deep internals in [`Development-Notes.md`](Dev
 - `agent/` — `Agent` orchestrates reasoning + drafting + tools; `TaskPlanner` decomposes (chat path composes plans with the main agent model ★); `SessionManager` for conversations.
 - `agent/profiles.py` — `ProfileManager` CRUD (`data/agent_profiles.yaml`); Docker-style `agent_id` + `self_channel`; seeded default profiles (one-time markers, deletions stick ★). **Rule:** `kind` ∈ `agent`|`ambassador`; ambassadors are **excluded from chat** (default/routing/`delegate_to` filter `kind=='agent'`). ★
 - `agent/skills.py` — **Agent Skills**: named instruction packs, progressively disclosed — compact index in the chat prompt, bodies load via `use_skill`; `data/skills.yaml`; per-agent access. UI: Connectors & Tools → Skills. ★
-- `alloy/` — **Agent Teams** (user-facing name; internals/routes/config keep `alloy`): Team (workflow) CRUD (`data/workflows.yaml`), `delegate_to` tool (per-dispatch `effort` tiers → tool-round budgets, `alloy.effort_tiers`) + `AlloyExecutor`; supervisor prompt in workflows, **soft ad-hoc roster block** in normal chats (opt-in `available_for_delegation`; per-conversation `disable_delegation`). ★
+- `alloy/` — **Agent Teams** (user-facing name; internals/routes/config keep `alloy`): Team (workflow) CRUD (`data/workflows.yaml`), `delegate_to` (per-dispatch `effort` tiers → round budgets, `alloy.effort_tiers`) + `AlloyExecutor`; supervisor prompt in workflows, **soft ad-hoc roster block** in normal chats (opt-in `available_for_delegation`; per-conversation `disable_delegation`). ★
 - `agent/tool_output_compressor.py` / `tool_output_chunker.py` — task-aware LLM compression for oversized tool outputs
 - `streaming/trajectory_compression.py` — Focus-style intra-trajectory compression for multi-round tool loops
 - `prompts/` — `PromptManager` + durable layered system-prompt stack (`LayerStore`). ★
 - `agent/context.py` — per-turn `assemble_turn_context` (verbatim budget + digest compaction + checkpoints/scratchpad); knobs in Settings → Memory → Conversation Context. ★
-- `agent/ambassador.py` (+ its `_storage`/`_tools`/`aide_swarm`/`conversation_meta` siblings) — the **Ambassador**: parallel conversational operator (persistent "Inquiry" threads + the **Command Deck**). **Rule:** the tool belt **never executes a write** — reads auto-run; conversation-meta writes and `dispatch_task` are **proposal-only** (client confirm strip), the write side landing only as *your* user turns (relay/dispatch); sidecar-only, never pollutes the transcript. ★
-- `logging_kit/` — centralized logging (queue handler → console/ring-buffer/`/api/logs` + daily encrypted archives), `AGENTX_LOG_*` flags. ★
+- `agent/ambassador.py` (+ `_storage`/`_tools`/`aide_swarm`/`conversation_meta` siblings) — the **Ambassador**: parallel conversational operator (persistent "Inquiry" threads + the **Command Deck**). **Rule:** the tool belt **never executes a write** — reads auto-run; conversation-meta writes and `dispatch_task` are **proposal-only** (client confirm strip), the write side landing only as *your* user turns (relay/dispatch); sidecar-only, never pollutes the transcript. ★
+- `logging_kit/` — central logging (queue handler → console/ring-buffer/`/api/logs` + daily encrypted archives), `AGENTX_LOG_*` flags. ★
 
 ★ Plus the **memory subsystems** and the **full API + chat-stream SSE reference** — all in [`Development-Notes.md`](Development-Notes.md) (see its Contents list).
 
@@ -124,13 +125,13 @@ before touching a surface. The rules that must not drift:
 - Multi-server: `ServerContext` app-wide; `lib/api` typed client facade; `lib/hooks.ts` data hooks on the `useApi<T>` factory; `AgentProfileContext` for profiles.
 - **Add a theme = one entry in `THEMES`** (`lib/theme.ts`) — pickers iterate the registry; a vitest enforces cross-theme token parity; glow tokens use a transparent shadow, never bare `none`.
 - API errors: `ApiError` carries a status-derived `kind`; use `apiErrorMessage(err)`/`toApiError(err)`; surface via `useNotify().notifyError(err)` (toasts); inline errors only for form-field validation.
-- **Two shells (desktop + web/PWA)** — one React app, gated by compile-time `__IS_TAURI__`. **Rule:** `@tauri-apps/*` is imported **only** under `src/platform/` (`importBoundary.test.ts` fails on any stray import, keeping the web bundle Tauri-free). PWA shell in `src/pwa/`; connection links in `lib/connectionString.ts`. Full detail ★ → Client Surface Map.
+- **Two shells (desktop + web/PWA)** — one React app, gated by compile-time `__IS_TAURI__`. **Rule:** `@tauri-apps/*` is imported **only** under `src/platform/` (`importBoundary.test.ts` fails on a stray import, keeping the web bundle Tauri-free). PWA shell in `src/pwa/`; connection links in `lib/connectionString.ts`. Detail ★ → Client Surface Map.
 
 #### Styling (Tailwind v4 + design tokens)
 
 - **Tailwind v4** via `@tailwindcss/vite`. CSS entry `src/App.css` imports only the `theme` + `utilities` layers — **Preflight is intentionally disabled** (it would clobber `styles/base.css`; utilities out-rank base, unlayered per-component CSS out-ranks utilities).
-- **Design tokens** in `lib/theme.ts`, injected at runtime by `ThemeProvider` as CSS vars; `App.css` bridges them via `@theme inline`. Use **semantic utilities**, not raw palette: `bg-surface-base|raised|overlay|sunken|hover`, `text-fg|fg-secondary|fg-muted|fg-inverse`, `border-line|line-strong`, `text-accent|bg-accent(-secondary|-tertiary)`, feedback `text-error|success|warning|info`. Spacing `--space-*` in hand-written CSS; brand shadows stay `var(--shadow-md)`.
-- **Components**: prefer Tailwind for new/shared UI; keep per-feature CSS for complex panels. Shared primitives in `components/ui/` (shadcn-style); Radix enter/exit animations from `tw-animate-css`. **Form controls must use the field primitives** — `Input`/`Textarea` (`ax-field`), `FieldTrigger` for select-like triggers, `.ax-fieldwrap` for composer wrappers. **Icon-only buttons use `IconButton`**; status pips use `StatusDot`. Never hand-roll `bg-surface-raised border-line` fields or ghost text-button pickers (washed-out regressions). `base.css` resets button background/color — give intentional-transparent buttons an explicit `bg-transparent`. Kit scale via `@theme static` (`text-2xs…4xl`, `tracking-caps`, `rounded-sm..2xl/pill`, `border-line-subtle`, `font-mono`; variant specifics ★ → Styling addenda).
+- **Design tokens** in `lib/theme.ts`, injected at runtime by `ThemeProvider` as CSS vars; `App.css` bridges them via `@theme inline`. Use **semantic utilities**, not raw palette: `bg-surface-base|raised|overlay|sunken|hover`, `text-fg|fg-secondary|fg-muted|fg-inverse`, `border-line|line-strong`, `text-accent|bg-accent(-secondary|-tertiary)`, feedback `text-error|success|warning|info`. Spacing `--space-*` in hand-written CSS; shadows stay `var(--shadow-md)`.
+- **Components**: prefer Tailwind for new/shared UI; per-feature CSS for complex panels. Shared primitives in `components/ui/` (shadcn-style); Radix enter/exit animations from `tw-animate-css`. **Form controls must use the field primitives** — `Input`/`Textarea` (`ax-field`), `FieldTrigger` for select-like triggers, `.ax-fieldwrap` for composer wrappers. **Icon-only buttons use `IconButton`**; status pips use `StatusDot`. Never hand-roll `bg-surface-raised border-line` fields or ghost text-button pickers (washed-out). `base.css` resets button background/color — intentional-transparent buttons need an explicit `bg-transparent`. Kit scale via `@theme static` (`text-2xs…4xl`, `tracking-caps`, `rounded-sm..2xl/pill`, `border-line-subtle`, `font-mono`; variants ★ → Styling addenda).
 
 ## Development Commands
 
@@ -201,7 +202,7 @@ task release:check      # Verify release readiness (clean tree, tests, TS compil
 task models:download    # Pre-download HuggingFace models (NLLB-200, language detection)
 ```
 
-**Releasing** is one headless action: `.github/workflows/release.yml` (`workflow_dispatch`, single `version` input) builds the 3-platform desktop installers **and** publishes the API Docker image (`qrmadness/agentx-api`), then one GitHub Release (tag `v{version}`). The **`Release-Notes.md`** body is injected verbatim; its `<!-- release-version -->` marker is asserted against the baked version. Version bumps are **bake-only** (not committed back; bump the repo via `task versions:sync`).
+**Releasing** is one headless action: `.github/workflows/release.yml` (`workflow_dispatch`, single `version` input) builds the 3-platform installers **and** publishes the API Docker image (`qrmadness/agentx-api`), then one GitHub Release (tag `v{version}`). The **`Release-Notes.md`** body is injected verbatim; its `<!-- release-version -->` marker is asserted against the baked version. Version bumps are **bake-only** (bump the repo via `task versions:sync`).
 
 ## API Endpoints
 

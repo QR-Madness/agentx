@@ -511,6 +511,12 @@ Everything that needs to know what a setting is derives from it rather than rest
    surface authors prose of its own, so the two cannot disagree. This **inverts** the v1 manifest's
    stated position — *"the docs-site is the narrative source until key-level descriptions are
    authored"* (`settings_manifest.py`, v1 docstring). They are now authored.
+   The same rule holds one level up: a `sections` store keyed by screen id describes each
+   settings screen once (manifest v3), and the Overview tiles, the screen's own header, and the
+   reference's section intro all render it. Unlike per-key help — which is being written on a
+   cadence — every screen must have a blurb from day one: there are only ~20, and `ALL_SECTIONS`
+   is asserted against the client's `SECTION_HIERARCHY` so neither side can add a screen the
+   other doesn't know about.
 5. **The generator is pure.** It imports declarations and never reads live config, so a committed
    page can't bake one machine's values into the repo. Drift warns, a missing page errors — a stale
    generated artifact should degrade, never lie (the ADR-13 rule).

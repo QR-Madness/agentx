@@ -19,6 +19,7 @@ import { useSettingsNavigation } from './hooks/useSettingsNavigation';
 import { SettingsNav } from './SettingsNav';
 import { SettingsContent } from './SettingsContent';
 import { SettingsManifestProvider } from './SettingsManifestContext';
+import { SettingsSearchProvider } from './SettingsSearchContext';
 import { ParallaxBackground } from './animations/ParallaxBackground';
 import { backdropVariants, containerVariants } from './animations/transitions';
 import './UnifiedSettings.css';
@@ -121,27 +122,29 @@ export function UnifiedSettings({
                 the nav searches it, the sections render from it, and both work
                 fine if it never arrives. */}
             <SettingsManifestProvider>
-              <div className="unified-settings-layout">
-                <SettingsNav
-                  activeSection={activeSection}
-                  isOpen={isNavOpen}
-                  onSectionChange={(id) => {
-                    navigateTo(id);
-                    setIsNavOpen(false);
-                  }}
-                  onSettingSelect={(sectionId, settingId) => {
-                    focusSettingIn(sectionId, settingId);
-                    setIsNavOpen(false);
-                  }}
-                  onClose={() => setIsNavOpen(false)}
-                />
-                <SettingsContent
-                  activeSection={activeSection}
-                  onNavigate={navigateTo}
-                  onFocusSetting={focusSettingIn}
-                  focus={focus}
-                />
-              </div>
+              <SettingsSearchProvider>
+                <div className="unified-settings-layout">
+                  <SettingsNav
+                    activeSection={activeSection}
+                    isOpen={isNavOpen}
+                    onSectionChange={(id) => {
+                      navigateTo(id);
+                      setIsNavOpen(false);
+                    }}
+                    onSettingSelect={(sectionId, settingId) => {
+                      focusSettingIn(sectionId, settingId);
+                      setIsNavOpen(false);
+                    }}
+                    onClose={() => setIsNavOpen(false)}
+                  />
+                  <SettingsContent
+                    activeSection={activeSection}
+                    onNavigate={navigateTo}
+                    onFocusSetting={focusSettingIn}
+                    focus={focus}
+                  />
+                </div>
+              </SettingsSearchProvider>
             </SettingsManifestProvider>
           </motion.div>
         </>

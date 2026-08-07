@@ -12973,12 +12973,35 @@ class SettingsManifestTest(TestCase):
 @override_settings(AGENTX_AUTH_ENABLED=False)
 class SettingsManifestEndpointTest(TestCase):
     def test_manifest_get_shape(self):
+        from agentx_ai.settings_manifest import MANIFEST_VERSION
+
         resp = self.client.get("/api/settings/manifest")
         self.assertEqual(resp.status_code, 200)
         body = resp.json()
-        self.assertEqual(body["version"], 2)
+        # Pinned to the constant, not a literal: the shape assertions below are
+        # what this test is about, and a version bump is a deliberate act
+        # elsewhere rather than a reason for this to fail.
+        self.assertEqual(body["version"], MANIFEST_VERSION)
         self.assertIsInstance(body["entries"], list)
         self.assertEqual(body["counts"]["total"], len(body["entries"]))
+
+    def test_v3_sections_block(self):
+        """One entry per settings screen, so the Overview can describe a screen
+        and count its contents without doing either by hand."""
+        from agentx_ai.settings_registry import ALL_SECTIONS
+
+        body = self.client.get("/api/settings/manifest").json()
+        sections = body["sections"]
+        self.assertEqual([s["id"] for s in sections], list(ALL_SECTIONS))
+
+        by_id = {s["id"]: s for s in sections}
+        recall = by_id["memory-recall"]
+        self.assertTrue(recall["help"]["summary"])
+        self.assertEqual(
+            recall["writable_count"],
+            sum(1 for e in body["entries"]
+                if e.get("writable_via") and e.get("ui_section") == "memory-recall"),
+        )
 
     def test_v2_axes_present_on_declared_keys(self):
         """v2 adds constraints/tier/help/ui_section — emitted only where declared,
@@ -13359,6 +13382,7 @@ class SettingsHelpTest(TestCase):
         from agentx_ai.settings_help import all_help
         from agentx_ai.kit.agent_memory.config import Settings
         from agentx_ai.config import DEFAULT_CONFIG
+        from agentx_ai.settings_registry import ALL_SECTIONS
 
         def _leaves(d, prefix=""):
             out = set()
@@ -13371,12 +13395,61 @@ class SettingsHelpTest(TestCase):
                 out.add(path)  # dict leaves may be documented whole
             return out
 
-        known = {"memory": set(Settings.model_fields), "config": _leaves(DEFAULT_CONFIG)}
+        known = {
+            "memory": set(Settings.model_fields),
+            "config": _leaves(DEFAULT_CONFIG),
+            "sections": set(ALL_SECTIONS),
+        }
         orphans = [f"{store}:{key}"
                    for store, entries in all_help().items()
                    for key in entries
                    if key not in known.get(store, set())]
         self.assertEqual(orphans, [], f"help authored for unknown keys: {orphans}")
+
+    def test_every_settings_screen_has_a_blurb(self):
+        """Unlike per-key help, section blurbs are a full gate from day one —
+        there are only ~20 screens, and the Overview lists all of them. A screen
+        with no blurb renders as a bare link, which is what the Overview polish
+        existed to remove."""
+        from agentx_ai.settings_help import SECTION_HELP_FIELDS, get_section_help
+        from agentx_ai.settings_registry import ALL_SECTIONS
+
+        missing = []
+        for section_id in ALL_SECTIONS:
+            blurb = get_section_help(section_id)
+            if not blurb:
+                missing.append(f"{section_id}: no blurb")
+                continue
+            missing.extend(
+                f"{section_id}.{field}"
+                for field in SECTION_HELP_FIELDS
+                if not (blurb.get(field) or "").strip()
+            )
+        self.assertEqual(missing, [], f"section blurbs incomplete: {missing}")
+
+    def test_manifest_sections_block(self):
+        """The Overview reads counts from here rather than tallying entries, so
+        the block must cover every screen and count only writable keys."""
+        from agentx_ai.settings_manifest import build_reference_entries, build_sections
+        from agentx_ai.settings_registry import ALL_SECTIONS
+
+        entries = build_reference_entries()
+        sections = build_sections(entries)
+
+        self.assertEqual([s["id"] for s in sections], list(ALL_SECTIONS))
+        for section in sections:
+            self.assertIn("label", section)
+            self.assertIn("help", section)
+            self.assertIsInstance(section["writable_count"], int)
+
+        by_id = {s["id"]: s for s in sections}
+        expected_recall = sum(
+            1 for e in entries
+            if e.get("writable_via") and e.get("ui_section") == "memory-recall"
+        )
+        self.assertEqual(by_id["memory-recall"]["writable_count"], expected_recall)
+        # A screen that owns no key in either store still reports a count.
+        self.assertEqual(by_id["appearance"]["writable_count"], 0)
 
 
 @override_settings(AGENTX_AUTH_ENABLED=False)

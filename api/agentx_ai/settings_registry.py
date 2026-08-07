@@ -620,12 +620,31 @@ UI_SECTION_LABELS: dict[str, str] = {
     "memory-consolidation": "Memory → Consolidation",
 }
 
+#: Settings screens that own no key in either store — they configure their own
+#: subsystem through a dedicated endpoint (prompt layers, the template library,
+#: themes) or only report state. They appear here so section blurbs can cover
+#: the whole nav without the manifest pretending these screens hold settings.
+UI_ONLY_SECTIONS: dict[str, str] = {
+    "overview": "Overview",
+    "prompt-stack": "Prompts → System Prompt",
+    "prompt-templates": "Prompts → Template Library",
+    "feature-prompts": "Prompts → Feature Prompts",
+    "memory-overview": "Memory → Overview",
+    "translation": "Tools → Translation",
+    "appearance": "Interface → Appearance",
+}
+
+#: Every settings screen, keyed by id. Asserted against the client's
+#: SECTION_HIERARCHY in both directions, so a screen cannot be added on either
+#: side without the other noticing — which is what keeps every screen blurbed.
+ALL_SECTIONS: dict[str, str] = {**UI_SECTION_LABELS, **UI_ONLY_SECTIONS}
+
 
 def ui_section_label(section_id: str | None) -> str:
     """Human-readable home for a ui_section id."""
     if not section_id:
         return "Not shown in Settings"
-    return UI_SECTION_LABELS.get(section_id, section_id)
+    return ALL_SECTIONS.get(section_id, section_id)
 
 
 def whole_write_paths() -> tuple[str, ...]:

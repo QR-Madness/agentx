@@ -9,7 +9,8 @@ side authors prose of its own, so the UI and the documentation cannot disagree.
 
 Keys are ``store`` → ``key``: dotted paths for the config store
 (``search.max_results``), bare field names for the memory store
-(``recall_candidate_pool``).
+(``recall_candidate_pool``), and settings-screen ids for the ``sections`` store
+(``memory-recall``), which describes a whole screen rather than one key.
 """
 
 from __future__ import annotations
@@ -22,10 +23,20 @@ logger = logging.getLogger(__name__)
 
 HELP_PATH = Path(__file__).parent / "settings_help.yaml"
 
-#: The prose fields a fully-authored entry carries, in reading order.
+#: The prose fields a fully-authored setting carries, in reading order.
 HELP_FIELDS: tuple[str, ...] = ("summary", "what", "how", "why", "manage")
 
+#: The ``sections`` store answers a smaller question — a screen has no "how it
+#: works at request time" and nothing to manage — so it carries three fields.
+SECTION_HELP_FIELDS: tuple[str, ...] = ("summary", "what", "why")
+
+SECTIONS_STORE = "sections"
+
 _cache: dict[str, dict[str, dict[str, str]]] | None = None
+
+
+def _fields_for(store: str) -> tuple[str, ...]:
+    return SECTION_HELP_FIELDS if store == SECTIONS_STORE else HELP_FIELDS
 
 
 def _load() -> dict[str, dict[str, dict[str, str]]]:
@@ -50,13 +61,14 @@ def _load() -> dict[str, dict[str, dict[str, str]]]:
     for store, keys in data.items():
         if not isinstance(keys, dict):
             continue
+        wanted = _fields_for(str(store))
         store_entries: dict[str, dict[str, str]] = {}
         for key, entry in keys.items():
             if not isinstance(entry, dict):
                 continue
             fields = {
                 name: str(entry[name]).strip()
-                for name in HELP_FIELDS
+                for name in wanted
                 if entry.get(name)
             }
             if fields:
@@ -70,6 +82,11 @@ def _load() -> dict[str, dict[str, dict[str, str]]]:
 def get_help(store: str, key: str) -> dict[str, str] | None:
     """Authored help for one setting, or None when it hasn't been written yet."""
     return _load().get(store, {}).get(key) or None
+
+
+def get_section_help(section_id: str) -> dict[str, str] | None:
+    """Authored blurb for a settings screen, or None if unwritten."""
+    return _load().get(SECTIONS_STORE, {}).get(section_id) or None
 
 
 def all_help() -> dict[str, dict[str, dict[str, str]]]:

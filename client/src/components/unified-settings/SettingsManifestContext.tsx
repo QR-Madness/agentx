@@ -28,6 +28,7 @@ import type { ApiError } from '../../lib/api';
 import type {
   SettingsManifest,
   SettingsManifestEntry,
+  SettingsManifestSection,
   SettingsStore,
 } from '../../lib/api';
 
@@ -38,8 +39,12 @@ export function entryId(store: SettingsStore, key: string): string {
 
 export interface SettingsManifestValue {
   entries: Map<string, SettingsManifestEntry>;
+  /** Screen metadata by SECTION_HIERARCHY id — blurb and writable count. */
+  sections: Map<string, SettingsManifestSection>;
   /** Writable entries whose current value differs from the shipped default. */
   modified: SettingsManifestEntry[];
+  /** How many changed settings each screen owns, for the Overview tiles. */
+  modifiedBySection: Map<string, number>;
   loading: boolean;
   error: ApiError | null;
   refresh: () => Promise<void>;
@@ -82,14 +87,29 @@ export function SettingsManifestProvider({ children }: { children: ReactNode }) 
     return map;
   }, [data]);
 
+  const sections = useMemo(() => {
+    const map = new Map<string, SettingsManifestSection>();
+    for (const section of data?.sections ?? []) map.set(section.id, section);
+    return map;
+  }, [data]);
+
   const modified = useMemo(
     () => (data?.entries ?? []).filter(isModifiedEntry),
     [data],
   );
 
+  const modifiedBySection = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of modified) {
+      if (!entry.ui_section) continue;
+      counts.set(entry.ui_section, (counts.get(entry.ui_section) ?? 0) + 1);
+    }
+    return counts;
+  }, [modified]);
+
   const value = useMemo<SettingsManifestValue>(
-    () => ({ entries, modified, loading, error, refresh }),
-    [entries, modified, loading, error, refresh],
+    () => ({ entries, sections, modified, modifiedBySection, loading, error, refresh }),
+    [entries, sections, modified, modifiedBySection, loading, error, refresh],
   );
 
   return (
