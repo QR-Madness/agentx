@@ -13351,39 +13351,36 @@ class SettingsHelpTest(TestCase):
     #: list when it is refit; the test then holds it there, so help can't rot
     #: back out once written. (store, keys-callable-or-tuple, label)
     DOCUMENTED_SECTIONS = (
-        ("memory", "recall", "Memory → Recall"),
+        ("memory", "memory-recall", "Memory → Recall"),
         ("config", "context", "Memory → Conversation Context"),
         ("config", "search", "Infrastructure → Web Search"),
         ("config", "research", "Intelligence → Research Mode"),
         ("config", "thinking", "Intelligence → Thinking Patterns"),
         ("config", "planner", "Intelligence → Task Planner"),
         ("config", "alloy", "Intelligence → Agent Teams"),
+        ("memory", "memory-consolidation", "Memory → Consolidation"),
     )
 
     def _keys_for(self, store, group):
-        """Every writable key the named screen owns.
+        """Every writable key the named screen owns, in the named store.
 
-        For the config store this is derived from the registry rather than
-        restated: a screen can span several config roots (Conversation Context
-        spans five), and a key can be declared onto a screen its root doesn't
-        own (`search.research_per_turn_limit` renders under Research Mode). Both
-        are exactly the cases a hand-written list gets wrong.
+        Derived from the manifest rather than restated, because both of the
+        things a hand-written list gets wrong are common here: a screen can span
+        several config roots (Conversation Context spans five), and a key can be
+        declared onto a screen its store would not have inferred
+        (`search.research_per_turn_limit` renders under Research Mode; the
+        extraction and relevance prompts render under Feature Prompts).
         """
-        if store == "memory" and group == "recall":
-            from agentx_ai.kit.agent_memory.config import get_recall_settings
-            return list(get_recall_settings())
-        if store == "config":
-            from agentx_ai.settings_manifest import build_reference_entries
+        from agentx_ai.settings_manifest import build_reference_entries
 
-            keys = [
-                e["key"] for e in build_reference_entries()
-                if e["store"] == "config"
-                and e.get("writable_via")
-                and e.get("ui_section") == group
-            ]
-            self.assertTrue(keys, f"no writable config keys map to screen {group!r}")
-            return keys
-        raise AssertionError(f"unknown documented group {store}/{group}")
+        keys = [
+            e["key"] for e in build_reference_entries()
+            if e["store"] == store
+            and e.get("writable_via")
+            and e.get("ui_section") == group
+        ]
+        self.assertTrue(keys, f"no writable {store} keys map to screen {group!r}")
+        return keys
 
     def test_documented_sections_have_full_help(self):
         """Refit sections carry the full five-field treatment — the register the

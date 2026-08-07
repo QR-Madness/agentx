@@ -68,7 +68,17 @@ def _apply_spec(entry: dict[str, Any], spec: Any, *, ui_section: str | None) -> 
     Only declared axes are emitted — an entry with no tier carries no ``tier``
     key rather than a null, so a consumer can tell "not classified" from
     "classified as nothing".
+
+    A key may declare the screen it renders on, overriding the one its store
+    would otherwise infer. Config keys resolve that in ``config_ui_section``
+    before calling here; memory keys had no way to say it at all, so a memory
+    setting edited on another screen — the extraction and relevance prompts,
+    which live on Feature Prompts — was reported under the panel it does not
+    appear in. ``""`` means "no screen shows this", distinct from not declaring.
     """
+    declared = getattr(spec, "ui_section", None) if spec is not None else None
+    if declared is not None:
+        ui_section = declared or None
     if ui_section:
         entry["ui_section"] = ui_section
 

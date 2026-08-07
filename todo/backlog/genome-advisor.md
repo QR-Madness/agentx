@@ -128,9 +128,18 @@
           `step_back_model`/`sc_model` fall back to the conversation's own model, not a role.
           Surfaced 3 more control-less keys (`step_back_timeout_seconds`, `max_subtasks`,
           `non_blocking_delegations`). **102 of 208 documented.**
-    - [ ] Consolidation (50) · Ambassador (18) + Images & Audio (6) · Model Providers (12) +
-          Model Limits (8) + Model Roles (3) + Prompt Enhancement (4) + Feature Prompts (2)
-          + the 4 strays.
+    - [x] **Consolidation** `[v0.21.269]` — the memory twin of Recall; 50 keys across the
+          extraction pipeline (extraction → relevance filter → contradiction → correction →
+          combined) and the background work (procedural distillation, reflex/salient cores,
+          entity linking, promotion, four job intervals). Thresholds get their measured
+          meaning: `fact_confidence_threshold` is explained against the calibration it filters
+          (0.95 stated / 0.85 implied / 0.70 inferred / 0.50 hedged), `semantic_duplicate_threshold`
+          against what merges at 0.92 vs 0.85. Prerequisite shipped with it: **memory keys can
+          now declare a screen** — `_apply_spec` honours `KeySpec.ui_section` for both stores,
+          which moved `extraction_system_prompt` and `relevance_filter_prompt` to the Feature
+          Prompts screen that actually edits them. **152 of 208 documented.**
+    - [ ] Ambassador (18) + Images & Audio (6) · Model Providers (12) + Model Limits (8) +
+          Model Roles (3) + Prompt Enhancement (4) + Feature Prompts (1 left) + the 4 strays.
     - [ ] Sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
     - [ ] **Invert the coverage gate** (the closing move) — `DOCUMENTED_SECTIONS` becomes an
           `UNDOCUMENTED_ALLOWLIST` that must be empty, so a new setting can't ship without
