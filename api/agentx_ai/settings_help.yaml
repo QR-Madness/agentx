@@ -698,6 +698,589 @@ config:
       Leads are pointers, not recall; the Recall layer is what fetches actual content.
       They ride at low priority and are the first thing dropped under pressure.
 
+  # ── Web Search · backend ────────────────────────────────────────────────
+  search.backend:
+    summary: Which search provider is tried first.
+    what: >-
+      The provider every web search goes to before anything else. Tavily and Brave
+      answer the same question differently: Tavily returns ranked results plus the
+      research suite (extract, crawl, map, deep research); Brave can return
+      pre-extracted page content and supports Goggles for re-ranking.
+    how: >-
+      Every `web_search` call goes to this backend. If it errors or comes back empty
+      and fallback is on, the other one is tried before the tool reports failure.
+      The choice also decides which of the two API keys actually gets used.
+    why: >-
+      Stay on Tavily unless you specifically want Brave's grounded content or its
+      Goggles: the extra web tools (`web_extract`, `web_map`, `web_crawl`,
+      `web_research`) are Tavily-backed, so switching narrows what agents can do
+      with a page once they have found it.
+    manage: >-
+      Whichever you pick needs its key set below. Use **Test connection** after
+      changing this — it reports each backend separately, so you can see the new
+      primary answering before you rely on it.
+
+  search.fallback_enabled:
+    summary: Try the other backend when the primary fails or finds nothing.
+    what: >-
+      A second attempt on the backend you did not choose, rather than returning an
+      error to the agent.
+    how: >-
+      Fires on two conditions: the primary raised an error, or it returned zero
+      results. The fallback call is a real, billable search on the other provider.
+    why: >-
+      Leave it on if both keys are set — a transient provider outage otherwise
+      surfaces as "I couldn't find anything", which the agent will often accept as
+      an answer rather than a failure. Turn it off if only one provider is
+      configured, or if you are deliberately keeping spend on one account.
+    manage: >-
+      Fallback searches count against the same per-turn budget as the original, so
+      a flapping primary consumes the turn's allowance twice as fast.
+
+  search.tavily_api_key:
+    summary: Your Tavily key — also what unlocks the extract, crawl, map and deep-research tools.
+    what: >-
+      Credentials for tavily.com. Beyond plain search, this key is what makes
+      `web_extract`, `web_map`, `web_crawl` and `web_research` available at all.
+    how: >-
+      Stored server-side and never returned to the client — reading the config
+      gives you a redacted mask. It falls back to the `TAVILY_API_KEY` environment
+      variable when unset, so a container can supply it without ever writing it to
+      `data/config.json`.
+    why: >-
+      Set this even if you run Brave as the primary backend: the research tools
+      have no Brave equivalent except deep research, and only when the separate
+      Answers plan is active.
+    manage: >-
+      Tavily bills per credit — a basic search is 1, an advanced search 2, and a
+      deep-research call 5–20. At the shipped estimate of $0.008 per credit that is
+      well under a cent for an ordinary search. Keys save on their own button, not
+      by autosave; nothing is sent unless you type a new value over the mask.
+
+  search.brave_api_key:
+    summary: Your Brave key — the Search plan; deep research needs their separate Answers plan.
+    what: >-
+      Credentials for api.search.brave.com. The Search subscription covers ordinary
+      search and grounding; Brave's deep research is a *different* product on the
+      same key.
+    how: >-
+      Stored server-side and redacted on read, with a `BRAVE_API_KEY` environment
+      fallback. A key without the Answers plan answers `OPTION_NOT_IN_PLAN` when
+      deep research is attempted, and the key does not advertise which plans it
+      holds — which is why Brave deep research ships off.
+    why: >-
+      Needed to select Brave as a backend or to use it as the fallback. Worth
+      having as a second provider even on Tavily: fallback only helps if the other
+      side is actually configured.
+    manage: >-
+      Brave Search bills about $5 per 1,000 requests — roughly $0.005 a search,
+      comparable to Tavily's basic tier. Answers bills a request line of about
+      $0.004 *plus* queries and tokens, and reports its own exact total.
+
+  # ── Web Search · defaults ───────────────────────────────────────────────
+  search.max_results:
+    summary: How many results one search returns.
+    what: >-
+      The result count requested from the provider when the agent does not ask for
+      a specific number.
+    how: >-
+      Passed with every search. Results arrive ranked, so raising this appends
+      lower-relevance entries rather than improving the top of the list.
+    why: >-
+      Raise it when the agent keeps searching again with slightly different wording
+      — that usually means the answer was just outside the window. Lower it to keep
+      turns tight: every result is text the model reads and pays for, and on Brave
+      with grounding on, each one can carry page content too.
+    manage: >-
+      Default 5, capped at 20. Past about 10 the tail is rarely read; if the agent
+      needs breadth it is usually better served by another query than by a longer
+      list of the same one.
+
+  search.default_search_depth:
+    summary: How hard Tavily digs before answering — and what that costs per search.
+    what: >-
+      Tavily's effort tier for a search. Deeper tiers read more of the web before
+      ranking, so they surface material a fast pass misses.
+    how: >-
+      Applied when the model doesn't name a depth itself. Empty means no opinion —
+      the provider's own default stands, which is the shipped state. Billing follows
+      the tier: `advanced` costs 2 credits, the rest 1.
+    why: >-
+      Set `advanced` when the agent works on questions where the answer is not on
+      the first page — technical detail, primary sources, anything niche. Set
+      `fast` or `ultra-fast` when latency matters more than reach and the questions
+      are ordinary. Doubling the credit cost of every search is the trade.
+    manage: >-
+      Brave ignores this. If you set `advanced` here, halve your expectation of how
+      far the per-turn call budget stretches in dollars — the count doesn't change,
+      the bill does.
+
+  search.default_chunks_per_source:
+    summary: How much of each result page to bring back.
+    what: >-
+      The number of content chunks Tavily returns per result, rather than a bare
+      title and snippet.
+    how: >-
+      Applied when the model doesn't specify. 0 means no opinion — the provider
+      decides, which is the shipped state. Higher values mean more of each page
+      arrives inline with the search result.
+    why: >-
+      Raise it when the agent habitually follows every search with `web_extract` on
+      the same pages: it is cheaper to bring the content back once than to fetch it
+      twice. Leave it at 0 when searches are mostly navigational — you don't need
+      three chunks of a page you only wanted the URL of.
+    manage: >-
+      Range 1–5. Multiply by max results to see what you are actually asking for:
+      5 results × 3 chunks is fifteen passages of text entering the turn.
+
+  search.safesearch:
+    summary: Brave's content filter for results.
+    what: >-
+      How aggressively Brave filters adult and explicit results.
+    how: >-
+      Passed to Brave with each search. Empty means no opinion — Brave's own
+      default applies, which is the shipped state. Tavily ignores it.
+    why: >-
+      Set `strict` for shared or workplace installs. Set `off` when the filter is
+      getting in the way of legitimate research — medical and security topics are
+      the usual casualties.
+    manage: >-
+      Brave only. Switching the backend to Tavily silently drops this; if filtering
+      matters to you, that alone is a reason to stay on Brave.
+
+  search.country:
+    summary: Bias results toward one country.
+    what: >-
+      A two-letter country code that tilts ranking toward locally relevant results.
+    how: >-
+      Passed with each search when set. Empty means no preference, which is the
+      shipped state. It is a bias, not a filter — results from elsewhere still
+      appear.
+    why: >-
+      Set it when answers are regional and wrong by default: law, tax, pricing,
+      availability, public services. Leave it empty for technical or academic work,
+      where a country bias only narrows a global corpus for no gain.
+    manage: >-
+      Use the ISO code (`GB`, `DE`, `JP`). This does not change the *language* of
+      results — that is the next setting, and the two are often both needed.
+
+  search.search_lang:
+    summary: Preferred language for results.
+    what: >-
+      A language code that tilts results toward pages written in that language.
+    how: >-
+      Passed with each search when set. Empty means no preference, the shipped
+      state. Like the country bias it ranks rather than filters.
+    why: >-
+      Set it when the agent works in one language and keeps surfacing English
+      sources it then has to translate. Leave it empty when the best source may be
+      in any language — the model reads them all, and narrowing costs you reach.
+    manage: >-
+      Use the short code (`en`, `de`, `ja`). Pair with the country bias when you
+      want local *and* in-language; setting only one often isn't enough.
+
+  # ── Web Search · budgets ────────────────────────────────────────────────
+  search.per_turn_limit:
+    summary: How many searches one turn may run before the tool starts refusing.
+    what: >-
+      A ceiling on `web_search` and `web_research` calls within a single user turn.
+      It exists to bound a tool loop that has started searching in circles.
+    how: >-
+      A budget window opens when your turn starts and closes when it ends. Each
+      search draws one unit; a deep-research call draws more (see the Research Mode
+      screen). Once the budget is gone the tool returns a budget error to the model
+      instead of reaching the provider, so the turn continues — it just stops
+      spending. **Only interactive turns are metered**: work running under
+      delegation or the planner is not inside a window and is not capped here.
+    why: >-
+      The default of 8 is set to never bite ordinary use and only clip a runaway.
+      Lower it if you have seen turns search a dozen times over one question; raise
+      it if genuinely broad questions are being cut off mid-investigation. Research
+      Mode does not use this number at all — it has its own, much larger one.
+    manage: >-
+      0 means unlimited, which is worth avoiding on a metered key. A call count is
+      a rough proxy for spend once a single deep call can cost 20× a basic search,
+      which is what the dollar ceiling below is for; set both and whichever runs
+      out first stops the turn.
+
+  search.per_turn_cost_usd:
+    summary: A dollar ceiling on one turn's searching, alongside the call count.
+    what: >-
+      The most a single turn's web searching may cost before the tool stops
+      reaching providers. It binds together with the call limit — whichever runs
+      out first ends that turn's spending.
+    how: >-
+      Every search's estimated cost is charged against the open budget window as it
+      happens, using the provider's own reported figure where there is one and a
+      per-credit estimate otherwise. When the running total reaches this ceiling,
+      further searches return a budget error rather than billing.
+    why: >-
+      This is the ceiling that actually corresponds to money. A call count treats a
+      basic search and a `pro` deep-research call as equal when one costs twenty
+      times the other. Set this if you have a metered key and a number you would be
+      unhappy to see on one question.
+    manage: >-
+      0 — the shipped default — means no cost ceiling, so nothing changes until you
+      set one. For scale: an ordinary search runs under a cent, so even $0.25 a
+      turn is generous for normal chat and still catches a loop.
+
+  search.research_per_turn_cost_usd:
+    summary: The same dollar ceiling, for turns running in Research Mode.
+    what: >-
+      A separate spend ceiling that applies only while a conversation is in
+      Research Mode, where the call budget is deliberately much larger.
+    how: >-
+      Swapped in for the ordinary ceiling whenever the turn carries the elevated
+      research budget. Charged the same way, against the same window.
+    why: >-
+      Research Mode raises the call budget roughly fivefold, which is exactly the
+      situation where a runaway costs real money — deep research calls are the
+      expensive ones. Setting this is how you say "research may be thorough, but
+      not unbounded".
+    manage: >-
+      0 means no ceiling. The Research Mode screen shows a projected worst case for
+      your current budget and depth; a ceiling somewhere near that figure will
+      almost never fire on a normal engagement but will stop a pathological one.
+
+  search.timeout:
+    summary: How long one search may hang before it is abandoned.
+    what: >-
+      A hard wall-clock cap on a single provider call.
+    how: >-
+      Searches run synchronously inside the tool loop, so a call that never returns
+      blocks the whole turn — including your Stop button, which can only take
+      effect between rounds. This cap is what guarantees the turn comes back.
+    why: >-
+      Raise it only if legitimate searches are timing out, which usually means a
+      slow deep tier rather than a slow network. Lowering it makes a wedged
+      provider fail faster, at the cost of abandoning searches that would have
+      answered.
+    manage: >-
+      Default 15 seconds. Tavily's own client default is around 60, which is why
+      this exists — an unbounded call is indistinguishable from a hung app.
+
+  search.cache_ttl_seconds:
+    summary: How long an identical search is served free from memory.
+    what: >-
+      A short in-process cache of search results, keyed by the query. A repeat
+      within the window returns the stored result without billing.
+    how: >-
+      Held in the server's memory, so it is lost on restart and not shared between
+      instances. Only exactly-repeated queries hit it.
+    why: >-
+      The default of 5 minutes is aimed at the common loop where an agent searches,
+      reads, and searches the same thing again a moment later. Raise it if your
+      agents revisit the same questions inside one session; lower it — or set 0 —
+      when freshness genuinely matters, such as news or prices.
+    manage: >-
+      0 disables caching entirely, and every repeat becomes a billable search.
+      Deep research has its own, much longer cache on the Research Mode screen,
+      because a repeated deep call is far more expensive to redo.
+
+  # ── Web Search · Brave grounding ────────────────────────────────────────
+  search.brave_grounding_default:
+    summary: Have Brave return page content, not just a list of links.
+    what: >-
+      Brave can return pre-extracted, relevance-ranked passages from the results —
+      search and extract fused into one call.
+    how: >-
+      When on, Brave searches route through the grounding endpoint and come back
+      with content already attached, bounded by the token budgets below. The model
+      can still ask for a plain link list per call when it only wants URLs.
+    why: >-
+      Leave it on. Whenever the agent would have read those pages anyway, one
+      grounded search replaces a search *and* an extract — a clear saving. It does
+      cost more than a bare link list for a quick "what is the URL for X", which is
+      why the model can opt out per call.
+    manage: >-
+      Brave only; Tavily has no equivalent and ignores this. If grounded searches
+      feel bloated, tighten the token budgets or the relevance threshold before
+      turning the feature off.
+
+  search.brave_context_max_tokens:
+    summary: The ceiling on content one grounded search may return.
+    what: >-
+      A total token budget for everything a single grounded Brave search brings
+      back, across all of its results.
+    how: >-
+      Enforced per search. Passages are included in relevance order until the
+      budget is spent, so what falls off the end is what mattered least.
+    why: >-
+      Raise it when grounded searches are clearly truncating material the agent
+      then has to fetch separately. Lower it when searches are crowding the context
+      window — this is content that enters the turn and is paid for on every
+      subsequent message in it.
+    manage: >-
+      Default 4096, well under Brave's own ceiling of 32768. That gap is
+      deliberate: a default returning 8k tokens per search would undo the saving
+      grounding exists to create. Read it together with the per-URL cap below.
+
+  search.brave_context_max_tokens_per_url:
+    summary: The ceiling on how much any single page may contribute.
+    what: >-
+      A per-result share of the grounded search's total budget, so one long page
+      cannot consume the whole thing.
+    how: >-
+      Applied to each result before the total budget is filled. A page whose
+      relevant passages exceed this is truncated; the freed budget goes to other
+      results.
+    why: >-
+      Raise it when the answer is usually deep inside one long document and you are
+      getting the top of it. Lower it to force breadth — several sources sampled
+      rather than one quoted at length.
+    manage: >-
+      Default 1024, a quarter of the total budget, so at least four sources can
+      contribute. Setting it equal to the total lets a single page take everything,
+      which is rarely what you want from a *search*.
+
+  search.brave_context_threshold:
+    summary: How picky Brave is about which passages count as relevant.
+    what: >-
+      The relevance bar a passage must clear to be included in grounded content.
+    how: >-
+      Applied when selecting passages, before the token budgets are filled. A
+      stricter bar means fewer passages qualify, so the budget goes further per
+      source and may not be spent at all.
+    why: >-
+      Move to `strict` when grounded results feel padded with material that only
+      loosely relates. Move to `lenient` when the agent keeps missing content you
+      can see on the page — a strict bar drops passages that were relevant but
+      worded unlike the query.
+    manage: >-
+      `balanced` is the default and is right for most work. This interacts with the
+      token budgets: strict plus a large budget usually returns less than lenient
+      plus a small one.
+
+  search.brave_answers_enabled:
+    summary: Allow Brave's deep research — needs their separate Answers plan.
+    what: >-
+      A second backend for `web_research`, so deep research still works when Brave
+      is the active search backend rather than Tavily.
+    how: >-
+      Routes deep research through Brave's research endpoint. Answers is a separate
+      subscription from Brave Search, and a key does not advertise which plans it
+      holds — an unsubscribed key answers `OPTION_NOT_IN_PLAN`.
+    why: >-
+      Turn it on once the Answers plan is actually active on your key. This is the
+      rare feature that ships **off**: enabling it by default would advertise a
+      tool that always fails for everyone who has not bought the plan, which is
+      worse than not offering it.
+    manage: >-
+      Answers bills a request line of roughly $0.004 *plus* queries and tokens on
+      top, and reports its own exact total per call — so the ledger shows real
+      figures rather than an estimate. If deep research fails immediately with a
+      plan error, this is the setting to turn back off.
+
+  # ── Web Search · source policy ──────────────────────────────────────────
+  search.source_policy:
+    summary: Which corners of the web may ground an answer — preferred, blocked, and Brave Goggles.
+    what: >-
+      An operator-owned answer to "where may this agent get its facts". Three
+      parts: **preferred** domains to favour, **blocked** domains never to return,
+      and a Brave **Goggle** for finer re-ranking than a list allows.
+    how: >-
+      Applied to every search and mapped per backend — Tavily receives include and
+      exclude domain lists, Brave receives an inline Goggle. The asymmetry that
+      matters: **blocked is a hard floor**, always merged in and impossible for the
+      model to widen past. **Preferred is a soft preference** — it seeds the
+      include list, but a model that passes its own domain scope for a specific
+      call wins, because silently over-narrowing is how a research turn comes back
+      empty.
+    why: >-
+      Use blocked for sources you consider actively unreliable — the agent then
+      cannot cite them however it phrases the query. Use preferred to steer toward
+      a corpus you trust without cutting the agent off from everything else.
+      Goggles are for shaping rather than gating: boost and downrank rather than
+      allow and deny.
+    manage: >-
+      Comma-separated domains; wildcards like `*.edu` work. Preferred is the one
+      that bites unexpectedly — a narrow list on a broad question returns nothing,
+      and the agent reads that as "no such information exists". Start with blocked,
+      which has no such failure mode. The Goggle field is Brave-only and takes
+      either a hosted Goggle URL or inline rules; it is merged after the two lists.
+
+  # ── Research Mode ───────────────────────────────────────────────────────
+  search.research_per_turn_limit:
+    summary: The elevated search budget a Research Mode turn may spend.
+    what: >-
+      The per-turn search ceiling that replaces the ordinary one whenever a
+      conversation is in Research Mode. This — not the tool-round cap — is what
+      actually governs how deep research goes.
+    how: >-
+      Swapped in for `search.per_turn_limit` when the turn carries the research
+      flag. Each ordinary search draws one unit; a deep-research call draws several
+      (see the deep-research weight below), so the budget is spent in uneven bites.
+    why: >-
+      Raise it for genuinely broad engagements — a survey of a field, a comparison
+      across many sources. Lower it to keep research from becoming an expensive
+      default. If reports read as thorough but shallow, this is the first number to
+      move, not the tool-round cap.
+    manage: >-
+      Default 40 — about five times the ordinary budget, and enough for a dozen
+      deep calls or forty cheap ones. 0 means unlimited, which on a metered key is
+      exactly where an unattended research turn can cost real money; prefer a large
+      number to none. The screen projects a worst-case dollar figure as you change
+      this.
+
+  research.enabled:
+    summary: Whether Research Mode can be turned on for a conversation at all.
+    what: >-
+      The master switch for the whole feature: an elevated search budget plus a
+      rigorous, self-reviewing research prompt that lands a cited report in the
+      attached Project.
+    how: >-
+      Off hides the Research chip in the composer everywhere, so no conversation
+      can enter the mode. It does not affect ordinary web search, which keeps its
+      own budget.
+    why: >-
+      Leave it on — it costs nothing until a conversation actually uses it. Turn it
+      off on a shared or cost-sensitive install where you would rather no one could
+      start a multi-dollar research turn by clicking a chip.
+    manage: >-
+      This is a global gate, not a default: turning it on does not put any
+      conversation into research mode. Each conversation opts in.
+
+  research.default_depth:
+    summary: The deep-research effort tier research starts from — the main cost dial.
+    what: >-
+      Which tier of deep research the prompt steers toward when it reaches for
+      `web_research`. The agent may still escalate for the hardest questions.
+    how: >-
+      Three tiers of increasing thoroughness. At the shipped credit estimate they
+      run roughly $0.04, $0.08 and $0.16 per deep call for mini, auto and pro.
+    why: >-
+      Move to `mini` when research is frequent and the questions are not deep — it
+      quarters the per-call cost against `pro`. Move to `pro` when reports come
+      back thin on questions you know have rich source material.
+    manage: >-
+      `auto` is the default and lets the provider judge. Read this together with
+      the research search budget: depth sets the price per deep call, the budget
+      sets how many of them a turn may make, and their product is the worst case.
+
+  research.max_tool_rounds:
+    summary: How many tool-use rounds a research turn may take.
+    what: >-
+      The ceiling on back-and-forth tool rounds within a single research turn,
+      replacing the ordinary chat limit.
+    how: >-
+      When rounds run out the loop forces an answer with whatever it has. It is
+      deliberately generous so that the *search budget* is what binds first.
+    why: >-
+      Mostly leave it alone. If reports end abruptly or mid-investigation, check
+      whether the search budget ran out first — that is the usual cause, and
+      raising rounds will not help. Raise this only when you have watched a turn
+      hit the round cap with search budget still unspent.
+    manage: >-
+      Default 40, against a much smaller chat default. If rounds bind before the
+      search budget, the turn force-answers mid-research, which reads as a
+      confident report built on half the evidence — the failure mode worth
+      avoiding.
+
+  research.min_max_tokens:
+    summary: A floor on the output budget for a research turn's replies.
+    what: >-
+      The minimum number of output tokens a research completion may be given,
+      overriding the ordinary adaptive budget.
+    how: >-
+      A research turn must fit its thinking *and* a full report into one call. The
+      chat-sized budget, which adapts down as context fills, starves exactly that.
+      This floor is still bounded by the model's real output cap.
+    why: >-
+      Raise it if reports are being cut off mid-section. Lower it only to control
+      cost on a model that charges heavily for output — the saving is real but the
+      failure mode is a truncated report, which is worth less than no report.
+    manage: >-
+      Default 16384. If reports still truncate, the model's declared output cap is
+      the likelier constraint: a model missing from the catalog falls back to a
+      conservative figure, and setting its real limit under **Model Limits**
+      unlocks this floor.
+
+  web_research.enabled:
+    summary: Whether the deep-research tool may be used at all.
+    what: >-
+      The agentic deep-research tool — an autonomous multi-query investigation that
+      returns a synthesised, sourced answer rather than a list of links.
+    how: >-
+      Off makes the tool report itself as disabled rather than blocking the turn,
+      so research falls back to ordinary search plus extraction.
+    why: >-
+      Leave it on for real research work; it is the difference between a report
+      built on a dozen sources and one built on three. Turn it off when cost
+      matters more than depth — a single deep call can cost twenty ordinary
+      searches.
+    manage: >-
+      Independent of Research Mode: the tool is available in ordinary turns too,
+      where it draws on the ordinary search budget and can consume most of it in
+      one call. That interaction is the reason for the deep-research weight below.
+
+  web_research.budget_weight:
+    summary: How many budget units one deep-research call costs.
+    what: >-
+      The number of units a `web_research` call charges against a turn's search
+      budget, reflecting that it is one call but an expensive one.
+    how: >-
+      Charged against whichever budget the turn is running under. At the default,
+      three deep calls cost the same budget as nine ordinary searches.
+    why: >-
+      Raise it if deep research is consuming turns that should have done more
+      cheap, broad searching first. Lower it if the weight is stopping research
+      short while actual spend is comfortably within your ceiling.
+    manage: >-
+      Default 3, against a real cost ratio nearer 5–20× an ordinary search — so the
+      weight understates the money deliberately, to avoid making deep research
+      unusable inside a small budget. If you want the count to track spend
+      honestly, use the dollar ceiling instead; that one measures the real thing.
+
+  web_research.cache_ttl_seconds:
+    summary: How long an identical deep-research result is reused.
+    what: >-
+      A cache of completed deep-research results, keyed by query and depth.
+    how: >-
+      A repeat of the same query at the same depth inside the window returns the
+      stored report without re-running the investigation or billing for it.
+    why: >-
+      Keep it generous. A deep call costs 5–20 credits, so serving a repeat from
+      cache is the single largest saving available here — much more than caching
+      ordinary searches. Shorten it only when the subject genuinely moves within
+      the window.
+    manage: >-
+      Default 30 minutes, six times the ordinary search cache, because deep
+      research is both expensive and stable. Held in server memory, so a restart
+      clears it.
+
+  web_research.poll_timeout_seconds:
+    summary: How long to wait for a deep-research report before giving up.
+    what: >-
+      The total wall-clock ceiling on waiting for a deep-research task to finish.
+    how: >-
+      Deep research is asynchronous: the call starts a task and the result is
+      collected by polling. When this deadline passes the tool returns an error
+      advising a narrower query or a shallower tier, rather than waiting forever.
+    why: >-
+      Raise it if `pro`-tier research routinely times out on questions you need
+      answered — the tiers differ enormously in wall-clock time. Lower it to fail
+      fast on an install where a four-minute pause inside a turn is unacceptable.
+    manage: >-
+      Default 240 seconds. For scale: mini usually completes in 30–60 seconds, auto
+      in one to two minutes, and pro can genuinely take several. Setting this below
+      your chosen depth's typical time turns every deep call into a timeout.
+
+  web_research.poll_interval_seconds:
+    summary: How often to check whether the report is ready.
+    what: >-
+      The gap between polls while waiting for a deep-research task.
+    how: >-
+      Each poll is a cheap status check, not a re-run. Shorter gaps notice
+      completion sooner; longer gaps make fewer requests.
+    why: >-
+      There is rarely a reason to change this. Shorten it only if you want a
+      completed report picked up promptly on short `mini` calls; lengthen it if
+      polling volume is a concern on a rate-limited key.
+    manage: >-
+      Default 5 seconds against a timeout measured in minutes, which is a sensible
+      ratio. Setting it near the timeout means the deadline can pass between two
+      polls and a finished report is reported as a timeout.
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Section blurbs — one per settings screen. See the header note for the shape.
 # ═══════════════════════════════════════════════════════════════════════════

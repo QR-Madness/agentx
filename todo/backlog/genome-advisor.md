@@ -109,10 +109,18 @@
           a search hero sharing the nav's query, a setup checklist read from the manifest, and
           tiles carrying blurb + changed-count. Fixed: every table in the generated reference
           rendered as literal pipe text; two humanizers named the same key differently.
-    - [ ] Web Search (22) + Research Mode (9) · Thinking Patterns (13) + Task Planner (7) +
-          Agent Teams (6) · Consolidation (50) · Ambassador (18) + Images & Audio (6) ·
-          Model Providers (12) + Model Limits (8) + Model Roles (3) + Prompt Enhancement (5)
-          + the 4 strays.
+    - [x] **Web Search + Research Mode** `[v0.21.267]` — 31 keys, written around the cost
+          story: the per-turn budget window (call count *and* dollar ceiling, whichever runs
+          out first; interactive turns only — delegated work isn't metered), Tavily credit
+          arithmetic, and `source_policy`'s hard-floor/soft-preference asymmetry. Fixed a
+          mis-section the refit caught — `search.research_per_turn_limit` claimed the Web
+          Search screen but renders on Research Mode — and surfaced 6 keys that were writable
+          over the API with no control anywhere (`brave_context_max_tokens_per_url` plus the
+          whole deep-research tuning group, including the budget weight the budget help points
+          at).
+    - [ ] Thinking Patterns (13) + Task Planner (7) + Agent Teams (6) · Consolidation (50) ·
+          Ambassador (18) + Images & Audio (6) · Model Providers (12) + Model Limits (8) +
+          Model Roles (3) + Prompt Enhancement (5) + the 4 strays.
     - [ ] Sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
     - [ ] **Invert the coverage gate** (the closing move) — `DOCUMENTED_SECTIONS` becomes an
           `UNDOCUMENTED_ALLOWLIST` that must be empty, so a new setting can't ship without

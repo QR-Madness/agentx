@@ -27,6 +27,12 @@ import {
   TextField,
   ToggleField,
 } from '../../settings/fields';
+import { SettingHelp } from '../../settings/SettingHelp';
+import {
+  bindSetting,
+  sectionBinder,
+  useSettingsManifest,
+} from '../SettingsManifestContext';
 
 type Backend = 'tavily' | 'brave';
 
@@ -49,6 +55,7 @@ interface SearchSettings extends Record<string, unknown> {
   // Brave
   brave_grounding_default: boolean;
   brave_context_max_tokens: number;
+  brave_context_max_tokens_per_url: number;
   brave_context_threshold: string;
   brave_answers_enabled: boolean;
   // Source policy (sent as one object)
@@ -56,6 +63,35 @@ interface SearchSettings extends Record<string, unknown> {
   blocked: string;
   goggle: string;
 }
+
+/**
+ * Local field name → `store:key` in the settings manifest. Everything the
+ * manifest knows — shipped default, declared bounds, authored help — reaches
+ * the control through this.
+ *
+ * `trusted`/`blocked`/`goggle` are absent deliberately: they are three inputs
+ * over one `source_policy` dict, so they bind once, by hand, below.
+ */
+const KEYS: Partial<Record<keyof SearchSettings & string, string>> = {
+  backend: 'config:search.backend',
+  fallback_enabled: 'config:search.fallback_enabled',
+  max_results: 'config:search.max_results',
+  cache_ttl_seconds: 'config:search.cache_ttl_seconds',
+  timeout: 'config:search.timeout',
+  default_search_depth: 'config:search.default_search_depth',
+  default_chunks_per_source: 'config:search.default_chunks_per_source',
+  safesearch: 'config:search.safesearch',
+  country: 'config:search.country',
+  search_lang: 'config:search.search_lang',
+  per_turn_limit: 'config:search.per_turn_limit',
+  per_turn_cost_usd: 'config:search.per_turn_cost_usd',
+  research_per_turn_cost_usd: 'config:search.research_per_turn_cost_usd',
+  brave_grounding_default: 'config:search.brave_grounding_default',
+  brave_context_max_tokens: 'config:search.brave_context_max_tokens',
+  brave_context_max_tokens_per_url: 'config:search.brave_context_max_tokens_per_url',
+  brave_context_threshold: 'config:search.brave_context_threshold',
+  brave_answers_enabled: 'config:search.brave_answers_enabled',
+};
 
 const isRedacted = (v: string) => v.startsWith('***');
 
@@ -65,6 +101,7 @@ const toList = (v: string): string[] =>
 
 export default function SearchSection() {
   const { notifyError, notifySuccess } = useNotify();
+  const manifest = useSettingsManifest();
 
   // Secrets stay out of the autosave draft — explicit Save only.
   const [keys, setKeys] = useState<{ tavily_api_key: string; brave_api_key: string }>({
@@ -109,6 +146,7 @@ export default function SearchSection() {
         research_per_turn_cost_usd: s.research_per_turn_cost_usd ?? 0,
         brave_grounding_default: s.brave_grounding_default ?? true,
         brave_context_max_tokens: s.brave_context_max_tokens ?? 4096,
+        brave_context_max_tokens_per_url: s.brave_context_max_tokens_per_url ?? 1024,
         brave_context_threshold: s.brave_context_threshold ?? 'balanced',
         brave_answers_enabled: s.brave_answers_enabled ?? false,
         trusted: (policy.trusted || []).join(', '),
@@ -132,6 +170,43 @@ export default function SearchSection() {
     },
     onError: err => notifyError(err, 'Web Search settings'),
   });
+
+  const bind = sectionBinder<SearchSettings>(manifest, KEYS, settings, update);
+
+  /**
+   * Source policy binds once, against the reconstructed dict.
+   *
+   * It is written whole (a per-leaf patch would drop its siblings), so the
+   * manifest carries one entry for all three inputs. Binding each input
+   * separately would compare a comma-separated string to a dict and report
+   * "changed from default" forever; resetting one would write the dict into a
+   * text field. So: one binding, attached to the first input, with a reset that
+   * puts all three back.
+   */
+  const policyBinding = bindSetting(
+    manifest, 'config', 'search.source_policy',
+    settings
+      ? {
+          trusted: toList(settings.trusted),
+          blocked: toList(settings.blocked),
+          goggle: settings.goggle.trim(),
+        }
+      : undefined,
+  );
+  const policyDefault = (policyBinding?.defaultValue ?? {}) as {
+    trusted?: string[]; blocked?: string[]; goggle?: string;
+  };
+  const resetPolicy = policyBinding
+    ? () => update({
+        trusted: (policyDefault.trusted ?? []).join(', '),
+        blocked: (policyDefault.blocked ?? []).join(', '),
+        goggle: policyDefault.goggle ?? '',
+      })
+    : undefined;
+
+  /** Authored help for a key with no field-kit control of its own. */
+  const helpFor = (key: string) =>
+    manifest?.entries.get(`config:${key}`)?.help;
 
   // A key is sendable when the user typed a new value (not empty, not the mask).
   const tavilyChanged = !!keys.tavily_api_key && !isRedacted(keys.tavily_api_key);
@@ -203,6 +278,7 @@ export default function SearchSection() {
                 { value: 'tavily', label: 'Tavily (recommended)' },
                 { value: 'brave', label: 'Brave' },
               ]}
+              {...bind('backend')}
             />
 
             <ToggleField
@@ -210,6 +286,7 @@ export default function SearchSection() {
               onChange={fallback_enabled => update({ fallback_enabled })}
               label="Fallback to other backend"
               hint="If the primary errors or returns nothing, try the other"
+              {...bind('fallback_enabled')}
             />
 
             {/* Tavily API key — secrets keep explicit Save (never autosaved) */}
@@ -218,6 +295,10 @@ export default function SearchSection() {
                 <span className="flex items-center gap-1.5">
                   Tavily API Key
                   <Badge variant="accent" size="sm">Recommended</Badge>
+                  {/* Secrets carry no field-kit chrome — no default to compare
+                      against, nothing to reset to — but the authored help still
+                      has the billing detail worth reading before you paste a key. */}
+                  <SettingHelp help={helpFor('search.tavily_api_key')} label="Tavily API Key" />
                 </span>
                 <span className="setting-hint">
                   From tavily.com — generous free tier; unlocks web_extract / web_map / web_crawl /
@@ -247,7 +328,10 @@ export default function SearchSection() {
             {/* Brave API key */}
             <div className="setting-row">
               <label className="setting-label">
-                <span>Brave API Key</span>
+                <span className="flex items-center gap-1.5">
+                  Brave API Key
+                  <SettingHelp help={helpFor('search.brave_api_key')} label="Brave API Key" />
+                </span>
                 <span className="setting-hint">
                   From api.search.brave.com — the Search plan covers grounding; deep research needs
                   the separate Answers plan
@@ -325,6 +409,7 @@ export default function SearchSection() {
               fallback={5}
               onChange={max_results => update({ max_results })}
               title="Results returned per search (1–20)"
+              {...bind('max_results')}
             />
 
             <SelectField
@@ -339,6 +424,7 @@ export default function SearchSection() {
                 { value: 'basic', label: 'Basic — balanced' },
                 { value: 'advanced', label: 'Advanced — deepest (2 credits)' },
               ]}
+              {...bind('default_search_depth')}
             />
 
             <NumberField
@@ -349,6 +435,7 @@ export default function SearchSection() {
               fallback={0}
               onChange={default_chunks_per_source => update({ default_chunks_per_source })}
               title="How much of each result to keep (1–5). 0 = provider default"
+              {...bind('default_chunks_per_source')}
             />
 
             <SelectField
@@ -362,6 +449,7 @@ export default function SearchSection() {
                 { value: 'moderate', label: 'Moderate' },
                 { value: 'strict', label: 'Strict' },
               ]}
+              {...bind('safesearch')}
             />
 
             <TextField
@@ -370,6 +458,7 @@ export default function SearchSection() {
               onChange={country => update({ country })}
               placeholder="e.g. GB"
               hint="Bias results toward a country. Blank = no preference"
+              {...bind('country')}
             />
 
             <TextField
@@ -378,6 +467,7 @@ export default function SearchSection() {
               onChange={search_lang => update({ search_lang })}
               placeholder="e.g. en"
               hint="Preferred language for results. Blank = no preference"
+              {...bind('search_lang')}
             />
           </SettingsSection>
 
@@ -394,6 +484,7 @@ export default function SearchSection() {
               fallback={0}
               onChange={per_turn_limit => update({ per_turn_limit })}
               title="Max searches in one turn. 0 = unlimited"
+              {...bind('per_turn_limit')}
             />
 
             <NumberField
@@ -405,6 +496,7 @@ export default function SearchSection() {
               fallback={0}
               onChange={per_turn_cost_usd => update({ per_turn_cost_usd })}
               title="Dollar ceiling for one turn's searches. 0 = no cost ceiling"
+              {...bind('per_turn_cost_usd')}
             />
 
             <NumberField
@@ -416,6 +508,7 @@ export default function SearchSection() {
               fallback={0}
               onChange={research_per_turn_cost_usd => update({ research_per_turn_cost_usd })}
               title="Dollar ceiling while Research Mode is on. 0 = no cost ceiling"
+              {...bind('research_per_turn_cost_usd')}
             />
 
             <NumberField
@@ -426,6 +519,7 @@ export default function SearchSection() {
               fallback={15}
               onChange={timeout => update({ timeout })}
               title="Hard per-call cap — a hung search blocks the turn until it returns"
+              {...bind('timeout')}
             />
 
             <NumberField
@@ -436,6 +530,7 @@ export default function SearchSection() {
               fallback={0}
               onChange={cache_ttl_seconds => update({ cache_ttl_seconds })}
               title="Repeat searches are served free from cache for this long. 0 = no caching"
+              {...bind('cache_ttl_seconds')}
             />
           </SettingsSection>
 
@@ -449,6 +544,7 @@ export default function SearchSection() {
               onChange={brave_grounding_default => update({ brave_grounding_default })}
               label="Return page content by default"
               hint="Off = a plain link list, cheaper but the agent must extract separately"
+              {...bind('brave_grounding_default')}
             />
 
             <NumberField
@@ -459,6 +555,19 @@ export default function SearchSection() {
               fallback={4096}
               onChange={brave_context_max_tokens => update({ brave_context_max_tokens })}
               title="Ceiling on one grounded search's returned content"
+              {...bind('brave_context_max_tokens')}
+            />
+
+            <NumberField
+              label="Per-page budget (tokens)"
+              value={settings.brave_context_max_tokens_per_url}
+              min={128}
+              max={8192}
+              fallback={1024}
+              onChange={brave_context_max_tokens_per_url =>
+                update({ brave_context_max_tokens_per_url })}
+              title="Most any single page may contribute, so one long result can't take the whole budget"
+              {...bind('brave_context_max_tokens_per_url')}
             />
 
             <SelectField
@@ -471,6 +580,7 @@ export default function SearchSection() {
                 { value: 'balanced', label: 'Balanced' },
                 { value: 'lenient', label: 'Lenient — more, less relevant' },
               ]}
+              {...bind('brave_context_threshold')}
             />
 
             <ToggleField
@@ -478,6 +588,7 @@ export default function SearchSection() {
               onChange={brave_answers_enabled => update({ brave_answers_enabled })}
               label="Brave deep research"
               hint="Needs the separate Answers plan on your key — leave off unless you have it, or every deep-research call will fail"
+              {...bind('brave_answers_enabled')}
             />
           </SettingsSection>
 
@@ -492,6 +603,8 @@ export default function SearchSection() {
               onChange={trusted => update({ trusted })}
               placeholder="arxiv.org, *.edu"
               hint="Favoured when the agent hasn't scoped a search itself. A preference, not a restriction — over-narrowing returns nothing"
+              binding={policyBinding}
+              onReset={resetPolicy}
             />
 
             <TextField

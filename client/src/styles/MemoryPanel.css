@@ -1903,6 +1903,19 @@
   align-items: center;
 }
 
+/* A toggle row lays out as [control + label + chrome] [hint], and the hint is
+   the longer of the two. Without this the hint wins the width fight and the
+   setting's own *name* wraps to three lines — which only got worse once labels
+   gained a help affordance beside them. Secondary text should be what wraps. */
+.setting-row.checkbox > :first-child {
+  flex: 0 0 auto;
+}
+
+.setting-row.checkbox > .setting-hint {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .setting-row.checkbox label {
   display: flex;
   align-items: center;
