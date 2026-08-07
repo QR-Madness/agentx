@@ -24,6 +24,22 @@ import {
   SelectField,
   ToggleField,
 } from '../../settings/fields';
+import { sectionBinder, useSettingsManifest } from '../SettingsManifestContext';
+
+/**
+ * Local field name → `store:key`.
+ *
+ * `defaultAmbassadorId` is absent on purpose: it is a *profile* flag persisted
+ * through its own endpoint, not a config key, so there is nothing in the
+ * manifest to bind it to.
+ */
+const KEYS: Partial<Record<keyof AmbassadorSettings & string, string>> = {
+  enabled: 'config:ambassador.enabled',
+  model: 'config:ambassador.model',
+  max_context_turns: 'config:ambassador.max_context_turns',
+  aideEnabled: 'config:ambassador.aide.enabled',
+  dispatchEnabled: 'config:ambassador.dispatch.enabled',
+};
 
 interface AmbassadorSettings extends Record<string, unknown> {
   enabled: boolean;
@@ -36,6 +52,7 @@ interface AmbassadorSettings extends Record<string, unknown> {
 
 export default function AmbassadorSection() {
   const { notifyError } = useNotify();
+  const manifest = useSettingsManifest();
   const { openModal } = useModal();
   const [ambassadors, setAmbassadors] = useState<AgentProfile[]>([]);
 
@@ -89,6 +106,8 @@ export default function AmbassadorSection() {
     onError: err => notifyError(err, 'Ambassador settings'),
   });
 
+  const bind = sectionBinder<AmbassadorSettings>(manifest, KEYS, settings, update);
+
   const handleNewAmbassador = async () => {
     try {
       const { profile } = await api.createAgentProfile({
@@ -135,6 +154,7 @@ export default function AmbassadorSection() {
             onChange={enabled => update({ enabled })}
             label="Enable Ambassador"
             hint="When off, the CC button reports the ambassador as disabled."
+            {...bind('enabled')}
           />
 
           <SelectField
@@ -161,14 +181,13 @@ export default function AmbassadorSection() {
             </Button>
           </div>
 
-          <div className="setting-row">
-            <ModelPickerField
-              label="Ambassador Model"
-              value={settings.model}
-              onChange={model => update({ model })}
-              showDefault={true}
-            />
-          </div>
+          <ModelPickerField
+            label="Ambassador Model"
+            value={settings.model}
+            onChange={model => update({ model })}
+            showDefault={true}
+            {...bind('model')}
+          />
 
           <NumberField
             label="Grounding Turns"
@@ -178,6 +197,7 @@ export default function AmbassadorSection() {
             fallback={8}
             onChange={max_context_turns => update({ max_context_turns })}
             title="How many recent turns the ambassador reads (read-only) to ground each briefing."
+            {...bind('max_context_turns')}
           />
 
           <ToggleField
@@ -192,6 +212,7 @@ export default function AmbassadorSection() {
                 transcripts directly.
               </>
             }
+            {...bind('aideEnabled')}
           />
 
           <ToggleField
@@ -199,6 +220,7 @@ export default function AmbassadorSection() {
             onChange={dispatchEnabled => update({ dispatchEnabled })}
             label="Dispatch to workers"
             hint="Let the ambassador hand a task to a worker you pick — it opens a new conversation with that agent and runs it. Off ⇒ the Dispatch option is hidden."
+            {...bind('dispatchEnabled')}
           />
         </div>
       )}

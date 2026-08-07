@@ -8448,7 +8448,7 @@ def config_update(request):
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
 
     from .config import get_config_manager
-    from .settings_registry import apply_ops, plan_config_update
+    from .settings_registry import CONFIG_SECTIONS, apply_ops, plan_config_update
 
     config = get_config_manager()
 
@@ -8469,6 +8469,19 @@ def config_update(request):
             'errors': errors,
         }, status=400)
 
+    # A root nobody declared is dropped on the floor. That is correct — undeclared
+    # means read-only by design — but doing it *silently* is how a settings screen
+    # ends up toasting "saved" while persisting nothing, which has now happened
+    # twice (the `images` scar below, and `audio` in the same section). Name them
+    # back to the caller and log them, so the next one announces itself instead of
+    # waiting to be found by hand.
+    ignored = sorted(k for k in data if k not in CONFIG_SECTIONS)
+    if ignored:
+        logger.warning(
+            f"config_update: ignored undeclared section(s) {ignored} — "
+            f"declare them in settings_registry.CONFIG_SECTIONS to make them writable"
+        )
+
     updated_keys = apply_ops(config, ops)
 
     # Persist to disk
@@ -8488,12 +8501,14 @@ def config_update(request):
             'status': 'partial',
             'message': f'Config saved but provider reload failed: {e}',
             'updated': updated_keys,
+            **({'ignored': ignored} if ignored else {}),
         })
 
     return JsonResponse({
         'status': 'ok',
         'message': 'Config updated and applied',
         'updated': updated_keys,
+        **({'ignored': ignored} if ignored else {}),
     })
 
 

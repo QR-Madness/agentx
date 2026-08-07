@@ -138,8 +138,17 @@
           now declare a screen** — `_apply_spec` honours `KeySpec.ui_section` for both stores,
           which moved `extraction_system_prompt` and `relevance_filter_prompt` to the Feature
           Prompts screen that actually edits them. **152 of 208 documented.**
-    - [ ] Ambassador (18) + Images & Audio (6) · Model Providers (12) + Model Limits (8) +
-          Model Roles (3) + Prompt Enhancement (4) + Feature Prompts (1 left) + the 4 strays.
+    - [x] **The agent's surfaces** `[v0.21.270]` — Ambassador (18) + Images & Audio (8).
+          **Fixed a live bug the refit found:** the Images & Audio screen POSTed `audio.*`,
+          a root nothing declared, so `config_update` dropped it and answered `ok` — *Enable
+          audio input* and *Enable speech generation* never persisted and could not be turned
+          off, though both are read (attachments; the `generate_speech` tool). Declared the
+          root, and made the general case observable: an undeclared section is now named back
+          in the response as `ignored` and logged, instead of vanishing. `PromptField` took
+          the manifest contract (the last field-kit primitive without it), and
+          `vision.refeed_recent_turns` got a control. **178 of 210 documented.**
+    - [ ] Model Providers (12) + Model Limits (8) + Model Roles (3) + Prompt Enhancement (4)
+          + Feature Prompts (1 left) + the 4 strays.
     - [ ] Sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
     - [ ] **Invert the coverage gate** (the closing move) — `DOCUMENTED_SECTIONS` becomes an
           `UNDOCUMENTED_ALLOWLIST` that must be empty, so a new setting can't ship without

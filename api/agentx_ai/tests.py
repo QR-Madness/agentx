@@ -13359,6 +13359,8 @@ class SettingsHelpTest(TestCase):
         ("config", "planner", "Intelligence → Task Planner"),
         ("config", "alloy", "Intelligence → Agent Teams"),
         ("memory", "memory-consolidation", "Memory → Consolidation"),
+        ("config", "ambassador", "Intelligence → Ambassador"),
+        ("config", "images", "Infrastructure → Images & Audio"),
     )
 
     def _keys_for(self, store, group):
@@ -13499,6 +13501,60 @@ class ConfigImagesVisionUpdateTest(TestCase):
         updated = resp.json()["updated"]
         self.assertIn("images.enabled", updated)
         self.assertIn("vision.refeed_recent_turns", updated)
+
+    def test_audio_toggles_persist(self):
+        """Regression, the same bug in the same section: the Images & Audio
+        screen's two audio switches POSTed to an `audio` root nothing declared,
+        so config_update dropped it and answered `ok` with an empty update list.
+        Both flags are read — attachments and the generate_speech tool — so the
+        symptom was that neither could be turned off."""
+        cfg = MagicMock()
+        cfg.save.return_value = True
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+             patch("agentx_ai.views.get_registry"):
+            resp = self.client.post(
+                "/api/config/update",
+                data=json.dumps({
+                    "audio": {"input_enabled": False, "speech_enabled": False},
+                }),
+                content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+        cfg.set.assert_any_call("audio.input_enabled", False)
+        cfg.set.assert_any_call("audio.speech_enabled", False)
+        self.assertIn("audio.input_enabled", resp.json()["updated"])
+
+    def test_undeclared_section_is_reported_not_swallowed(self):
+        """The general form of the bug above. An undeclared root is still
+        dropped — undeclared means read-only by design — but it is now named in
+        the response and logged, so the next screen wired to a root nobody
+        declared says so instead of waiting to be found by hand."""
+        cfg = MagicMock()
+        cfg.save.return_value = True
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+             patch("agentx_ai.views.get_registry"):
+            resp = self.client.post(
+                "/api/config/update",
+                data=json.dumps({
+                    "images": {"enabled": False},
+                    "no_such_section": {"whatever": 1},
+                }),
+                content_type="application/json")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["ignored"], ["no_such_section"])
+        # The declared part of the same payload still applies.
+        self.assertIn("images.enabled", body["updated"])
+
+    def test_clean_payload_carries_no_ignored_key(self):
+        cfg = MagicMock()
+        cfg.save.return_value = True
+        with patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+             patch("agentx_ai.views.get_registry"):
+            resp = self.client.post(
+                "/api/config/update",
+                data=json.dumps({"images": {"enabled": True}}),
+                content_type="application/json")
+        self.assertNotIn("ignored", resp.json())
 
 
 class UsageLedgerTest(TestCase):

@@ -2561,6 +2561,420 @@ config:
       transcript of a non-blocking turn interleaves the agent's own work with
       reports arriving out of order.
 
+  # ── Ambassador ─────────────────────────────────────────────────────────
+  ambassador.enabled:
+    summary: Whether the parallel briefing agent is available at all.
+    what: >-
+      The master switch for the Ambassador: an agent that runs alongside a
+      conversation, reads it, and briefs you — without entering the transcript.
+    how: >-
+      Off removes the affordance everywhere. On, it is available but idle: the
+      Ambassador costs nothing until you actually ask it something.
+    why: >-
+      Leave it on. The whole point is that it is there when a turn needs
+      explaining and invisible when it does not. Turn it off on an install where
+      you want exactly one agent per conversation and no side channel.
+    manage: >-
+      The invariant worth knowing: **its tool belt never executes a write.**
+      Reads run automatically; anything that would change state comes back as a
+      proposal for you to confirm. That is what makes a read-broad agent safe.
+
+  ambassador.profile_id:
+    summary: Which agent profile the Ambassador speaks as.
+    what: >-
+      The profile supplying the Ambassador's identity, persona and voice. Any
+      profile carrying an `ambassador` section can serve.
+    how: >-
+      Unset falls back to the default agent profile. The profile decides who the
+      Ambassador *is*; the settings on this screen are feature-level knobs around
+      that.
+    why: >-
+      Set it when you want briefings in a distinct voice from the agent doing the
+      work — which is most of the time, since the point of a briefing is a second
+      perspective rather than the same one restated.
+    manage: >-
+      An explicit model below overrides whatever model the profile carries, so
+      the two settings interact: profile for persona, model for capability.
+
+  ambassador.model:
+    summary: The model the Ambassador thinks with, overriding its profile.
+    what: >-
+      An explicit model for briefing work, authoritative when set.
+    how: >-
+      Unset uses the chosen profile's model, and failing that a built-in floor.
+      Setting it here overrides the profile without editing the profile.
+    why: >-
+      Briefing is summarisation over a transcript — a job that rewards a fast,
+      cheap model more than a strong one. Set it when the profile you like the
+      voice of carries a model you would rather not pay for on every briefing.
+    manage: >-
+      Clearing it back to unset is a real write, not a no-op: it returns control
+      to the profile.
+
+  ambassador.max_context_turns:
+    summary: How much of the conversation the Ambassador reads.
+    what: >-
+      The number of recent turns pulled in, read-only, to ground a briefing.
+    how: >-
+      Read fresh for each briefing rather than accumulated, so this bounds every
+      briefing's input rather than growing over a session.
+    why: >-
+      Raise it when briefings miss context that was established earlier and you
+      are asking about the shape of a conversation rather than its last move.
+      Lower it to make briefings cheaper and more focused on what just happened.
+    manage: >-
+      Default 8 turns. This is input cost on every briefing, so it multiplies
+      with how often you use the feature rather than being a one-off.
+
+  ambassador.max_tokens:
+    summary: How long a briefing may be.
+    what: >-
+      The output budget for one briefing.
+    how: >-
+      A briefing that does not fit is truncated. The budget is deliberately tight
+      — a briefing is meant to be read at a glance, not studied.
+    why: >-
+      Raise it if briefings are being cut off mid-sentence, or if you want fuller
+      analysis rather than a summary. Lower it to force brevity.
+    manage: >-
+      Default 600 tokens, a few paragraphs. If you find yourself raising this a
+      lot, the thing you want is probably a conversation with the agent rather
+      than a briefing about one.
+
+  ambassador.speech_model:
+    summary: Fallback text-to-speech model for spoken briefings.
+    what: >-
+      The model used to speak a briefing aloud, when nothing more specific has
+      been chosen.
+    how: >-
+      A fallback near the end of a chain: an explicit request wins, then the
+      chosen profile's own voice settings, then this, then a shipped default.
+      That is why this screen has no control for it — the profile editor owns the
+      one you actually set.
+    why: >-
+      Set it to establish a house default for installs where profiles do not
+      specify a voice model. Most people never touch it.
+    manage: >-
+      Writable over the API and documented here, but edited on the ambassador
+      profile in practice. Null means "fall through the chain", which is the
+      shipped state.
+
+  ambassador.voice:
+    summary: Fallback voice for spoken briefings.
+    what: >-
+      Which voice the speech model uses, when nothing more specific has been
+      chosen.
+    how: >-
+      Sits in the same fallback chain as the speech model: explicit request →
+      profile → this → shipped default.
+    why: >-
+      Set it for a consistent house voice across profiles that do not pick one.
+      Otherwise leave it; a voice is part of an agent's identity and belongs on
+      the profile.
+    manage: >-
+      Valid values depend on the speech model — a voice name from one provider
+      will not be recognised by another, and the failure surfaces at speech time
+      rather than when you save.
+
+  ambassador.transcription_model:
+    summary: Fallback speech-to-text model for talking to the Ambassador.
+    what: >-
+      The model that turns your recorded speech into text, when nothing more
+      specific has been chosen.
+    how: >-
+      Same fallback chain as the other two voice settings, and used by both voice
+      mode and the ordinary transcription seam so there is one resolution rather
+      than two.
+    why: >-
+      Set it if the default transcription is mishearing domain vocabulary — names,
+      jargon, identifiers — which a better model usually fixes.
+    manage: >-
+      Null means fall through the chain. As with the others, the profile editor
+      is where this is normally set.
+
+  ambassador.aide.enabled:
+    summary: Let the Ambassador survey many conversations without reading them all.
+    what: >-
+      The aide swarm: instead of pulling whole transcripts into the Ambassador's
+      own context, cheap parallel "aide" calls each condense **one** conversation
+      and return a short digest.
+    how: >-
+      Map-reduce — the aides map, the Ambassador reduces. Read-only throughout,
+      and never allowed to raise: an aide that fails is simply absent from the
+      survey rather than failing the briefing.
+    why: >-
+      Leave it on. It is what keeps a cross-conversation question affordable and
+      the Ambassador's context lean; off, the same question means reading every
+      transcript in full into one prompt.
+    manage: >-
+      The settings below tune the fan-out and rarely need touching. They are
+      documented because they are writable, not because they need attention.
+
+  ambassador.aide.model:
+    summary: Which model the aides use to condense one conversation.
+    what: >-
+      The model behind each aide's digest — a summarisation job, run many times
+      in parallel.
+    how: >-
+      Empty follows the Ambassador's cheap floor through the fallback chain.
+      Because aides run several at a time, this multiplies more than most model
+      settings on this screen.
+    why: >-
+      Use the cheapest model that produces a usable digest. A survey spawns
+      several aides at once, so quality here buys much less than it costs.
+    manage: >-
+      If digests are missing the point of a conversation, raise the input cap
+      below before the model — an aide reading a truncated transcript looks
+      exactly like an aide that is not clever enough.
+
+  ambassador.aide.temperature:
+    summary: How literally an aide summarises.
+    what: >-
+      Sampling temperature for an aide's digest.
+    how: >-
+      Low values keep digests close to what the conversation actually contained.
+    why: >-
+      Keep it low. A digest is evidence the Ambassador then reasons over, so
+      invention here propagates into the briefing as though it were fact.
+    manage: >-
+      Default 0.2.
+
+  ambassador.aide.max_tokens:
+    summary: How long one aide's digest may be.
+    what: >-
+      The output budget per aide — a tight digest, not a transcript.
+    how: >-
+      Several digests are combined into one briefing, so this multiplies by the
+      number of aides in the reduce step.
+    why: >-
+      Raise it if digests are too thin to be useful. Lower it if surveys are
+      producing more material than the Ambassador can usefully reduce.
+    manage: >-
+      Default 220 tokens — deliberately small. The whole design assumes digests
+      are cheap enough to make several of.
+
+  ambassador.aide.max_input_chars:
+    summary: How much of a conversation an aide is allowed to read.
+    what: >-
+      A cap on the transcript fed to a single aide.
+    how: >-
+      A longer conversation is truncated to this, so a digest of a very long
+      conversation covers only part of it.
+    why: >-
+      Raise it when digests of long conversations miss their later half — the
+      commonest cause of a survey that feels out of date. Lower it to cut input
+      cost across a wide survey.
+    manage: >-
+      Default 6000 characters. This is the first thing to check when aide
+      digests seem to be summarising the wrong part of a conversation.
+
+  ambassador.aide.max_parallel:
+    summary: How many aides run at once.
+    what: >-
+      Concurrency for the fan-out.
+    how: >-
+      More at once finishes a survey sooner without changing its total cost —
+      the same aides run either way.
+    why: >-
+      Raise it to make wide surveys faster. Lower it if concurrent calls are
+      hitting provider rate limits, which shows up as aides going missing rather
+      than as an error.
+    manage: >-
+      Default 4; three to five is the practical sweet spot. Beyond that the
+      reduce step usually becomes the bottleneck rather than the fan-out.
+
+  ambassador.aide.timeout_seconds:
+    summary: How long one aide may take before it is abandoned.
+    what: >-
+      A wall-clock cap per aide.
+    how: >-
+      An aide that times out is simply left out of the survey — the briefing
+      still arrives, with one fewer digest behind it.
+    why: >-
+      Raise it if you have pointed aides at a slower model and surveys are coming
+      back thin. Lower it to keep a briefing prompt when one provider is
+      struggling.
+    manage: >-
+      Default 20 seconds. Because a timeout degrades silently rather than
+      failing, a too-low value looks like "the survey missed that conversation".
+
+  ambassador.aide.max_per_survey:
+    summary: How many conversations one survey may cover.
+    what: >-
+      A cap on the aides spawned by a single question.
+    how: >-
+      Bounds the worst-case cost of asking something broad. Conversations beyond
+      the cap are not surveyed.
+    why: >-
+      Raise it when you routinely ask questions spanning more conversations than
+      this and the answers feel partial. Lower it to bound what one broad
+      question can cost.
+    manage: >-
+      Default 8. Multiply by the aide output budget for a rough ceiling on what
+      the reduce step has to read.
+
+  ambassador.aide.cache_ttl_seconds:
+    summary: How long an aide's digest is reused before being made again.
+    what: >-
+      A cache of per-conversation digests, so surveying the same conversations
+      repeatedly does not re-read them each time.
+    how: >-
+      Refreshes automatically when a conversation grows, so a cached digest never
+      describes a stale version of an active conversation.
+    why: >-
+      Keep it generous. Because growth invalidates entries anyway, a long TTL
+      mostly saves work on conversations that have not changed — which is exactly
+      where re-reading is wasted.
+    manage: >-
+      Default 30 minutes. 0 disables caching and makes every survey pay full
+      price for conversations it has already digested.
+
+  ambassador.dispatch.enabled:
+    summary: Let the Ambassador hand a task to another agent, with your confirmation.
+    what: >-
+      Dispatch: minting a new conversation and running a chosen worker on a task
+      headlessly, from the briefing side channel.
+    how: >-
+      **Proposal-only.** The Ambassador can propose a dispatch; it cannot perform
+      one. The task starts as *your* action after you pick a worker and confirm.
+      Off hides the affordance and the endpoint refuses.
+    why: >-
+      Leave it on — it is the one write-shaped thing the side channel offers, and
+      it is gated by your confirmation. Turn it off if you want the Ambassador
+      strictly read-only with no write-shaped affordance at all.
+    manage: >-
+      This does not weaken the belt's invariant: the tool still executes no
+      write. Dispatch lands as a user turn, which is what keeps the audit trail
+      honest about who started the work.
+
+  # ── Images & Audio ─────────────────────────────────────────────────────
+  images.enabled:
+    summary: Whether agents may generate images in a conversation.
+    what: >-
+      Image generation as a tool the agent can reach for, distinct from reading
+      images you send.
+    how: >-
+      Off removes the capability; agents describe rather than draw. Routed
+      through OpenRouter today.
+    why: >-
+      Leave it on unless image generation is unwanted or unbudgeted — it costs
+      nothing until an agent actually generates something.
+    manage: >-
+      Separate from vision below: this is pictures *out*, that is pictures *in*.
+      Turning one off does not affect the other.
+
+  images.default_model:
+    summary: Which model draws images in conversations.
+    what: >-
+      The image model used for ordinary in-conversation generation.
+    how: >-
+      Named as `provider:model` like every other model here. Image models vary
+      enormously in speed and price for similar-looking results.
+    why: >-
+      Change it when output quality or cost matters. This is the one used for
+      anything an agent draws in the course of a conversation, so its price is
+      the one you will notice.
+    manage: >-
+      Must be a model that can actually output images — the picker filters to
+      those, but a hand-set id is not checked until generation fails.
+
+  images.avatar_model:
+    summary: Which model draws profile avatars.
+    what: >-
+      A separate image model for agent avatars, so portraits and conversational
+      images can use different models.
+    how: >-
+      Used only for avatar generation, paired with the style template below.
+    why: >-
+      Avatars are generated rarely and looked at constantly, which justifies a
+      better model here than for throwaway conversational images. That is why it
+      is a separate setting rather than sharing the default.
+    manage: >-
+      Changing it does not regenerate existing avatars; it applies to the next
+      one created.
+
+  images.avatar_style_prompt:
+    summary: The house style every avatar is drawn in.
+    what: >-
+      A template describing composition, background, lighting and rules, into
+      which each agent's own subject description is inserted.
+    how: >-
+      The app-level *style* prompt; the per-profile *subject* prompt is appended
+      at generation time. Empty falls back to the shipped template.
+    why: >-
+      Edit it to change the look of every avatar at once — a different palette, a
+      different framing, a house style of your own. Leave it alone to keep the
+      shipped look, which is built to survive circular cropping.
+    manage: >-
+      The shipped template carries real constraints, notably a circular safe zone
+      because avatars are cropped to a circle. A rewrite that drops that produces
+      avatars with their subjects clipped.
+
+  vision.enabled:
+    summary: Whether agents can see images you attach.
+    what: >-
+      Image *input*: you attach a picture and a vision-capable model looks at it.
+    how: >-
+      On by default. A model without vision degrades to text-only rather than
+      failing, so leaving this on costs nothing when the model cannot use it.
+    why: >-
+      Leave it on. Turn it off to guarantee no image ever reaches a provider —
+      the reason to do that is policy, not cost.
+    manage: >-
+      Independent of image generation above. Also see the re-feed setting below,
+      which decides whether an attached image stays visible on later turns.
+
+  vision.refeed_recent_turns:
+    summary: How many past turns' images stay visible to the model.
+    what: >-
+      Whether images you attached earlier are shown again as a conversation
+      continues, or seen once and then only remembered as text.
+    how: >-
+      When a session reloads from history, this many recent image-bearing turns
+      are re-fed. Re-sending encoded image data on every turn is expensive, which
+      is why it is bounded rather than unlimited.
+    why: >-
+      Raise it when the agent keeps losing track of an image you are working
+      through together. Lower it — or set 0 — when images are incidental and the
+      token cost of carrying them is not worth it.
+    manage: >-
+      0 disables multi-turn re-feed; single-turn vision still works, so an image
+      is seen when sent and not afterwards. Each re-fed image is paid for on
+      every turn that carries it.
+
+  audio.input_enabled:
+    summary: Whether you can attach or record audio for an agent.
+    what: >-
+      Audio *input*: a clip you attach or record, heard natively by a capable
+      model or transcribed first.
+    how: >-
+      Off refuses audio attachments outright rather than silently ignoring them.
+    why: >-
+      Leave it on unless audio input is unwanted. As with vision, the reason to
+      turn it off is usually policy — keeping recordings from reaching a provider
+      — rather than cost.
+    manage: >-
+      This switch did nothing before v0.21.270: the screen wrote to a config
+      section nobody had declared, so the value never persisted and reverted on
+      reload. If you tried to turn audio input off before and it came back, that
+      is why.
+
+  audio.speech_enabled:
+    summary: Whether agents may speak into a conversation.
+    what: >-
+      Speech *output*: the tool that lets an agent produce spoken audio as part
+      of a reply.
+    how: >-
+      Off makes the tool unavailable, so agents answer in text. Distinct from the
+      Ambassador's voice mode, which has its own settings.
+    why: >-
+      Leave it on if you use spoken replies at all — it costs nothing unless an
+      agent actually speaks. Turn it off to keep conversations text-only.
+    manage: >-
+      Which speech model and voice get used is resolved through the Ambassador's
+      voice settings, so this switch controls *whether*, not *how*. Like the
+      input switch above, it did not persist before v0.21.270.
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Section blurbs — one per settings screen. See the header note for the shape.
 # ═══════════════════════════════════════════════════════════════════════════
