@@ -16,7 +16,22 @@ import { useSettingsAutosave } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { SectionHeader } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
-import { PromptField, SaveStatusChip, ToggleField } from '../../settings/fields';
+import { NumberField, PromptField, SaveStatusChip, ToggleField } from '../../settings/fields';
+import { sectionBinder, useSettingsManifest } from '../SettingsManifestContext';
+
+/** Local field name → `store:key`. The screen spans four config roots; the
+ *  `audio` pair was undeclared until v0.21.270, which is why those two toggles
+ *  silently did nothing. */
+const KEYS: Partial<Record<keyof ImageSettings & string, string>> = {
+  enabled: 'config:images.enabled',
+  default_model: 'config:images.default_model',
+  avatar_model: 'config:images.avatar_model',
+  avatar_style_prompt: 'config:images.avatar_style_prompt',
+  visionEnabled: 'config:vision.enabled',
+  visionRefeedTurns: 'config:vision.refeed_recent_turns',
+  audioInputEnabled: 'config:audio.input_enabled',
+  speechEnabled: 'config:audio.speech_enabled',
+};
 
 interface ImageSettings extends Record<string, unknown> {
   enabled: boolean;
@@ -25,6 +40,8 @@ interface ImageSettings extends Record<string, unknown> {
   avatar_style_prompt: string;
   // Vision input (image *input* — the user attaches a picture a model can see).
   visionEnabled: boolean;
+  // How many past image-bearing turns are shown to the model again.
+  visionRefeedTurns: number;
   // Audio input (the user attaches/records a clip — heard natively or transcribed).
   audioInputEnabled: boolean;
   // Speech output (the `generate_speech` tool — agents speak into the conversation).
@@ -65,18 +82,20 @@ const FALLBACK: ImageSettings = {
   avatar_model: 'openrouter:microsoft/mai-image-2.5',
   avatar_style_prompt: DEFAULT_AVATAR_TEMPLATE,
   visionEnabled: true,
+  visionRefeedTurns: 2,
   audioInputEnabled: true,
   speechEnabled: true,
 };
 
 export default function ImagesSection() {
   const { notifyError } = useNotify();
+  const manifest = useSettingsManifest();
 
   const { settings, loading, status, update } = useSettingsAutosave<ImageSettings>({
     load: async () => {
       const config = await api.getConfig();
       const im = (config.images || {}) as Partial<ImageSettings>;
-      const vi = (config.vision || {}) as { enabled?: boolean };
+      const vi = (config.vision || {}) as { enabled?: boolean; refeed_recent_turns?: number };
       const au = (config.audio || {}) as { input_enabled?: boolean; speech_enabled?: boolean };
       return {
         enabled: im.enabled ?? FALLBACK.enabled,
@@ -84,16 +103,25 @@ export default function ImagesSection() {
         avatar_model: im.avatar_model || FALLBACK.avatar_model,
         avatar_style_prompt: im.avatar_style_prompt || FALLBACK.avatar_style_prompt,
         visionEnabled: vi.enabled ?? FALLBACK.visionEnabled,
+        visionRefeedTurns: vi.refeed_recent_turns ?? FALLBACK.visionRefeedTurns,
         audioInputEnabled: au.input_enabled ?? FALLBACK.audioInputEnabled,
         speechEnabled: au.speech_enabled ?? FALLBACK.speechEnabled,
       };
     },
     save: async changed => {
       // vision.* / audio.* keys split off; everything else persists under images.*.
-      const { visionEnabled, audioInputEnabled, speechEnabled, ...images } = changed;
+      const {
+        visionEnabled, visionRefeedTurns, audioInputEnabled, speechEnabled, ...images
+      } = changed;
       const payload: Parameters<typeof api.updateConfig>[0] = {};
       if (Object.keys(images).length > 0) payload.images = images;
-      if (visionEnabled !== undefined) payload.vision = { enabled: visionEnabled };
+      if (visionEnabled !== undefined || visionRefeedTurns !== undefined) {
+        payload.vision = {
+          ...(visionEnabled !== undefined ? { enabled: visionEnabled } : {}),
+          ...(visionRefeedTurns !== undefined
+            ? { refeed_recent_turns: visionRefeedTurns } : {}),
+        };
+      }
       if (audioInputEnabled !== undefined || speechEnabled !== undefined) {
         payload.audio = {
           ...(audioInputEnabled !== undefined ? { input_enabled: audioInputEnabled } : {}),
@@ -104,6 +132,8 @@ export default function ImagesSection() {
     },
     onError: err => notifyError(err, 'Media settings'),
   });
+
+  const bind = sectionBinder<ImageSettings>(manifest, KEYS, settings, update);
 
   return (
     <div className="settings-section fade-in">
@@ -138,6 +168,7 @@ export default function ImagesSection() {
             onChange={enabled => update({ enabled })}
             label="Enable image generation"
             hint={'Lets agents generate images in a conversation (the `generate_image` tool and image-output models) and powers the avatar "Generate" tab. When off, both are unavailable.'}
+            {...bind('enabled')}
           />
 
           <ToggleField
@@ -145,6 +176,18 @@ export default function ImagesSection() {
             onChange={visionEnabled => update({ visionEnabled })}
             label="Enable vision input"
             hint="Let you attach images to a message so a vision-capable model can see them. When off, the composer's attach button is hidden."
+            {...bind('visionEnabled')}
+          />
+
+          <NumberField
+            label="Image re-feed depth (turns)"
+            value={settings.visionRefeedTurns}
+            min={0}
+            max={10}
+            fallback={0}
+            onChange={visionRefeedTurns => update({ visionRefeedTurns })}
+            title="How many past image-bearing turns are shown to the model again. 0 = seen once, then remembered as text only."
+            {...bind('visionRefeedTurns')}
           />
 
           <ToggleField
@@ -152,6 +195,7 @@ export default function ImagesSection() {
             onChange={audioInputEnabled => update({ audioInputEnabled })}
             label="Enable audio input"
             hint="Let you attach audio clips or record voice notes on a message. Audio-capable models hear them natively; other models get an automatic transcript."
+            {...bind('audioInputEnabled')}
           />
 
           <ToggleField
@@ -159,28 +203,30 @@ export default function ImagesSection() {
             onChange={speechEnabled => update({ speechEnabled })}
             label="Enable speech generation"
             hint={'Lets agents speak — the `generate_speech` tool renders an audio player in the conversation. Uses the voice model from the Ambassador\'s voice settings.'}
+            {...bind('speechEnabled')}
           />
 
-          <div className="setting-row">
-            <ModelPickerField
-              label="Image model"
-              value={settings.default_model}
-              onChange={default_model => update({ default_model })}
-            />
-          </div>
+          <ModelPickerField
+            label="Image model"
+            value={settings.default_model}
+            onChange={default_model => update({ default_model })}
+            {...bind('default_model')}
+          />
 
-          <div className="setting-row">
-            <ModelPickerField
-              label="Avatar model"
-              value={settings.avatar_model}
-              onChange={avatar_model => update({ avatar_model })}
-            />
-          </div>
+          <ModelPickerField
+            label="Avatar model"
+            value={settings.avatar_model}
+            onChange={avatar_model => update({ avatar_model })}
+            {...bind('avatar_model')}
+          />
           <span className="setting-hint">
             Used by the avatar "Generate" tab — portrait quality matters more than speed
             there. Clear it to fall back to the image model above.
           </span>
 
+          {/* Binding only, not the whole spread: the manifest's reset would write
+              the config default, while this field's own reset restores the shipped
+              *template text* that its diff view compares against. */}
           <PromptField
             label="Avatar style template"
             value={settings.avatar_style_prompt}
@@ -189,6 +235,7 @@ export default function ImagesSection() {
             placeholder={FALLBACK.avatar_style_prompt}
             rows={8}
             defaultText={FALLBACK.avatar_style_prompt}
+            binding={bind('avatar_style_prompt').binding}
           />
           <span className="setting-hint">
             The app-wide look, shared by every avatar. <code>{'<SUBJECT>'}</code> is replaced

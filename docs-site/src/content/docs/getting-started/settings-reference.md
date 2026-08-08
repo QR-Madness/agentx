@@ -417,16 +417,119 @@ Image generation for conversations and profile avatars, speech synthesis and tra
 
 Change the models when output quality or cost matters. The vision re-feed is the subtle one: showing an image on more turns keeps the agent able to refer back to it, and spends tokens every time it does.
 
-| Setting | Type | Default | Store | Set via |
-| --- | --- | --- | --- | --- |
-| `images.avatar_model` | str | `openrouter:microsoft/mai-image-2.5` | config | `/api/config/update` |
-| `images.avatar_style_prompt` | str | `Create one square avatar portrait.
+### `audio.input_enabled`
 
-COMPOSITI…` | config | `/api/config/update` |
-| `images.default_model` | str | `openrouter:black-forest-labs/flux.2-klein-4b` | config | `/api/config/update` |
-| `images.enabled` | bool | `true` | config | `/api/config/update` |
-| `vision.enabled` | bool | `true` | config | `/api/config/update` |
-| `vision.refeed_recent_turns` | int | `2` | config | `/api/config/update` |
+*Whether you can attach or record audio for an agent.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Audio *input*: a clip you attach or record, heard natively by a capable model or transcribed first.
+
+**How it works.** Off refuses audio attachments outright rather than silently ignoring them.
+
+**When to change it.** Leave it on unless audio input is unwanted. As with vision, the reason to turn it off is usually policy — keeping recordings from reaching a provider — rather than cost.
+
+**Managing it.** This switch did nothing before v0.21.270: the screen wrote to a config section nobody had declared, so the value never persisted and reverted on reload. If you tried to turn audio input off before and it came back, that is why.
+
+### `audio.speech_enabled`
+
+*Whether agents may speak into a conversation.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Speech *output*: the tool that lets an agent produce spoken audio as part of a reply.
+
+**How it works.** Off makes the tool unavailable, so agents answer in text. Distinct from the Ambassador's voice mode, which has its own settings.
+
+**When to change it.** Leave it on if you use spoken replies at all — it costs nothing unless an agent actually speaks. Turn it off to keep conversations text-only.
+
+**Managing it.** Which speech model and voice get used is resolved through the Ambassador's voice settings, so this switch controls *whether*, not *how*. Like the input switch above, it did not persist before v0.21.270.
+
+### `images.avatar_model`
+
+*Which model draws profile avatars.*
+
+**Default:** `openrouter:microsoft/mai-image-2.5` · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A separate image model for agent avatars, so portraits and conversational images can use different models.
+
+**How it works.** Used only for avatar generation, paired with the style template below.
+
+**When to change it.** Avatars are generated rarely and looked at constantly, which justifies a better model here than for throwaway conversational images. That is why it is a separate setting rather than sharing the default.
+
+**Managing it.** Changing it does not regenerate existing avatars; it applies to the next one created.
+
+### `images.avatar_style_prompt`
+
+*The house style every avatar is drawn in.*
+
+**Default:** `Create one square avatar portrait.
+
+COMPOSITI…` · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A template describing composition, background, lighting and rules, into which each agent's own subject description is inserted.
+
+**How it works.** The app-level *style* prompt; the per-profile *subject* prompt is appended at generation time. Empty falls back to the shipped template.
+
+**When to change it.** Edit it to change the look of every avatar at once — a different palette, a different framing, a house style of your own. Leave it alone to keep the shipped look, which is built to survive circular cropping.
+
+**Managing it.** The shipped template carries real constraints, notably a circular safe zone because avatars are cropped to a circle. A rewrite that drops that produces avatars with their subjects clipped.
+
+### `images.default_model`
+
+*Which model draws images in conversations.*
+
+**Default:** `openrouter:black-forest-labs/flux.2-klein-4b` · **Set via:** `/api/config/update`
+
+**What it is.** The image model used for ordinary in-conversation generation.
+
+**How it works.** Named as `provider:model` like every other model here. Image models vary enormously in speed and price for similar-looking results.
+
+**When to change it.** Change it when output quality or cost matters. This is the one used for anything an agent draws in the course of a conversation, so its price is the one you will notice.
+
+**Managing it.** Must be a model that can actually output images — the picker filters to those, but a hand-set id is not checked until generation fails.
+
+### `images.enabled`
+
+*Whether agents may generate images in a conversation.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Image generation as a tool the agent can reach for, distinct from reading images you send.
+
+**How it works.** Off removes the capability; agents describe rather than draw. Routed through OpenRouter today.
+
+**When to change it.** Leave it on unless image generation is unwanted or unbudgeted — it costs nothing until an agent actually generates something.
+
+**Managing it.** Separate from vision below: this is pictures *out*, that is pictures *in*. Turning one off does not affect the other.
+
+### `vision.enabled`
+
+*Whether agents can see images you attach.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Image *input*: you attach a picture and a vision-capable model looks at it.
+
+**How it works.** On by default. A model without vision degrades to text-only rather than failing, so leaving this on costs nothing when the model cannot use it.
+
+**When to change it.** Leave it on. Turn it off to guarantee no image ever reaches a provider — the reason to do that is policy, not cost.
+
+**Managing it.** Independent of image generation above. Also see the re-feed setting below, which decides whether an attached image stays visible on later turns.
+
+### `vision.refeed_recent_turns`
+
+*How many past turns' images stay visible to the model.*
+
+**Default:** `2` · **Range:** 0 to 10, turns · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** Whether images you attached earlier are shown again as a conversation continues, or seen once and then only remembered as text.
+
+**How it works.** When a session reloads from history, this many recent image-bearing turns are re-fed. Re-sending encoded image data on every turn is expensive, which is why it is bounded rather than unlimited.
+
+**When to change it.** Raise it when the agent keeps losing track of an image you are working through together. Lower it — or set 0 — when images are incidental and the token cost of carrying them is not worth it.
+
+**Managing it.** 0 disables multi-turn re-feed; single-turn vision still works, so an image is seen when sent and not afterwards. Each re-fed image is paid for on every turn that carries it.
 
 ## Intelligence → Task Planner
 
@@ -819,26 +922,257 @@ A dedicated operator running alongside a conversation: it reads the transcript, 
 
 Change the model or context depth when briefings are too shallow or too expensive. The aide settings tune the parallel read fan-out behind it and rarely need touching.
 
-| Setting | Type | Default | Store | Set via |
-| --- | --- | --- | --- | --- |
-| `ambassador.aide.cache_ttl_seconds` | int | `1800` | config | `/api/config/update` |
-| `ambassador.aide.enabled` | bool | `true` | config | `/api/config/update` |
-| `ambassador.aide.max_input_chars` | int | `6000` | config | `/api/config/update` |
-| `ambassador.aide.max_parallel` | int | `4` | config | `/api/config/update` |
-| `ambassador.aide.max_per_survey` | int | `8` | config | `/api/config/update` |
-| `ambassador.aide.max_tokens` | int | `220` | config | `/api/config/update` |
-| `ambassador.aide.model` | str | *(empty)* | config | `/api/config/update` |
-| `ambassador.aide.temperature` | float | `0.2` | config | `/api/config/update` |
-| `ambassador.aide.timeout_seconds` | int | `20` | config | `/api/config/update` |
-| `ambassador.dispatch.enabled` | bool | `true` | config | `/api/config/update` |
-| `ambassador.enabled` | bool | `true` | config | `/api/config/update` |
-| `ambassador.max_context_turns` | int | `8` | config | `/api/config/update` |
-| `ambassador.max_tokens` | int | `600` | config | `/api/config/update` |
-| `ambassador.model` | NoneType | — | config | `/api/config/update` |
-| `ambassador.profile_id` | NoneType | — | config | `/api/config/update` |
-| `ambassador.speech_model` | NoneType | — | config | `/api/config/update` |
-| `ambassador.transcription_model` | NoneType | — | config | `/api/config/update` |
-| `ambassador.voice` | NoneType | — | config | `/api/config/update` |
+### `ambassador.aide.cache_ttl_seconds`
+
+*How long an aide's digest is reused before being made again.*
+
+**Default:** `1800` · **Range:** 0 to 86400, seconds · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A cache of per-conversation digests, so surveying the same conversations repeatedly does not re-read them each time.
+
+**How it works.** Refreshes automatically when a conversation grows, so a cached digest never describes a stale version of an active conversation.
+
+**When to change it.** Keep it generous. Because growth invalidates entries anyway, a long TTL mostly saves work on conversations that have not changed — which is exactly where re-reading is wasted.
+
+**Managing it.** Default 30 minutes. 0 disables caching and makes every survey pay full price for conversations it has already digested.
+
+### `ambassador.aide.enabled`
+
+*Let the Ambassador survey many conversations without reading them all.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** The aide swarm: instead of pulling whole transcripts into the Ambassador's own context, cheap parallel "aide" calls each condense **one** conversation and return a short digest.
+
+**How it works.** Map-reduce — the aides map, the Ambassador reduces. Read-only throughout, and never allowed to raise: an aide that fails is simply absent from the survey rather than failing the briefing.
+
+**When to change it.** Leave it on. It is what keeps a cross-conversation question affordable and the Ambassador's context lean; off, the same question means reading every transcript in full into one prompt.
+
+**Managing it.** The settings below tune the fan-out and rarely need touching. They are documented because they are writable, not because they need attention.
+
+### `ambassador.aide.max_input_chars`
+
+*How much of a conversation an aide is allowed to read.*
+
+**Default:** `6000` · **Range:** 500 to 50000, characters · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A cap on the transcript fed to a single aide.
+
+**How it works.** A longer conversation is truncated to this, so a digest of a very long conversation covers only part of it.
+
+**When to change it.** Raise it when digests of long conversations miss their later half — the commonest cause of a survey that feels out of date. Lower it to cut input cost across a wide survey.
+
+**Managing it.** Default 6000 characters. This is the first thing to check when aide digests seem to be summarising the wrong part of a conversation.
+
+### `ambassador.aide.max_parallel`
+
+*How many aides run at once.*
+
+**Default:** `4` · **Range:** 1 to 16, at once · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** Concurrency for the fan-out.
+
+**How it works.** More at once finishes a survey sooner without changing its total cost — the same aides run either way.
+
+**When to change it.** Raise it to make wide surveys faster. Lower it if concurrent calls are hitting provider rate limits, which shows up as aides going missing rather than as an error.
+
+**Managing it.** Default 4; three to five is the practical sweet spot. Beyond that the reduce step usually becomes the bottleneck rather than the fan-out.
+
+### `ambassador.aide.max_per_survey`
+
+*How many conversations one survey may cover.*
+
+**Default:** `8` · **Range:** 1 to 32, aides · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A cap on the aides spawned by a single question.
+
+**How it works.** Bounds the worst-case cost of asking something broad. Conversations beyond the cap are not surveyed.
+
+**When to change it.** Raise it when you routinely ask questions spanning more conversations than this and the answers feel partial. Lower it to bound what one broad question can cost.
+
+**Managing it.** Default 8. Multiply by the aide output budget for a rough ceiling on what the reduce step has to read.
+
+### `ambassador.aide.max_tokens`
+
+*How long one aide's digest may be.*
+
+**Default:** `220` · **Range:** 50 to 4000, tokens · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget per aide — a tight digest, not a transcript.
+
+**How it works.** Several digests are combined into one briefing, so this multiplies by the number of aides in the reduce step.
+
+**When to change it.** Raise it if digests are too thin to be useful. Lower it if surveys are producing more material than the Ambassador can usefully reduce.
+
+**Managing it.** Default 220 tokens — deliberately small. The whole design assumes digests are cheap enough to make several of.
+
+### `ambassador.aide.model`
+
+*Which model the aides use to condense one conversation.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The model behind each aide's digest — a summarisation job, run many times in parallel.
+
+**How it works.** Empty follows the Ambassador's cheap floor through the fallback chain. Because aides run several at a time, this multiplies more than most model settings on this screen.
+
+**When to change it.** Use the cheapest model that produces a usable digest. A survey spawns several aides at once, so quality here buys much less than it costs.
+
+**Managing it.** If digests are missing the point of a conversation, raise the input cap below before the model — an aide reading a truncated transcript looks exactly like an aide that is not clever enough.
+
+### `ambassador.aide.temperature`
+
+*How literally an aide summarises.*
+
+**Default:** `0.2` · **Range:** 0 to 1 · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** Sampling temperature for an aide's digest.
+
+**How it works.** Low values keep digests close to what the conversation actually contained.
+
+**When to change it.** Keep it low. A digest is evidence the Ambassador then reasons over, so invention here propagates into the briefing as though it were fact.
+
+**Managing it.** Default 0.2.
+
+### `ambassador.aide.timeout_seconds`
+
+*How long one aide may take before it is abandoned.*
+
+**Default:** `20` · **Range:** 5 to 120, seconds · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A wall-clock cap per aide.
+
+**How it works.** An aide that times out is simply left out of the survey — the briefing still arrives, with one fewer digest behind it.
+
+**When to change it.** Raise it if you have pointed aides at a slower model and surveys are coming back thin. Lower it to keep a briefing prompt when one provider is struggling.
+
+**Managing it.** Default 20 seconds. Because a timeout degrades silently rather than failing, a too-low value looks like "the survey missed that conversation".
+
+### `ambassador.dispatch.enabled`
+
+*Let the Ambassador hand a task to another agent, with your confirmation.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** Dispatch: minting a new conversation and running a chosen worker on a task headlessly, from the briefing side channel.
+
+**How it works.** **Proposal-only.** The Ambassador can propose a dispatch; it cannot perform one. The task starts as *your* action after you pick a worker and confirm. Off hides the affordance and the endpoint refuses.
+
+**When to change it.** Leave it on — it is the one write-shaped thing the side channel offers, and it is gated by your confirmation. Turn it off if you want the Ambassador strictly read-only with no write-shaped affordance at all.
+
+**Managing it.** This does not weaken the belt's invariant: the tool still executes no write. Dispatch lands as a user turn, which is what keeps the audit trail honest about who started the work.
+
+### `ambassador.enabled`
+
+*Whether the parallel briefing agent is available at all.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** The master switch for the Ambassador: an agent that runs alongside a conversation, reads it, and briefs you — without entering the transcript.
+
+**How it works.** Off removes the affordance everywhere. On, it is available but idle: the Ambassador costs nothing until you actually ask it something.
+
+**When to change it.** Leave it on. The whole point is that it is there when a turn needs explaining and invisible when it does not. Turn it off on an install where you want exactly one agent per conversation and no side channel.
+
+**Managing it.** The invariant worth knowing: **its tool belt never executes a write.** Reads run automatically; anything that would change state comes back as a proposal for you to confirm. That is what makes a read-broad agent safe.
+
+### `ambassador.max_context_turns`
+
+*How much of the conversation the Ambassador reads.*
+
+**Default:** `8` · **Range:** 1 to 40, turns · **Set via:** `/api/config/update`
+
+**What it is.** The number of recent turns pulled in, read-only, to ground a briefing.
+
+**How it works.** Read fresh for each briefing rather than accumulated, so this bounds every briefing's input rather than growing over a session.
+
+**When to change it.** Raise it when briefings miss context that was established earlier and you are asking about the shape of a conversation rather than its last move. Lower it to make briefings cheaper and more focused on what just happened.
+
+**Managing it.** Default 8 turns. This is input cost on every briefing, so it multiplies with how often you use the feature rather than being a one-off.
+
+### `ambassador.max_tokens`
+
+*How long a briefing may be.*
+
+**Default:** `600` · **Range:** 100 to 8000, tokens · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget for one briefing.
+
+**How it works.** A briefing that does not fit is truncated. The budget is deliberately tight — a briefing is meant to be read at a glance, not studied.
+
+**When to change it.** Raise it if briefings are being cut off mid-sentence, or if you want fuller analysis rather than a summary. Lower it to force brevity.
+
+**Managing it.** Default 600 tokens, a few paragraphs. If you find yourself raising this a lot, the thing you want is probably a conversation with the agent rather than a briefing about one.
+
+### `ambassador.model`
+
+*The model the Ambassador thinks with, overriding its profile.*
+
+**Default:** — · **Set via:** `/api/config/update`
+
+**What it is.** An explicit model for briefing work, authoritative when set.
+
+**How it works.** Unset uses the chosen profile's model, and failing that a built-in floor. Setting it here overrides the profile without editing the profile.
+
+**When to change it.** Briefing is summarisation over a transcript — a job that rewards a fast, cheap model more than a strong one. Set it when the profile you like the voice of carries a model you would rather not pay for on every briefing.
+
+**Managing it.** Clearing it back to unset is a real write, not a no-op: it returns control to the profile.
+
+### `ambassador.profile_id`
+
+*Which agent profile the Ambassador speaks as.*
+
+**Default:** — · **Set via:** `/api/config/update`
+
+**What it is.** The profile supplying the Ambassador's identity, persona and voice. Any profile carrying an `ambassador` section can serve.
+
+**How it works.** Unset falls back to the default agent profile. The profile decides who the Ambassador *is*; the settings on this screen are feature-level knobs around that.
+
+**When to change it.** Set it when you want briefings in a distinct voice from the agent doing the work — which is most of the time, since the point of a briefing is a second perspective rather than the same one restated.
+
+**Managing it.** An explicit model below overrides whatever model the profile carries, so the two settings interact: profile for persona, model for capability.
+
+### `ambassador.speech_model`
+
+*Fallback text-to-speech model for spoken briefings.*
+
+**Default:** — · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The model used to speak a briefing aloud, when nothing more specific has been chosen.
+
+**How it works.** A fallback near the end of a chain: an explicit request wins, then the chosen profile's own voice settings, then this, then a shipped default. That is why this screen has no control for it — the profile editor owns the one you actually set.
+
+**When to change it.** Set it to establish a house default for installs where profiles do not specify a voice model. Most people never touch it.
+
+**Managing it.** Writable over the API and documented here, but edited on the ambassador profile in practice. Null means "fall through the chain", which is the shipped state.
+
+### `ambassador.transcription_model`
+
+*Fallback speech-to-text model for talking to the Ambassador.*
+
+**Default:** — · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The model that turns your recorded speech into text, when nothing more specific has been chosen.
+
+**How it works.** Same fallback chain as the other two voice settings, and used by both voice mode and the ordinary transcription seam so there is one resolution rather than two.
+
+**When to change it.** Set it if the default transcription is mishearing domain vocabulary — names, jargon, identifiers — which a better model usually fixes.
+
+**Managing it.** Null means fall through the chain. As with the others, the profile editor is where this is normally set.
+
+### `ambassador.voice`
+
+*Fallback voice for spoken briefings.*
+
+**Default:** — · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** Which voice the speech model uses, when nothing more specific has been chosen.
+
+**How it works.** Sits in the same fallback chain as the speech model: explicit request → profile → this → shipped default.
+
+**When to change it.** Set it for a consistent house voice across profiles that do not pick one. Otherwise leave it; a voice is part of an agent's identity and belongs on the profile.
+
+**Managing it.** Valid values depend on the speech model — a voice name from one provider will not be recognised by another, and the failure surfaces at speech time rather than when you save.
 
 ## Intelligence → Research Mode
 

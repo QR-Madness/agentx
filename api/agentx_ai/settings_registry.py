@@ -546,21 +546,67 @@ CONFIG_SECTIONS: dict[str, SectionSpec] = {
         manifest_keys=_AMBASSADOR_MANIFEST_KEYS,
         ui_section="ambassador",
         overrides={
-            "model": KeySpec(nullable=True),
-            "profile_id": KeySpec(nullable=True),
-            "speech_model": KeySpec(nullable=True),
-            "voice": KeySpec(nullable=True),
-            "transcription_model": KeySpec(nullable=True),
-            "aide.model": KeySpec(empty_means="follow_role"),
+            "enabled": KeySpec(tier="essential"),
+            "model": KeySpec(nullable=True, tier="essential"),
+            "profile_id": KeySpec(nullable=True, tier="essential"),
+            "max_context_turns": KeySpec(min=1, max=40, step=1, unit="turns",
+                                         tier="essential"),
+            "max_tokens": KeySpec(min=100, max=8000, step=50, unit="tokens",
+                                  tier="advanced"),
+            # Global fallbacks below the per-profile voice settings, which is why
+            # they have no control here — the profile editor owns the ones you set.
+            "speech_model": KeySpec(nullable=True, tier="advanced"),
+            "voice": KeySpec(nullable=True, tier="advanced"),
+            "transcription_model": KeySpec(nullable=True, tier="advanced"),
+            # The aide swarm — the parallel read fan-out behind a briefing.
+            "aide.enabled": KeySpec(tier="essential"),
+            "aide.model": KeySpec(empty_means="follow_role", tier="advanced"),
+            "aide.temperature": KeySpec(min=0, max=1, step=0.05, tier="advanced"),
+            "aide.max_tokens": KeySpec(min=50, max=4000, step=10, unit="tokens",
+                                       tier="advanced"),
+            "aide.max_input_chars": KeySpec(min=500, max=50_000, step=100,
+                                            unit="characters", tier="advanced"),
+            "aide.max_parallel": KeySpec(min=1, max=16, step=1, unit="at once",
+                                         tier="advanced"),
+            "aide.timeout_seconds": KeySpec(min=5, max=120, step=1, unit="seconds",
+                                            tier="advanced"),
+            "aide.max_per_survey": KeySpec(min=1, max=32, step=1, unit="aides",
+                                           tier="advanced"),
+            "aide.cache_ttl_seconds": KeySpec(min=0, max=86400, step=1,
+                                              unit="seconds", tier="advanced"),
+            "dispatch.enabled": KeySpec(tier="essential"),
         },
     ),
     "images": SectionSpec(
         keys=("enabled", "default_model", "avatar_model", "avatar_style_prompt"),
         ui_section="images",
+        overrides={
+            "enabled": KeySpec(tier="essential"),
+            "default_model": KeySpec(tier="essential"),
+            "avatar_model": KeySpec(tier="advanced"),
+            "avatar_style_prompt": KeySpec(empty_means="built_in_prompt",
+                                           tier="advanced"),
+        },
     ),
     "vision": SectionSpec(
         keys=("enabled", "refeed_recent_turns"),
         ui_section="images",
+        overrides={
+            "enabled": KeySpec(tier="essential"),
+            "refeed_recent_turns": KeySpec(min=0, max=10, step=1, unit="turns",
+                                           tier="advanced"),
+        },
+    ),
+    # Undeclared until v0.21.270, which is why the two Images & Audio toggles
+    # silently did nothing: the client POSTed `audio.*`, nothing here claimed it,
+    # and config_update dropped the section while answering "ok".
+    "audio": SectionSpec(
+        keys=("input_enabled", "speech_enabled"),
+        ui_section="images",
+        overrides={
+            "input_enabled": KeySpec(tier="essential"),
+            "speech_enabled": KeySpec(tier="essential"),
+        },
     ),
     "models": SectionSpec(
         planner=_plan_model_roles,

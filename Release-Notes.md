@@ -30,6 +30,6 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Fixes
 
-- **Settings that claimed to save now do** — Ambassador's voice pickers were dropped silently; editing one Web Search source-policy list wiped the others. Model pickers now mark what you've changed and offer it back. A failing section no longer downs the app.
+- **Settings that claimed to save now do** — **"Enable audio input" and "Enable speech generation" never persisted**, so neither could be turned off; Ambassador's voice pickers were dropped silently; editing one Web Search source-policy list wiped the others.
 - **Memory exports carry distilled procedures** — learned rules didn't travel.
 - **Replace-mode memory import resets the PostgreSQL mirror** for wiped channels — it cleared only the graph, leaving stale rows.

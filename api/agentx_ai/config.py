@@ -276,6 +276,21 @@ DEFAULT_CONFIG = {
         # expensive). 0 disables multi-turn re-feed (single-turn vision still works).
         "refeed_recent_turns": 2,
     },
+    "audio": {
+        # The vision block's counterparts for sound. Both were read from day one
+        # (`audio.input_enabled` gates attachments in views; `audio.speech_enabled`
+        # gates the generate_speech tool) but this root did not exist, so the
+        # Images & Audio toggles POSTed to an undeclared section, config_update
+        # dropped it, and the UI reported success. Declaring the defaults here is
+        # what makes those two switches actually switch anything.
+        #
+        # Audio INPUT: the user attaches or records a clip, heard natively by a
+        # capable model or transcribed first.
+        "input_enabled": True,
+        # Speech OUTPUT: the `generate_speech` tool, which lets an agent speak
+        # into the conversation.
+        "speech_enabled": True,
+    },
     "session": {
         # Master switch + model for automatic conversation compaction (both
         # targets — the conversation-state digest AND the legacy prose summary
