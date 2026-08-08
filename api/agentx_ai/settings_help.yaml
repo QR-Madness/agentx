@@ -2975,6 +2975,504 @@ config:
       voice settings, so this switch controls *whether*, not *how*. Like the
       input switch above, it did not persist before v0.21.270.
 
+  # ── Model Providers ────────────────────────────────────────────────────
+  providers.anthropic.api_key:
+    summary: Your Anthropic key.
+    what: Credentials for Anthropic's API — the Claude model family.
+    how: >-
+      Stored server-side and returned redacted, with an `ANTHROPIC_API_KEY`
+      environment fallback so a container can supply it without it ever reaching
+      `data/config.json`.
+    why: >-
+      Set it to address Claude models directly rather than through a gateway.
+      Direct access is usually cheaper per token than the same model via an
+      aggregator, and it is the only route to features a gateway has not exposed.
+    manage: >-
+      Keys save on their own button, never by autosave. The card reports whether
+      the backend is reachable — a saved key that cannot reach the API shows as
+      unreachable rather than silently failing at turn time.
+
+  providers.anthropic.base_url:
+    summary: Point Anthropic requests somewhere other than the default endpoint.
+    what: An override for the API host, for proxies and compatible gateways.
+    how: >-
+      Unset uses Anthropic's own endpoint, which is the normal state. When set,
+      every Anthropic-routed request goes here instead.
+    why: >-
+      Set it for a corporate proxy, a regional endpoint, or a local recording
+      proxy while debugging. Wrong values fail at request time rather than on
+      save, so change it deliberately.
+    manage: >-
+      A caller-supplied URL is guarded before use, but it is still an outbound
+      destination for your prompts. Treat it with the same care as the key.
+
+  providers.openai.api_key:
+    summary: Your OpenAI key.
+    what: Credentials for OpenAI's API.
+    how: >-
+      Stored server-side, returned redacted, with an `OPENAI_API_KEY` environment
+      fallback. Also used by the embedding path when the embedding provider is
+      set to OpenAI rather than local.
+    why: >-
+      Set it to use OpenAI models directly. Worth noting the second role: memory
+      embeddings can run through this key, so it may matter even on an install
+      whose chat models come from elsewhere.
+    manage: >-
+      As with all keys here, an explicit Save — nothing is transmitted unless you
+      type a new value over the mask.
+
+  providers.openai.base_url:
+    summary: Point OpenAI requests somewhere other than the default endpoint.
+    what: An override for the API host.
+    how: >-
+      Unset uses OpenAI's own endpoint. Set, everything OpenAI-routed goes here.
+    why: >-
+      Useful for Azure-style deployments or a proxy. For a genuinely different
+      OpenAI-compatible service, prefer registering a **custom endpoint** below —
+      that keeps its models addressable as `yourid:model` instead of masquerading
+      as OpenAI.
+    manage: >-
+      Overriding this changes where *all* OpenAI traffic goes, including
+      embeddings if they are routed through this provider.
+
+  providers.openrouter.api_key:
+    summary: Your OpenRouter key — one key, many model families.
+    what: >-
+      Credentials for OpenRouter, an aggregator that fronts models from many
+      vendors behind a single API.
+    how: >-
+      Stored server-side and redacted. The account can also be linked by signing
+      in, which avoids pasting a key at all; either way the card can then show
+      balance and spend.
+    why: >-
+      The fastest way to reach a wide range of models without an account per
+      vendor. The trade is a margin on top of direct pricing and a dependency on
+      one intermediary.
+    manage: >-
+      OpenRouter renames models; ids can go stale. The provider surface offers a
+      repair for stored ids that were renamed — worth running if models suddenly
+      report far smaller context windows than they should.
+
+  providers.openrouter.site_url:
+    summary: The site OpenRouter attributes your traffic to.
+    what: >-
+      An optional attribution header sent with each request, used in OpenRouter's
+      own reporting and rankings.
+    how: >-
+      Purely informational: it does not affect routing, pricing, or which models
+      you can reach.
+    why: >-
+      Set it if you want your usage attributed to a site you run. Leave it empty
+      otherwise; nothing degrades without it.
+    manage: >-
+      Sent on every request, so treat it as public — it is not a secret and
+      should not carry anything you would not publish.
+
+  providers.openrouter.app_name:
+    summary: The application name OpenRouter attributes your traffic to.
+    what: The companion attribution header to the site URL.
+    how: Informational only, exactly as above.
+    why: >-
+      Set it alongside the site URL if you care about attribution. Otherwise
+      leave it empty.
+    manage: Also sent on every request; also not a secret.
+
+  providers.vercel.api_key:
+    summary: Your Vercel AI Gateway key.
+    what: Credentials for Vercel's AI Gateway, another multi-vendor front door.
+    how: Stored server-side and redacted, like the others.
+    why: >-
+      Set it if you already route through Vercel. It occupies the same niche as
+      OpenRouter — one key, several vendors — so most installs want one or the
+      other rather than both.
+    manage: >-
+      Having two aggregators configured is not a problem, but it makes the
+      question "where did this turn actually go" harder to answer. The supply
+      line on the provider surface is what answers it.
+
+  providers.vercel.base_url:
+    summary: Point Vercel Gateway requests somewhere other than the default.
+    what: An override for the gateway host.
+    how: Unset uses Vercel's own endpoint.
+    why: Set it only for a proxy or a self-hosted gateway deployment.
+    manage: >-
+      As with the other base URLs, a wrong value fails at request time rather
+      than on save.
+
+  providers.lmstudio.base_url:
+    summary: Where your local LM Studio server is listening.
+    what: >-
+      The address of a local (or LAN) LM Studio instance serving models from your
+      own hardware.
+    how: >-
+      Unlike the hosted providers, this needs no key — reachability *is* the
+      credential. Models served there become addressable like any other.
+    why: >-
+      Set it to run models locally: no per-token cost, no data leaving your
+      network, at the cost of your own hardware and slower generation.
+      Particularly worth it for the high-volume background work memory does.
+    manage: >-
+      Include the scheme and port. Because this is often a LAN address, a laptop
+      that moves networks will find it unreachable — which shows as a provider
+      failure rather than a settings error.
+
+  providers.lmstudio.timeout:
+    summary: How long to wait on the local server before giving up.
+    what: A request timeout for LM Studio calls.
+    how: >-
+      Generous by default, because local generation on modest hardware is far
+      slower than a hosted API — a timeout tuned for the cloud would abandon
+      perfectly healthy local runs.
+    why: >-
+      Raise it if large local models are being cut off mid-generation. Lower it
+      if you would rather fail over quickly when the machine is asleep or busy.
+    manage: >-
+      Default 300 seconds. This is the one provider setting where the right value
+      depends mostly on your hardware rather than on the service.
+
+  providers.custom:
+    summary: Any OpenAI-compatible endpoint, registered as its own provider.
+    what: >-
+      User-registered backends — Groq, DeepSeek, Ollama, a colleague's server —
+      each with an id, so their models are addressed as `yourid:model`.
+    how: >-
+      Written as one object rather than key by key. Caller-supplied URLs are
+      guarded before any request is made to them.
+    why: >-
+      The escape hatch that keeps the provider list from being a fixed set of
+      five. Anything speaking the OpenAI API can be a first-class backend without
+      pretending to *be* OpenAI, which is what setting `openai.base_url` would do.
+    manage: >-
+      Add and edit these through the Model Providers screen rather than by hand —
+      the id becomes a namespace, and a stored model id that references a
+      provider you later delete resolves to nothing.
+
+  # ── Model Limits ───────────────────────────────────────────────────────
+  llm_settings.default_temperature:
+    summary: The sampling temperature a turn uses when nothing else specifies one.
+    what: >-
+      The global fallback temperature, used when neither the agent profile nor
+      the feature sets its own.
+    how: >-
+      Lower values make responses more deterministic and repeatable; higher ones
+      more varied. Applies only where nothing more specific has been chosen —
+      most background features set their own and ignore this.
+    why: >-
+      Lower it for factual and technical work where you want the same question to
+      get the same answer. Raise it for writing and ideation. Per-agent
+      temperature on the profile is usually the better lever, since different
+      agents want different values.
+    manage: >-
+      Default 0.7, a conversational middle. Above ~1.2 most models become
+      noticeably erratic rather than creative. **No settings screen shows this** —
+      it is set via the API or `data/config.json`; the per-agent temperature on a
+      profile is the equivalent you can reach from the UI.
+
+  llm_settings.default_max_tokens:
+    summary: How long a reply may be when nothing else specifies.
+    what: The global fallback output budget.
+    how: >-
+      A reply that reaches the budget is cut off mid-sentence rather than
+      summarised, so this is a hard stop rather than a target.
+    why: >-
+      Raise it if long answers are being truncated. Lower it to keep replies
+      short and costs predictable on an expensive model.
+    manage: >-
+      Default 4096. Bounded by what the model actually allows — a value above the
+      model's own cap does nothing, and **Model Context Limits** is where a
+      model's real cap is corrected if the catalog has it wrong. **No settings
+      screen shows this**; the profile's own output budget is the UI equivalent.
+
+  llm_settings.top_p:
+    summary: Nucleus sampling — how much of the probability mass to consider.
+    what: >-
+      An alternative to temperature for controlling variety: the model samples
+      only from the most likely tokens whose probabilities sum to this.
+    how: >-
+      1.0 considers everything and is effectively off, which is the shipped
+      state. Lower values progressively exclude the unlikely tail.
+    why: >-
+      Change temperature *or* this, rarely both — they control the same thing by
+      different means and interact confusingly. If you are unsure which to reach
+      for, use temperature.
+    manage: >-
+      Default 1.0. Providers differ in how they combine the two, so a
+      configuration that works on one may behave differently on another. **No
+      settings screen shows this** — set it via the API or the config file.
+
+  llm_settings.frequency_penalty:
+    summary: Discourage repeating the same words.
+    what: >-
+      A penalty applied to tokens in proportion to how often they have already
+      appeared.
+    how: >-
+      Positive values push away from repetition; negative values encourage it.
+      0 disables it, which is the shipped state.
+    why: >-
+      Raise it slightly if a model loops or repeats phrasing. Leave it at 0
+      otherwise — modern models rarely need it, and a heavy penalty distorts
+      technical writing where repeating the right term is correct.
+    manage: >-
+      Range −2 to 2; useful values are small, around 0.1 to 0.5. Not every
+      provider supports it, and those that do not simply ignore it. **No settings
+      screen shows this** — set it via the API or the config file.
+
+  llm_settings.presence_penalty:
+    summary: Encourage bringing up new topics.
+    what: >-
+      A penalty applied to any token that has appeared at all, regardless of how
+      often.
+    how: >-
+      Positive values push toward new subject matter; 0 disables it, the shipped
+      state.
+    why: >-
+      Raise it if answers circle one aspect of a question instead of covering it.
+      As with the frequency penalty, leave it alone unless you have a specific
+      problem it addresses.
+    manage: >-
+      Range −2 to 2, small values only. It changes what is discussed rather than
+      how it is worded — that is the difference from the frequency penalty. **No
+      settings screen shows this** — set it via the API or the config file.
+
+  context_limits.lmstudio.context_window:
+    summary: How much context your local models can actually hold.
+    what: >-
+      The window size assumed for LM Studio models, which do not report their own
+      the way hosted APIs do.
+    how: >-
+      Used to size every turn: how much transcript stays verbatim, when
+      compaction begins, how much room is left for a reply.
+    why: >-
+      Set it to what you actually loaded the model with. Too low and
+      conversations compact far earlier than they need to — the usual cause of an
+      agent that seems to forget. Too high and turns are built that the model
+      then refuses or truncates.
+    manage: >-
+      Default 32768, conservative on purpose because it applies to whatever you
+      happen to load. It is a *provider-level* default; a specific model that
+      differs belongs in the per-model overrides below.
+
+  context_limits.lmstudio.max_output_tokens:
+    summary: How much your local models may generate in one reply.
+    what: The output ceiling assumed for LM Studio models.
+    how: >-
+      Bounds every reply and, with the window above, decides how much room
+      assembly reserves for the answer.
+    why: >-
+      Raise it if local replies are being cut short; lower it if long generations
+      are tying the machine up. Local generation is slow, so this is a latency
+      dial as much as a length one.
+    manage: >-
+      Default 8192. As above, per-model differences belong in the overrides.
+
+  context_limits.models:
+    summary: Per-model corrections for any provider that reports its limits wrongly.
+    what: >-
+      A table of model id → window and output cap, overriding whatever the
+      catalog believes.
+    how: >-
+      Written as one object. A model listed here uses your figures; everything
+      else uses the catalog's.
+    why: >-
+      The escape hatch for the single most damaging catalog error: a model whose
+      real context is large but is read as small. Turns then compact almost
+      immediately and the agent appears to forget within a few messages. An
+      aggregator alias that resolves to no catalog entry is the classic case.
+    manage: >-
+      Use it when the supply line or a compaction that fires far too early tells
+      you a limit is wrong. Mapping a model to null removes its override. Setting
+      a window *larger* than the model truly has moves the failure from
+      early compaction to provider errors, which is worse.
+
+  # ── Model Roles ────────────────────────────────────────────────────────
+  preferences.default_model:
+    summary: The model everything falls back to.
+    what: >-
+      The global default: what runs when an agent profile pins nothing and no
+      role applies.
+    how: >-
+      The bottom of every resolution chain. Roles sit above it, explicit
+      per-feature models above those, and a profile's own model above that.
+    why: >-
+      Set it to the model you want ordinary conversation on. It is the one model
+      choice that affects an install with no other configuration at all.
+    manage: >-
+      Because it is the floor, a model unavailable here makes *everything*
+      fail rather than one feature. Prefer a reliably reachable model, and use
+      roles for the specialised choices.
+
+  models.roles.fast_utility:
+    summary: The model for small, frequent, mechanical calls.
+    what: >-
+      One of three workload roles. This one covers the high-volume background
+      work: classification, relevance gating, entity resolution, short digests.
+    how: >-
+      Features left on `inherit` follow their role rather than naming a model. An
+      explicit per-feature model always wins over the role.
+    why: >-
+      This is where model choice pays back most, because these calls are the most
+      numerous. A cheap, fast model here is usually right — the jobs are
+      judgements a small model makes correctly.
+    manage: >-
+      Empty means the role is unset and its members fall through to the global
+      default. Setting one role does not require setting the others.
+
+  models.roles.deep_reasoning:
+    summary: The model for work where quality matters more than volume.
+    what: >-
+      The role for the hardest background jobs — combined extraction is the
+      notable member, because doing relevance and extraction in one pass is
+      harder than either separately.
+    how: >-
+      Same resolution as the other roles: members on `inherit` follow it, an
+      explicit choice overrides it.
+    why: >-
+      Point it at a genuinely capable model. Its members run rarely enough that
+      the cost is modest, and their output is what the rest of the system builds
+      on — a badly extracted fact is retrieved wrongly forever.
+    manage: >-
+      Empty falls through to the global default. If memory quality is
+      disappointing and you change one thing, change this.
+
+  models.roles.summarizer:
+    summary: The model for compressing text.
+    what: >-
+      The role for summarisation: conversation compaction, tool-output
+      compression, trajectory compression.
+    how: >-
+      Members on `inherit` follow it. These jobs run inside a live turn, so
+      latency here is felt directly rather than absorbed by a background queue.
+    why: >-
+      Favour a fast model. Summarisation is forgiving of model strength and
+      unforgiving of latency — a slow summarizer stalls the turn it is trying to
+      make room for.
+    manage: >-
+      Empty falls through to the global default. Its members are spread across
+      Conversation Context rather than gathered on one screen, which is exactly
+      why the role exists.
+
+  # ── Prompt Enhancement ─────────────────────────────────────────────────
+  prompt_enhancement.enabled:
+    summary: Whether your prompt is rewritten before it runs.
+    what: >-
+      An optional pass that expands what you typed into a fuller instruction
+      before the agent sees it.
+    how: >-
+      Runs on its own model and budget, so it does not draw on the conversation's
+      own. The agent receives the rewritten prompt.
+    why: >-
+      Useful when you type quickly and want intent inferred. Turn it off when you
+      need your exact wording to survive — it rewrites, and a rewrite can drop a
+      constraint you meant literally.
+    manage: >-
+      The failure mode is quiet: a request that behaves oddly may have been
+      reworded rather than misunderstood. That is the first thing to rule out.
+
+  prompt_enhancement.model:
+    summary: Which model rewrites your prompt.
+    what: The model used for the enhancement pass.
+    how: >-
+      Empty follows the summarizer role. The job is rewriting rather than
+      reasoning, which is why it shares a role with the compression work.
+    why: >-
+      Use a fast model — this sits between you pressing send and anything
+      happening, so its latency is the most visible on this screen.
+    manage: >-
+      A slow model here makes the whole app feel slow in a way that is hard to
+      attribute, because the delay lands before any streaming starts.
+
+  prompt_enhancement.temperature:
+    summary: How freely your prompt is rewritten.
+    what: Sampling temperature for the enhancement pass.
+    how: >-
+      Higher values produce more liberal rewrites; lower ones stay closer to what
+      you actually typed.
+    why: >-
+      Lower it if enhanced prompts are drifting from what you meant. There is
+      little upside to raising it — a creatively rewritten instruction is a
+      different instruction.
+    manage: >-
+      Default 0.7, which is high for a rewriting task. If you use enhancement
+      routinely and find it changes your meaning, this is the setting to lower.
+
+  prompt_enhancement.max_tokens:
+    summary: How long the rewritten prompt may be.
+    what: The output budget for the enhancement pass.
+    how: >-
+      A rewrite that exceeds the budget is truncated — which produces a prompt
+      cut off mid-sentence, sent to the agent as though complete.
+    why: >-
+      Raise it if enhanced prompts arrive incomplete. Lower it to keep
+      enhancement from turning a sentence into an essay.
+    manage: >-
+      Default 1000. Truncation here is silent and easy to misread as the agent
+      misunderstanding you.
+
+  prompt_enhancement.system_prompt:
+    summary: Replace the built-in instruction that governs how prompts are rewritten.
+    what: >-
+      The prompt behind the enhancement pass. Empty uses the shipped one, which
+      is the normal state.
+    how: >-
+      An override replaces the built-in entirely rather than extending it.
+      Edited on **Prompts → Feature Prompts**, which diffs it against the default.
+    why: >-
+      Worth touching only if you want enhancement to follow house conventions —
+      always ask for sources, always prefer a particular format. Otherwise the
+      shipped prompt improves over time and an override opts out of that.
+    manage: >-
+      Test any override on a request whose exact wording you care about; the
+      point of failure is a rewrite that quietly drops constraints.
+
+  # ── Set outside Settings ───────────────────────────────────────────────
+  preferences.default_reasoning_strategy:
+    summary: The reasoning pattern used when nothing else picks one.
+    what: >-
+      A global fallback in the pattern-resolution chain, below the per-agent
+      default and the per-conversation composer chip.
+    how: >-
+      `auto` — the shipped value — lets the classifier choose per message. A
+      named pattern pins it globally instead.
+    why: >-
+      Pin one only if you want a single pattern everywhere regardless of the
+      question, which is rarely what you want: the classifier exists because
+      different questions reward different scaffolds.
+    manage: >-
+      **No settings screen shows this** — set it via `/api/config/update` or in
+      `data/config.json`. The per-agent default on the profile is the equivalent
+      you can reach from the UI.
+
+  preferences.enable_memory_by_default:
+    summary: Whether new conversations start with memory on.
+    what: A default for the per-conversation memory switch.
+    how: >-
+      Applies at conversation creation. An existing conversation keeps whatever
+      it was created with.
+    why: >-
+      Turn it off on an install where memory should be opt-in per conversation —
+      shared machines, or work you would rather not accumulate.
+    manage: >-
+      **No settings screen shows this** — set it via the API or the config file.
+      It does not disable memory; it changes the starting position of a switch
+      each conversation still owns.
+
+  memory.project_channels:
+    summary: Whether Projects get their own memory channel.
+    what: >-
+      Scoping that gives each Project a `_project_<id>` channel, so what is
+      learned inside a Project stays associated with it.
+    how: >-
+      Off, Project conversations write to the ordinary channel and lose that
+      separation.
+    why: >-
+      Leave it on if you use Projects. Channel separation is what stops facts
+      about one client turning up while you work on another; cross-channel
+      promotion is the deliberate route between them.
+    manage: >-
+      **No settings screen shows this** — set it via the API or the config file.
+      Changing it does not move memory that has already been written under the
+      previous scheme.
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Section blurbs — one per settings screen. See the header note for the shape.
 # ═══════════════════════════════════════════════════════════════════════════

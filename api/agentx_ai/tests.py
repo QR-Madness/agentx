@@ -13347,59 +13347,76 @@ class SettingsHelpTest(TestCase):
     """Help is authored once (settings_help.yaml) and rendered by both the
     settings UI and the generated reference — so coverage is testable."""
 
-    #: Sections written up to the full five-field standard. A section joins this
-    #: list when it is refit; the test then holds it there, so help can't rot
-    #: back out once written. (store, keys-callable-or-tuple, label)
-    DOCUMENTED_SECTIONS = (
-        ("memory", "memory-recall", "Memory → Recall"),
-        ("config", "context", "Memory → Conversation Context"),
-        ("config", "search", "Infrastructure → Web Search"),
-        ("config", "research", "Intelligence → Research Mode"),
-        ("config", "thinking", "Intelligence → Thinking Patterns"),
-        ("config", "planner", "Intelligence → Task Planner"),
-        ("config", "alloy", "Intelligence → Agent Teams"),
-        ("memory", "memory-consolidation", "Memory → Consolidation"),
-        ("config", "ambassador", "Intelligence → Ambassador"),
-        ("config", "images", "Infrastructure → Images & Audio"),
-    )
+    #: Writable settings allowed to ship without help.
+    #:
+    #: **This list must stay empty.** It is the inverse of how coverage started:
+    #: a per-section allowlist that grew as sections were written up, which meant
+    #: a *new* setting could ship undocumented forever without tripping anything.
+    #: Every writable setting is now documented, so the gate is opt-out — adding
+    #: a setting without help fails here, and the only way past is to write the
+    #: key into this list and defend it in review.
+    #:
+    #: If you are here because the test failed: write the help. That is cheaper
+    #: than the argument for why this one setting deserves an exception, and it
+    #: is the whole reason the settings area is worth navigating.
+    UNDOCUMENTED_ALLOWLIST: frozenset[tuple[str, str]] = frozenset()
 
-    def _keys_for(self, store, group):
-        """Every writable key the named screen owns, in the named store.
+    #: The prose every documented setting carries, in reading order.
+    REQUIRED_FIELDS = ("summary", "what", "how", "why", "manage")
 
-        Derived from the manifest rather than restated, because both of the
-        things a hand-written list gets wrong are common here: a screen can span
-        several config roots (Conversation Context spans five), and a key can be
-        declared onto a screen its store would not have inferred
-        (`search.research_per_turn_limit` renders under Research Mode; the
-        extraction and relevance prompts render under Feature Prompts).
+    def _writable_entries(self):
+        """Every setting a user can change, from the manifest declarations.
+
+        Read-only plumbing is excluded: connection strings and embedding
+        credentials are set in `.env`, not through a settings screen, and are
+        documented by the deployment guide rather than by a control's help.
         """
         from agentx_ai.settings_manifest import build_reference_entries
 
-        keys = [
-            e["key"] for e in build_reference_entries()
-            if e["store"] == store
-            and e.get("writable_via")
-            and e.get("ui_section") == group
-        ]
-        self.assertTrue(keys, f"no writable {store} keys map to screen {group!r}")
-        return keys
+        return [e for e in build_reference_entries() if e.get("writable_via")]
 
-    def test_documented_sections_have_full_help(self):
-        """Refit sections carry the full five-field treatment — the register the
-        remaining sections are being brought up to, one section at a time."""
+    def test_every_writable_setting_is_documented(self):
+        """The standard, enforced rather than remembered.
+
+        Every setting a user can change carries the full five-field write-up:
+        what it is, how it works, when to change it, and how to manage it. A new
+        setting that arrives without one fails here.
+        """
         from agentx_ai.settings_help import get_help
 
         missing = []
-        for store, group, label in self.DOCUMENTED_SECTIONS:
-            for key in self._keys_for(store, group):
-                help_entry = get_help(store, key)
-                if not help_entry:
-                    missing.append(f"{label}: {key} has no help")
-                    continue
-                for field in ("summary", "what", "how", "why", "manage"):
-                    if not (help_entry.get(field) or "").strip():
-                        missing.append(f"{label}: {key}.{field}")
-        self.assertEqual(missing, [], f"documented-section help incomplete: {missing}")
+        for entry in self._writable_entries():
+            store, key = entry["store"], entry["key"]
+            if (store, key) in self.UNDOCUMENTED_ALLOWLIST:
+                continue
+            help_entry = get_help(store, key)
+            if not help_entry:
+                missing.append(f"{store}:{key} — no help at all")
+                continue
+            gaps = [f for f in self.REQUIRED_FIELDS
+                    if not (help_entry.get(f) or "").strip()]
+            if gaps:
+                missing.append(f"{store}:{key} — missing {', '.join(gaps)}")
+
+        self.assertEqual(
+            missing, [],
+            "Undocumented settings — write help in settings_help.yaml, then "
+            "`task docs:gen:settings`:\n  " + "\n  ".join(missing),
+        )
+
+    def test_undocumented_allowlist_is_empty(self):
+        """The allowlist exists as an escape hatch and is not currently used.
+
+        Asserted separately from the coverage test so that adding an exception
+        is a visible, deliberate act with its own failing test — rather than
+        something that quietly makes the coverage test pass again.
+        """
+        self.assertEqual(
+            set(self.UNDOCUMENTED_ALLOWLIST), set(),
+            "A setting has been excused from the help standard. That may be "
+            "right, but it should be argued for in review rather than merged "
+            "quietly — update this test with the reason if so.",
+        )
 
     def test_no_orphan_help_keys(self):
         """Help authored for a key that no longer exists is drift — it would

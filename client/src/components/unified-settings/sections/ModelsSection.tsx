@@ -22,6 +22,7 @@ import { useNotify } from '../../../contexts/NotificationContext';
 import { Button, Card, Badge, SectionHeader, IconButton } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
 import { NumberField, SaveStatusChip } from '../../settings/fields';
+import { bindSetting, useSettingsManifest } from '../SettingsManifestContext';
 
 interface ContextLimits extends Record<string, unknown> {
   lmstudio: { context_window: number; max_output_tokens: number };
@@ -34,6 +35,7 @@ const NEW_OVERRIDE_WINDOW = 200_000;
 const NEW_OVERRIDE_MAX_OUTPUT = 8_192;
 
 export default function ModelsSection() {
+  const manifest = useSettingsManifest();
   const { notifyError } = useNotify();
 
   // Context limits — autosave (baseline-diff on top-level keys, so edits
@@ -45,6 +47,20 @@ export default function ModelsSection() {
     },
     onError: err => notifyError(err, 'Context limits'),
   });
+
+  // The local shape nests these under `lmstudio`, so they bind by hand rather
+  // than through sectionBinder's flat map.
+  const bindLmStudio = (leaf: 'context_window' | 'max_output_tokens') => {
+    const entry = bindSetting(
+      manifest, 'config', `context_limits.lmstudio.${leaf}`, settings?.lmstudio?.[leaf],
+    );
+    return {
+      binding: entry,
+      onReset: entry
+        ? () => update({ lmstudio: { ...settings!.lmstudio, [leaf]: entry.defaultValue as number } })
+        : undefined,
+    };
+  };
 
   // Per-model context-window overrides (escape hatch for any provider — e.g. an
   // OpenRouter `:latest` route that reports no window and falls back to ~8k).
@@ -125,6 +141,7 @@ export default function ModelsSection() {
                   update({ lmstudio: { ...settings.lmstudio, context_window: v } })
                 }
                 title={`≈ ${(settings.lmstudio.context_window / 1000).toFixed(0)}k tokens`}
+                {...bindLmStudio('context_window')}
               />
               <NumberField
                 label="Max Output Tokens"
@@ -136,6 +153,7 @@ export default function ModelsSection() {
                   update({ lmstudio: { ...settings.lmstudio, max_output_tokens: v } })
                 }
                 title={`≈ ${(settings.lmstudio.max_output_tokens / 1000).toFixed(0)}k tokens`}
+                {...bindLmStudio('max_output_tokens')}
               />
             </div>
           </Card>

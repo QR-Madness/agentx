@@ -297,13 +297,62 @@ CONFIG_SECTIONS: dict[str, SectionSpec] = {
         planner=_plan_providers,
         manifest_keys=ALL_SUBTREE,
         ui_section="providers",
+        overrides={
+            "anthropic.api_key": KeySpec(tier="essential"),
+            "openai.api_key": KeySpec(tier="essential"),
+            "openrouter.api_key": KeySpec(tier="essential"),
+            "vercel.api_key": KeySpec(tier="essential"),
+            "lmstudio.base_url": KeySpec(tier="essential"),
+            "custom": KeySpec(tier="essential"),
+            "anthropic.base_url": KeySpec(tier="advanced"),
+            "openai.base_url": KeySpec(tier="advanced"),
+            "lmstudio.timeout": KeySpec(min=10, max=1800, step=1, unit="seconds",
+                                        tier="advanced"),
+            "openrouter.site_url": KeySpec(tier="advanced"),
+            "openrouter.app_name": KeySpec(tier="advanced"),
+        },
     ),
-    "preferences": SectionSpec(keys=None),
-    "llm_settings": SectionSpec(keys=None, ui_section="models"),
+    "preferences": SectionSpec(
+        keys=None,
+        overrides={
+            # Set on the Model Roles screen, which owns the global default model
+            # alongside the three roles that fall back to it.
+            "default_model": KeySpec(nullable=True, tier="essential",
+                                     ui_section="model-roles"),
+            # No screen renders these two — config-file and API only.
+            "default_reasoning_strategy": KeySpec(tier="advanced", ui_section=""),
+            "enable_memory_by_default": KeySpec(tier="advanced", ui_section=""),
+        },
+    ),
+    # Sampling defaults: writable over the API, but no settings screen renders
+    # them — per-agent temperature and output budget live on the agent profile,
+    # which is where anyone actually changes these. They are documented as
+    # config-only rather than left claiming a screen that has never shown them.
+    "llm_settings": SectionSpec(
+        keys=None,
+        overrides={
+            "default_temperature": KeySpec(min=0, max=2, step=0.05,
+                                           tier="advanced", ui_section=""),
+            "default_max_tokens": KeySpec(min=256, max=200_000, step=1, unit="tokens",
+                                          tier="advanced", ui_section=""),
+            "top_p": KeySpec(min=0, max=1, step=0.05, tier="advanced", ui_section=""),
+            "frequency_penalty": KeySpec(min=-2, max=2, step=0.1,
+                                         tier="advanced", ui_section=""),
+            "presence_penalty": KeySpec(min=-2, max=2, step=0.1,
+                                        tier="advanced", ui_section=""),
+        },
+    ),
     "context_limits": SectionSpec(
         planner=_plan_context_limits,
         manifest_keys=ALL_SUBTREE,
         ui_section="models",
+        overrides={
+            "lmstudio.context_window": KeySpec(min=2048, max=2_000_000, step=1,
+                                               unit="tokens", tier="essential"),
+            "lmstudio.max_output_tokens": KeySpec(min=256, max=200_000, step=1,
+                                                  unit="tokens", tier="essential"),
+            "models": KeySpec(tier="essential"),
+        },
     ),
     "context": SectionSpec(
         keys=(
@@ -372,7 +421,7 @@ CONFIG_SECTIONS: dict[str, SectionSpec] = {
             # Projects/workspace channel scoping — writable, but no screen shows
             # it. It inherited "context" from this root and claimed a home on the
             # Conversation Context page that has never rendered it.
-            "project_channels": KeySpec(ui_section=""),
+            "project_channels": KeySpec(tier="advanced", ui_section=""),
         },
     ),
     "reasoning": SectionSpec(
@@ -410,9 +459,17 @@ CONFIG_SECTIONS: dict[str, SectionSpec] = {
     "prompt_enhancement": SectionSpec(
         keys=None,
         ui_section="prompts",
-        # The prompt body is edited on Feature Prompts alongside the other
-        # feature prompts, not on the Prompt Enhancement screen.
-        overrides={"system_prompt": KeySpec(ui_section="feature-prompts")},
+        overrides={
+            "enabled": KeySpec(tier="essential"),
+            "model": KeySpec(empty_means="follow_role", tier="advanced"),
+            "temperature": KeySpec(min=0, max=2, step=0.05, tier="advanced"),
+            "max_tokens": KeySpec(min=100, max=8000, step=50, unit="tokens",
+                                  tier="advanced"),
+            # The prompt body is edited on Feature Prompts alongside the other
+            # feature prompts, not on the Prompt Enhancement screen.
+            "system_prompt": KeySpec(empty_means="built_in_prompt", tier="advanced",
+                                     ui_section="feature-prompts"),
+        },
     ),
     "planner": SectionSpec(
         keys=None,
@@ -612,6 +669,11 @@ CONFIG_SECTIONS: dict[str, SectionSpec] = {
         planner=_plan_model_roles,
         manifest_keys=None,  # filled below from ROLE_NAMES
         ui_section="model-roles",
+        overrides={
+            "roles.fast_utility": KeySpec(empty_means="role_unset", tier="essential"),
+            "roles.deep_reasoning": KeySpec(empty_means="role_unset", tier="essential"),
+            "roles.summarizer": KeySpec(empty_means="role_unset", tier="essential"),
+        },
     ),
 }
 
