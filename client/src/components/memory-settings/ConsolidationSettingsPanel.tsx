@@ -514,8 +514,14 @@ export function ConsolidationSettingsPanel({
         </div>
       </SettingsSection>
 
-      <div className="settings-section experimental">
-        <h3 className="settings-section-title">Experimental</h3>
+      {/* Was a hand-rolled "Experimental" block. Both switches ship on, are read
+          on every consolidation pass, and are declared `essential` — the label
+          was stale, and the tier is the source of truth for how a setting is
+          framed. */}
+      <SettingsSection
+        title="Contradictions & Corrections"
+        description="Two checks that keep memory from accumulating things that are no longer true: one catches a new fact conflicting with a stored one, the other catches you correcting yourself in the same conversation."
+      >
         <div className="settings-grid">
           <ToggleField
             label="Enable contradiction detection"
@@ -586,7 +592,7 @@ export function ConsolidationSettingsPanel({
             </>
           )}
         </div>
-      </div>
+      </SettingsSection>
 
       <div className="settings-actions">
         <SaveStatusChip status={status} />

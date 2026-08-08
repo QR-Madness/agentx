@@ -36,20 +36,173 @@ Connections to the model backends: the five built-ins (Anthropic, OpenAI, OpenRo
 
 The first thing to configure on a new install — nothing else works without at least one reachable provider. Come back when a backend stops responding, when you're adding a local or self-hosted endpoint, or to read the supply line: which provider a turn actually resolves to, and what it costs.
 
-| Setting | Type | Default | Store | Set via |
-| --- | --- | --- | --- | --- |
-| `providers.anthropic.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-| `providers.anthropic.base_url` | NoneType | — | config | `/api/config/update` |
-| `providers.custom` | dict | *(empty)* | config | `/api/config/update` |
-| `providers.lmstudio.base_url` | NoneType | — | config | `/api/config/update` |
-| `providers.lmstudio.timeout` | int | `300` | config | `/api/config/update` |
-| `providers.openai.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-| `providers.openai.base_url` | NoneType | — | config | `/api/config/update` |
-| `providers.openrouter.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-| `providers.openrouter.app_name` | NoneType | — | config | `/api/config/update` |
-| `providers.openrouter.site_url` | NoneType | — | config | `/api/config/update` |
-| `providers.vercel.api_key` | NoneType | *(secret)* | config | `/api/config/update` |
-| `providers.vercel.base_url` | NoneType | — | config | `/api/config/update` |
+### `providers.anthropic.api_key`
+
+*Your Anthropic key.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update`
+
+**What it is.** Credentials for Anthropic's API — the Claude model family.
+
+**How it works.** Stored server-side and returned redacted, with an `ANTHROPIC_API_KEY` environment fallback so a container can supply it without it ever reaching `data/config.json`.
+
+**When to change it.** Set it to address Claude models directly rather than through a gateway. Direct access is usually cheaper per token than the same model via an aggregator, and it is the only route to features a gateway has not exposed.
+
+**Managing it.** Keys save on their own button, never by autosave. The card reports whether the backend is reachable — a saved key that cannot reach the API shows as unreachable rather than silently failing at turn time.
+
+### `providers.anthropic.base_url`
+
+*Point Anthropic requests somewhere other than the default endpoint.*
+
+**Default:** — · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** An override for the API host, for proxies and compatible gateways.
+
+**How it works.** Unset uses Anthropic's own endpoint, which is the normal state. When set, every Anthropic-routed request goes here instead.
+
+**When to change it.** Set it for a corporate proxy, a regional endpoint, or a local recording proxy while debugging. Wrong values fail at request time rather than on save, so change it deliberately.
+
+**Managing it.** A caller-supplied URL is guarded before use, but it is still an outbound destination for your prompts. Treat it with the same care as the key.
+
+### `providers.custom`
+
+*Any OpenAI-compatible endpoint, registered as its own provider.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update`
+
+**What it is.** User-registered backends — Groq, DeepSeek, Ollama, a colleague's server — each with an id, so their models are addressed as `yourid:model`.
+
+**How it works.** Written as one object rather than key by key. Caller-supplied URLs are guarded before any request is made to them.
+
+**When to change it.** The escape hatch that keeps the provider list from being a fixed set of five. Anything speaking the OpenAI API can be a first-class backend without pretending to *be* OpenAI, which is what setting `openai.base_url` would do.
+
+**Managing it.** Add and edit these through the Model Providers screen rather than by hand — the id becomes a namespace, and a stored model id that references a provider you later delete resolves to nothing.
+
+### `providers.lmstudio.base_url`
+
+*Where your local LM Studio server is listening.*
+
+**Default:** — · **Set via:** `/api/config/update`
+
+**What it is.** The address of a local (or LAN) LM Studio instance serving models from your own hardware.
+
+**How it works.** Unlike the hosted providers, this needs no key — reachability *is* the credential. Models served there become addressable like any other.
+
+**When to change it.** Set it to run models locally: no per-token cost, no data leaving your network, at the cost of your own hardware and slower generation. Particularly worth it for the high-volume background work memory does.
+
+**Managing it.** Include the scheme and port. Because this is often a LAN address, a laptop that moves networks will find it unreachable — which shows as a provider failure rather than a settings error.
+
+### `providers.lmstudio.timeout`
+
+*How long to wait on the local server before giving up.*
+
+**Default:** `300` · **Range:** 10 to 1800, seconds · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A request timeout for LM Studio calls.
+
+**How it works.** Generous by default, because local generation on modest hardware is far slower than a hosted API — a timeout tuned for the cloud would abandon perfectly healthy local runs.
+
+**When to change it.** Raise it if large local models are being cut off mid-generation. Lower it if you would rather fail over quickly when the machine is asleep or busy.
+
+**Managing it.** Default 300 seconds. This is the one provider setting where the right value depends mostly on your hardware rather than on the service.
+
+### `providers.openai.api_key`
+
+*Your OpenAI key.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update`
+
+**What it is.** Credentials for OpenAI's API.
+
+**How it works.** Stored server-side, returned redacted, with an `OPENAI_API_KEY` environment fallback. Also used by the embedding path when the embedding provider is set to OpenAI rather than local.
+
+**When to change it.** Set it to use OpenAI models directly. Worth noting the second role: memory embeddings can run through this key, so it may matter even on an install whose chat models come from elsewhere.
+
+**Managing it.** As with all keys here, an explicit Save — nothing is transmitted unless you type a new value over the mask.
+
+### `providers.openai.base_url`
+
+*Point OpenAI requests somewhere other than the default endpoint.*
+
+**Default:** — · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** An override for the API host.
+
+**How it works.** Unset uses OpenAI's own endpoint. Set, everything OpenAI-routed goes here.
+
+**When to change it.** Useful for Azure-style deployments or a proxy. For a genuinely different OpenAI-compatible service, prefer registering a **custom endpoint** below — that keeps its models addressable as `yourid:model` instead of masquerading as OpenAI.
+
+**Managing it.** Overriding this changes where *all* OpenAI traffic goes, including embeddings if they are routed through this provider.
+
+### `providers.openrouter.api_key`
+
+*Your OpenRouter key — one key, many model families.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update`
+
+**What it is.** Credentials for OpenRouter, an aggregator that fronts models from many vendors behind a single API.
+
+**How it works.** Stored server-side and redacted. The account can also be linked by signing in, which avoids pasting a key at all; either way the card can then show balance and spend.
+
+**When to change it.** The fastest way to reach a wide range of models without an account per vendor. The trade is a margin on top of direct pricing and a dependency on one intermediary.
+
+**Managing it.** OpenRouter renames models; ids can go stale. The provider surface offers a repair for stored ids that were renamed — worth running if models suddenly report far smaller context windows than they should.
+
+### `providers.openrouter.app_name`
+
+*The application name OpenRouter attributes your traffic to.*
+
+**Default:** — · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The companion attribution header to the site URL.
+
+**How it works.** Informational only, exactly as above.
+
+**When to change it.** Set it alongside the site URL if you care about attribution. Otherwise leave it empty.
+
+**Managing it.** Also sent on every request; also not a secret.
+
+### `providers.openrouter.site_url`
+
+*The site OpenRouter attributes your traffic to.*
+
+**Default:** — · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** An optional attribution header sent with each request, used in OpenRouter's own reporting and rankings.
+
+**How it works.** Purely informational: it does not affect routing, pricing, or which models you can reach.
+
+**When to change it.** Set it if you want your usage attributed to a site you run. Leave it empty otherwise; nothing degrades without it.
+
+**Managing it.** Sent on every request, so treat it as public — it is not a secret and should not carry anything you would not publish.
+
+### `providers.vercel.api_key`
+
+*Your Vercel AI Gateway key.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update`
+
+**What it is.** Credentials for Vercel's AI Gateway, another multi-vendor front door.
+
+**How it works.** Stored server-side and redacted, like the others.
+
+**When to change it.** Set it if you already route through Vercel. It occupies the same niche as OpenRouter — one key, several vendors — so most installs want one or the other rather than both.
+
+**Managing it.** Having two aggregators configured is not a problem, but it makes the question "where did this turn actually go" harder to answer. The supply line on the provider surface is what answers it.
+
+### `providers.vercel.base_url`
+
+*Point Vercel Gateway requests somewhere other than the default.*
+
+**Default:** — · **Set via:** `/api/config/update`
+
+**What it is.** An override for the gateway host.
+
+**How it works.** Unset uses Vercel's own endpoint.
+
+**When to change it.** Set it only for a proxy or a self-hosted gateway deployment.
+
+**Managing it.** As with the other base URLs, a wrong value fails at request time rather than on save.
 
 ## Infrastructure → Model Limits
 
@@ -59,16 +212,47 @@ Two things a provider often gets wrong on your behalf: the token window a model 
 
 Override a window when a model's declared one is wrong. An understated window makes conversations compact far earlier than they need to, which you experience as the agent forgetting things it should still be able to see.
 
-| Setting | Type | Default | Store | Set via |
-| --- | --- | --- | --- | --- |
-| `context_limits.lmstudio.context_window` | int | `32768` | config | `/api/config/update` |
-| `context_limits.lmstudio.max_output_tokens` | int | `8192` | config | `/api/config/update` |
-| `context_limits.models` | dict | *(empty)* | config | `/api/config/update` |
-| `llm_settings.default_max_tokens` | int | `4096` | config | `/api/config/update` |
-| `llm_settings.default_temperature` | float | `0.7` | config | `/api/config/update` |
-| `llm_settings.frequency_penalty` | float | `0.0` | config | `/api/config/update` |
-| `llm_settings.presence_penalty` | float | `0.0` | config | `/api/config/update` |
-| `llm_settings.top_p` | float | `1.0` | config | `/api/config/update` |
+### `context_limits.lmstudio.context_window`
+
+*How much context your local models can actually hold.*
+
+**Default:** `32768` · **Range:** 2048 to 2000000, tokens · **Set via:** `/api/config/update`
+
+**What it is.** The window size assumed for LM Studio models, which do not report their own the way hosted APIs do.
+
+**How it works.** Used to size every turn: how much transcript stays verbatim, when compaction begins, how much room is left for a reply.
+
+**When to change it.** Set it to what you actually loaded the model with. Too low and conversations compact far earlier than they need to — the usual cause of an agent that seems to forget. Too high and turns are built that the model then refuses or truncates.
+
+**Managing it.** Default 32768, conservative on purpose because it applies to whatever you happen to load. It is a *provider-level* default; a specific model that differs belongs in the per-model overrides below.
+
+### `context_limits.lmstudio.max_output_tokens`
+
+*How much your local models may generate in one reply.*
+
+**Default:** `8192` · **Range:** 256 to 200000, tokens · **Set via:** `/api/config/update`
+
+**What it is.** The output ceiling assumed for LM Studio models.
+
+**How it works.** Bounds every reply and, with the window above, decides how much room assembly reserves for the answer.
+
+**When to change it.** Raise it if local replies are being cut short; lower it if long generations are tying the machine up. Local generation is slow, so this is a latency dial as much as a length one.
+
+**Managing it.** Default 8192. As above, per-model differences belong in the overrides.
+
+### `context_limits.models`
+
+*Per-model corrections for any provider that reports its limits wrongly.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update`
+
+**What it is.** A table of model id → window and output cap, overriding whatever the catalog believes.
+
+**How it works.** Written as one object. A model listed here uses your figures; everything else uses the catalog's.
+
+**When to change it.** The escape hatch for the single most damaging catalog error: a model whose real context is large but is read as small. Turns then compact almost immediately and the agent appears to forget within a few messages. An aggregator alias that resolves to no catalog entry is the classic case.
+
+**Managing it.** Use it when the supply line or a compaction that fires far too early tells you a limit is wrong. Mapping a model to null removes its override. Setting a window *larger* than the model truly has moves the failure from early compaction to provider errors, which is worse.
 
 ## Infrastructure → Model Roles
 
@@ -78,6 +262,64 @@ Three roles — fast utility, deep reasoning, and summarizer — that features p
 
 Set these once and most of the platform is configured. Change a role to move every background task onto a cheaper or faster model without visiting a dozen sections to do it.
 
+### `models.roles.deep_reasoning`
+
+*The model for work where quality matters more than volume.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update`
+
+**What it is.** The role for the hardest background jobs — combined extraction is the notable member, because doing relevance and extraction in one pass is harder than either separately.
+
+**How it works.** Same resolution as the other roles: members on `inherit` follow it, an explicit choice overrides it.
+
+**When to change it.** Point it at a genuinely capable model. Its members run rarely enough that the cost is modest, and their output is what the rest of the system builds on — a badly extracted fact is retrieved wrongly forever.
+
+**Managing it.** Empty falls through to the global default. If memory quality is disappointing and you change one thing, change this.
+
+### `models.roles.fast_utility`
+
+*The model for small, frequent, mechanical calls.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update`
+
+**What it is.** One of three workload roles. This one covers the high-volume background work: classification, relevance gating, entity resolution, short digests.
+
+**How it works.** Features left on `inherit` follow their role rather than naming a model. An explicit per-feature model always wins over the role.
+
+**When to change it.** This is where model choice pays back most, because these calls are the most numerous. A cheap, fast model here is usually right — the jobs are judgements a small model makes correctly.
+
+**Managing it.** Empty means the role is unset and its members fall through to the global default. Setting one role does not require setting the others.
+
+### `models.roles.summarizer`
+
+*The model for compressing text.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update`
+
+**What it is.** The role for summarisation: conversation compaction, tool-output compression, trajectory compression.
+
+**How it works.** Members on `inherit` follow it. These jobs run inside a live turn, so latency here is felt directly rather than absorbed by a background queue.
+
+**When to change it.** Favour a fast model. Summarisation is forgiving of model strength and unforgiving of latency — a slow summarizer stalls the turn it is trying to make room for.
+
+**Managing it.** Empty falls through to the global default. Its members are spread across Conversation Context rather than gathered on one screen, which is exactly why the role exists.
+
+### `preferences.default_model`
+
+*The model everything falls back to.*
+
+**Default:** — · **Set via:** `/api/config/update`
+
+**What it is.** The global default: what runs when an agent profile pins nothing and no role applies.
+
+**How it works.** The bottom of every resolution chain. Roles sit above it, explicit per-feature models above those, and a profile's own model above that.
+
+**When to change it.** Set it to the model you want ordinary conversation on. It is the one model choice that affects an install with no other configuration at all.
+
+**Managing it.** Because it is the floor, a model unavailable here makes *everything* fail rather than one feature. Prefer a reliably reachable model, and use roles for the specialised choices.
+
+**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+
 | Setting | Type | Default | Store | Set via |
 | --- | --- | --- | --- | --- |
 | `models.defaults.chat` | NoneType | — | config | read-only |
@@ -85,9 +327,6 @@ Set these once and most of the platform is configured. Change a role to move eve
 | `models.defaults.reasoning` | NoneType | — | config | read-only |
 | `models.fallback_enabled` | bool | `true` | config | read-only |
 | `models.overrides` | dict | *(empty)* | config | read-only |
-| `models.roles.deep_reasoning` | str | *(empty)* | config | `/api/config/update` |
-| `models.roles.fast_utility` | str | *(empty)* | config | `/api/config/update` |
-| `models.roles.summarizer` | str | *(empty)* | config | `/api/config/update` |
 
 ## Infrastructure → Web Search
 
@@ -1330,12 +1569,61 @@ An optional pass that expands what you typed into a more complete instruction, u
 
 Useful when you type quickly and want intent inferred. Turn it off when you need your exact wording to survive — it rewrites, and a rewrite can drop a constraint you meant literally.
 
-| Setting | Type | Default | Store | Set via |
-| --- | --- | --- | --- | --- |
-| `prompt_enhancement.enabled` | bool | `true` | config | `/api/config/update` |
-| `prompt_enhancement.max_tokens` | int | `1000` | config | `/api/config/update` |
-| `prompt_enhancement.model` | str | *(empty)* | config | `/api/config/update` |
-| `prompt_enhancement.temperature` | float | `0.7` | config | `/api/config/update` |
+### `prompt_enhancement.enabled`
+
+*Whether your prompt is rewritten before it runs.*
+
+**Default:** `true` · **Set via:** `/api/config/update`
+
+**What it is.** An optional pass that expands what you typed into a fuller instruction before the agent sees it.
+
+**How it works.** Runs on its own model and budget, so it does not draw on the conversation's own. The agent receives the rewritten prompt.
+
+**When to change it.** Useful when you type quickly and want intent inferred. Turn it off when you need your exact wording to survive — it rewrites, and a rewrite can drop a constraint you meant literally.
+
+**Managing it.** The failure mode is quiet: a request that behaves oddly may have been reworded rather than misunderstood. That is the first thing to rule out.
+
+### `prompt_enhancement.max_tokens`
+
+*How long the rewritten prompt may be.*
+
+**Default:** `1000` · **Range:** 100 to 8000, tokens · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The output budget for the enhancement pass.
+
+**How it works.** A rewrite that exceeds the budget is truncated — which produces a prompt cut off mid-sentence, sent to the agent as though complete.
+
+**When to change it.** Raise it if enhanced prompts arrive incomplete. Lower it to keep enhancement from turning a sentence into an essay.
+
+**Managing it.** Default 1000. Truncation here is silent and easy to misread as the agent misunderstanding you.
+
+### `prompt_enhancement.model`
+
+*Which model rewrites your prompt.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The model used for the enhancement pass.
+
+**How it works.** Empty follows the summarizer role. The job is rewriting rather than reasoning, which is why it shares a role with the compression work.
+
+**When to change it.** Use a fast model — this sits between you pressing send and anything happening, so its latency is the most visible on this screen.
+
+**Managing it.** A slow model here makes the whole app feel slow in a way that is hard to attribute, because the delay lands before any streaming starts.
+
+### `prompt_enhancement.temperature`
+
+*How freely your prompt is rewritten.*
+
+**Default:** `0.7` · **Range:** 0 to 2 · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** Sampling temperature for the enhancement pass.
+
+**How it works.** Higher values produce more liberal rewrites; lower ones stay closer to what you actually typed.
+
+**When to change it.** Lower it if enhanced prompts are drifting from what you meant. There is little upside to raising it — a creatively rewritten instruction is a different instruction.
+
+**Managing it.** Default 0.7, which is high for a rewriting task. If you use enhancement routinely and find it changes your meaning, this is the setting to lower.
 
 ## Prompts → Feature Prompts
 
@@ -1373,6 +1661,20 @@ Worth touching only when a feature misbehaves in a way you can trace to its word
 
 **Managing it.** Leaving this empty means the prompt improves when the shipped one does; an override opts out of that permanently. Clear it to return to the default.
 
+### `prompt_enhancement.system_prompt`
+
+*Replace the built-in instruction that governs how prompts are rewritten.*
+
+**Default:** *(empty)* · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The prompt behind the enhancement pass. Empty uses the shipped one, which is the normal state.
+
+**How it works.** An override replaces the built-in entirely rather than extending it. Edited on **Prompts → Feature Prompts**, which diffs it against the default.
+
+**When to change it.** Worth touching only if you want enhancement to follow house conventions — always ask for sources, always prefer a particular format. Otherwise the shipped prompt improves over time and an override opts out of that.
+
+**Managing it.** Test any override on a request whose exact wording you care about; the point of failure is a rewrite that quietly drops constraints.
+
 ### `relevance_filter_prompt`
 
 *Replace the built-in instruction the relevance gate works from.*
@@ -1386,12 +1688,6 @@ Worth touching only when a feature misbehaves in a way you can trace to its word
 **When to change it.** Worth touching when your conversations carry value the default definition of "worth remembering" misses — a domain where short confirmations are meaningful, say. Otherwise leave it: this prompt runs on every turn, so a subtly worse one is a cost paid continuously.
 
 **Managing it.** Edited on **Prompts → Feature Prompts** with a diff against the default. Test any override by watching whether turns you expect to be stored still are — a broken gate fails quietly, by dropping things.
-
-**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
-
-| Setting | Type | Default | Store | Set via |
-| --- | --- | --- | --- | --- |
-| `prompt_enhancement.system_prompt` | str | *(empty)* | config | `/api/config/update` |
 
 ## Memory → Conversation Context
 
@@ -2732,6 +3028,120 @@ Raise the confidence thresholds when memory accumulates things that aren't true;
 
 Read-only plumbing, plus a few values set elsewhere in the app rather than on a settings screen.
 
+### `llm_settings.default_max_tokens`
+
+*How long a reply may be when nothing else specifies.*
+
+**Default:** `4096` · **Range:** 256 to 200000, tokens · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The global fallback output budget.
+
+**How it works.** A reply that reaches the budget is cut off mid-sentence rather than summarised, so this is a hard stop rather than a target.
+
+**When to change it.** Raise it if long answers are being truncated. Lower it to keep replies short and costs predictable on an expensive model.
+
+**Managing it.** Default 4096. Bounded by what the model actually allows — a value above the model's own cap does nothing, and **Model Context Limits** is where a model's real cap is corrected if the catalog has it wrong. **No settings screen shows this**; the profile's own output budget is the UI equivalent.
+
+### `llm_settings.default_temperature`
+
+*The sampling temperature a turn uses when nothing else specifies one.*
+
+**Default:** `0.7` · **Range:** 0 to 2 · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** The global fallback temperature, used when neither the agent profile nor the feature sets its own.
+
+**How it works.** Lower values make responses more deterministic and repeatable; higher ones more varied. Applies only where nothing more specific has been chosen — most background features set their own and ignore this.
+
+**When to change it.** Lower it for factual and technical work where you want the same question to get the same answer. Raise it for writing and ideation. Per-agent temperature on the profile is usually the better lever, since different agents want different values.
+
+**Managing it.** Default 0.7, a conversational middle. Above ~1.2 most models become noticeably erratic rather than creative. **No settings screen shows this** — it is set via the API or `data/config.json`; the per-agent temperature on a profile is the equivalent you can reach from the UI.
+
+### `llm_settings.frequency_penalty`
+
+*Discourage repeating the same words.*
+
+**Default:** `0.0` · **Range:** -2 to 2 · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A penalty applied to tokens in proportion to how often they have already appeared.
+
+**How it works.** Positive values push away from repetition; negative values encourage it. 0 disables it, which is the shipped state.
+
+**When to change it.** Raise it slightly if a model loops or repeats phrasing. Leave it at 0 otherwise — modern models rarely need it, and a heavy penalty distorts technical writing where repeating the right term is correct.
+
+**Managing it.** Range −2 to 2; useful values are small, around 0.1 to 0.5. Not every provider supports it, and those that do not simply ignore it. **No settings screen shows this** — set it via the API or the config file.
+
+### `llm_settings.presence_penalty`
+
+*Encourage bringing up new topics.*
+
+**Default:** `0.0` · **Range:** -2 to 2 · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A penalty applied to any token that has appeared at all, regardless of how often.
+
+**How it works.** Positive values push toward new subject matter; 0 disables it, the shipped state.
+
+**When to change it.** Raise it if answers circle one aspect of a question instead of covering it. As with the frequency penalty, leave it alone unless you have a specific problem it addresses.
+
+**Managing it.** Range −2 to 2, small values only. It changes what is discussed rather than how it is worded — that is the difference from the frequency penalty. **No settings screen shows this** — set it via the API or the config file.
+
+### `llm_settings.top_p`
+
+*Nucleus sampling — how much of the probability mass to consider.*
+
+**Default:** `1.0` · **Range:** 0 to 1 · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** An alternative to temperature for controlling variety: the model samples only from the most likely tokens whose probabilities sum to this.
+
+**How it works.** 1.0 considers everything and is effectively off, which is the shipped state. Lower values progressively exclude the unlikely tail.
+
+**When to change it.** Change temperature *or* this, rarely both — they control the same thing by different means and interact confusingly. If you are unsure which to reach for, use temperature.
+
+**Managing it.** Default 1.0. Providers differ in how they combine the two, so a configuration that works on one may behave differently on another. **No settings screen shows this** — set it via the API or the config file.
+
+### `memory.project_channels`
+
+*Whether Projects get their own memory channel.*
+
+**Default:** `true` · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** Scoping that gives each Project a `_project_<id>` channel, so what is learned inside a Project stays associated with it.
+
+**How it works.** Off, Project conversations write to the ordinary channel and lose that separation.
+
+**When to change it.** Leave it on if you use Projects. Channel separation is what stops facts about one client turning up while you work on another; cross-channel promotion is the deliberate route between them.
+
+**Managing it.** **No settings screen shows this** — set it via the API or the config file. Changing it does not move memory that has already been written under the previous scheme.
+
+### `preferences.default_reasoning_strategy`
+
+*The reasoning pattern used when nothing else picks one.*
+
+**Default:** `auto` · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A global fallback in the pattern-resolution chain, below the per-agent default and the per-conversation composer chip.
+
+**How it works.** `auto` — the shipped value — lets the classifier choose per message. A named pattern pins it globally instead.
+
+**When to change it.** Pin one only if you want a single pattern everywhere regardless of the question, which is rarely what you want: the classifier exists because different questions reward different scaffolds.
+
+**Managing it.** **No settings screen shows this** — set it via `/api/config/update` or in `data/config.json`. The per-agent default on the profile is the equivalent you can reach from the UI.
+
+### `preferences.enable_memory_by_default`
+
+*Whether new conversations start with memory on.*
+
+**Default:** `true` · **Set via:** `/api/config/update` · Advanced — most installs never need to change this.
+
+**What it is.** A default for the per-conversation memory switch.
+
+**How it works.** Applies at conversation creation. An existing conversation keeps whatever it was created with.
+
+**When to change it.** Turn it off on an install where memory should be opt-in per conversation — shared machines, or work you would rather not accumulate.
+
+**Managing it.** **No settings screen shows this** — set it via the API or the config file. It does not disable memory; it changes the starting position of a switch each conversation still owns.
+
+**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+
 | Setting | Type | Default | Store | Set via |
 | --- | --- | --- | --- | --- |
 | `always_include_recent_turns` | int | `3` | memory | read-only |
@@ -2780,7 +3190,6 @@ Read-only plumbing, plus a few values set elsewhere in the app rather than on a 
 | `max_query_length` | int | `10000` | memory | read-only |
 | `max_results_per_conversation` | int | `3` | memory | read-only |
 | `max_working_memory_items` | int | `50` | memory | read-only |
-| `memory.project_channels` | bool | `true` | config | `/api/config/update` |
 | `neo4j_max_connection_lifetime` | int | `300` | memory | read-only |
 | `neo4j_password` | str | *(secret)* | memory | read-only |
 | `neo4j_uri` | str | *(secret)* | memory | read-only |
@@ -2789,9 +3198,6 @@ Read-only plumbing, plus a few values set elsewhere in the app rather than on a 
 | `postgres_pool_max_overflow` | int | `20` | memory | read-only |
 | `postgres_pool_size` | int | `10` | memory | read-only |
 | `postgres_uri` | str | *(secret)* | memory | read-only |
-| `preferences.default_model` | NoneType | — | config | `/api/config/update` |
-| `preferences.default_reasoning_strategy` | str | `auto` | config | `/api/config/update` |
-| `preferences.enable_memory_by_default` | bool | `true` | config | `/api/config/update` |
 | `pricing.audio` | dict | *(empty)* | config | read-only |
 | `pricing.images` | dict | *(empty)* | config | read-only |
 | `promotion_min_access_count` | int | `5` | memory | read-only |

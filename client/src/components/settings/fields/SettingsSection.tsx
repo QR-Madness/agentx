@@ -8,6 +8,12 @@
  * three different ways — a plain block titled "Advanced", a bare
  * `<div className="settings-section experimental">`, and an Experimental badge
  * — so nothing about "this is the deep end" was consistent or reusable.
+ *
+ * Those are gone. A setting's depth is now declared as its `tier` in
+ * `settings_registry.py` and rendered from the manifest, so the UI and the
+ * generated reference agree on what counts as advanced. The last hand-rolled
+ * block said "Experimental" over two switches that ship on and are declared
+ * essential — which is the failure mode of writing a judgement into markup.
  */
 
 import { useId, useState, type ReactNode } from 'react';

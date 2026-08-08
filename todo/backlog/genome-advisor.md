@@ -89,11 +89,14 @@
         chain carries `initialSection`/`focusSetting` end-to-end (fixed `stubs.tsx`, `surfaces`,
         `open()` arity, and RootLayout's duplicated ⌘, descriptor); registry-driven `Settings: <x>`
         palette commands, `searchOnly` so they don't bury the resting list.
-  - [ ] **Wave 3 — help cadence** (in progress): write up the remaining sections to the golden
-        standard, section by section, binding each to the manifest as it goes. A section joins
-        `SettingsHelpTest.DOCUMENTED_SECTIONS` when refit, which then holds its coverage.
-        **208 writable settings; 45 documented at v0.21.265.** Sliced by subject, not by
-        section — several remaining screens are 5–9 keys and don't justify a PR each.
+  - [x] **Wave 3 — help cadence** `[v0.21.265 → v0.21.271]` — **complete. All 210 writable
+        settings carry the full five-field write-up**, and the gate is now opt-out rather than
+        opt-in, so a new setting cannot ship without one. Sliced by subject, not by section
+        (several screens are 5–9 keys and didn't justify a PR each): six PRs, #68 and #70–#74.
+        The cadence paid for itself in defects as much as in prose — **eight mis-sections**
+        (keys claiming a screen that never rendered them) and **one live bug** (two Images &
+        Audio toggles that silently never saved) surfaced only because writing a key's help
+        means checking what it actually does.
     - [x] **Memory → Recall** `[v0.21.263]` — the golden section; 24 keys.
     - [x] **Memory → Conversation Context** `[v0.21.265]` — 20 keys across five config roots
           (`context`, `session.rolling_summary`, `trajectory_compression`, `compression`,
@@ -147,12 +150,21 @@
           in the response as `ignored` and logged, instead of vanishing. `PromptField` took
           the manifest contract (the last field-kit primitive without it), and
           `vision.refeed_recent_turns` got a control. **178 of 210 documented.**
-    - [ ] Model Providers (12) + Model Limits (8) + Model Roles (3) + Prompt Enhancement (4)
-          + Feature Prompts (1 left) + the 4 strays.
-    - [ ] Sweep the ad-hoc Advanced/Experimental groupings onto the declared tiers.
-    - [ ] **Invert the coverage gate** (the closing move) — `DOCUMENTED_SECTIONS` becomes an
-          `UNDOCUMENTED_ALLOWLIST` that must be empty, so a new setting can't ship without
-          help unless someone writes its key in and defends it in review.
+    - [x] **The tail, and the close** `[v0.21.271]` — the last 32 keys (Model Providers,
+          Model Limits, Model Roles, Prompt Enhancement, Feature Prompts, and the strays no
+          screen renders). **210 of 210 writable settings documented.** An eighth mis-section
+          fixed: `preferences.default_model` is set on Model Roles, not nowhere.
+    - [x] **Tier sweep** `[v0.21.271]` — the three ad-hoc dialects are gone; depth is the
+          declared `tier`, rendered from the manifest. The last hand-rolled block labelled
+          "Experimental" two switches that ship on and are declared essential.
+    - [x] **Coverage gate inverted** `[v0.21.271]` — `DOCUMENTED_SECTIONS` became
+          `UNDOCUMENTED_ALLOWLIST`, asserted empty by its own test. A setting without help now
+          fails the suite by name. Verified by removing an entry and watching it fail.
+    - [ ] **Help on the two bespoke screens** — Model Providers (12 keys) and Model Roles (4)
+          are card/role UIs rather than field-kit sections, so their authored help reaches the
+          generated reference but not a popover beside the control. Every other screen shows
+          it in place. Wiring `SettingHelp` into those two surfaces is the last gap between
+          "documented" and "explains itself where you are".
   - [ ] **Dead-knob flags** — declared-but-unread keys. `scripts/check_config_keys.py` already has the
         inventory half; the registry makes its output authoritative enough to gate on.
 - [ ] **`@Settings` Advisor agent** — a built-in agent profile addressed via the shipped @-mention

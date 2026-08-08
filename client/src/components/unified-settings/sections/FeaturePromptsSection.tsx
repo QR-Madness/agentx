@@ -17,6 +17,7 @@ import { useSettingsAutosave } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { SectionHeader } from '../../ui';
 import { PromptField, SaveStatusChip, SettingsSection } from '../../settings/fields';
+import { bindSetting, useSettingsManifest } from '../SettingsManifestContext';
 
 interface MemoryPromptSettings extends Record<string, unknown> {
   extraction_system_prompt: string;
@@ -29,6 +30,11 @@ interface ConfigPromptSettings extends Record<string, unknown> {
 }
 
 export default function FeaturePromptsSection() {
+  const manifest = useSettingsManifest();
+  /** Four prompt bodies over two stores — each declares itself onto this screen
+   *  rather than inheriting the screen its config root would imply. */
+  const help = (store: 'config' | 'memory', key: string, value: string) =>
+    bindSetting(manifest, store, key, value);
   const { notifyError } = useNotify();
 
   // Shipped defaults — fetched once, shared by both autosave loads. The ref
@@ -126,6 +132,7 @@ export default function FeaturePromptsSection() {
               placeholder="Override the extraction system prompt (entities, facts, relationships)..."
               rows={8}
               defaultText={defaults?.extraction_system_prompt}
+              binding={help('memory', 'extraction_system_prompt', memory.settings!.extraction_system_prompt)}
             />
             <PromptField
               label="Relevance Filter Prompt"
@@ -135,6 +142,7 @@ export default function FeaturePromptsSection() {
               placeholder="Override the relevance filter prompt (skip non-informative turns)..."
               rows={6}
               defaultText={defaults?.relevance_filter_prompt}
+              binding={help('memory', 'relevance_filter_prompt', memory.settings!.relevance_filter_prompt)}
             />
           </SettingsSection>
 
@@ -152,6 +160,7 @@ export default function FeaturePromptsSection() {
               placeholder="Override the planner's decomposition system prompt..."
               rows={10}
               defaultText={defaults?.planner_prompt}
+              binding={help('config', 'planner.prompt_override', config.settings!.planner_prompt)}
             />
             <PromptField
               label="Enhancement System Prompt"
@@ -161,6 +170,7 @@ export default function FeaturePromptsSection() {
               placeholder="Enter custom instructions for the enhancement model..."
               rows={4}
               defaultText={defaults?.prompt_enhancement_prompt}
+              binding={help('config', 'prompt_enhancement.system_prompt', config.settings!.enhancement_prompt)}
             />
           </SettingsSection>
         </div>

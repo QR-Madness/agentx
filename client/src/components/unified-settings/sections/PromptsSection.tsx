@@ -17,6 +17,7 @@ import {
   SliderField,
   ToggleField,
 } from '../../settings/fields';
+import { sectionBinder, useSettingsManifest } from '../SettingsManifestContext';
 
 interface PromptEnhanceSettings extends Record<string, unknown> {
   enabled: boolean;
@@ -25,8 +26,18 @@ interface PromptEnhanceSettings extends Record<string, unknown> {
   max_tokens: number;
 }
 
+/** Local field name → `store:key`. The prompt *body* is edited on Feature
+ *  Prompts and declares itself onto that screen, so it isn't here. */
+const KEYS: Partial<Record<keyof PromptEnhanceSettings & string, string>> = {
+  enabled: 'config:prompt_enhancement.enabled',
+  model: 'config:prompt_enhancement.model',
+  temperature: 'config:prompt_enhancement.temperature',
+  max_tokens: 'config:prompt_enhancement.max_tokens',
+};
+
 export default function PromptsSection() {
   const { notifyError } = useNotify();
+  const manifest = useSettingsManifest();
 
   const { settings, loading, status, update } = useSettingsAutosave<PromptEnhanceSettings>({
     load: async () => {
@@ -44,6 +55,8 @@ export default function PromptsSection() {
     },
     onError: err => notifyError(err, 'Prompt Enhancement settings'),
   });
+
+  const bind = sectionBinder<PromptEnhanceSettings>(manifest, KEYS, settings, update);
 
   return (
     <div className="settings-section fade-in">
@@ -66,16 +79,16 @@ export default function PromptsSection() {
             onChange={enabled => update({ enabled })}
             label="Enable Prompt Enhancement"
             hint="Allow AI to improve your prompts before sending"
+            {...bind('enabled')}
           />
 
-          <div className="setting-row">
-            <ModelPickerField
-              label="Enhancement Model"
-              value={settings.model}
-              onChange={model => update({ model })}
-              showDefault={false}
-            />
-          </div>
+          <ModelPickerField
+            label="Enhancement Model"
+            value={settings.model}
+            onChange={model => update({ model })}
+            showDefault={false}
+            {...bind('model')}
+          />
 
           <SliderField
             label="Temperature"
@@ -85,6 +98,7 @@ export default function PromptsSection() {
             step={0.1}
             onChange={temperature => update({ temperature })}
             format={v => v.toFixed(1)}
+            {...bind('temperature')}
           />
 
           <NumberField
@@ -95,6 +109,7 @@ export default function PromptsSection() {
             fallback={1000}
             onChange={max_tokens => update({ max_tokens })}
             title="Maximum output length for enhanced prompt."
+            {...bind('max_tokens')}
           />
 
           <p className="setting-hint">

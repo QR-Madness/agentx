@@ -520,7 +520,26 @@ Everything that needs to know what a setting is derives from it rather than rest
 5. **The generator is pure.** It imports declarations and never reads live config, so a committed
    page can't bake one machine's values into the repo. Drift warns, a missing page errors — a stale
    generated artifact should degrade, never lie (the ADR-13 rule).
-6. **The legacy trajectory-compression bridge is removed.** `/api/memory/settings` accepted
+6. **Every writable setting is documented, and the gate is opt-out.** Coverage began as an
+   allowlist of refit sections, which held what was written but let a *new* setting ship
+   undocumented indefinitely. All 210 writable settings now carry the full five-field write-up,
+   so `SettingsHelpTest` asserts the inverse: any writable key without help fails, and the only
+   way past is `UNDOCUMENTED_ALLOWLIST`, which is asserted empty by its own separate test so an
+   exception cannot be added quietly. Section blurbs gate the same way, per (4).
+   **Source:** `SettingsHelpTest.test_every_writable_setting_is_documented` +
+   `test_undocumented_allowlist_is_empty`.
+7. **Depth is declared, not written into markup.** A setting's `tier` (`essential` /
+   `advanced` / `experimental`) lives in the registry and reaches the UI through the manifest.
+   The three ad-hoc dialects it replaced — a block titled "Advanced", a
+   `settings-section experimental` div, a free-text badge — are gone. The last of them labelled
+   "Experimental" two switches that ship on and are load-bearing, which is exactly what writing
+   a judgement into markup costs: the label outlives the judgement.
+8. **An undeclared config root is reported, not swallowed.** `config_update` returns `ignored`
+   and logs any section it does not recognise. Dropping it remains correct — undeclared means
+   read-only by design — but three settings screens have now shipped writing to a root nobody
+   declared (`images`, `audio`), toasting success while persisting nothing. Property (1) makes
+   a *declared* section honest; this makes the undeclared case audible.
+9. **The legacy trajectory-compression bridge is removed.** `/api/memory/settings` accepted
    `trajectory_compression_*` and wrote them through to `data/config.json` unvalidated
    (`extra="ignore"` waved them past the schema) against a second copy of the defaults. A second
    blessed write path contradicts (1); an undeclared one is the bug class this ADR exists to end.
