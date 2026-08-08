@@ -318,7 +318,7 @@ Set these once and most of the platform is configured. Change a role to move eve
 
 **Managing it.** Because it is the floor, a model unavailable here makes *everything* fail rather than one feature. Prefer a reliably reachable model, and use roles for the specialised choices.
 
-**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+**Also in this area** — values that are read-only over the API. Set them in `.env` or the settings file directly and restart; they have no control and no per-setting write-up:
 
 | Setting | Type | Default | Store | Set via |
 | --- | --- | --- | --- | --- |
@@ -630,7 +630,7 @@ Come here to change backends, to cap spend, or to stop the agent reading a domai
 
 **Managing it.** Default 15 seconds. Tavily's own client default is around 60, which is why this exists — an unbounded call is indistinguishable from a hung app.
 
-**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+**Also in this area** — values that are read-only over the API. Set them in `.env` or the settings file directly and restart; they have no control and no per-setting write-up:
 
 | Setting | Type | Default | Store | Set via |
 | --- | --- | --- | --- | --- |
@@ -1144,7 +1144,7 @@ Lower the depth or parallelism when delegation is running away with cost. Turn a
 
 **Managing it.** Turn it off if you want strictly sequential, easier-to-follow turns; the transcript of a non-blocking turn interleaves the agent's own work with reports arriving out of order.
 
-**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+**Also in this area** — values that are read-only over the API. Set them in `.env` or the settings file directly and restart; they have no control and no per-setting write-up:
 
 | Setting | Type | Default | Store | Set via |
 | --- | --- | --- | --- | --- |
@@ -1977,7 +1977,7 @@ The section to visit when a conversation starts losing detail, or when a long to
 
 **Managing it.** Default 0.75. Below about 0.5 you compress work that had room to breathe.
 
-**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+**Also in this area** — values that are read-only over the API. Set them in `.env` or the settings file directly and restart; they have no control and no per-setting write-up:
 
 | Setting | Type | Default | Store | Set via |
 | --- | --- | --- | --- | --- |
@@ -3140,7 +3140,7 @@ Read-only plumbing, plus a few values set elsewhere in the app rather than on a 
 
 **Managing it.** **No settings screen shows this** — set it via the API or the config file. It does not disable memory; it changes the starting position of a switch each conversation still owns.
 
-**Also in this area**, not yet written up. A `read-only` route means the value is set in `.env` or the settings file rather than through the API:
+**Also in this area** — values that are read-only over the API. Set them in `.env` or the settings file directly and restart; they have no control and no per-setting write-up:
 
 | Setting | Type | Default | Store | Set via |
 | --- | --- | --- | --- | --- |

@@ -214,13 +214,13 @@ def render(entries: list[dict]) -> str:
 
         if rest:
             if documented:
-                # Not always literally "on the screen": a section's config roots
-                # can hold read-only keys no control renders. Say what the row
-                # means rather than implying every one has a knob.
+                # Every writable setting is written up, so what is left here is
+                # read-only plumbing rather than pending work. Saying "not yet
+                # written up" implied a backlog that no longer exists.
                 parts.append(
-                    "**Also in this area**, not yet written up. A `read-only` "
-                    "route means the value is set in `.env` or the settings file "
-                    "rather than through the API:\n"
+                    "**Also in this area** — values that are read-only over the "
+                    "API. Set them in `.env` or the settings file directly and "
+                    "restart; they have no control and no per-setting write-up:\n"
                 )
             _render_table(rest, parts)
 
