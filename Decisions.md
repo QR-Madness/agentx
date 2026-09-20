@@ -311,33 +311,6 @@ namespace until a deliberate migration (e.g. `ambassador.speech_model` pending a
 **Source:** multi-modal follow-ups session (v0.21.238), user direction on the Inquiry/conversation
 seam.
 
-### ADR-11 — Model roles are an implicit overlay tier; explicit values always win
-**Decision:** the scattered utility-model settings cluster into three roles
-(`models.roles.{fast_utility,deep_reasoning,summarizer}`, single source `agentx_ai/model_roles.py`).
-The role tier is **implicit**: a member follows its role only while its own value is empty/"inherit";
-_setting_ a role never rewrites member keys (they would destroy custom values); an
-unset role makes the tier a byte-identical no-op. `role:<name>` is a valid explicit value anywhere;
-the registry expands it defensively so the sentinel never reaches a provider lookup. Roles produce ONE
-concrete requested model — ADR-5 fallback + swap-surfacing run after, unchanged. Membership excludes
-planner/ambassador-answerer/images (their empty means "follow the agent model", a different semantic —
-bucket b below); the **ambassador aide is a member** (`fast_utility`).
-**Coverage invariant (v0.21.176):** every general-purpose LLM feature-model setting must resolve
-through a family — a `ROLE_MEMBERS` source, OR one of two documented lists in `model_roles.py`:
-`INHERITS_AGENT_MODEL` (bucket b — falls through to the calling agent's own model) or
-`EXEMPT_SPECIALIZED` (bucket c — embeddings/reranker/image-gen/TTS-STT + the speculative
-draft↔target matched pair). A `*_model` with no bucket fails the guard. Consolidation stage defaults
-flipped `lmstudio:…` → `"inherit"` (they were shadowing a set role); an **explicit, user-initiated**
-`POST /api/models/roles/adopt` clears an existing install's concrete stage overrides so they follow
-the role — distinct from role-setting (user-triggered, clears-to-inherit, never writes a role's value
-into a key).
-**Why:** ~15 "which model runs this internal job?" knobs across two stores were unintelligible; an
-overlay keeps every existing chain intact while giving users three meaningful levers — and a member
-that ships pinned to a concrete model silently defeats the overlay.
-**Guard:** `ModelRolesTest` (behavior-preservation matrix, sentinel containment, role-to-role refs
-ignored); `ModelFamilyCoverageTest` (three-bucket coverage + consolidation defaults inherit);
-`ModelRolesEndpointTest` (incl. the adopt action). **Source:** settings overhaul D1 (user-locked:
-implicit tier) + Slice 0 model-family audit.
-
 ### ADR-12 — Background jobs move to Procrastinate (Postgres queue); retire the hand-rolled worker (direction)
 **Decision:** the consolidation worker's bespoke machinery — a `while True: sleep(60)` interval loop,
 manual Redis heartbeats, `consolidation:active` single-flight, and stale-worker cleanup
@@ -561,6 +534,33 @@ every declared key, manifest-vs-registry writability, atomic rejection, whole-wr
 constraints), `MemorySettingsWriteSurfaceTest` (bridge tombstone, display-only keys),
 `SettingsHelpTest` (golden-section coverage, no orphan keys), and
 `gen_settings_reference.py --check` in `task docs:check`.
+
+### ADR-18 — Model roles are an implicit overlay tier; explicit values always win
+**Decision:** the scattered utility-model settings cluster into three roles
+(`models.roles.{fast_utility,deep_reasoning,summarizer}`, single source `agentx_ai/model_roles.py`).
+The role tier is **implicit**: a member follows its role only while its own value is empty/"inherit";
+_setting_ a role never rewrites member keys (they would destroy custom values); an
+unset role makes the tier a byte-identical no-op. `role:<name>` is a valid explicit value anywhere;
+the registry expands it defensively so the sentinel never reaches a provider lookup. Roles produce ONE
+concrete requested model — ADR-5 fallback + swap-surfacing run after, unchanged. Membership excludes
+planner/ambassador-answerer/images (their empty means "follow the agent model", a different semantic —
+bucket b below); the **ambassador aide is a member** (`fast_utility`).
+**Coverage invariant (v0.21.176):** every general-purpose LLM feature-model setting must resolve
+through a family — a `ROLE_MEMBERS` source, OR one of two documented lists in `model_roles.py`:
+`INHERITS_AGENT_MODEL` (bucket b — falls through to the calling agent's own model) or
+`EXEMPT_SPECIALIZED` (bucket c — embeddings/reranker/image-gen/TTS-STT + the speculative
+draft↔target matched pair). A `*_model` with no bucket fails the guard. Consolidation stage defaults
+flipped `lmstudio:…` → `"inherit"` (they were shadowing a set role); an **explicit, user-initiated**
+`POST /api/models/roles/adopt` clears an existing install's concrete stage overrides so they follow
+the role — distinct from role-setting (user-triggered, clears-to-inherit, never writes a role's value
+into a key).
+**Why:** ~15 "which model runs this internal job?" knobs across two stores were unintelligible; an
+overlay keeps every existing chain intact while giving users three meaningful levers — and a member
+that ships pinned to a concrete model silently defeats the overlay.
+**Guard:** `ModelRolesTest` (behavior-preservation matrix, sentinel containment, role-to-role refs
+ignored); `ModelFamilyCoverageTest` (three-bucket coverage + consolidation defaults inherit);
+`ModelRolesEndpointTest` (incl. the adopt action). **Source:** settings overhaul D1 (user-locked:
+implicit tier) + Slice 0 model-family audit.
 
 ---
 
