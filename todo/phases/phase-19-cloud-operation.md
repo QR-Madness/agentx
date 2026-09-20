@@ -61,9 +61,29 @@ conversation meta.
   [known-future-issues.md](../known-future-issues.md)). Even once closed it remains
   trust-the-app isolation: acceptable for a managed offering we run, not for adversarial
   tenants.
-- Managed: AuraDB Professional ≈ $65/mo **per instance** (fine as one shared instance,
-  ruinous per tenant). Aura Free (200k nodes) genuinely fits a single user's graph —
-  legit per-tenant hack; pauses after ~3 idle days.
+- Managed **(re-checked 2026-09-20 — the pricing model moved, verify against Neo4j's
+  pricing page before committing)**: AuraDB Professional is reported at **$65/GB/month with a
+  1 GB minimum** (≈$65.70), i.e. *per GB*, not the flat per-instance figure this doc assumed.
+  Business Critical ≈$146/GB/mo, 2 GB min. **Pay-as-you-go is now available** via the AWS / GCP /
+  Azure marketplaces (hourly usage reporting, monthly billing) **or a credit card — no commitment**.
+  This matters more than it looks: our graphs are *tiny* (the whole dev cluster is 239 entities /
+  256 facts across 12 channels, far under 1 GB), so one shared Aura Professional instance at the
+  1 GB minimum could hold a large number of tenants for ~$65/mo. That makes "shared managed Aura"
+  a credible way to delete the self-hosted 2 GB JVM floor **without** a storage migration —
+  gated, as ever, on fail-closed tenant scoping landing first.
+- **ACUs are not the PAYG option — they are the opposite.** An ACU is an *Aura Consumption Unit*:
+  a **prepaid** contract negotiated with Neo4j sales, **minimum one year**, no marketplace
+  automation and no auto-renewal. Critically, **ACUs expire — unused units are forfeited**. For a
+  pre-revenue product with unknown load that is a commitment to spend against a demand curve we
+  cannot yet draw. Take marketplace PAYG; revisit ACUs only once usage is boring and predictable.
+- **Aura Graph Analytics is separable** — a standalone PAYG service (~$0.40/GB-hour, to 512 GB)
+  that runs GDS *without* Aura being the primary store. That decouples "we want PageRank and
+  Leiden" (Memory-Roadmap §3.6/§3.7) from "we run a graph database", and is a third path beside
+  in-process scipy. At our graph size in-process is still far cheaper — $0.40/GB-hour suits bursty
+  analytics, not a 15-minute consolidation loop — but it means the *algorithms* never require the
+  *storage*.
+- Aura Free (200k nodes) genuinely fits a single user's graph — legit per-tenant hack;
+  pauses after ~3 idle days.
 - Escape hatch (research slice): graph usage is modest (typed nodes, ABOUT/SUBGOAL_OF,
   salience ordering — no deep traversals) → Postgres + Apache AGE or plain relational
   adjacency could absorb it and delete a stateful service. See 19.5.
