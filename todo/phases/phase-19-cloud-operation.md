@@ -48,10 +48,19 @@ conversation meta.
 - Community edition idles at ~1.5–2 GB JVM (compose: heap 2G + pagecache 1G, limit 4G) —
   dominates per-tenant RAM everywhere.
 - Community = **one database per instance, no clustering** (multi-database is Enterprise).
-  Per-tenant DBs on one shared instance are impossible — BUT the schema is already
-  app-level multi-tenant (`user_id` on every node/query via `CypherFilterBuilder`), so one
-  shared Community instance with app-enforced isolation works today. Trust-the-app
-  isolation: fine for a managed offering we run, not for adversarial tenants.
+  Per-tenant DBs on one shared instance are impossible. The schema *can* be tenant-scoped —
+  `user_id` is on the nodes and `CypherFilterBuilder.add_user_filter()`
+  (`kit/agent_memory/query_utils.py`) builds the predicate — but scoping is **opt-in, not
+  enforced** (verified 2026-09-20): the builder silently skips the filter on a falsy
+  `user_id`, callers must remember to chain it (19 builder constructions vs 12
+  `add_user_filter` calls; all three `portability/` modules scope by channel and never by
+  user), and **173 raw `MATCH` queries** across the kit never touch the builder at all.
+  Harmless today — one user per cluster means an unscoped query has nothing to leak — but a
+  shared instance turns every missed filter into a silent cross-tenant read. **Fail-closed
+  tenant scoping is a prerequisite for 19.4, not a detail of it** (see
+  [known-future-issues.md](../known-future-issues.md)). Even once closed it remains
+  trust-the-app isolation: acceptable for a managed offering we run, not for adversarial
+  tenants.
 - Managed: AuraDB Professional ≈ $65/mo **per instance** (fine as one shared instance,
   ruinous per tenant). Aura Free (200k nodes) genuinely fits a single user's graph —
   legit per-tenant hack; pauses after ~3 idle days.
@@ -91,6 +100,17 @@ re-embed plumbing remains the fallback for any future model/dimension change.
 | Redis (256 MB) | ~$3 | Upstash paygo ≈ $0–2 | sessions/runs/sidecars |
 | TLS/ingress | $0 (Fly proxy) | ALB ~$18 + LCU | ALB idle timeout must be ≥600s for SSE |
 | **Total / tenant** | **~$45–55** (≈$25–35 w/ autostop) | **~$120–160** | |
+
+**Autostop does not apply to the stateful half (verified against Fly pricing, 2026-09-20).**
+Fly bills volumes at $0.15/GB/mo of *provisioned* capacity "whether they are attached to a Machine
+or not, including when an attached Machine is stopped", plus $0.15/GB/30d of rootfs for each
+stopped Machine. A per-tenant cluster's Neo4j (10 GB vol) + PG volume + four machine rootfs floors
+a **fully dormant tenant at roughly $3–4/mo** — autostop cuts the compute, never the storage. The
+per-tenant machine rates above remain accurate (shared-cpu-4x/4GB = $23.66, shared-cpu-2x/2GB =
+$11.83), so the "~$25–35 w/ autostop" figure holds for an *active* tenant and understates the cost
+of an idle roster: 100 dormant users ≈ $300–400/mo before a single request. This is the strongest
+argument for 19.4 over 19.3 — and it is also the lock-in, since those economics are Fly's pricing,
+not a portable property of the workload.
 
 Shape 1: ~$30–120/mo total for a handful of tenants. Shape 3: fixed ~$100–200/mo floor,
 marginal tenant <$1/mo + their LLM spend. **LLM/API usage dwarfs hosting in every shape**

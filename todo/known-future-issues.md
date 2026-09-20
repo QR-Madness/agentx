@@ -19,6 +19,22 @@ model download moved to the explicit `warmup_embeddings` step run only when the 
 (`AGENTX_INIT_EXIT_GRACE`, default 15s). Root-causing which library leaks the thread remains
 open groundskeeping.
 
+**Tenant scoping is opt-in, not enforced** — blocks Phase 19.4 (shared multi-tenant stack)
+- `CypherFilterBuilder.add_user_filter()` (`kit/agent_memory/query_utils.py`) appends the
+  `user_id` predicate only `if user_id:` — a falsy/missing id silently widens the query to every
+  tenant instead of failing. Scoping is also opt-in by construction: 19 `CypherFilterBuilder(`
+  constructions vs 12 `add_user_filter(` calls, and `portability/{exporter,extract,importer}.py`
+  scope by channel only. Separately, **173 raw `MATCH (` queries** in the kit bypass the builder.
+- Impact: **NONE today** — single-user-per-cluster means an unscoped query has nothing to leak.
+  **HIGH the moment two tenants share a Neo4j instance**, where each gap is a silent cross-tenant
+  read, not an error.
+- Fix direction: make scoping fail-closed rather than remembered — require an explicit tenant
+  context at the session/driver seam so an unscoped query raises instead of widening; treat raw
+  `MATCH` sites as the migration surface. Channel scoping is *not* a substitute: channel names
+  (`_self_{agent_id}`, `_project_{ws_id}`) are not tenant-unique.
+- Chose to record rather than fix: this is only activated by a deployment shape that does not
+  exist yet, and the fix belongs with 19.4's design, not ahead of it.
+
 **Distributed Transaction Support**
 - Dual-write to Neo4j + PostgreSQL has no transaction coordination
 - Impact: LOW for single-user; HIGH for multi-user deployment
