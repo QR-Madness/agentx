@@ -340,7 +340,7 @@ tasks:
       # `docker compose up -d` starts only the manager) — naming services
       # here starts them regardless of profile, without also starting `api`
       # (dev runs the API from source, not this containerized image).
-      - docker-compose up -d --wait neo4j postgres redis
+      - docker compose up -d --wait neo4j postgres redis
 
   db:down:
     desc: "Stop database services"
@@ -348,17 +348,17 @@ tasks:
     cmds:
       # --profile production (not a bare `down`, which only tears down whatever
       # profile is currently active — none, by default) — see db:up.
-      - docker-compose --profile production down
+      - docker compose --profile production down
 
   db:restart:
     desc: "Restart database services"
     cmds:
-      - docker-compose restart
+      - docker compose restart
 
   db:logs:
     desc: "Tail logs from all database containers"
     cmds:
-      - docker-compose logs -f
+      - docker compose logs -f
 
   db:init:
     desc: "Initialize local data directories for databases"
@@ -538,7 +538,7 @@ tasks:
   db:status:
     desc: "Show status of database containers"
     cmds:
-      - docker-compose ps
+      - docker compose ps
 
   db:clean:
     desc: "⚠️  Remove ALL database data (destructive!)"
@@ -731,7 +731,7 @@ tasks:
     desc: "⚠️  Remove Docker volumes (keeps local ./data/)"
     prompt: "Remove Docker volumes for this project?"
     cmds:
-      - docker-compose down -v
+      - docker compose down -v
       - echo "✅ Docker volumes removed!"
   
   remove:concurrently:
@@ -989,13 +989,13 @@ tasks:
     desc: "Tail all logs (Docker + API)"
     cmds:
       - bunx concurrently -n "DOCKER,API" -c "gray,cyan" 
-          "docker-compose logs -f --tail=50" 
+          "docker compose logs -f --tail=50" 
           "tail -f api/*.log 2>/dev/null || echo 'No API logs found'"
 
   logs:docker:
     desc: "Tail Docker container logs"
     cmds:
-      - docker-compose logs -f --tail=100
+      - docker compose logs -f --tail=100
 
   logs:api:
     desc: "Tail Django API logs"

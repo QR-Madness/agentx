@@ -19,6 +19,61 @@ Postgres — which is what makes this a *decision gate* rather than a commitment
 
 **Scope discipline: this spike buys information, not a migration.** Nothing moves stores here.
 
+#### Step 0 — RESULT: **GATE FAILS — spike stopped** `[measured 2026-09-20]`
+
+Profiled the live dev graph (12 channels, 239 entities, 256 facts):
+
+| Metric | Value |
+|---|---|
+| Entities | 239 |
+| `ABOUT` (Fact→Entity) | 354 |
+| **`RELATES_TO` (Entity→Entity)** | **113** — the edges PPR needs |
+| **Median entity degree** | **1** (gate required ≥ 2) |
+| Mean degree | 0.94 |
+| **Isolated entities (degree 0)** | **111 — 46%** |
+| Max degree | 3 in every channel except `_global` (15) |
+
+One channel (`_self_bright-grand-fern`) has **100%** isolated entities. There is almost no path
+longer than one hop anywhere in the graph, so **PPR has nothing to propagate over**. Do not build
+§3.6 against this graph — any arm would score at noise for data reasons, not ranking reasons.
+
+**This reclassifies the problem.** Multi-hop MRR is weak because the entity graph is barely
+connected — an **extraction/density** problem, not a *ranking* problem and **not a storage problem**.
+No graph database and no retrieval technique fixes a graph that has no edges.
+
+**Root cause: narrowed, not established.** The pipeline is intact end-to-end — the extraction prompt
+requests `relationships`, and `consolidation/jobs.py::_batch_store_relationships` MERGEs them. But
+that function **drops** any relationship whose endpoints fail to resolve, at `debug` level, into
+`metrics.relationships_dropped`. Endpoint resolution runs through semantic entity linking with
+`entity_linking_auto_threshold = 0.90` and a `0.75–0.90` **log-only gray zone** that never links.
+
+Tested the obvious hypothesis — that strict linking fragments entities so endpoints miss — and it is
+**real but insufficient**: only ~14 near-duplicate pairs across 239 entities (~6%), several of which
+are correctly separate (`'Section 1.1'` vs `'Section 1.2'` scores 0.91 on string similarity but are
+different things). That cannot explain 46% isolation. *Caveat: this probe used string similarity as a
+proxy; the linker uses embeddings, so true fragmentation may be lower still.*
+
+Three candidates remain, and they are distinguishable by one measurement:
+1. the extractor proposes few relationships at all (**yield**),
+2. proposed relationships die at endpoint resolution (**drop rate**),
+3. the corpus genuinely has few entity-entity relations.
+
+**Blocking instrumentation gap:** `relationships_dropped` is computed in `ConsolidationMetrics` and
+asserted in `tests_memory.py`, but **surfaced in no endpoint, log line above debug, or dashboard**.
+There is no *proposed* counter to divide it by. Until both exist, cause (1) and (2) are
+indistinguishable.
+
+- **Next action — small and concrete:** surface `relationships_proposed` / `relationships_dropped`
+  (consolidation metrics → `/metrics`), run a consolidation pass on a populated channel, read the
+  ratio. A high drop rate ⇒ loosen the gray zone / improve resolution. A low drop rate with few
+  proposals ⇒ the extraction prompt is the lever (§2.10).
+- **Consequence for [19.5](../phases/phase-19-cloud-operation.md):** the storage decision is now
+  gated behind **graph density**, not behind PPR. You cannot judge whether a graph database earns its
+  place until there is a graph worth traversing — today Neo4j's ~2 GB JVM floor is holding 113 edges.
+
+<details>
+<summary>Original Step 0 plan (kept for provenance)</summary>
+
 #### Step 0 — profile the entity graph first (≈½ day; may end the spike)
 
 PPR propagates over `(:Entity)-[:RELATES_TO]->(:Entity)`; `ABOUT` only links `Fact → Entity`. If
@@ -28,6 +83,10 @@ one. Measure on a real channel **and** on the eval corpus: entity count, `RELATE
 distribution, share of entities at degree 0.
 
 - **Gate:** median entity degree < 2 ⇒ stop. Fix extraction (Memory-Roadmap §2.10) before ranking.
+
+</details>
+
+#### Steps 1–4 — **BLOCKED** on Step 0's density fix. Retained below; re-run Step 0 before resuming.
 
 #### Step 1 — re-baseline before comparing anything (≈½ day)
 
