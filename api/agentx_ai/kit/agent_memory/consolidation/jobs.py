@@ -2269,6 +2269,7 @@ async def consolidate_episodic_to_semantic(
             "entities_stored": metrics.entities_stored,
             "facts_stored": metrics.facts_stored,
             "relationships_stored": metrics.relationships_stored,
+            "relationships_dropped": metrics.relationships_dropped,
             "conversations_processed": len(records),
             "duration_ms": metrics.total_latency_ms,
             **metrics.live_snapshot(),
@@ -2286,6 +2287,10 @@ async def consolidate_episodic_to_semantic(
         "entities": metrics.entities_stored,
         "facts": metrics.facts_stored,
         "relationships": metrics.relationships_stored,
+        "relationships_extracted": metrics.relationships_extracted,
+        "relationships_dropped": metrics.relationships_dropped,
+        "relationship_drop_rate": metrics.relationship_drop_rate,
+        "relationship_yield": metrics.relationship_yield,
         "metrics": metrics.to_dict(),
         "errors": errors
     }

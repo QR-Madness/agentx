@@ -114,6 +114,32 @@ class ConsolidationMetrics:
             return 0.0
         return self.facts_extracted / self.extraction_calls
 
+    @property
+    def relationship_drop_rate(self) -> float:
+        """Share of store-stage relationships lost to unresolvable endpoints.
+
+        Denominator is ``stored + dropped`` — i.e. only relationships that
+        actually reached :func:`_batch_store_relationships` — so this isolates
+        *endpoint resolution* from upstream extraction yield.
+        """
+        seen = self.relationships_stored + self.relationships_dropped
+        if seen == 0:
+            return 0.0
+        return self.relationships_dropped / seen
+
+    @property
+    def relationship_yield(self) -> float:
+        """End-to-end survival: proposed by the LLM → actually in the graph.
+
+        Read together with :attr:`relationship_drop_rate` these separate the two
+        causes of a sparse entity graph: a low yield with a high drop rate is a
+        *resolution* problem, while a low yield with a low drop rate but few
+        ``relationships_extracted`` is an *extraction* problem.
+        """
+        if self.relationships_extracted == 0:
+            return 0.0
+        return self.relationships_stored / self.relationships_extracted
+
     def live_snapshot(self) -> dict[str, int]:
         """Cheap running-totals snapshot for mid-run progress UI.
 
@@ -129,6 +155,9 @@ class ConsolidationMetrics:
                 + self.contradiction_calls
             ),
             "tokens": self.total_tokens_used,
+            "relationships_extracted": self.relationships_extracted,
+            "relationships_stored": self.relationships_stored,
+            "relationships_dropped": self.relationships_dropped,
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -142,6 +171,8 @@ class ConsolidationMetrics:
         # Add computed properties
         d["skip_rate"] = self.skip_rate
         d["extraction_efficiency"] = self.extraction_efficiency
+        d["relationship_drop_rate"] = self.relationship_drop_rate
+        d["relationship_yield"] = self.relationship_yield
         return d
 
     def to_json(self) -> str:
@@ -159,6 +190,8 @@ class ConsolidationMetrics:
         # Remove computed properties that aren't constructor args
         d.pop("skip_rate", None)
         d.pop("extraction_efficiency", None)
+        d.pop("relationship_drop_rate", None)
+        d.pop("relationship_yield", None)
         return cls(**d)
 
     def log_summary(self) -> None:
@@ -170,6 +203,10 @@ class ConsolidationMetrics:
             f"llm_calls={self.total_llm_calls}, tokens={self.total_tokens_used}, "
             f"extracted=[{self.entities_extracted}e, {self.facts_extracted}f, {self.relationships_extracted}r], "
             f"stored=[{self.entities_stored}e, {self.facts_stored}f, {self.relationships_stored}r], "
+            f"rels=[dropped={self.relationships_dropped} "
+            f"({self.relationship_drop_rate:.0%} of store-stage), "
+            f"yield={self.relationship_yield:.0%}, "
+            f"gray_zone={self.entities_semantic_candidates}], "
             f"fact_links=[recovered={self.fact_entity_links_recovered}, stubs={self.fact_entity_stubs_created}], "
             f"latency={self.total_latency_ms}ms"
         )

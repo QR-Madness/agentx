@@ -6371,6 +6371,66 @@ class RelationshipEndpointRecoveryTest(TestCase):
         session.run.assert_not_called()  # nothing valid to store
 
 
+class RelationshipMetricsSurfaceTest(TestCase):
+    """The sparse-entity-graph diagnostic: drop rate vs yield must be visible.
+
+    A sparse graph has two candidate causes — relationships die at endpoint
+    resolution, or the extractor never proposes them. These two rates separate
+    them, so they have to be computed correctly, survive serialization, and
+    actually appear in the human-readable summary.
+    """
+
+    @staticmethod
+    def _m(**kw) -> ConsolidationMetrics:
+        return ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC), **kw)
+
+    def test_drop_rate_is_scoped_to_the_store_stage(self) -> None:
+        # 3 stored + 5 dropped = 8 reached the store stage; extraction yield is
+        # a separate question, so the 10 extracted must NOT be the denominator.
+        m = self._m(relationships_extracted=10, relationships_stored=3, relationships_dropped=5)
+        self.assertAlmostEqual(m.relationship_drop_rate, 5 / 8)
+        self.assertAlmostEqual(m.relationship_yield, 3 / 10)
+
+    def test_rates_are_zero_safe(self) -> None:
+        m = self._m()
+        self.assertEqual(m.relationship_drop_rate, 0.0)
+        self.assertEqual(m.relationship_yield, 0.0)
+
+    def test_resolution_problem_is_distinguishable_from_extraction_problem(self) -> None:
+        resolution = self._m(relationships_extracted=20, relationships_stored=4, relationships_dropped=16)
+        extraction = self._m(relationships_extracted=4, relationships_stored=4, relationships_dropped=0)
+        self.assertGreater(resolution.relationship_drop_rate, 0.5)   # endpoints failing
+        self.assertEqual(extraction.relationship_drop_rate, 0.0)     # nothing lost...
+        self.assertEqual(extraction.relationship_yield, 1.0)         # ...just few proposed
+
+    def test_computed_rates_round_trip_through_from_dict(self) -> None:
+        """to_dict injects the rates; from_dict must pop them or construction fails."""
+        m = self._m(relationships_extracted=10, relationships_stored=3, relationships_dropped=5)
+        d = m.to_dict()
+        self.assertIn("relationship_drop_rate", d)
+        self.assertIn("relationship_yield", d)
+        rt = ConsolidationMetrics.from_dict(d)
+        self.assertEqual(rt.relationships_dropped, 5)
+        self.assertEqual(rt.relationships_extracted, 10)
+
+    def test_live_snapshot_carries_the_relationship_counters(self) -> None:
+        snap = self._m(relationships_extracted=7, relationships_stored=2, relationships_dropped=5).live_snapshot()
+        self.assertEqual(snap["relationships_extracted"], 7)
+        self.assertEqual(snap["relationships_stored"], 2)
+        self.assertEqual(snap["relationships_dropped"], 5)
+
+    def test_summary_line_reports_dropped(self) -> None:
+        """Dropped was absent from the summary, which is why sparsity went unnoticed."""
+        m = self._m(relationships_extracted=10, relationships_stored=3, relationships_dropped=5)
+        with self.assertLogs(
+            "agentx_ai.kit.agent_memory.consolidation.metrics", level="INFO"
+        ) as cm:
+            m.log_summary()
+        line = "\n".join(cm.output)
+        self.assertIn("dropped=5", line)
+        self.assertIn("gray_zone=", line)
+
+
 class EntityEmbeddingBackfillTest(TestCase):
     """_backfill_entity_embeddings: bounded batch embed + UNWIND write."""
 
