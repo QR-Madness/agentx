@@ -200,6 +200,22 @@ marginal tenant <$1/mo + their LLM spend. **LLM/API usage dwarfs hosting in ever
 
 - [ ] Default: one shared Community instance, app-level `user_id` isolation (works today).
 - [ ] Research slice: migrate the graph to Postgres (Apache AGE or relational adjacency)
-      — deletes the RAM floor, the licensing constraint, and a stateful service. Audit
-      actual Cypher surface first (`kit/agent_memory/`) to size the port.
+      — deletes the RAM floor, the licensing constraint, and a stateful service.
+      **Cypher audit done 2026-09-20:** the workload is not graph-shaped — **0** variable-length
+      paths, **0** `shortestPath`, **0** `gds.`, 5 APOC calls; all 20 relationship types are
+      single-hop parent/child or labelling edges. Port size: **173 raw `MATCH` sites** and **9
+      Neo4j-only node labels** (`Entity`, `Fact`, `Goal`, `Strategy`, `Procedure`, `Topic`,
+      `Preference`, `Outcome`, `AgentParticipant`) — `Conversation`/`Turn`/`Tool`/`ToolInvocation`/
+      `User` are already mirrored in Postgres, which also already holds the pgvector index.
+      Migration tool already exists: the portability envelopes are text-only and regenerate
+      embeddings on import.
+      **Do not decide this on the audit alone.** What the graph is *for* is unbuilt: Memory-Roadmap
+      §3.6 (Personalized PageRank) and §3.7 (Leiden community summaries) are the planned fix for
+      multi-hop recall, the weakest category in the golden set. Both are *algorithm* capabilities,
+      not *storage* capabilities, on a ~10⁴-node per-user graph. **Gate:** the PPR spike in
+      [memory-recall.md](../backlog/memory-recall.md) settles it empirically — build §3.6
+      out-of-store, measure it, and let the result decide this slice.
+      Sequencing note: if the graph does move, do it **before** 19.4, not after — fail-closed tenant
+      scoping is far cheaper on Postgres (RLS enforces it at the engine) than as an audit of 173
+      Cypher sites, so doing 19.4 first means paying for scoping twice.
 - [ ] Non-option to remember: Aura per tenant never pencils out (~$65/mo/instance).

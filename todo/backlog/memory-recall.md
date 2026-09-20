@@ -5,6 +5,64 @@
 
 ---
 
+### ⭐ PPR spike — §3.6 Personalized PageRank, run out-of-store `[SPIKE · decision gate for 19.5]`
+
+> Companion roadmap entry: [Memory-Roadmap.md](../../Memory-Roadmap.md) §3.6.
+> Storage decision it gates: [phase-19-cloud-operation.md](../phases/phase-19-cloud-operation.md) §19.5.
+
+**Why this is one task and not two.** §3.6 has to be built regardless — multi-hop is the weakest
+category in the golden set and PPR is its identified fix. Building it **out-of-store** (materialize
+the subgraph → rank in Python → return facts) costs little more than building it against Neo4j GDS,
+and it settles a far larger question: whether a second stateful service earns its place. Write the
+ranking against a materialized subgraph and the same code runs whether facts live in Neo4j or
+Postgres — which is what makes this a *decision gate* rather than a commitment.
+
+**Scope discipline: this spike buys information, not a migration.** Nothing moves stores here.
+
+#### Step 0 — profile the entity graph first (≈½ day; may end the spike)
+
+PPR propagates over `(:Entity)-[:RELATES_TO]->(:Entity)`; `ABOUT` only links `Fact → Entity`. If
+consolidation is producing few `RELATES_TO` edges the graph is effectively bipartite, **no**
+technique can do multi-hop, and the weak score is an *extraction* problem rather than a *ranking*
+one. Measure on a real channel **and** on the eval corpus: entity count, `RELATES_TO` count, degree
+distribution, share of entities at degree 0.
+
+- **Gate:** median entity degree < 2 ⇒ stop. Fix extraction (Memory-Roadmap §2.10) before ranking.
+
+#### Step 1 — re-baseline before comparing anything (≈½ day)
+
+The recorded **multi-hop MRR 0.29** is the W1 run of 2026-07-05, taken *before* §2.11 stage 1 shipped
+`recall_candidate_pool=50` `[v0.21.155]`. Arms were explicitly "within noise of each other at today's
+`top_k*2`(=20) pool" — that confound is now fixed, so the old number is not a valid comparison point.
+Re-run `manage.py eval_recall` on the current build first.
+
+#### Step 2 — implement PPR out-of-store (≈2–3 days)
+
+- New `RecallLayer` technique beside `_entity_centric_retrieval` (`memory/recall.py`).
+- Materialize the channel's entity subgraph into `scipy`/`networkx`; seed on query-matched entities;
+  rank facts by stationary probability over `ABOUT`/`RELATES_TO`/`SUPERSEDES`. Surface the **bridge
+  facts** between the query's entities — what Tier-3 `deep_recall` hops on.
+- Cache the materialized graph per channel on a **membership hash**, the same invalidation trick §3.7
+  uses for `CommunitySummary` re-summarization. Materialization cost is the real risk: pulling the
+  subgraph per query will dominate p95 if uncached.
+- Gate behind `recall.ppr_enabled` — declared in `settings_registry` + `settings_help.yaml`, then
+  `task docs:gen:settings` (ADR-17; undeclared settings are read-only by design).
+
+#### Step 3 — measure it as an eval arm (≈1 day)
+
+Add a `ppr` arm to `eval_recall` alongside the existing arms. Score multi-hop MRR + recall@k against
+the Step 1 re-baseline, and **report p95 separately** — a quality win paid for with a latency
+regression is not a win.
+
+#### Step 4 — the decision (no code)
+
+- **PPR works out-of-store at acceptable p95** ⇒ Neo4j's remaining claim is Leiden community
+  detection (§3.7), which is *also* an out-of-store algorithm on a ~10⁴-node graph. 19.5's research
+  slice becomes a cleanup with a known cost (audit below).
+- **Materialization dominates, or quality lags a graph-native implementation** ⇒ Neo4j earns its
+  place. Record *why* in [Decisions.md](../../Decisions.md) and close 19.5's research slice, so the
+  question stops being re-asked.
+
 ### ⭐ Active Memory Recall — close the query-formulation gap
 
 > The real gap isn't *retrieval*, it's **query formulation**. Recall is `remember(query=message)` —

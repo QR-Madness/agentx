@@ -496,7 +496,11 @@ The backlog wants lightweight path-finding; PPR (HippoRAG-style) is the stronger
 seed on matched entities, rank facts by stationary probability over
 `ABOUT`/`RELATES_TO`/`SUPERSEDES` (Neo4j GDS, fallback to bounded traversal). Surfaces
 *bridge facts* between the query's entities — what Tier-3 `deep_recall` hops on. Gate
-behind `recall.ppr_enabled`.
+behind `recall.ppr_enabled`. **Scoped as a spike** — see the PPR spike in
+[todo/backlog/memory-recall.md](todo/backlog/memory-recall.md): build it *out-of-store*
+(materialized subgraph → scipy/networkx) rather than against GDS, so the same ranking code runs on
+either store and the run doubles as the decision gate for phase 19.5. Note the recorded multi-hop
+0.29 predates §2.11's pool widening `[v0.21.155]` and must be re-baselined before comparison.
 
 ### 3.7 Graph community summaries `[NEW — fills the altitude gap]`
 Recap (shipped) is conversation-level; facts are shard-level; nothing sits between.
