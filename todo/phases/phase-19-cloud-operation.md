@@ -45,8 +45,12 @@ conversation meta.
 
 ### The Neo4j problem
 
-- Community edition idles at ~1.5–2 GB JVM (compose: heap 2G + pagecache 1G, limit 4G) —
-  dominates per-tenant RAM everywhere.
+- **Measured 2026-10-11: 0.87 GB fresh-start idle** with the real dev graph — not the ~1.5–2 GB
+  this doc previously asserted, and it does *not* dominate (see the measured budget under
+  Bottlenecks). The whole store is **33 MB on disk**, provisioned with a 1 G pagecache (~30× the
+  store) and a 2 G heap ceiling (compose limit 4G). A long-running JVM rarely returns committed heap,
+  so after sustained load it can climb toward those caps — which makes the cost a *config* choice:
+  right-size heap and pagecache to the data before treating Neo4j as a RAM problem.
 - Community = **one database per instance, no clustering** (multi-database is Enterprise).
   Per-tenant DBs on one shared instance are impossible. The schema *can* be tenant-scoped —
   `user_id` is on the nodes and `CypherFilterBuilder.add_user_filter()`
@@ -69,7 +73,8 @@ conversation meta.
   This matters more than it looks: our graphs are *tiny* (the whole dev cluster is 239 entities /
   256 facts across 12 channels, far under 1 GB), so one shared Aura Professional instance at the
   1 GB minimum could hold a large number of tenants for ~$65/mo. That makes "shared managed Aura"
-  a credible way to delete the self-hosted 2 GB JVM floor **without** a storage migration —
+  a credible way to delete the self-hosted Neo4j footprint (0.9 GB fresh, config-capped near 3 GB)
+  **without** a storage migration —
   gated, as ever, on fail-closed tenant scoping landing first.
 - **ACUs are not the PAYG option — they are the opposite.** An ACU is an *Aura Consumption Unit*:
   a **prepaid** contract negotiated with Neo4j sales, **minimum one year**, no marketplace
@@ -136,16 +141,40 @@ Shape 1: ~$30–120/mo total for a handful of tenants. Shape 3: fixed ~$100–20
 marginal tenant <$1/mo + their LLM spend. **LLM/API usage dwarfs hosting in every shape**
 — metering per-user spend (existing `usage_ledger` + `/metrics/usage`) is the control lever.
 
+### Measured resource budget (2026-10-11 — dev machine, real dev data)
+
+| Component | Resident | When resident | Lever |
+|---|---|---|---|
+| NLLB-200-distilled-600M + language detection | **3.03 GB** | first translate/detect call, then for the process lifetime | idle-unload · int8 runtime · optional install |
+| Docker Desktop VM (Linux only) | **~2.0 GB** above the containers | whenever Desktop runs | native Docker Engine has no VM |
+| bge-m3 local embedder | **1.44 GB** (lower bound) | default — `embedding_provider=local` | cloud bge-m3 is already vector-compatible |
+| Neo4j | **0.87 GB** fresh; caps 2 G heap + 1 G pagecache | always | store is 33 MB — right-size the caps |
+| python + torch + transformers | **0.68 GB** | always — solely because models run in-process | torch-free runtime if the models move |
+| ms-marco-MiniLM reranker | 0.04 GB | default on | — |
+| Postgres + Redis | 0.12 GB | always | — |
+
+*Method:* per-model RSS deltas with every model held at once (`HF_HUB_OFFLINE=1`, one warm-up
+inference each); containers via `docker stats` at idle; VM via host `ps` (qemu RSS contains the
+containers, so the tax is qemu minus their ~1.0 GB). Embedding-heavy models are **lower bounds**:
+weights are memory-mapped and only touched vocabulary rows become resident, so bge-m3 grows toward
+~2.3 GB with diverse text. **Neo4j is the fourth-largest consumer, not the first.**
+
 ### Bottlenecks (ranked)
 
-1. **Translation eager-load** — `TranslationKit` loads NLLB-200 (~600 MB dl, +2 GB RSS) at
-   init; kills cold starts + fattens every API machine. Biggest single fix (19.2.1).
-2. **Neo4j RAM floor + Community licensing** — decides the tenancy model (above / 19.5).
+1. **Translation models** — no longer eager: `get_translation_kit` is a `@lazy_singleton`, loaded
+   only by the `detect_language` / `translate` tools and the translate view (status reads use
+   `get_if_initialized()`). But once anything triggers it, NLLB-200 + language detection hold
+   **3.03 GB for the life of the process** — the largest consumer measured. Fix (19.2.1): idle-unload,
+   an int8 runtime, or ship translation as an optional extra.
+2. **Neo4j** — measured smaller than assumed (above); its long-running cost is set by
+   over-provisioned config. Right-size first. The storage question (19.5) is about operations and
+   tenancy more than RAM. Community licensing still decides the tenancy model.
 3. **SSE through cloud proxies** — Fly proxy fine; AWS ALB default 60s idle timeout kills
    quiet streams (rounds can go minutes between events). Raise timeout + rely on detached
    runs/re-attach; a periodic SSE heartbeat comment would make it bulletproof.
-4. **Local embeddings on shared CPU** — solved: cloud profile uses OpenRouter bge-m3
-   via `EMBEDDING_BASE_URL` (vector-compatible with local; see Ingest flow above).
+4. **Local embeddings** — solved for the *cloud profile* (OpenRouter bge-m3 via
+   `EMBEDDING_BASE_URL`, vector-compatible with local; see Ingest flow above). But the **default**
+   is still `embedding_provider=local`, so every self-hosted API process carries bge-m3 at 1.44 GB+.
 5. **Agent Shells** — `container` backend needs dind (EC2/Fly-machines only, never
    Fargate); bubblewrap needs privileges PaaS won't grant. Cloud clusters ship
    `allow_shell` off (already the default); treat shells as an EC2-only feature.

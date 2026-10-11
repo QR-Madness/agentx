@@ -69,7 +69,8 @@ indistinguishable.
   proposals ⇒ the extraction prompt is the lever (§2.10).
 - **Consequence for [19.5](../phases/phase-19-cloud-operation.md):** the storage decision is now
   gated behind **graph density**, not behind PPR. You cannot judge whether a graph database earns its
-  place until there is a graph worth traversing — today Neo4j's ~2 GB JVM floor is holding 113 edges.
+  place until there is a graph worth traversing — today a JVM provisioned for ~3 GB (measured
+  0.87 GB idle) holds a 33 MB store with 113 entity-entity edges.
 
 <details>
 <summary>Original Step 0 plan (kept for provenance)</summary>
