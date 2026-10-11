@@ -6,6 +6,18 @@
 
 ### Translation Quality Overhaul (pluggable `TranslationKit` backend)
 
+- [ ] **BUG — every translation assumes an English source** `[found 2026-10-11]`. `translate_text`
+      (`kit/translation.py`) never sets NLLB's `src_lang` — the assignment is commented out — so the
+      tokenizer's default `eng_Latn` is prepended to *every* input, whatever language it is in.
+      Neither the Translation panel (no source-language picker) nor `/translate` (text + target
+      only) supplies a source. Detection (`detect_language_level_i`) and code conversion
+      (`convert_level_i_detection_to_level_ii`) both exist but are wired only to the *target* side —
+      and the detector knows just 20 of NLLB's ~200 languages. Fix: identify with a broad, torch-free
+      detector (fastText lid.176 or GlotLID), map to the NLLB code, set `src_lang` before tokenizing,
+      and let the panel override it. Pairs naturally with the CTranslate2 move in
+      [phase-19 §19.2.6](../phases/phase-19-cloud-operation.md), which needs explicit source tokens
+      anyway. Research: [2026-10-torch-free-inference-research.md](../research/2026-10-torch-free-inference-research.md).
+
 > NLLB-200 graded 5/10 — but we just invested in it (GPU accel `[v0.21.6]`, `LanguageLexicon` ISO-code
 > bridging), so the move is *pluggable backend*, not rip-and-replace. (Caveat on the eval: Mistral
 > grading NLLB output while itself relying on NLLB is a soft/circular benchmark.)

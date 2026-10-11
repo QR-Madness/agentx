@@ -88,6 +88,7 @@ hold the literature and citations.
 |------|----------|
 | [2026-07-extraction-research.md](todo/research/2026-07-extraction-research.md) | SOTA survey — memory extraction (write path); feeds Memory-Roadmap §2.10 |
 | [2026-07-memory-recall-research.md](todo/research/2026-07-memory-recall-research.md) | SOTA survey — recall accuracy + stable long-term growth (read path); feeds §2.11 + enrichments |
+| [2026-10-torch-free-inference-research.md](todo/research/2026-10-torch-free-inference-research.md) | Torch-free CPU inference — runtimes, int8 quality, image size; feeds phase-19 §19.2.6 + the translation source-language bug |
 | [Archive/2026-07-conversation-context-research.md](todo/research/Archive/2026-07-conversation-context-research.md) | Prior-art benchmark — conversation memory & context management; drove the conversation-state/digest slices + the v0.21.203 compaction unification |
 | [Archive/2026-07-extraction-research-raw.md](todo/research/Archive/2026-07-extraction-research-raw.md) | Raw deep-research report behind the extraction survey (unedited source) |
 | [Archive/2026-07-memory-recall-research-raw.md](todo/research/Archive/2026-07-memory-recall-research-raw.md) | Raw deep-research report behind the recall survey (unedited source) |

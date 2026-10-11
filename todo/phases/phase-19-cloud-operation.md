@@ -197,7 +197,31 @@ weights are memory-mapped and only touched vocabulary rows become resident, so b
 
 - [ ] **19.2.1 Lazy/optional translation** — deployment profile flag
       (`TRANSLATION_ENABLED=false` or lazy-load on first use); keeps API machines small
-      and makes autostop viable.
+      and makes autostop viable. **Lazy half shipped** (`get_translation_kit` is a
+      `@lazy_singleton`); the `TRANSLATION_ENABLED` flag is not built. Once loaded the models hold
+      3.03 GB for the life of the process, so idle-unload belongs here too — see 19.2.6.
+- [ ] **19.2.6 Footprint track — torch-free inference** (research:
+      [2026-10-torch-free-inference-research.md](../research/2026-10-torch-free-inference-research.md)).
+      Two separate problems, with separate fixes:
+      - **Image size — the install funnel.** `qrmadness/agentx-api:latest` is 13.1 GB; torch resolves
+        to the CUDA build, and `nvidia/` + `torch/` + `triton/` are 6.6 GB of a 7.2 GB
+        site-packages. **Slice 0: a CPU-only torch wheel** for the default image (a uv index for
+        `torch`), plus a GPU variant tag for `docker-compose.gpu.yml`, which runs the same image.
+        No code change, and it recovers most of the CUDA payload on its own. The other ~5 GB of the
+        image sits outside the Python layer and is unexamined.
+      - **Resident RAM** (measured budget above), ordered so the vector index is touched last:
+        1. Language ID → fastText lid.176 / GlotLID, wired into translation's `src_lang` — fixes the
+           English-source bug ([translation-web-search.md](../backlog/translation-web-search.md)).
+           ~0.60 → ~0.15 GB.
+        2. Reranker → fastembed `TextCrossEncoder` (ONNX). Already 0.04 GB; the point is losing torch.
+        3. NLLB → CTranslate2 `int8_float32`, plus idle-unload. ~2.43 → ~0.8 GB (estimate).
+        4. bge-m3 → ONNX int8 **with the embedding table quantized** (include `Gather`; Linear-only
+           int8 stalls near 1.3 GB). Shadow index, an `eval_recall` recall@10 gate, then re-embed
+           through the portability envelopes. Re-check cloud↔local parity: int8 is ~0.999, not 1.0.
+        5. Optional — EmbeddingGemma-300M A/B on `eval_recall`: 62.49 vs 54.60 multilingual retrieval
+           (MMTEB v2, Google's own paper) at about half the size. It breaks cloud parity outright, so
+           the cloud path would need a provider for it too.
+      Once 1–4 land, torch leaves the dependency set entirely: estimated RSS ~5.2 → ~1.0–1.9 GB.
 - [ ] **19.2.2 Async memory import** — `/api/memory/import` becomes a `/api/jobs/*` job
       (it's synchronous today): progress reporting, size limits, and validation of the
       envelope's `embedder_info` against the target cluster's embedding config
