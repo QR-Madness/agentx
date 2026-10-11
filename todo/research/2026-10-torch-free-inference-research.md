@@ -32,6 +32,12 @@
 >   `baai/bge-m3`) to one vector space so a cluster can switch without re-embedding (phase-19, Ingest
 >   flow). int8 local weakens that to ~0.999; **EmbeddingGemma breaks it outright** — the cloud path
 >   would need an EmbeddingGemma provider too. The run could not have known the property exists.
+> - **Licensing is not moot.** §5 dismisses the Gemma terms because "AgentX is personal and
+>   non-production" — it is not any more: AgX is a launch candidate for sale under a licence
+>   (Notion Project Pool). Shipping or auto-downloading EmbeddingGemma in a commercial product means
+>   carrying the Gemma Terms of Use and prohibited-use policy through to users. fastText lid.176 is
+>   CC BY-SA 3.0 — attribution required when redistributing the model file. Neither blocks; both
+>   need a decision before slice 1 and slice 5.
 > - The baseline RSS figures quoted in the body (1.44 / 0.04 / 2.43 / 0.60 / 0.68 GB) are AgX's own
 >   measurements of 2026-10-11 — see phase-19's measured resource budget.
 
