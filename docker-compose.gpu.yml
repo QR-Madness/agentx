@@ -24,11 +24,17 @@
 #   docker exec <cluster>-api python -c "import torch; print(torch.cuda.is_available())"
 #   curl -s localhost:<API_PORT>/api/health | jq .compute   # {"device":"cuda","cuda_available":true}
 #
-# The default Linux torch wheel bundles the CUDA runtime, so the Dockerfile's base
-# image works as-is once the NVIDIA Container Toolkit passes the driver through.
+# The CUDA build of torch ships in its own image: `:latest` is CPU-only (no ~5 GB
+# CUDA payload), and this overlay switches the API to `:latest-gpu` below — CUDA
+# 12.8, which bundles the CUDA runtime, so it works as-is once the NVIDIA Container
+# Toolkit passes the driver through. Building from source on a GPU host? Also layer
+# docker-compose.gpu.build.yml so the build installs the CUDA wheels; the deployment
+# manager does that automatically for source clusters. This file stays pull-only on
+# purpose: no `build:` keys, so image-based clusters can never fall back to a build.
 
 services:
   api:
+    image: ${AGENTX_IMAGE:-qrmadness/agentx-api:latest-gpu}
     deploy:
       resources:
         reservations:

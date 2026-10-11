@@ -1,0 +1,20 @@
+# docker-compose.gpu.build.yml
+#
+# Build-from-source companion to docker-compose.gpu.yml. Layer it AFTER
+# docker-compose.build.yml (and docker-compose.gpu.yml) when you build the API
+# image locally for a GPU host, so the build installs the CUDA 12.8 torch wheels
+# instead of the default CPU ones:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml \
+#     -f docker-compose.gpu.yml -f docker-compose.gpu.build.yml \
+#     --profile production up -d --build
+#
+# The deployment manager adds this file automatically for source clusters with
+# GPU enabled (manager/agentx_manager/overlays.py). It exists separately so that
+# docker-compose.gpu.yml can stay pull-only for image-based clusters.
+
+services:
+  api:
+    build:
+      args:
+        TORCH_VARIANT: gpu

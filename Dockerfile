@@ -1,7 +1,10 @@
 # syntax=docker/dockerfile:1
 # AgentX API Server Dockerfile
 # Update AGENTX_IMAGE for customizing the base image (see docker-compose.yml for example usage). The base image is pinned to a specific Python version for reproducibility.
-# Build: docker build -t qrmadness/agentx-api .
+# Build (CPU, the default — published as :latest):
+#   docker build -t qrmadness/agentx-api .
+# Build (CUDA 12.8 — published as :latest-gpu, selected by docker-compose.gpu.yml):
+#   docker build --build-arg TORCH_VARIANT=gpu -t qrmadness/agentx-api:latest-gpu .
 # Run: docker run -p 12319:12319 --env-file .env qrmadness/agentx-api
 
 FROM python:3.14-slim
@@ -35,11 +38,22 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
+# Which PyTorch build to install (see the torch groups in pyproject.toml):
+#   cpu — default; no CUDA payload (nvidia/triton are ~5 GB of an otherwise
+#         ~1 GB dependency set).
+#   gpu — CUDA 12.8, for hosts running docker-compose.gpu.yml.
+# Anything else fails the build rather than silently producing the wrong image.
+ARG TORCH_VARIANT=cpu
+
 # Dependency layer first for caching. The (large) uv download cache rides a
 # BuildKit cache mount, so it speeds rebuilds without bloating the image layer.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    case "$TORCH_VARIANT" in \
+      cpu) uv sync --frozen --no-dev ;; \
+      gpu) uv sync --frozen --no-dev --no-group cpu --group gpu ;; \
+      *)   echo "TORCH_VARIANT must be 'cpu' or 'gpu' (got '$TORCH_VARIANT')" >&2; exit 1 ;; \
+    esac
 
 # Copy application code.
 # Preserve api/ structure so versions.yaml path calculation works.
@@ -67,6 +81,13 @@ ENV DJANGO_SETTINGS_MODULE=agentx_api.settings
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app/api
+# The environment is fixed at build time. `uv run` (the CMD, and the entrypoint's
+# bootstrap + warmup) would otherwise re-sync to the DEFAULT dependency groups —
+# which, in the gpu image, means uninstalling CUDA torch and downloading the CPU
+# build on first boot. Never remove this without replacing that guarantee.
+ENV UV_NO_SYNC=1
+# Which torch build this image carries, for diagnostics (`docker run … env`).
+ENV AGENTX_TORCH_VARIANT=${TORCH_VARIANT}
 # Disable huggingface_hub's hf-xet download backend: its Rust download threads
 # have been observed outliving a finished model download, keeping the process
 # alive after init_memory_schema prints success — which blocks the entrypoint

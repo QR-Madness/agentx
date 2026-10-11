@@ -68,8 +68,10 @@ Set via the `.env` file. Key variables: `DJANGO_SECRET_KEY` (required),
 `AGENTX_AUTH_ENABLED`, `EMBEDDING_PROVIDER` (`local` | `openai`), `AGENTX_DEVICE`
 (`auto` | `cpu` | `cuda`), and provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …).
 
-GPU acceleration is available via the `docker-compose.gpu.yml` overlay (NVIDIA
-Container Toolkit required).
+Two tags: **`latest`** is CPU-only — the default, and several GB smaller —
+and **`latest-gpu`** carries CUDA 12.8 PyTorch for NVIDIA hosts. The
+`docker-compose.gpu.yml` overlay selects `latest-gpu` and reserves the GPU
+(NVIDIA Container Toolkit required).
 
 ## Links
 

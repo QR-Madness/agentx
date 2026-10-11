@@ -1643,15 +1643,16 @@ tasks:
         echo "✓ deploy bundle sources present, image-based, and location-independent"
 
   docker:publish:
-    desc: "Build + push the API image locally (IMAGE=qrmadness/agentx-api TAG=dev). CI uses .github/workflows/release.yml"
+    desc: "Build + push the API image locally (IMAGE=qrmadness/agentx-api TAG=dev VARIANT=cpu|gpu). CI uses .github/workflows/release.yml"
     silent: true
     vars:
       IMAGE: '{{.IMAGE | default "qrmadness/agentx-api"}}'
       TAG: '{{.TAG | default "dev"}}'
+      VARIANT: '{{.VARIANT | default "cpu"}}'
     cmds:
       - |
         set -e
-        echo "🐳 Building {{.IMAGE}}:{{.TAG}} ..."
-        docker build -t "{{.IMAGE}}:{{.TAG}}" .
+        echo "🐳 Building {{.IMAGE}}:{{.TAG}} (torch: {{.VARIANT}}) ..."
+        docker build --build-arg TORCH_VARIANT="{{.VARIANT}}" -t "{{.IMAGE}}:{{.TAG}}" .
         echo "⬆️  Pushing {{.IMAGE}}:{{.TAG}} ..."
         docker push "{{.IMAGE}}:{{.TAG}}"

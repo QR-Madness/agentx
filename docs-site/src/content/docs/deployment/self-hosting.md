@@ -144,7 +144,8 @@ docker compose exec api agentx import --input /app/data/memory-export.json
 With the [NVIDIA Container Toolkit](clusters.md#gpu-acceleration-nvidia-overlay)
 on the host, add the overlay to `COMPOSE_FILE` in `.env` (keep
 `docker-compose.manager.yml` in the list), then bring the stack up through the
-manager:
+manager. The overlay also switches the API to the CUDA image,
+`qrmadness/agentx-api:latest-gpu` — the default `:latest` is CPU-only and much smaller:
 
 ```bash
 # .env: COMPOSE_FILE=docker-compose.yml:docker-compose.manager.yml:docker-compose.gpu.yml

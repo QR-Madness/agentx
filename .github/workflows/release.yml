@@ -219,6 +219,17 @@ jobs:
   publish-api:
     needs: [validate-version, test]
     runs-on: ubuntu-latest
+    # One runner per torch build: the CUDA image is ~13 GB unpacked, so it must not
+    # share a runner's disk with the CPU build. fail-fast off so a flaky push on one
+    # leg doesn't cancel the other mid-flight (`gh run rerun --failed` reruns one leg).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: cpu
+            tag: latest
+          - variant: gpu
+            tag: latest-gpu
     steps:
       - uses: actions/checkout@v4
 
@@ -249,10 +260,11 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Build and LOAD the image into the local docker daemon (no push here). The
-      # image is ~4.4GB; pushing it straight from buildx intermittently 400s on
-      # Docker Hub's registry for the big PyTorch blob, so we push separately with
-      # a retry loop (classic `docker push` resumes missing blobs each attempt).
-      - name: Build image (amd64)
+      # CUDA variant is ~4.4GB compressed; pushing it straight from buildx
+      # intermittently 400s on Docker Hub's registry for the big PyTorch blob, so we
+      # push separately with a retry loop (classic `docker push` resumes missing
+      # blobs each attempt). The CPU variant shares the same path for simplicity.
+      - name: Build image (amd64, ${{ matrix.variant }})
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -260,10 +272,12 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
-          # Publish ONLY :latest — each image is ~4GB, so we don't accumulate a
-          # per-version tag every release. Version provenance lives in the OCI labels
-          # below + the GitHub Release tag.
-          tags: ${{ env.IMAGE }}:latest
+          # Publish ONLY :latest (CPU) and :latest-gpu (CUDA 12.8) — we don't
+          # accumulate a per-version tag every release. Version provenance lives in
+          # the OCI labels below + the GitHub Release tag.
+          tags: ${{ env.IMAGE }}:${{ matrix.tag }}
+          build-args: |
+            TORCH_VARIANT=${{ matrix.variant }}
           provenance: false
           sbom: false
           labels: |
@@ -271,17 +285,21 @@ jobs:
             org.opencontainers.image.version=${{ inputs.version }}
             org.opencontainers.image.source=https://github.com/QR-Madness/agentx
             org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Scoped per variant: a shared scope would make the two legs evict each
+          # other's dependency layers on every release.
+          cache-from: type=gha,scope=api-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=api-${{ matrix.variant }}
 
       - name: Push image (with retry)
+        env:
+          TAG: ${{ matrix.tag }}
         run: |
           set -e
           for attempt in 1 2 3 4 5; do
             echo "::group::docker push attempt ${attempt}"
-            if docker push "${IMAGE}:latest"; then
+            if docker push "${IMAGE}:${TAG}"; then
               echo "::endgroup::"
-              echo "✓ pushed ${IMAGE}:latest on attempt ${attempt}"
+              echo "✓ pushed ${IMAGE}:${TAG} on attempt ${attempt}"
               exit 0
             fi
             echo "::endgroup::"
@@ -292,6 +310,7 @@ jobs:
           exit 1
 
       - name: Sync Docker Hub repo overview
+        if: matrix.variant == 'cpu'  # once per release, not once per leg
         # Bakes deploy/dockerhub-overview.md into the repo's Docker Hub overview.
         # Needs DOCKERHUB_TOKEN to be a Read/Write/Delete PAT. Non-fatal: a cosmetic
         # overview sync should never block a release.
@@ -451,10 +470,11 @@ jobs:
             echo "### Docker image (API server)"
             echo ""
             echo '```bash'
-            echo "docker pull ${IMAGE}:latest"
+            echo "docker pull ${IMAGE}:latest        # CPU — the default"
+            echo "docker pull ${IMAGE}:latest-gpu    # CUDA 12.8, NVIDIA hosts"
             echo '```'
             echo ""
-            echo "Published to Docker Hub as \`${IMAGE}:latest\` (linux/amd64) — this release is v${VERSION} (see the image's \`org.opencontainers.image.version\` label). The repo is kept to a single \`latest\` tag to stay storage-lean."
+            echo "Published to Docker Hub as \`${IMAGE}:latest\` (CPU) and \`${IMAGE}:latest-gpu\` (CUDA 12.8), linux/amd64 — this release is v${VERSION} (see the image's \`org.opencontainers.image.version\` label). \`docker-compose.gpu.yml\` selects the GPU image automatically. The repo keeps one tag per variant to stay storage-lean."
             echo ""
             echo "For a self-contained isolated deployment (API + Neo4j + PostgreSQL + Redis), download **\`agentx-deploy.tar.gz\`** below: \`tar xzf agentx-deploy.tar.gz && cd agentx-deploy && cp .env.example .env\` then \`docker compose up -d\` (starts the manager), open http://127.0.0.1:12320, and click **Up**."
             echo ""
