@@ -54,7 +54,7 @@ profile, then sync:
 
 ```bash
 export UV_NO_GROUP=cpu   # every uv sync / uv run now skips the CPU-only torch build
-uv sync                  # installs PyPI's torch, which bundles the CUDA 12.8 runtime
+uv sync                  # PyPI's build of the pinned torch — for 2.9.1, it bundles CUDA 12.8
 ```
 
 The variable must stay set: `uv run` re-syncs the environment on every call, and without it the next
