@@ -611,3 +611,23 @@ Options weighed and declined (with the reason, so they don't return as "good ide
   guard gets written (the `tests_invariants.py` collection is Memory-Roadmap T3).
 - If a change *intentionally* reverses an entry, edit the entry in the same change with the new why —
   don't leave it contradicting the code.
+
+### ADR-19 — torch ships as a CPU build by default; CUDA is the `-gpu` variant, and images never re-sync
+**Decision:** torch is not a `[project]` dependency. It lives in two conflicting dependency groups —
+`cpu` (the default group; `download.pytorch.org/whl/cpu`) and `gpu` (CUDA 12.8; `whl/cu128`, Linux
+only) — with the version held for every fork by one `constraint-dependencies` pin. The published
+`qrmadness/agentx-api:latest` is CPU-only; `:latest-gpu` is built with `TORCH_VARIANT=gpu`.
+`docker-compose.gpu.yml` selects `:latest-gpu` and stays **pull-only** (no `build:` keys);
+`docker-compose.gpu.build.yml` carries the build arg and the manager adds it **only** for source
+clusters. Images set `UV_NO_SYNC=1`.
+**Why:** `nvidia/` + `torch/` + `triton/` were 6.6 GB of a 7.2 GB dependency set, shipped to every
+install while the default device is CPU. The invariants each guard a silent failure:
+- **`UV_NO_SYNC=1`** — the CMD and the entrypoint call `uv run`, which re-syncs to the *default*
+  groups; without it the GPU image uninstalls CUDA torch and downloads the CPU build on first boot.
+- **torch out of `[project]`** — it is also a transitive dependency of `sentence-transformers`; a bare
+  requirement resolves from PyPI's CUDA build in any fork where neither group is active.
+- **the version pin** — changing a package's index makes uv float it to the newest build that index
+  carries, so without one place for the version the variants diverge (and PyPI's newer builds pull
+  CUDA 13).
+- **pull-only GPU overlay** — a `build:` section on an image cluster makes compose try to build from a
+  bundle directory with no Dockerfile instead of pulling. Guarded by `test_overlays.py`.

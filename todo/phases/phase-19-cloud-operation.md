@@ -203,12 +203,13 @@ weights are memory-mapped and only touched vocabulary rows become resident, so b
 - [ ] **19.2.6 Footprint track — torch-free inference** (research:
       [2026-10-torch-free-inference-research.md](../research/2026-10-torch-free-inference-research.md)).
       Two separate problems, with separate fixes:
-      - **Image size — the install funnel.** `qrmadness/agentx-api:latest` is 13.1 GB; torch resolves
-        to the CUDA build, and `nvidia/` + `torch/` + `triton/` are 6.6 GB of a 7.2 GB
-        site-packages. **Slice 0: a CPU-only torch wheel** for the default image (a uv index for
-        `torch`), plus a GPU variant tag for `docker-compose.gpu.yml`, which runs the same image.
-        No code change, and it recovers most of the CUDA payload on its own. The other ~5 GB of the
-        image sits outside the Python layer and is unexamined.
+      - **Image size — the install funnel.** ✅ **Slice 0 shipped `[v0.21.273]`** (ADR-19): torch moved
+        into `cpu` (default) / `gpu` dependency groups; `:latest` is CPU-only and `:latest-gpu`
+        carries CUDA 12.8, selected by `docker-compose.gpu.yml`. Measured: the Python dependency
+        layer **7.97 → 1.73 GB**, every other layer unchanged; estimated pull **~4.4 → ~0.65 GB**.
+        *Correction:* the "13.1 GB" figure — and the "other ~5 GB outside the Python layer" once
+        noted here — was Docker Desktop's accounting, which counts compressed blobs *plus* the
+        unpacked snapshot. The real image was ~8.5 GB unpacked; its non-Python layers are ~0.5 GB.
       - **Resident RAM** (measured budget above), ordered so the vector index is touched last:
         1. Language ID → fastText lid.176 / GlotLID, wired into translation's `src_lang` — fixes the
            English-source bug ([translation-web-search.md](../backlog/translation-web-search.md)).

@@ -112,7 +112,9 @@ COMPOSE_FILE=docker-compose.yml:docker-compose.manager.yml:docker-compose.gpu.ym
 ```
 
 Then bring the stack up through the manager (dashboard **Up**, or
-`docker compose exec manager agentx-manager up`) — same as the main flow.
+`docker compose exec manager agentx-manager up`) — same as the main flow. The overlay
+also switches the API to the CUDA image, `qrmadness/agentx-api:latest-gpu`; the default
+`:latest` is CPU-only, so this overlay is what makes a GPU usable at all.
 
 Verify: `curl -s localhost:12319/api/health | jq .compute` → `{"device":"cuda",...}`.
 

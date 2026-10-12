@@ -192,12 +192,13 @@ cluster's `AGENTX_GATEWAY_TOKEN`, and warns about the foot-guns before you copy:
 
 ## GPU Acceleration (NVIDIA overlay)
 
-Passing `NVIDIA=1` to `cluster:up` layers in `docker-compose.gpu.yml`, which reserves the
-host's NVIDIA GPUs for the `api` service:
+Passing `NVIDIA=1` to `cluster:up` layers in `docker-compose.gpu.yml`, which switches the `api`
+service to the CUDA image and reserves the host's NVIDIA GPUs for it:
 
 ```yaml
 services:
   api:
+    image: ${AGENTX_IMAGE:-qrmadness/agentx-api:latest-gpu}
     deploy:
       resources:
         reservations:
@@ -217,6 +218,17 @@ sudo systemctl restart docker
 
 On Windows, use Docker Desktop's WSL2 backend with the GPU driver installed on the Windows host
 (not inside WSL).
+
+**Two images.** `:latest` is CPU-only, which keeps it free of the ~5 GB CUDA payload;
+`:latest-gpu` carries CUDA 12.8 torch. The overlay selects `:latest-gpu`, so image-based clusters
+need nothing else. **Source** clusters build the image themselves, so they also layer
+`docker-compose.gpu.build.yml`, which passes `TORCH_VARIANT=gpu` to the build — the manager adds it
+automatically. Building one by hand:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml \
+  -f docker-compose.gpu.yml -f docker-compose.gpu.build.yml --profile production up -d --build
+```
 
 No application config changes are needed: the app resolves its compute device from
 `AGENTX_DEVICE` (default `auto` → CUDA when available) and moves **both** the embedding model

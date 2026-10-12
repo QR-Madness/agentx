@@ -44,26 +44,38 @@ python -c "import torch; print(torch.cuda.is_available())"
 
 ## Installing CUDA-enabled PyTorch (local dev)
 
-GPU use depends entirely on having a CUDA build of `torch`.
+GPU use depends entirely on having a CUDA build of `torch`, and **the project installs the CPU
+build by default** — `uv sync`, `uv run` and every `task` that wraps them pull torch from the `cpu`
+dependency group, which carries none of the ~5 GB CUDA payload. That is the right default for most
+machines; on an NVIDIA machine you have to opt out of it.
 
-- **Linux:** the default PyPI `torch` wheel **bundles the CUDA runtime**, so `task setup` /
-  `uv sync` gives you a GPU-capable build automatically — just have an NVIDIA driver installed.
-- **Windows:** the default PyPI `torch` wheel is **CPU-only**. You must install the CUDA build
-  explicitly (or run under WSL2). See [Windows Setup](../getting-started/windows.md#gpu-on-windows).
-
-To install the CUDA build with uv (adjust the CUDA version to your driver):
+**Linux with an NVIDIA GPU:** disable the `cpu` group for good by exporting this in your shell
+profile, then sync:
 
 ```bash
-uv pip install torch --index-url https://download.pytorch.org/whl/cu121
+export UV_NO_GROUP=cpu   # every uv sync / uv run now skips the CPU-only torch build
+uv sync                  # PyPI's build of the pinned torch — for 2.9.1, it bundles CUDA 12.8
 ```
 
+The variable must stay set: `uv run` re-syncs the environment on every call, and without it the next
+`uv run` (or `task dev`) quietly swaps the CPU build back in.
+
+**Windows:** PyPI's `torch` wheel is CPU-only on Windows, so the switch above does not help. Run the
+API under WSL2 instead. See [Windows Setup](../getting-started/windows.md#gpu-on-windows).
+
+The torch **version** lives in one place — `constraint-dependencies` in `pyproject.toml` — and applies
+to every build, so the CPU and CUDA environments can never drift apart.
+
 !!! note
-    If `cuda_available` is `false` despite having a GPU, you almost always have a CPU-only `torch`
-    wheel installed. Reinstall from the CUDA index above.
+    If `cuda_available` is `false` despite having a GPU, you almost always have the CPU build
+    installed — check `python -c "import torch; print(torch.__version__)"`: a `+cpu` suffix means
+    `UV_NO_GROUP=cpu` is not set in the shell that ran `uv sync`.
 
 ## Docker / production
 
 For containerized deployments, GPU passthrough is handled by the `docker-compose.gpu.yml` overlay
-(applied via `cluster:up CLUSTER=<name> NVIDIA=1`). The default Linux `torch` wheel in the
-`python:3.14-slim` image is CUDA-capable, so the overlay plus the NVIDIA Container Toolkit on the host
-is all that's needed. See [Clusters & Gateway → GPU Acceleration](../deployment/clusters.md#gpu-acceleration-nvidia-overlay).
+(applied via `cluster:up CLUSTER=<name> NVIDIA=1`). The overlay also switches the API to the
+**`qrmadness/agentx-api:latest-gpu`** image — the CUDA 12.8 build. The default `:latest` image is
+CPU-only, so on its own it cannot use a GPU no matter what the overlay reserves. Source clusters that
+build the image locally also need `docker-compose.gpu.build.yml`; the deployment manager adds it for
+you. See [Clusters & Gateway → GPU Acceleration](../deployment/clusters.md#gpu-acceleration-nvidia-overlay).

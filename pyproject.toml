@@ -1,14 +1,14 @@
 [project]
 name = "agentx-source"
-version = "0.21.272"
+version = "0.21.273"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.14"
 dependencies = [
     # Django Framework
     "django>=5.2.8",
     "django-cors-headers>=4.6.0",
-    # AI/ML Models
-    "torch>=2.9.1",
+    # AI/ML Models — torch is NOT listed here: it comes from exactly one of the
+    # `cpu` / `gpu` dependency groups below (see [tool.uv.sources]).
     "transformers>=4.57.1",
     "sentencepiece>=0.2.1",
     # Vector & Graph Databases
@@ -51,6 +51,53 @@ dependencies = [
     "alembic>=1.18.4",
     "pypdf>=6.13.3",
 ]
+
+# ----------------------------------------------------------------------------
+# PyTorch build selection. Exactly one torch build is installed:
+#   - `cpu` (default) — every plain `uv sync` / `uv run`, and the published
+#     `:latest` image. CPU wheels carry no CUDA payload (nvidia/triton).
+#   - `gpu` — CUDA 12.8, the same CUDA the image shipped before this split, so
+#     GPU drivers that worked keep working. Opt in with
+#     `uv sync --no-group cpu --group gpu`; the `:latest-gpu` image does this.
+# torch is a transitive dependency of sentence-transformers, so it must NOT also
+# sit in [project] dependencies — a bare requirement there would resolve from
+# PyPI's default (CUDA) build in any fork where neither group is active.
+# ----------------------------------------------------------------------------
+[dependency-groups]
+cpu = ["torch"]
+gpu = ["torch"]
+
+[tool.uv]
+default-groups = ["cpu"]
+# The ONE place torch's version lives, applied to every fork (cpu, gpu, and any
+# group-less resolution). Without it, switching index makes uv float each
+# variant to the newest build that index carries — different versions per
+# variant, and PyPI's newer builds drag in CUDA 13. Bump here, then `uv lock`.
+constraint-dependencies = ["torch==2.9.1"]
+conflicts = [
+    [
+        { group = "cpu" },
+        { group = "gpu" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", group = "cpu" },
+    # CUDA wheels exist only for Linux; elsewhere the gpu group falls back to
+    # PyPI's build (CPU on Windows, CPU/MPS on macOS).
+    { index = "pytorch-cu128", group = "gpu", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 # ----------------------------------------------------------------------------
 # Static analysis — ruff. Lean by design: only rules that earn their keep in this

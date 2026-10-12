@@ -54,12 +54,16 @@ docker compose exec api agentx setup-auth --force   # reset the root password
 
 ## Tags
 
-- `latest` — the most recent release
-- `X.Y.Z` — pinned release (recommended for reproducible deploys)
+- `latest` — the most recent release, CPU-only (the default)
+- `latest-gpu` — the same release with CUDA 12.8 PyTorch, for NVIDIA hosts
 
-`linux/amd64`. The image bundles PyTorch + Transformers + sentence-transformers,
-so it is large (~4.4 GB); the embedding/translation models themselves download at
-runtime into the mounted cache volume.
+The repo keeps one tag per variant to stay storage-lean; each image records its
+release in the `org.opencontainers.image.version` label.
+
+`linux/amd64`. The image bundles PyTorch + Transformers + sentence-transformers —
+under 1 GB to pull for `latest`, ~4.4 GB for `latest-gpu` (the CUDA runtime is most
+of that); the embedding/translation models themselves download at runtime into the
+mounted cache volume.
 
 ## Configuration
 
@@ -68,8 +72,8 @@ Set via the `.env` file. Key variables: `DJANGO_SECRET_KEY` (required),
 `AGENTX_AUTH_ENABLED`, `EMBEDDING_PROVIDER` (`local` | `openai`), `AGENTX_DEVICE`
 (`auto` | `cpu` | `cuda`), and provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …).
 
-GPU acceleration is available via the `docker-compose.gpu.yml` overlay (NVIDIA
-Container Toolkit required).
+GPU acceleration: the `docker-compose.gpu.yml` overlay selects `latest-gpu` and
+reserves the GPU (NVIDIA Container Toolkit required).
 
 ## Links
 

@@ -23,7 +23,8 @@
 >   Moving NLLB to CTranslate2 (§2) forces explicit source handling anyway — fix it there.
 > - **The image case is the CUDA one, and worse than the body's example.** `torch` resolves from the
 >   default PyPI index — the CUDA build, with 15 `nvidia-*` packages in `uv.lock`.
->   `qrmadness/agentx-api:latest` is **13.1 GB**; its `uv sync` layer alone is **7.97 GB**. Installed,
+>   `qrmadness/agentx-api:latest` reports **13.1 GB** in Docker Desktop (which counts compressed blobs
+>   plus the unpacked snapshot — ~8.5 GB unpacked); its `uv sync` layer alone is **7.97 GB**. Installed,
 >   `nvidia/` 4.3 GB + `torch/` 1.7 GB + `triton/` 0.59 GB = **6.6 GB of a 7.2 GB site-packages
 >   (92%)**. Models are not baked in. **A CPU-only wheel recovers most of this with no code change** —
 >   but `docker-compose.gpu.yml` runs the same image with an NVIDIA reservation, so it needs a GPU

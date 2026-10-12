@@ -18,6 +18,10 @@ GATEWAY_EXPOSE = "docker-compose.gateway.expose.yml"
 TUNNEL_TOKEN = "docker-compose.tunnel.yml"  # noqa: S105 — compose filename, not a secret
 TUNNEL_NAMED = "docker-compose.tunnel.named.yml"
 GPU = "docker-compose.gpu.yml"
+# Build-arg companion to GPU. Source clusters only: it carries `build:` keys, and
+# image clusters must never gain a build section (they would try to build from a
+# bundle directory that has no Dockerfile instead of pulling :latest-gpu).
+GPU_BUILD = "docker-compose.gpu.build.yml"
 SHELL = "docker-compose.shell.yml"
 
 
@@ -38,6 +42,8 @@ def compose_files(spec: ClusterSpec) -> list[str]:
         files.append(TUNNEL_NAMED)
     if spec.gpu:
         files.append(GPU)
+        if spec.kind == "source":
+            files.append(GPU_BUILD)
     if spec.shell:
         files.append(SHELL)
     return files

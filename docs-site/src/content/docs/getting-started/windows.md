@@ -63,20 +63,21 @@ haven't installed the Rust/MSVC toolchain yet.
 
 ## GPU on Windows
 
-The default PyPI `torch` wheel on Windows is **CPU-only**. AgentX will run fine, but the embedding and
-translation models stay on the CPU regardless of `AGENTX_DEVICE`. To use an NVIDIA GPU you have two
-options:
+AgentX installs the **CPU build** of `torch` by default on every platform, so out of the box the
+embedding and translation models run on the CPU regardless of `AGENTX_DEVICE`. AgentX runs fine that
+way. To use an NVIDIA GPU, run the backend somewhere a CUDA build of torch can live:
 
-1. **Install the CUDA build of torch** into the project environment (match the CUDA version to your
-   driver):
+1. **Docker Desktop (recommended).** Install the NVIDIA driver on the **Windows host** (not inside
+   WSL), enable GPU support in Docker Desktop → Settings → Resources → WSL Integration, and add
+   `docker-compose.gpu.yml`. That overlay switches the API to the `qrmadness/agentx-api:latest-gpu`
+   image (CUDA 12.8) and reserves the GPU for it.
 
-   ```powershell
-   uv pip install torch --index-url https://download.pytorch.org/whl/cu121
-   ```
+2. **The backend directly under WSL2.** Follow the Linux steps in
+   [GPU Acceleration](../development/gpu.md#installing-cuda-enabled-pytorch-local-dev): export
+   `UV_NO_GROUP=cpu`, then `uv sync`.
 
-2. **Run the backend under WSL2** (recommended), where the default Linux `torch` wheel already bundles
-   the CUDA runtime. Install the NVIDIA driver on the **Windows host** (not inside WSL) and enable GPU
-   support in Docker Desktop → Settings → Resources → WSL Integration.
+Installing a CUDA build into a native Windows environment with `uv pip install` does not stick: the
+next `uv run` re-syncs the environment to the lockfile and puts the CPU build back.
 
 Either way, confirm it worked:
 
