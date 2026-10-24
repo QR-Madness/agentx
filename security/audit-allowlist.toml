@@ -1,0 +1,151 @@
+# Triaged dependency advisories: the debt ledger behind `task audit`
+# (scripts/audit_deps.py; policy in Decisions.md ADR-20).
+#
+# Every advisory the audit reports must be fixed or listed here. Each entry needs a
+# reason a reviewer can check and a review_by date. Past that date the gate fails
+# until someone re-triages: upgrade the dependency, or set a new date with a fresh
+# reason. An id listed here that the audit no longer reports is flagged as stale;
+# delete it.
+#
+# Fields: ecosystem ("pypi" | "npm"), package, ids (advisory ids or their aliases),
+#         reason, review_by, projects (optional; omit to match in any project:
+#         api, api-gpu, manager, client, manager-ui, docs-site).
+
+# --- Python (API images) ------------------------------------------------------
+
+[[advisory]]
+ecosystem = "pypi"
+package = "transformers"
+ids = ["PYSEC-2025-217", "PYSEC-2025-218", "PYSEC-2026-2288", "PYSEC-2026-2289",
+       "PYSEC-2026-2290", "PYSEC-2026-3929", "PYSEC-2026-4174"]
+reason = """
+Fixed only in 5.x (a breaking major that sentence-transformers 5.7 and the
+translation kit haven't moved to), or not fixed at all. AgX never trains, never
+calls save_pretrained or load_custom_generate, and loads none of the X-CLIP,
+GLM4 or LightGlue code. The live one is PYSEC-2026-2289 (a malicious
+config.json in a loaded repo): AgX loads four operator-chosen repos (bge-m3,
+the reranker, NLLB-200, language detection), so the exposure is a compromised
+upstream repo. Mitigation to do: pin model revisions. Leaves with the
+torch-free track (todo/phases/19 §19.2.6) or a transformers 5 migration.
+"""
+review_by = 2027-01-31
+
+[[advisory]]
+ecosystem = "pypi"
+package = "torch"
+ids = ["PYSEC-2025-194"]
+reason = """
+Memory corruption in torch.jit.script, local only. Neither AgX nor the model
+code it loads (XLM-R, M2M-100) calls jit.script. The fix is torch 2.13, whose
+Linux wheels would move the GPU image off CUDA 12.8; take it with that
+decision.
+"""
+review_by = 2027-01-31
+
+[[advisory]]
+ecosystem = "pypi"
+package = "setuptools"
+ids = ["PYSEC-2026-3447", "GHSA-xmj3-9gf7-h52w"]
+reason = """
+Both are package-build/install paths (sdist MANIFEST.in matching on macOS;
+legacy wheel install on Windows), not runtime. torch 2.11 requires
+setuptools<82, so the fixed 83/84 lines wait on torch.
+"""
+review_by = 2027-01-31
+
+[[advisory]]
+ecosystem = "pypi"
+package = "filelock"
+ids = ["CVE-2026-112907", "CVE-2026-112913", "CVE-2026-112940"]
+reason = """
+Two are in ReadWriteLock/AsyncReadWriteLock, which no consumer uses
+(huggingface-hub, torch and transformers only take FileLock). The third is the
+Windows soft lock; huggingface-hub falls back to SoftFileLock only on
+filesystems without flock, and the images are Linux. The fix is filelock 4.x,
+a major: Dependabot's major group proposes it and the CI suite vets it.
+"""
+review_by = 2027-01-31
+
+# --- Client -------------------------------------------------------------------
+
+[[advisory]]
+ecosystem = "npm"
+package = "katex"
+ids = ["GHSA-238p-pmpm-9mq7"]
+projects = ["client", "docs-site"]
+reason = """
+Low severity, and it needs an existing prototype-pollution bug in the page to
+exploit. The fix is katex 0.18.2, a breaking line for every range in use: the
+client's own ^0.17, and ^0.16 from rehype-katex, micromark-extension-math and
+mermaid. Bumping the client's direct range alone would leave the ^0.16 copies.
+"""
+review_by = 2027-01-31
+
+# --- Docs site ----------------------------------------------------------------
+# A static build (no adapter, no SSR, no on-demand image endpoint) of the repo's
+# own content. Every advisory below needs attacker-controlled input, and the only
+# inputs are the repo's files, so keep Vercel's fork protection on (fork-PR
+# previews wait for approval). The trigger to clear most of these is the Astro 7
+# migration, which brings sharp 0.35 and esbuild 0.28 with it.
+
+[[advisory]]
+ecosystem = "npm"
+package = "astro"
+ids = ["GHSA-26w7-cxv4-gfx2", "GHSA-376h-93r7-7g6f", "GHSA-4g3v-8h47-v7g6",
+       "GHSA-7pw4-f3q4-r2p2", "GHSA-98hj-9722-w3j8", "GHSA-f48w-9m4c-m7f5"]
+projects = ["docs-site"]
+reason = """
+Fixed only in astro 7.x (a major). The critical one is RCE in AVIF optimization,
+which needs an attacker-supplied image; the rest are XSS and an auth bypass in
+rendering or SSR paths, fed here only by trusted repo content.
+"""
+review_by = 2027-01-31
+
+[[advisory]]
+ecosystem = "npm"
+package = "sharp"
+ids = ["GHSA-f88m-g3jw-g9cj", "GHSA-rgj7-g3m4-5g8c", "GHSA-wq5f-xc86-pv6w"]
+projects = ["docs-site"]
+reason = """
+libvips/libheif/librsvg bugs reached by decoding hostile images; the build only
+decodes the repo's own images. Fixed in sharp 0.35, outside astro 6's ^0.34
+range.
+"""
+review_by = 2027-01-31
+
+[[advisory]]
+ecosystem = "npm"
+package = "js-yaml"
+ids = ["GHSA-2883-xcg3-v3hh", "GHSA-52cp-r559-cp3m", "GHSA-5p4m-2wfm-xmqj"]
+projects = ["docs-site"]
+reason = """
+CPU exhaustion on hostile YAML. The vulnerable copy is pinned exactly (4.2.0) by
+@redocly/openapi-core under redoc; the API explorer page only ever parses the
+site's own /openapi.yaml (the repo's OpenApi.yaml). Clears with a redoc release
+that moves off the pin.
+"""
+review_by = 2027-01-31
+
+[[advisory]]
+ecosystem = "npm"
+package = "zod"
+ids = ["GHSA-mrhx-c7xc-m3w5"]
+projects = ["docs-site"]
+reason = """
+Memory exhaustion validating oversized input. The vulnerable copy is pinned
+exactly (4.1.11) by @vercel/cli-config (via @vercel/functions → @vercel/oidc),
+which validates the Vercel CLI's own config files in the home directory. The
+middleware imports only next/rewrite, so no request data reaches it.
+"""
+review_by = 2027-01-31
+
+[[advisory]]
+ecosystem = "npm"
+package = "esbuild"
+ids = ["GHSA-g7r4-m6w7-qqqr"]
+projects = ["docs-site"]
+reason = """
+Arbitrary file read through the esbuild dev server; production builds never
+start it. The fix (0.28.1) is outside astro 6's ^0.27 range.
+"""
+review_by = 2027-01-31
