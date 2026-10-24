@@ -200,6 +200,13 @@ task test
 
 Runs Django test suite.
 
+### CI Suite (offline)
+```bash
+task test:ci
+```
+
+Runs the same full suite with Hugging Face offline, as CI does. Tests that need a translation model you haven't downloaded skip instead of fetching it; everything else runs.
+
 ### Quick Tests (no model loading)
 ```bash
 task test:quick

@@ -73,6 +73,13 @@
       AGENTX_AUTH_ENABLED=False)` on `MCPClientTest`, matching the 4 sibling endpoint classes.
       `task test:quick` is now green regardless of local auth and **runs in CI**. *(If the full `task
       test` is ever CI-gated, sweep the same override onto any other endpoint test that 401s.)*
+- [x] **Full backend suite + Vitest in CI** — **shipped** (2026-10-24). `ci.yml` splits into
+      `gates` (lint/types/docs) · `backend-tests` (`task test:ci` = the whole `tests` + `tests_memory`
+      run HF-offline) · `client-tests` (`task test:client`) · `manager`. The WS-4 sweep happened: 7
+      endpoint classes 401'd without a local `.env` (auth defaults on) and now carry the override.
+      The 8 tests that need the translation models skip offline via `translation_models_available()`
+      (`test_utils.py`) instead of pulling them, so a fresh runner proves the rest. A fresh checkout
+      has no `data/config.json`, so CI is config-sterile by construction (the `test:sterile` class).
 - [×] **(WS-5) TODO-comment pointer-or-perish** — **won't build (doesn't earn its keep).** The whole
       codebase has **2** inline `TODO`s (`mcp/client.py` config-search, `views.py:4095` auth placeholder);
       a gate + ratchet for 2 markers is over-tooling. Revisit only if `grep -rE "TODO|FIXME"` climbs into

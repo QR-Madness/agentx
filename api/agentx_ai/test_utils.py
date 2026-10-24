@@ -43,14 +43,33 @@ def has_configured_provider() -> bool:
     )
 
 
-def translation_models_loaded() -> bool:
-    """Check if translation models are available (slow to load)."""
-    try:
-        from agentx_ai.kit.translation import TranslationKit  # noqa: F401
+def translation_models_available() -> bool:
+    """Check the translation models can load without a download.
 
-        return True
+    Online, an uncached model downloads on first use (slow, but it works — that's
+    ``task test``). Offline (``HF_HUB_OFFLINE``/``TRANSFORMERS_OFFLINE``, which
+    ``task test:ci`` sets), each model must already be in the local HF cache, so
+    the tests that need one skip instead of failing on a fresh CI runner.
+    """
+    try:
+        from huggingface_hub import constants, try_to_load_from_cache
+
+        from agentx_ai.kit.translation import TranslationKit
     except ImportError:
         return False
+    if not constants.HF_HUB_OFFLINE:  # also set by TRANSFORMERS_OFFLINE
+        return True
+
+    def cached(repo: str, filename: str) -> bool:
+        # A str is a cache hit; None / the no-exist sentinel are misses.
+        return isinstance(try_to_load_from_cache(repo, filename), str)
+
+    repos = {TranslationKit.language_detection_model_name, TranslationKit.level_ii_translation_model_name}
+    return all(
+        cached(repo, "config.json")
+        and (cached(repo, "model.safetensors") or cached(repo, "pytorch_model.bin"))
+        for repo in repos
+    )
 
 
 def embeddings_compatible() -> bool:

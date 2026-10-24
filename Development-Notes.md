@@ -792,7 +792,7 @@ Every LLM feature resolves `provider:model` through the registry. `resolve_with_
 
 ### Test config isolation (`task test:sterile`)
 
-A test that reads the developer's live `data/config.json` asserts *that box's* setup rather than the code's behavior — it passes for whoever wrote it and breaks for the next person, or only under a particular test order. The full `agentx_ai.tests` module is **not CI-gated** (CI runs `test:quick` + `test:memory`), so nothing else catches this class.
+A test that reads the developer's live `data/config.json` asserts *that box's* setup rather than the code's behavior — it passes for whoever wrote it and breaks for the next person, or only under a particular test order. CI runs the full suite (`task test:ci`, HF-offline) on a fresh checkout — no `data/config.json`, no `.env` — so it catches this class after the push; `test:sterile` catches it on your box first.
 
 `scripts/test_sterile_config.py` (`task test:sterile`, accepts a label) points `ConfigManager.CONFIG_PATH` at a nonexistent file **before** the tests import anything, so every config read falls back to `DEFAULT_CONFIG`. Anything failing only under it is depending on ambient local config. Fix by stubbing, never by relaxing the assertion. Read-only — the real config is never moved or written.
 

@@ -169,7 +169,7 @@ Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 Ensure Docker containers are healthy (`task db:status`) before running `task db:init:schemas`. Neo4j takes 10-20 seconds to become ready after container start.
 
 **Translation tests are slow on first run**
-The `TranslationKitTest` suite downloads NLLB-200 (~600MB) on first execution. Use `task test:quick` to skip model-dependent tests during development.
+The `TranslationKitTest` suite downloads NLLB-200 (~600MB) on first execution. Use `task test:ci` to run the full suite offline (model-dependent tests skip until the models are cached), or `task test:quick` for a small fast subset.
 
 **Embedding dimension mismatch errors**
 If you switch `EMBEDDING_PROVIDER` between `local` and `openai`, the vector dimensions differ. Reset the memory tables with `task db:init:schemas` or use the memory reset API endpoint.

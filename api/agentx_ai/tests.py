@@ -89,13 +89,18 @@ from agentx_ai.test_utils import (
     MockRedisTestBase,
     docker_services_running,
     has_configured_provider,
+    translation_models_available,
 )
 
 import agentx_ai.agent.tool_output_compressor as _compressor_mod
 
+_NO_TRANSLATION_MODELS = "translation models not cached and HF is offline"
 
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
 class TranslationKitTest(APITestBase):
 
+    @skipUnless(translation_models_available(), _NO_TRANSLATION_MODELS)
     def test_language_detect_post(self) -> None:
         """Test that the language detection API works with POST."""
         response = self.client.post(
@@ -109,6 +114,7 @@ class TranslationKitTest(APITestBase):
         self.assertIn('confidence', data)
         self.assertEqual(data['detected_language'], 'fr')
 
+    @skipUnless(translation_models_available(), _NO_TRANSLATION_MODELS)
     def test_language_detect_get(self) -> None:
         """Test backwards compatibility with GET request."""
         response = self.client.get("/api/tools/language-detect-20")
@@ -126,6 +132,7 @@ class TranslationKitTest(APITestBase):
         self.assertEqual(level_ii_language, "eng_Latn")
         self.assertTrue(level_ii_language in lexicon.level_ii_languages)
 
+    @skipUnless(translation_models_available(), _NO_TRANSLATION_MODELS)
     def test_translate_to_french(self) -> None:
         """Test that the translation API works."""
         response = self.client.post(
@@ -230,6 +237,7 @@ class MCPClientTest(APITestBase):
         self.assertEqual(response.status_code, 404)  # type: ignore[union-attr]
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
 class MCPOAuthTest(TestCase):
     """OAuth 2.1 for remote MCP servers: config schema, token storage, the
     interactive-flow bridge, and the callback/reset endpoints."""
@@ -1369,6 +1377,8 @@ class MCPServerRegistryTest(TestCase):
 # Phase 10: Translation Tests
 # =============================================================================
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
+@skipUnless(translation_models_available(), _NO_TRANSLATION_MODELS)
 class TranslationLanguagePairsTest(APITestBase):
     """Test translation across multiple language pairs."""
 
@@ -1407,6 +1417,7 @@ class TranslationLanguagePairsTest(APITestBase):
         self.assertIn('translatedText', data)
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
 class TranslationErrorHandlingTest(APITestBase):
     """Test translation error handling."""
 
@@ -1438,6 +1449,8 @@ class TranslationErrorHandlingTest(APITestBase):
         self.assertEqual(response.status_code, 400)  # type: ignore[union-attr]
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
+@skipUnless(translation_models_available(), _NO_TRANSLATION_MODELS)
 class TranslationLongTextTest(APITestBase):
     """Test translation with various text lengths."""
 
@@ -7363,6 +7376,7 @@ class ChatRunLifecycleTest(TestCase):
         mark.assert_called_once_with("r-stale", "failed")
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
 class ConversationStateEndpointTest(MockRedisTestBase):
     """GET/PATCH /api/conversations/<id>/state — the editable state surface (Slice 1b)."""
 
@@ -13795,7 +13809,7 @@ class WebResearchToolsTest(TestCase):
         # which asks whether a key exists — and that reads the developer's live
         # `data/config.json`/env. Without the stub this asserted the box's key
         # inventory rather than the gating logic, and passed only where a Tavily
-        # key happened to be present (the full suite isn't CI-gated, so nothing
+        # key happened to be present (the full suite wasn't CI-gated then, so nothing
         # caught it). Found by running the suite with a sterile ConfigManager path.
         with patch.object(it, "resolve_active_search_backend", return_value="tavily"), \
              patch.object(it, "_backend_has_key", lambda n: True):
@@ -16609,6 +16623,7 @@ class AmbassadorRelayEndpointTest(TestCase):
         self.assertEqual(enq.call_args.kwargs["agent_profile_id"], "prof-default")
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
 class AmbassadorDispatchEndpointTest(TestCase):
     """POST /api/agent/ambassador/dispatch — the write-side: hand a task to a chosen worker
     by minting a NEW conversation and running it headless (the user is the author; INV-2)."""
