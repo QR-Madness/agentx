@@ -3,7 +3,9 @@
 A test that reads the developer's live ``data/config.json`` asserts *that box's*
 setup rather than the code's behavior. The failure mode is nasty: it passes for
 whoever wrote it, and breaks for the next person — or, worse, only under a
-particular test order. The full suite is not CI-gated, so nothing else catches it.
+particular test order. CI runs the full suite (``task test:ci``) on a fresh
+checkout with no ``data/config.json``, so it catches this class too; this script
+reproduces that on a developer box, without moving or touching the real config.
 
 This points ``ConfigManager.CONFIG_PATH`` at a nonexistent file **before** the
 tests import anything, so config reads fall back to ``DEFAULT_CONFIG``. Any test
