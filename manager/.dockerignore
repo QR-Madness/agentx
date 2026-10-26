@@ -1,0 +1,11 @@
+# Keep the build context to what the Dockerfile copies: pyproject.toml,
+# uv.lock, agentx_manager/, and ui/ sources. Host-built artifacts must never
+# reach the image — a local ui/node_modules would overwrite the frozen
+# `bun install` in the ui stage, and a local .venv/__pycache__ would ride along.
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+tests/
+ui/node_modules/
+ui/dist/

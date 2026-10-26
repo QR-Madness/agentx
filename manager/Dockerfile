@@ -1,9 +1,15 @@
+# syntax=docker/dockerfile:1
 # AgentX Manager image — CLI + web GUI over the host's Docker.
 #
 # Runs from source at /app (no wheel): the server resolves the GUI at
 # /app/ui/dist, and PYTHONPATH keeps the layout identical to the repo's
 # manager/ directory. The docker CLI + compose plugin are copied from the
 # official docker:cli image (static Go binaries).
+#
+# Dependencies install from the lockfiles only (uv.lock, ui/bun.lock) and are
+# never re-resolved at build time, so the lockfiles describe exactly what the
+# image ships. To change a dependency, relock — a rebuild alone never picks up
+# a newer release.
 #
 # The container needs, at runtime (see docker-compose.manager.yml):
 #   - /var/run/docker.sock mounted
@@ -12,12 +18,31 @@
 
 FROM oven/bun:1-slim AS ui
 WORKDIR /build
-COPY ui/package.json ui/bun.lock* ./
-RUN bun install --frozen-lockfile || bun install
+COPY ui/package.json ui/bun.lock ./
+RUN bun install --frozen-lockfile
 COPY ui/ .
 RUN bun run build
 
 FROM docker:27-cli AS dockercli
+
+# Python runtime dependencies → /app/.venv, with the same pinned uv as the API
+# image (root Dockerfile). uv stays in this stage; the final image gets only
+# the environment.
+FROM python:3.12-slim AS deps
+COPY --from=ghcr.io/astral-sh/uv:0.9.11 /uv /bin/
+# Compile bytecode for faster cold starts; copy (not hardlink) out of the cache
+# mount; never download a uv-managed Python — the venv must link to this
+# image's interpreter, which the final stage shares.
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+# --frozen: install exactly what uv.lock pins. --no-dev: skip the test group
+# (pytest, httpx). --no-install-project: the app runs from source, so only its
+# dependencies belong in the environment.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
 
 FROM python:3.12-slim
 LABEL org.opencontainers.image.title="AgentX Manager" \
@@ -28,12 +53,14 @@ COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose \
      /usr/local/libexec/docker/cli-plugins/docker-compose
 
 WORKDIR /app
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir fastapi>=0.115 "uvicorn>=0.30"
+COPY --from=deps /app/.venv .venv
 COPY agentx_manager/ agentx_manager/
 COPY --from=ui /build/dist ui/dist
 
-ENV PYTHONPATH=/app \
+# The venv comes first on PATH, so the ENTRYPOINT's `python` (and any
+# `--entrypoint python` override) runs against the locked environment.
+ENV PATH=/app/.venv/bin:$PATH \
+    PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
 
 EXPOSE 12320

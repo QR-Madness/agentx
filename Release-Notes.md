@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.274 -->
+<!-- release-version: 0.21.275 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -32,4 +32,4 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 - **Settings that claimed to save now do** — **"Enable audio input" and "Enable speech generation" never persisted**; Ambassador's voice pickers were dropped silently; editing one Web Search source-policy list wiped the others.
 - **Memory moves are complete** — exports carry distilled procedures, replace-mode import also resets the PostgreSQL mirror, and consolidation reports the relationships it drops.
-- **Security updates** — a critical sanitizer bypass in diagram rendering (mermaid's DOMPurify), a torch model-loading bypass, and fixes for Django, PyJWT and other server packages.
+- **Security updates** — a critical DOMPurify bypass in mermaid diagrams, a torch model-loading bypass, and fixes for Django, PyJWT and more; the manager image is pinned to its lockfile.
