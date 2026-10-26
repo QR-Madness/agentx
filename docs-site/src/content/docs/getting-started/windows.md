@@ -73,8 +73,8 @@ way. To use an NVIDIA GPU, run the backend somewhere a CUDA build of torch can l
    image (CUDA 12.8) and reserves the GPU for it.
 
 2. **The backend directly under WSL2.** Follow the Linux steps in
-   [GPU Acceleration](../development/gpu.md#installing-cuda-enabled-pytorch-local-dev): export
-   `UV_NO_GROUP=cpu`, then `uv sync`.
+   [GPU Acceleration](../development/gpu.md#installing-cuda-enabled-pytorch-local-dev), choosing
+   CUDA 12.8 or CUDA 13 by what your Windows driver supports.
 
 Installing a CUDA build into a native Windows environment with `uv pip install` does not stick: the
 next `uv run` re-syncs the environment to the lockfile and puts the CPU build back.

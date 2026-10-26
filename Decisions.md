@@ -238,8 +238,8 @@ code). `S608` stays active everywhere else to catch *new* raw SQL.
 **Why:** in a utilitarian repo, a linter that emits hundreds of findings against intentional idioms
 trains you to ignore it. Lean rules that *earn their keep* stay green and get read. The real fix for
 the raw-SQL surface is the §1.5 repository layer (Memory-Roadmap), not `noqa`-decoration.
-**Guard:** `task lint:python` runs clean at HEAD; `task docs:check` + `task audit` (pip-audit CVEs)
-round out the gate. **Source:** this session's static-analysis pass; pyproject comments point here.
+**Guard:** `task lint:python` runs clean at HEAD; `task docs:check` + `task audit` (the lock-based
+advisory gate, ADR-20) round out the gate. **Source:** this session's static-analysis pass; pyproject comments point here.
 
 ### ADR-8 — OpenAPI is spec-first and hand-maintained; no DRF/generator
 **Decision:** `OpenApi.yaml` stays the authoritative, hand-written contract; **code is checked
@@ -631,3 +631,23 @@ install while the default device is CPU. The invariants each guard a silent fail
   CUDA 13).
 - **pull-only GPU overlay** — a `build:` section on an image cluster makes compose try to build from a
   bundle directory with no Dockerfile instead of pulling. Guarded by `test_overlays.py`.
+
+### ADR-20 — Dependency advisories are gated from the lockfiles, against a dated allowlist
+**Decision:** `task audit` (`scripts/audit_deps.py`) audits what ships, read from the lockfiles,
+never from an installed environment. Python: each uv lock is exported to pins (the API twice, as the
+CPU set and the `gpu` group, since both images publish), markers are dropped and local tags (`+cpu`,
+`+cu128`) stripped so torch is checked under its public version, then `pip-audit --no-deps` runs.
+JS: `bun audit --production` per bun project. An advisory must be fixed or listed in
+`security/audit-allowlist.toml` with a checkable reason and a `review_by` date; past that date the
+gate fails. It fails closed: a tool that didn't run, or a pin it couldn't check, is an error, never
+a pass. It runs in `security-audit.yml` on any dependency-manifest change, weekly, and on demand, and
+it blocks `release:check`. Dependabot raises grouped version updates (minor+patch apart from majors,
+5-day cooldown); security alerts and security-update PRs are a repository setting.
+**Why:** the old `task audit` checked the dev venv, so it never saw the GPU image's packages and
+skipped torch outright (`+cpu` isn't a PyPI version), and the client audit counted dev tooling. That
+noise hid a critical DOMPurify bypass that ships in the client. Requiring every exception to be
+written down, with a date, keeps it a decision rather than a warning everyone learns to skip.
+**Rejected:** auditing the installed venv (misses image variants); Dependabot `ignore` rules (unclear
+whether they also mute security updates); running the audit on every PR (a new advisory against an
+unchanged lock would turn unrelated PRs red; the weekly run surfaces it instead).
+**Guard:** `security-audit.yml` + `release:check`; stale allowlist ids warn (`--strict` fails).

@@ -1,6 +1,6 @@
 [project]
 name = "agentx-source"
-version = "0.21.274"
+version = "0.21.275"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.14"
 dependencies = [
@@ -73,7 +73,7 @@ default-groups = ["cpu"]
 # group-less resolution). Without it, switching index makes uv float each
 # variant to the newest build that index carries — different versions per
 # variant, and PyPI's newer builds drag in CUDA 13. Bump here, then `uv lock`.
-constraint-dependencies = ["torch==2.9.1"]
+constraint-dependencies = ["torch==2.11.0"]
 conflicts = [
     [
         { group = "cpu" },

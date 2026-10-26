@@ -10,6 +10,7 @@ of the repo's anti-drift posture (the judgement half lives in [`Decisions.md`](.
 | `check_docs_site.py` | `docs:check` | docs-site homepage + content links resolve; `landing.ts` version in sync |
 | `check_pyright_baseline.py` | `check:types:python:baseline` | pyright error count never rises above `api/.pyright-baseline` |
 | `check_config_keys.py` | `lint:config-keys` | `config.get()` reads vs `DEFAULT_CONFIG` + key inventory (`--inventory`); advisory, not gated |
+| `audit_deps.py` | `audit` | every advisory in the uv locks (both API images + manager) and production bun deps is fixed or in `security/audit-allowlist.toml` with an unexpired `review_by`; needs network, fails closed (ADR-20) |
 
 ## The gate protocol (write new gates to this spec, not by imitation)
 

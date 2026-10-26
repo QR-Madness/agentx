@@ -186,10 +186,11 @@ or API keys; bare `manage.py` invocations work.
 task lint               # All linters (Python + Client)
 task lint:python        # ruff check api/  (lint:python:fix to auto-fix)
 task format:python      # ruff format api/
-task check:static       # All static analysis (lint + types + build)
-task check:types        # All type checkers (python: pyright; client: tsc)
-task check:build        # Verify both API and client build
+task check:static       # lint + types + build
+task check:types        # pyright + tsc
+task check:build        # API + client build
 task api:spec:lint      # Lint OpenApi.yaml with Redocly
+task audit              # Dependency CVE gate: locks vs allowlist (ADR-20)
 ```
 
 The root `OpenApi.yaml` mirrors the docs-site API reference (`docs-site/.../api/endpoints.md`) — update both when endpoints change and run `task api:spec:lint`. A **memory capability** change also updates `docs-site/.../architecture/memory-capabilities.md` (matrix row + section + diagram) in the same change.

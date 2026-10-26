@@ -1,0 +1,65 @@
+name: Security audit
+
+# The dependency advisory gate (`task audit` → scripts/audit_deps.py, Decisions.md ADR-20):
+# the uv locks for both API images and the manager, plus production bun deps, checked
+# against security/audit-allowlist.toml. Runs when a dependency manifest or the gate
+# changes, weekly (new advisories land against unchanged locks), and on demand.
+
+on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "manager/pyproject.toml"
+      - "manager/uv.lock"
+      - "**/package.json"
+      - "**/bun.lock"
+      - "security/**"
+      - "scripts/audit_deps.py"
+      - ".github/workflows/security-audit.yml"
+  push:
+    branches: [master]
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - "manager/pyproject.toml"
+      - "manager/uv.lock"
+      - "**/package.json"
+      - "**/bun.lock"
+      - "security/**"
+      - "scripts/audit_deps.py"
+      - ".github/workflows/security-audit.yml"
+  schedule:
+    - cron: "23 7 * * 1"  # Mondays 07:23 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: dependency advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Task
+        uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Audit the lockfiles (exceptions live in security/audit-allowlist.toml)
+        run: task audit
