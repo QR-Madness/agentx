@@ -27,12 +27,12 @@ jobs:
   resolve:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: astral-sh/setup-uv@v5
-      - uses: arduino/setup-task@v2
+      - uses: astral-sh/setup-uv@v7
+      - uses: arduino/setup-task@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
