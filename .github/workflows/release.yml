@@ -30,7 +30,7 @@ jobs:
   validate-version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate version format
         run: |
@@ -70,7 +70,7 @@ jobs:
     needs: validate-version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install system dependencies
         run: |
@@ -114,7 +114,7 @@ jobs:
             tauri_bundles: nsis,msi
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Linux system dependencies
         if: startsWith(matrix.platform, 'ubuntu')
@@ -177,7 +177,7 @@ jobs:
         run: bun install
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -205,7 +205,7 @@ jobs:
           rename_glob msi       "client/src-tauri/target/release/bundle/msi/*.msi"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: artifacts-${{ matrix.artifact_suffix }}
           path: |
@@ -231,7 +231,7 @@ jobs:
           - variant: gpu
             tag: latest-gpu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
 
@@ -251,10 +251,10 @@ jobs:
           grep -nE '^\s+version:' versions.yaml
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -265,7 +265,7 @@ jobs:
       # push separately with a retry loop (classic `docker push` resumes missing
       # blobs each attempt). The CPU variant shares the same path for simplicity.
       - name: Build image (amd64, ${{ matrix.variant }})
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -315,7 +315,7 @@ jobs:
         # Needs DOCKERHUB_TOKEN to be a Read/Write/Delete PAT. Non-fatal: a cosmetic
         # overview sync should never block a release.
         continue-on-error: true
-        uses: peter-evans/dockerhub-description@v4
+        uses: peter-evans/dockerhub-description@v5
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -327,13 +327,13 @@ jobs:
     needs: [validate-version, test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -341,7 +341,7 @@ jobs:
       # Small image (python-slim + docker CLI + built GUI) — unlike the API
       # image it's fine to push per-version tags straight from buildx.
       - name: Build + push manager image (amd64)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./manager
           file: ./manager/Dockerfile
@@ -370,13 +370,13 @@ jobs:
       # Checkout FIRST: reading versions.yaml + Release-Notes.md needs the repo, and
       # checkout cleans the workspace — running it after the download would wipe
       # release-artifacts/.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Reuse the bun-based versions.yaml idiom used by the build job.
       - uses: oven-sh/setup-bun@v2
 
       - name: Download client installer artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           # Only the per-platform installer bundles. Scoped by pattern so we skip
           # the `*.dockerbuild` build-record artifact that docker/build-push-action
@@ -398,7 +398,7 @@ jobs:
         run: find release-artifacts -type f | sort
 
       - name: Re-upload as single artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentx-client-v${{ inputs.version }}
           path: |
@@ -508,7 +508,7 @@ jobs:
           echo "=== bundle ==="; ls -la agentx-deploy.tar.gz; tar -tzf agentx-deploy.tar.gz
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ inputs.version }}
           name: AgentX v${{ inputs.version }} (Alpha)
