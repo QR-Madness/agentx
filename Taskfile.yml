@@ -782,9 +782,9 @@ tasks:
       - uv run ruff check --fix api/ manager/
 
   audit:
-    desc: "Scan installed dependencies for known CVEs (pip-audit)"
+    desc: "Dependency advisory gate — uv locks (both API images + manager) and production bun deps vs security/audit-allowlist.toml"
     cmds:
-      - uv run pip-audit --progress-spinner off {{.CLI_ARGS}}
+      - python3 scripts/audit_deps.py {{.CLI_ARGS}}
 
   lint:client:
     desc: "Lint TypeScript/React code"
@@ -1154,14 +1154,7 @@ tasks:
       - echo "🔍 Release Checklist"
       - echo "━━━━━━━━━━━━━━━━━━━━"
       - task: docs:check
-      - |
-        echo "  ⏳ Auditing dependencies (advisory — not blocking)..."
-        uv run pip-audit --progress-spinner off \
-          && echo "  ✓ No known Python dependency CVEs" \
-          || echo "  ⚠️  pip-audit reported advisories above — triage with 'task audit'"
-        (cd client && bun audit) \
-          && echo "  ✓ No known client dependency CVEs" \
-          || echo "  ⚠️  bun audit reported advisories above — triage with 'task lint:client:audit'"
+      - task: audit
       - |
         ISSUES=""
         

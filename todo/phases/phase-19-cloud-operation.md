@@ -210,6 +210,11 @@ weights are memory-mapped and only touched vocabulary rows become resident, so b
         *Correction:* the "13.1 GB" figure — and the "other ~5 GB outside the Python layer" once
         noted here — was Docker Desktop's accounting, which counts compressed blobs *plus* the
         unpacked snapshot. The real image was ~8.5 GB unpacked; its non-Python layers are ~0.5 GB.
+        `[v0.21.274]` moved the pin to **torch 2.11.0** (the `torch.load` `weights_only` bypass,
+        PYSEC-2026-2286, sat on bge-m3's pickled `.bin` load path); the `gpu` group stays CUDA 12.8.
+      - **Security debt this track retires.** The transformers 4.x advisories triaged in
+        `security/audit-allowlist.toml` (ADR-20) clear when the steps below drop transformers, or
+        with a transformers 5 migration, whichever lands first.
       - **Resident RAM** (measured budget above), ordered so the vector index is touched last:
         1. Language ID → fastText lid.176 / GlotLID, wired into translation's `src_lang` — fixes the
            English-source bug ([translation-web-search.md](../backlog/translation-web-search.md)).
