@@ -9,7 +9,7 @@ chains by hand.
 |---|---|
 | CLI | `agentx-manager` — repo: `uv run --project manager agentx-manager`, or the `task cluster:*` wrappers · bundle: `docker compose exec manager agentx-manager …` |
 | GUI | `http://127.0.0.1:12320` — `task manager:serve` (repo) or the `manager` compose profile (bundle) |
-| Image | `qrmadness/agentx-manager` (~370 MB; python-slim + docker CLI + built GUI) |
+| Image | `qrmadness/agentx-manager` (~355 MB; python-slim + docker CLI + built GUI). Dependencies install only from `manager/uv.lock` and `manager/ui/bun.lock`, never re-resolved at build time — relock to change what ships |
 
 !!! note "Which one am I?"
     **Repo checkout** — you cloned the source and run things with `task`/`uv`. **Bundle** — you
