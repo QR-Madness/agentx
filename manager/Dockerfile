@@ -63,6 +63,15 @@ ENV PATH=/app/.venv/bin:$PATH \
     PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
 
+# `docker compose exec manager agentx-manager <cmd>` (deploy/README.md) needs the
+# CLI on PATH. The app runs from source rather than as an installed package, so
+# this shim stands in for the console script an install would create. It keeps
+# the caller's working directory, which root discovery walks up from.
+COPY --chmod=0755 <<'EOF' /usr/local/bin/agentx-manager
+#!/bin/sh
+exec /app/.venv/bin/python -m agentx_manager.cli "$@"
+EOF
+
 EXPOSE 12320
 ENTRYPOINT ["python", "-m", "agentx_manager.cli"]
 CMD ["serve", "--host", "0.0.0.0"]
