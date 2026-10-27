@@ -123,6 +123,7 @@ ignore = [
     "S101",          # asserts are deliberate (and are the point in tests)
     "S110", "S112",  # try/except/pass|continue IS the never-raise / degrade-gracefully idiom (INV-1)
     "S311",          # `random` is for agent-id / jitter, never crypto
+    "UP042",         # StrEnum changes str()/f-string output of members (value, not Class.MEMBER) — convert deliberately, not by lint
 ]
 
 [tool.ruff.lint.per-file-ignores]

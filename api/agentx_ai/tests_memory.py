@@ -2759,6 +2759,18 @@ class SettingsCacheTTLTest(TestCase):
         self.assertGreater(SETTINGS_CACHE_TTL, 0)
 
 
+class PostgresDriverPinTest(TestCase):
+    """SQLAlchemy 2.1 maps a bare postgresql:// URL to psycopg 3; AgX ships psycopg2."""
+
+    def test_bare_scheme_is_pinned_to_psycopg2(self) -> None:
+        s = memory_config_module.Settings(postgres_uri="postgresql://u:p@db:5432/agent_memory")
+        self.assertEqual(s.postgres_uri, "postgresql+psycopg2://u:p@db:5432/agent_memory")
+
+    def test_explicit_driver_is_left_alone(self) -> None:
+        s = memory_config_module.Settings(postgres_uri="postgresql+psycopg://u:p@db:5432/agent_memory")
+        self.assertEqual(s.postgres_uri, "postgresql+psycopg://u:p@db:5432/agent_memory")
+
+
 class PinMemorySettingsTest(TestCase):
     """pin_memory_settings: the one sanctioned temporary-override mechanism."""
 

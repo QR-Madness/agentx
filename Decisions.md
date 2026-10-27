@@ -229,7 +229,9 @@ dual-write coupling. **Status:** aspirational — not yet the implemented write 
 **Decision:** `[tool.ruff.lint]` selects a *curated* set (`E4/E7/E9,F,B,C4,PIE,UP,ASYNC,S`), not
 "everything." Deliberately **off**: `E501` (line length — the codebase uses a compact-block style,
 [[project_ruff_check_not_format]]); `S110`/`S112` (try/except/pass *is* the never-raise idiom, INV-1);
-`S311` (random is agent-id/jitter, never crypto); `S101` (asserts are deliberate). `S608` is
+`S311` (random is agent-id/jitter, never crypto); `S101` (asserts are deliberate); `UP042` (moving a
+`(str, Enum)` to `StrEnum` changes `str()`/f-string output of its members, which can reach prompts
+and logs, so that's a deliberate change, never a lint fix). `S608` is
 **per-file-ignored** on the three audited raw-SQL files (`views.py`, `memory/semantic.py`,
 `eval_consolidation.py`) — their SQL binds all values (`%s`/`:name`/Cypher
 `$params`) and interpolates only static fragments/identifiers; per-line `noqa` was rejected because
@@ -648,6 +650,8 @@ skipped torch outright (`+cpu` isn't a PyPI version), and the client audit count
 noise hid a critical DOMPurify bypass that ships in the client. Requiring every exception to be
 written down, with a date, keeps it a decision rather than a warning everyone learns to skip.
 **Rejected:** auditing the installed venv (misses image variants); Dependabot `ignore` rules (unclear
-whether they also mute security updates); running the audit on every PR (a new advisory against an
+whether they also mute security updates) — with one exception, torch: its `constraint-dependencies`
+pin (ADR-19) is something Dependabot can't edit, so no update of either kind can succeed and each try
+fails the run; ignoring it costs nothing. Also rejected: running the audit on every PR (a new advisory against an
 unchanged lock would turn unrelated PRs red; the weekly run surfaces it instead).
 **Guard:** `security-audit.yml` + `release:check`; stale allowlist ids warn (`--strict` fails).

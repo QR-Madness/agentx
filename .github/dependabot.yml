@@ -19,6 +19,11 @@ updates:
         update-types: [minor, patch]
       major:
         update-types: [major]
+    # torch's version lives in pyproject's constraint-dependencies pin (ADR-19), which
+    # Dependabot can't edit, so every attempt fails to resolve and fails the run. Bump
+    # the pin by hand; `task audit` tracks torch's advisories against the allowlist.
+    ignore:
+      - dependency-name: torch
 
   - package-ecosystem: uv
     directory: "/manager"

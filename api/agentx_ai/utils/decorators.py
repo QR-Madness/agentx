@@ -12,7 +12,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
 
 
@@ -97,7 +96,7 @@ def lazy_singleton[T](init_func: Callable[[], T]) -> LazySingletonCallable[T]:
     return cast(LazySingletonCallable[T], wrapper)
 
 
-def lazy_singleton_with_fallback(
+def lazy_singleton_with_fallback[T](
     init_func: Callable[[], T],
     fallback: T | None = None,
 ) -> LazySingletonCallable[T | None]:
