@@ -6,6 +6,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,16 @@ class Settings(BaseSettings):
 
     # PostgreSQL
     postgres_uri: str = "postgresql://agent:changeme@localhost:5432/agent_memory"
+
+    @field_validator("postgres_uri")
+    @classmethod
+    def _pin_psycopg2_driver(cls, uri: str) -> str:
+        # SQLAlchemy 2.1 maps a bare postgresql:// URL to psycopg 3, but AgX ships
+        # psycopg2 and every .env/compose file uses the bare scheme. Pinning the
+        # driver here keeps both engines (connections.py, alembic/env.py) on it.
+        if uri.startswith("postgresql://"):
+            return "postgresql+psycopg2://" + uri.removeprefix("postgresql://")
+        return uri
 
     # Redis
     redis_uri: str = "redis://localhost:6379"
