@@ -23,7 +23,7 @@ RUN bun install --frozen-lockfile
 COPY ui/ .
 RUN bun run build
 
-FROM docker:27-cli AS dockercli
+FROM docker:29-cli AS dockercli
 
 # Python runtime dependencies → /app/.venv, with the same pinned uv as the API
 # image (root Dockerfile). uv stays in this stage; the final image gets only
