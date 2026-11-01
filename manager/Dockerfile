@@ -28,7 +28,7 @@ FROM docker:27-cli AS dockercli
 # Python runtime dependencies → /app/.venv, with the same pinned uv as the API
 # image (root Dockerfile). uv stays in this stage; the final image gets only
 # the environment.
-FROM python:3.12-slim AS deps
+FROM python:3.15-slim AS deps
 COPY --from=ghcr.io/astral-sh/uv:0.9.11 /uv /bin/
 # Compile bytecode for faster cold starts; copy (not hardlink) out of the cache
 # mount; never download a uv-managed Python — the venv must link to this
@@ -44,7 +44,7 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 LABEL org.opencontainers.image.title="AgentX Manager" \
       org.opencontainers.image.source="https://github.com/QR-Madness/agentx"
 
