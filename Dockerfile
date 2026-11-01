@@ -7,7 +7,7 @@
 #   docker build --build-arg TORCH_VARIANT=gpu -t qrmadness/agentx-api:latest-gpu .
 # Run: docker run -p 12319:12319 --env-file .env qrmadness/agentx-api
 
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
