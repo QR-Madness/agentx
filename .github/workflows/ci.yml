@@ -190,7 +190,7 @@ jobs:
         run: task test:client
 
   manager:
-    name: deployment manager · tests + types
+    name: deployment manager · tests + types + GUI build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -217,3 +217,14 @@ jobs:
       - name: Integration tests (real nginx gateway, fake API upstream)
         working-directory: manager
         run: uv run pytest tests/integration -m docker -q
+
+      # The web GUI is only compiled inside the image build, which CI doesn't run,
+      # so a toolchain bump that breaks it (TypeScript 7 did) would stay green.
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Web GUI — install (asserts bun.lock is current) + build (tsc, vite)
+        working-directory: manager/ui
+        run: |
+          bun install --frozen-lockfile
+          bun run build
