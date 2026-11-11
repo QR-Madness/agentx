@@ -53,19 +53,6 @@ setuptools<82, so the fixed 83/84 lines wait on torch.
 """
 review_by = 2027-01-31
 
-[[advisory]]
-ecosystem = "pypi"
-package = "filelock"
-ids = ["CVE-2026-112907", "CVE-2026-112913", "CVE-2026-112940"]
-reason = """
-Two are in ReadWriteLock/AsyncReadWriteLock, which no consumer uses
-(huggingface-hub, torch and transformers only take FileLock). The third is the
-Windows soft lock; huggingface-hub falls back to SoftFileLock only on
-filesystems without flock, and the images are Linux. The fix is filelock 4.x,
-a major: Dependabot's major group proposes it and the CI suite vets it.
-"""
-review_by = 2027-01-31
-
 # --- Client -------------------------------------------------------------------
 
 [[advisory]]
