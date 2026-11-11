@@ -1,9 +1,14 @@
 # Dependabot version updates (Decisions.md ADR-20). Security alerts and security-update
 # PRs are a repository setting (Settings → Code security), not this file. Version updates
 # wait out a cooldown so a bad release has time to be yanked; security updates skip it.
-# Updates are grouped (minor+patch, majors apart) so each directory opens at most two PRs.
+# Minor and patch updates are grouped per directory. JS majors are grouped too (their
+# toolchains move together and tsc/vitest/build judge the set); Python majors for the API
+# come one PR each, because each is its own migration and a bundle can never go green.
 # Note: Dependabot raises security-update PRs for uv but not bun; for bun, the
 # Security audit workflow is what catches advisories.
+#
+# Holds use `ignore` with `update-types`, which stops version updates only: security
+# updates for a held package still open PRs, and `task audit` tracks its advisories.
 version: 2
 updates:
   - package-ecosystem: uv
@@ -17,13 +22,20 @@ updates:
     groups:
       minor-patch:
         update-types: [minor, patch]
-      major:
-        update-types: [major]
-    # torch's version lives in pyproject's constraint-dependencies pin (ADR-19), which
-    # Dependabot can't edit, so every attempt fails to resolve and fails the run. Bump
-    # the pin by hand; `task audit` tracks torch's advisories against the allowlist.
     ignore:
+      # torch's version lives in pyproject's constraint-dependencies pin (ADR-19), which
+      # Dependabot can't edit, so every attempt fails to resolve and fails the run. Bump
+      # the pin by hand; `task audit` tracks torch's advisories against the allowlist.
       - dependency-name: torch
+      # Django: stay on the 5.2 LTS line (supported into 2028); move LTS to LTS.
+      - dependency-name: django
+        update-types: ["version-update:semver-major"]
+      # transformers 5 / sentence-transformers 6 are one migration, and the torch-free
+      # track (phase 19 §19.2.6) may remove both first.
+      - dependency-name: transformers
+        update-types: ["version-update:semver-major"]
+      - dependency-name: sentence-transformers
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: uv
     directory: "/manager"
@@ -97,6 +109,12 @@ updates:
       interval: monthly
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # The interpreter version is a coordinated change (requires-python, CI's
+      # python-version, the pyright baseline, wheel availability for every pin), and CI
+      # doesn't build the images, so its checks can't judge a base-image bump.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: docker
     directory: "/manager"
@@ -104,3 +122,9 @@ updates:
       interval: monthly
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # The interpreter version is a coordinated change (requires-python, CI's
+      # python-version, the pyright baseline, wheel availability for every pin), and CI
+      # doesn't build the images, so its checks can't judge a base-image bump.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
