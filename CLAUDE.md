@@ -168,7 +168,8 @@ task manager:serve      # Web GUI :12320; cluster lifecycle via task cluster:* C
 
 ```bash
 task test               # All backend tests (slow — loads translation models)
-task test:ci            # Same suite HF-offline (model tests skip) — what CI runs
+task test:ci            # Same, HF-offline (model tests skip) — what CI runs
+task test:live          # On real DBs (db:up): skips fail ★
 task test:quick         # No model loading (HealthCheck, MCP)
 task test:sterile       # Sterile config — a test must never read live config.json ★
 
@@ -177,8 +178,7 @@ uv run python api/manage.py test agentx_ai.tests.TranslationKitTest -v2
 ```
 
 Test files: `tests.py` (non-memory) and `tests_memory.py` (memory — mock-based, fast;
-`task test:memory`, accepts a class). Everything degrades to skips without Docker (`task db:up`)
-or API keys; bare `manage.py` invocations work.
+`task test:memory`, accepts a class). Without Docker or API keys those tests skip.
 
 ### Linting, Formatting & Static Analysis
 

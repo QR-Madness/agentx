@@ -21,6 +21,18 @@ from django.test import Client, TestCase
 # Skip-Condition Helpers
 # =============================================================================
 
+def _unavailable(what: str) -> bool:
+    """Report a missing live dependency: normally a skip (returns False).
+
+    Under ``AGENTX_TEST_REQUIRE_LIVE=1`` (``task test:live``, CI's live job) it
+    raises instead, so a green run proves the database-backed tests really ran
+    rather than quietly skipping.
+    """
+    if os.environ.get("AGENTX_TEST_REQUIRE_LIVE") == "1":
+        raise RuntimeError(f"AGENTX_TEST_REQUIRE_LIVE=1, but {what}")
+    return False
+
+
 def docker_services_running() -> bool:
     """Check if Docker services (Neo4j, PostgreSQL, Redis) are reachable."""
     services = [("localhost", 7687), ("localhost", 5432), ("localhost", 6379)]
@@ -29,7 +41,7 @@ def docker_services_running() -> bool:
             with socket.create_connection((host, port), timeout=1):
                 pass
         except (TimeoutError, OSError):
-            return False
+            return _unavailable(f"{host}:{port} is not reachable — run `task db:up`")
     return True
 
 
@@ -82,10 +94,12 @@ def embeddings_compatible() -> bool:
     try:
         from agentx_ai.kit.agent_memory.embeddings import get_embedder
         embedder = get_embedder()
-        _, _, match = embedder.validate_dimensions()
-        return match
-    except Exception:
-        return False
+        actual, configured, match = embedder.validate_dimensions()
+    except Exception as e:
+        return _unavailable(f"the embedding model did not load ({e}) — run `task warmup:embeddings`")
+    if not match:
+        return _unavailable(f"the embedder outputs {actual} dimensions and the schema expects {configured}")
+    return True
 
 
 # =============================================================================
