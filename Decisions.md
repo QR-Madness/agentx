@@ -643,15 +643,23 @@ JS: `bun audit --production` per bun project. An advisory must be fixed or liste
 `security/audit-allowlist.toml` with a checkable reason and a `review_by` date; past that date the
 gate fails. It fails closed: a tool that didn't run, or a pin it couldn't check, is an error, never
 a pass. It runs in `security-audit.yml` on any dependency-manifest change, weekly, and on demand, and
-it blocks `release:check`. Dependabot raises grouped version updates (minor+patch apart from majors,
-5-day cooldown); security alerts and security-update PRs are a repository setting.
+it blocks `release:check`. Dependabot raises version updates on a 5-day cooldown: minor+patch grouped
+per directory, JS majors grouped (their toolchains move together and tsc/vitest/build judge the set),
+API Python majors one PR each (each is its own migration; a bundle of eight never went green).
+Security alerts and security-update PRs are a repository setting. **Holds** are `ignore` rules with
+`update-types`, which stop version updates only — security updates for a held package still open PRs.
+Held: Django majors (5.2 LTS, move LTS to LTS), transformers / sentence-transformers majors (one
+migration; the torch-free track may remove both), and the images' Python minor (a coordinated change:
+`requires-python`, CI, the pyright baseline, wheels for every pin).
 **Why:** the old `task audit` checked the dev venv, so it never saw the GPU image's packages and
 skipped torch outright (`+cpu` isn't a PyPI version), and the client audit counted dev tooling. That
 noise hid a critical DOMPurify bypass that ships in the client. Requiring every exception to be
 written down, with a date, keeps it a decision rather than a warning everyone learns to skip.
-**Rejected:** auditing the installed venv (misses image variants); Dependabot `ignore` rules (unclear
-whether they also mute security updates) — with one exception, torch: its `constraint-dependencies`
-pin (ADR-19) is something Dependabot can't edit, so no update of either kind can succeed and each try
-fails the run; ignoring it costs nothing. Also rejected: running the audit on every PR (a new advisory against an
-unchanged lock would turn unrelated PRs red; the weekly run surfaces it instead).
+**Rejected:** auditing the installed venv (misses image variants); `ignore` rules by name or
+`versions` alone, which also mute security updates — with one exception, torch: its
+`constraint-dependencies` pin (ADR-19) is something Dependabot can't edit, so no update of either
+kind can succeed and each try fails the run; ignoring it costs nothing. Also rejected: running the
+audit on every PR (a new advisory against an unchanged lock would turn unrelated PRs red; the weekly
+run surfaces it instead). The cost of that choice: a red scheduled run has to be noticed. Master
+sat red for nine days in November 2026 before anyone looked.
 **Guard:** `security-audit.yml` + `release:check`; stale allowlist ids warn (`--strict` fails).
