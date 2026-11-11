@@ -27,7 +27,7 @@ from unittest import skipUnless
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from sqlalchemy import text
 
 from agentx_ai.kit.agent_memory import config as memory_config_module
@@ -1908,6 +1908,7 @@ class PostgresAuditLogTest(MemoryTestBase):
                 self.skipTest("No audit log partitions exist yet")
 
 
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint tests don't auth; stay green regardless of local .env
 @skipUnless(docker_services_running(), "Docker services not running")
 class ChannelCRUDTest(APITestBase):
     """Test channel create, list, delete and data cleanup."""
@@ -3936,6 +3937,7 @@ class RecallLayerEscapeLuceneTest(TestCase):
 # Memory Mutation Routes (PATCH/DELETE) — Phase 18 editable memory
 # =============================================================================
 
+@override_settings(AGENTX_AUTH_ENABLED=False)
 @skipUnless(docker_services_running(), "Docker services not running")
 class MemoryMutationViewTest(APITestBase):
     """PATCH/DELETE routes for facts and entities, with re-embedding semantics."""

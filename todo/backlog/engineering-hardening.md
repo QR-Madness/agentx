@@ -82,6 +82,13 @@
       The 8 tests that need the translation models skip offline via `translation_models_available()`
       (`test_utils.py`) instead of pulling them, so a fresh runner proves the rest. A fresh checkout
       has no `data/config.json`, so CI is config-sterile by construction (the `test:sterile` class).
+- [x] **Live-database tests in CI** — **shipped** (2026-11-11). The suite's ~45 database-backed
+      tests skipped in CI (no services), so nothing ran them on a clean checkout: two endpoint
+      classes passed only where a local `.env` turned auth off, and SQLAlchemy 2.1 (new default
+      PostgreSQL driver) merged on mocks alone. `ci.yml` gains `backend-live`: Neo4j + pgvector + Redis service containers, cached
+      embedder/reranker, `task db:schemas:apply`, then `task test:live` — which sets
+      `AGENTX_TEST_REQUIRE_LIVE=1` so a missing database or model **fails** instead of skipping.
+      Also the safety net for the Neo4j → PostgreSQL consolidation (phase 19).
 - [×] **(WS-5) TODO-comment pointer-or-perish** — **won't build (doesn't earn its keep).** The whole
       codebase has **2** inline `TODO`s (`mcp/client.py` config-search, `views.py:4095` auth placeholder);
       a gate + ratchet for 2 markers is over-tooling. Revisit only if `grep -rE "TODO|FIXME"` climbs into

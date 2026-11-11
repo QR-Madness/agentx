@@ -207,6 +207,14 @@ task test:ci
 
 Runs the same full suite with Hugging Face offline, as CI does. Tests that need a translation model you haven't downloaded skip instead of fetching it; everything else runs.
 
+### Live Suite (real databases)
+```bash
+task db:up
+task test:live
+```
+
+Runs the full suite against the running Neo4j, PostgreSQL and Redis. The database-backed tests skip everywhere else; here a missing database or embedding model fails the run instead, so a green result proves they ran. CI runs this in its `backend-live` job.
+
 ### Quick Tests (no model loading)
 ```bash
 task test:quick

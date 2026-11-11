@@ -1,10 +1,15 @@
 name: CI
 
 # Runs the same gates as the local dev loop (Taskfile), so "laptop discipline"
-# becomes a guarantee. No build matrix, no model downloads: the backend suite
-# runs HF-offline (`task test:ci`), so the few tests that need the translation
-# models skip instead of pulling them. A fresh checkout has no `.env` and no
+# becomes a guarantee. No build matrix: the backend suite runs HF-offline
+# (`task test:ci`), so the few tests that need the translation models skip
+# instead of pulling them. A fresh checkout has no `.env` and no
 # `data/config.json`, so these jobs also prove tests don't lean on local state.
+#
+# `backend-live` runs the same suite again with real Neo4j, PostgreSQL and Redis
+# service containers and the cached embedding models (`task test:live`): the
+# database-backed tests that skip everywhere else run there, and a missing
+# database or model fails the job instead of skipping.
 
 on:
   push:
@@ -82,6 +87,85 @@ jobs:
 
       - name: Full suite — tests + tests_memory (HF-offline; Docker-gated classes self-skip)
         run: task test:ci
+
+  backend-live:
+    name: backend · live databases
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Same images and dev-default credentials as docker-compose.yml; throwaway
+    # containers that live only for this job.
+    services:
+      neo4j:
+        image: neo4j:5.15-community
+        env:
+          NEO4J_AUTH: neo4j/changeme
+          NEO4J_PLUGINS: '["apoc"]'
+          NEO4J_server_memory_heap_max__size: 1G
+          NEO4J_server_memory_pagecache_size: 256m
+        ports:
+          - 7687:7687
+        options: >-
+          --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:7474/ || exit 1"
+          --health-interval 10s --health-timeout 5s --health-retries 30 --health-start-period 20s
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: agent
+          POSTGRES_PASSWORD: changeme
+          POSTGRES_DB: agent_memory
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U agent -d agent_memory"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv (+ dependency cache, Python 3.14)
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.14"
+
+      - name: Set up Task
+        uses: arduino/setup-task@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install API deps
+        run: uv sync --frozen
+
+      # The live tests embed for real, so the embedder (BAAI/bge-m3, ~2.3 GB) and
+      # the reranker are cached. Bump the key when either model setting changes;
+      # until then the offline test step fails with "the embedding model did not load".
+      - name: Embedding models (cache)
+        id: models
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-memory-models-bge-m3-minilm-v1
+
+      - name: Embedding models (download on a cache miss)
+        if: steps.models.outputs.cache-hit != 'true'
+        run: |
+          task warmup:embeddings
+          uv run python -c "import sys; sys.path.insert(0, 'api'); from sentence_transformers import CrossEncoder; from agentx_ai.kit.agent_memory.config import get_settings; CrossEncoder(get_settings().cross_encoder_model)"
+
+      - name: Schemas — Alembic (PostgreSQL) + Neo4j/Redis init, on fresh databases
+        run: task db:schemas:apply
+
+      - name: Full suite against real databases (a missing database or model fails, never skips)
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
+        run: task test:live
 
   client-tests:
     name: client · vitest
