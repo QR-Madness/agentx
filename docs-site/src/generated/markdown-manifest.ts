@@ -18,7 +18,7 @@ export const MARKDOWN_TOKENS: Record<string, number> = {
   '/docs/deployment/clusters.md': 3352,
   '/docs/deployment/docker.md': 958,
   '/docs/deployment/hosting-handbook.md': 908,
-  '/docs/deployment/manager.md': 2774,
+  '/docs/deployment/manager.md': 2809,
   '/docs/deployment/migration.md': 137,
   '/docs/deployment/production.md': 1249,
   '/docs/deployment/self-hosting.md': 3824,
