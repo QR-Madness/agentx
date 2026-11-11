@@ -277,6 +277,12 @@ weights are memory-mapped and only touched vocabulary rows become resident, so b
 
 ### 19.5 Neo4j strategy (decide only when 19.4 is real)
 
+> **2026-11-11:** a full plan now lives in
+> [memory-store-consolidation.md](../backlog/memory-store-consolidation.md) (proposed, not
+> ratified). It re-measured the audit below and corrects it: memory recall's vectors and full-text
+> index are **in Neo4j** (6 vector indexes, 3 full-text), there is one bounded variable-length
+> traversal, 25 relationship types and 188 Cypher strings. Read the plan for current numbers.
+
 - [ ] Default: one shared Community instance, app-level `user_id` isolation (works today).
 - [ ] Research slice: migrate the graph to Postgres (Apache AGE or relational adjacency)
       — deletes the RAM floor, the licensing constraint, and a stateful service.
