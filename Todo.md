@@ -55,6 +55,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.277** (pro
 | [cognitive-os.md](todo/backlog/cognitive-os.md) | Cognitive OS — the north-star map (abstractive; pillars cross-reference the concrete tracks) |
 | [workspaces.md](todo/backlog/workspaces.md) | ⭐ File Workspaces & Document RAG |
 | [memory-recall.md](todo/backlog/memory-recall.md) | ⭐ Active Memory Recall (3 tiers) · pairs with `Memory-Roadmap.md` |
+| [memory-store-consolidation.md](todo/backlog/memory-store-consolidation.md) | ⭐ Memory store consolidation — Neo4j → PostgreSQL (**proposed**; sliced plan, decisions to ratify) |
 | [procedural.md](todo/backlog/procedural.md) | ⭐ Procedural Memory (encode → replay → activate) · pairs with `Memory-Roadmap.md` |
 | [agentic-organizations.md](todo/backlog/agentic-organizations.md) | ⭐ Agentic Organizations — org manager canvas, chain of command, durable delegation threads |
 | [retrieval-extraction.md](todo/backlog/retrieval-extraction.md) | Retrieval Quality · MCP Tools · Extraction Improvements · pairs with `Memory-Roadmap.md` |
