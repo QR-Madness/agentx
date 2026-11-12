@@ -151,6 +151,11 @@ methods where a query **cannot exist without `(user_id, ChannelRef)`**, + a CI g
 `Neo4jConnection.session()` / `raw_connection()` outside the kit. Do this *before* the
 Settings Manifest / multi-user waves so the audit surface is one module.
 
+**Being built** as Slice 1 of
+[todo/backlog/memory-store-consolidation.md](todo/backlog/memory-store-consolidation.md) (ADR-21),
+with a tighter line than the one above: the memory classes, not the whole kit, because the
+consolidation jobs and the portability code have to run on either store.
+
 ### 1.6 Redis durability tiers `[REFINES: Todo "Redis/Postgres-backed live session store" + "Rolling summary as a first-class conversations column"]`
 
 `allkeys-lru` @ 512MB now backs semi-durable state: checkpoints (7-day, designed to survive
@@ -646,6 +651,7 @@ there in the same PR.
 | Token estimators, dead-knob sweep (2.8, 1.8) | [`todo/backlog/foundation.md`](todo/backlog/foundation.md) (#6) + [`todo/backlog/engineering-hardening.md`](todo/backlog/engineering-hardening.md) |
 | Survey/community summaries → Ambassador (3.7) | [`todo/phases/phase-16-multi-agent.md`](todo/phases/phase-16-multi-agent.md) (16.7 Slice 4) |
 | Workspace channel scoping (1.4) | [`todo/backlog/workspaces.md`](todo/backlog/workspaces.md) |
+| Store consolidation, Neo4j → PostgreSQL (builds 1.5; moves where 1.1's projections and 1.3's vectors live) | [`todo/backlog/memory-store-consolidation.md`](todo/backlog/memory-store-consolidation.md) |
 
 ### 7.2 Open reconciliation items (enrichment queue)
 

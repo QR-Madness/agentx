@@ -596,6 +596,9 @@ Options weighed and declined (with the reason, so they don't return as "good ide
   a second task runner is drift by construction.
 - **CODEOWNERS / PR-template machinery** — human-team review-routing ceremony; in an agent-first
   workspace the Documentation Map is the ownership model and gates outrank reviewers.
+- **Apache AGE, or any graph engine or extension, for the memory store** — the workload is a
+  document store with vector and keyword indexes plus one bounded traversal, not graph-shaped. AGE
+  would keep Cypher for the relationship queries and replace none of the search. See ADR-21.
 - **Storing the memory degradation L-level on a capability/store** — it's derivable from `stores`;
   a stored copy can contradict it (Repo-Questions Q1).
 - **Deriving bitemporal `valid_to` from `expected_stability`** — invents world-time data and
@@ -663,3 +666,34 @@ audit on every PR (a new advisory against an unchanged lock would turn unrelated
 run surfaces it instead). The cost of that choice: a red scheduled run has to be noticed. Master
 sat red for nine days in November 2026 before anyone looked.
 **Guard:** `security-audit.yml` + `release:check`; stale allowlist ids warn (`--strict` fails).
+
+### ADR-21 — The memory store consolidates into PostgreSQL: plain tables, no graph engine (direction)
+**Decision (ratified 2026-11-12):** the memory store — nodes, relationships, vectors and full-text
+search — moves from Neo4j into PostgreSQL as plain tables with pgvector and built-in text search,
+behind the existing memory classes (`EpisodicMemory`, `SemanticMemory`, `ProceduralMemory`, the goal
+store), selected by one boot-frozen `memory_store` setting. Neo4j stays selectable for a deprecation
+window and is then removed. The schema depends on two extensions only, `vector` and `pg_trgm`, so
+the provider stays a pricing choice. Tenant isolation becomes row-level security (`FORCE ROW LEVEL
+SECURITY`, the scope set per transaction; cross-user jobs under one named system role). Existing
+installs move with a copy command that carries the vectors. Measurements, design and slices:
+[`todo/backlog/memory-store-consolidation.md`](todo/backlog/memory-store-consolidation.md).
+**Why:** Neo4j is used here as a document store with vector and keyword indexes, not as a graph
+engine: 188 Cypher strings, one bounded traversal (depth ≤ 3), no path or graph algorithms. Its
+vector search ranks across every user and channel and filters afterwards (a fixed 2× over-fetch),
+Community edition cannot enforce tenant isolation in the engine, and it is a second stateful service
+(0.87 GB resident for a 33 MB store) doing work that PostgreSQL, already required, can do. The PPR
+spike that was to decide this failed on graph density, not on storage
+([`todo/backlog/memory-recall.md`](todo/backlog/memory-recall.md)).
+**Rejected:** Apache AGE — it keeps Cypher for the relationship queries only, provides neither
+vector nor full-text search, stores properties as `agtype` (awkward for RLS and indexes), needs a
+custom image when self-hosted, and narrows the managed providers. Keeping both backends for good —
+every memory change would be written twice. A new store-abstraction layer — the memory classes
+already are one.
+**Does not change:** INV-4 (exports stay text-only; the copy command is a one-time move between two
+stores on the same embedder, not an export format) and ADR-9 (PostgreSQL changes are Alembic
+revisions; the Neo4j runner lives until the removal slice).
+**Status:** in progress. Slice 0 (live-database tests in CI) has shipped. The default flips only
+after the recall-parity gate (`eval_recall` on both backends); if parity cannot be reached, the work
+stops after Slice 1 with Neo4j in place and nothing lost.
+**Guard (planned):** from Slice 1, a boundary test that fails on Cypher or a Neo4j session outside
+the store modules; from Slice 3, CI's `backend-live` job runs the suite on both backends.

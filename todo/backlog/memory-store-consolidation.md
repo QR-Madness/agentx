@@ -2,7 +2,8 @@
 
 > Part of the AgentX TODO — index: [Todo.md](../../Todo.md)
 >
-> **Status: PROPOSED (2026-11-11) — not ratified.** Nothing below is built except Slice 0.
+> **Status: RATIFIED (2026-11-12).** Decisions D1–D5 were accepted as recommended and are recorded
+> as ADR-21 in [Decisions.md](../../Decisions.md). Built so far: Slice 0. Next: Slice 1.
 > Supersedes the audit in [phase-19 §19.5](../phases/phase-19-cloud-operation.md), whose numbers
 > were partly wrong (corrected under [What Neo4j does today](#what-neo4j-does-today)).
 
@@ -79,14 +80,16 @@ has a working pgvector retrieval path and a working `tsvector` search to model o
   inspection.
 - **Opportunity cost.** It delays feature work. Nothing here is user-visible until the default flips.
 
-### Decisions to ratify
+### Decisions
 
-| # | Decision | Recommendation |
+Ratified 2026-11-12 as recommended.
+
+| # | Decision | Ruling |
 |---|----------|----------------|
 | D1 | End state | **PostgreSQL only.** Neo4j stays selectable for a deprecation window, then is removed. Keeping two backends forever doubles every memory change. |
 | D2 | Graph representation | **Plain tables + SQL.** AGE would preserve Cypher syntax for the relationship queries only; it provides neither vector nor full-text search (most of what Neo4j does here), stores properties as `agtype` (awkward for RLS and indexes), needs a custom self-hosted image, and limits managed providers. Neon does not list it (2026-11-04; private builds on request only). Snowflake Postgres does. |
 | D3 | Provider | **Stay neutral.** Depend only on `vector` and `pg_trgm`. Then Neon, Snowflake Postgres, Supabase, RDS and a self-hosted container are all candidates, and the choice is a pricing decision made later. |
-| D4 | Existing installs | **A direct copy command that carries the vectors** (id-preserving, verified by counts and content hashes, resumable, dry-run first). The text-only portability envelope re-embeds on import, which is slow and makes parity harder to judge. |
+| D4 | Existing installs | **A direct copy command that carries the vectors** (id-preserving, verified by counts and content hashes, resumable, dry-run first). The text-only portability envelope re-embeds on import, which is slow and makes parity harder to judge. INV-4 is untouched: the envelope stays text-only, and the copy command is a one-time move between two stores on the same embedder, not an export format. |
 | D5 | Sequencing | **Slice 1 first, whatever else is decided.** It changes no behaviour and is worth having even if the move stops there. The release does not need to wait for any of this. |
 
 ### Design
@@ -127,7 +130,11 @@ runs the suite against both backends.
 - [ ] **Slice 1 — one door** (4–6 days). Move the 125 Cypher strings outside the memory classes
       behind methods on them: 1a consolidation jobs, 1b `views.py`, 1c portability, 1d commands and
       maintenance. No behaviour change; tests move from query text to store calls. Schema-init and
-      migration commands stay backend-specific.
+      migration commands stay backend-specific. This is
+      [Memory-Roadmap §1.5](../../Memory-Roadmap.md) (the repository layer) with a tighter line —
+      the memory classes, not the whole kit — and it ships that section's guard: a boundary test
+      that fails on a Cypher string or a Neo4j session outside the store modules, with a short
+      allowlist that only shrinks.
 - [ ] **Slice 2 — schema and RLS** (1–2 days). Alembic revisions for the tables, indexes and
       policies. Empty tables; nothing reads them yet.
 - [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`.
@@ -173,10 +180,12 @@ not close, the fallback is to stop after Slice 1 with Neo4j still in place and n
 
 ### Open questions
 
-1. **Turns.** `Turn` nodes (with embeddings and consolidation flags) duplicate much of
-   `conversation_logs`. One table or two?
-2. **Parity tolerance.** What difference in recall@k counts as "the same"? Propose: within the
-   run-to-run noise of the current backend, measured first.
-3. **Deprecation window.** How many releases does the Neo4j backend stay selectable?
-4. **Managed target.** Per-tenant instances that suspend, or one shared instance with RLS? The
-   schema supports both; the pricing differs by an order of magnitude.
+None of these blocks Slice 1; each names the slice that has to settle it.
+
+1. **Turns** (before Slice 2). `Turn` nodes (with embeddings and consolidation flags) duplicate much
+   of `conversation_logs`. One table or two?
+2. **Parity tolerance** (Slice 4). What difference in recall@k counts as "the same"? Propose: within
+   the run-to-run noise of the current backend, measured first.
+3. **Deprecation window** (Slice 6). How many releases does the Neo4j backend stay selectable?
+4. **Managed target** (with phase-19 §19.4). Per-tenant instances that suspend, or one shared
+   instance with RLS? The schema supports both; the pricing differs by an order of magnitude.
