@@ -8,7 +8,9 @@
 ### ⭐ PPR spike — §3.6 Personalized PageRank, run out-of-store `[SPIKE · decision gate for 19.5]`
 
 > Companion roadmap entry: [Memory-Roadmap.md](../../Memory-Roadmap.md) §3.6.
-> Storage decision it gates: [phase-19-cloud-operation.md](../phases/phase-19-cloud-operation.md) §19.5.
+> Storage decision it gates: [phase-19-cloud-operation.md](../phases/phase-19-cloud-operation.md) §19.5
+> — **decided 2026-11-12** (ADR-21): the store moves to PostgreSQL; see
+> [memory-store-consolidation.md](memory-store-consolidation.md).
 
 **Why this is one task and not two.** §3.6 has to be built regardless — multi-hop is the weakest
 category in the golden set and PPR is its identified fix. Building it **out-of-store** (materialize
