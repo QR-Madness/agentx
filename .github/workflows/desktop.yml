@@ -1,0 +1,84 @@
+name: Desktop shell
+
+# Compiles the Tauri desktop shell the way a release does, minus installers and
+# publishing. Nothing else builds it: ci.yml type-checks and unit-tests the client,
+# and release.yml runs only when a release is cut, so a change that breaks the
+# shell would otherwise surface at release time.
+#
+# `tauri build` also runs the CLI's own check that Tauri's npm packages and Rust
+# crates agree on major.minor. A dependency update that moves one half alone fails
+# here (that is how the build broke in October 2026: the npm half went to 2.12 while
+# the crates stayed on 2.9, with every other check green).
+#
+# Runs for changes to the shell, to the client's dependency manifests, or to this
+# file; on master for the same paths; and on demand.
+
+on:
+  pull_request:
+    paths:
+      - "client/src-tauri/**"
+      - "client/package.json"
+      - "client/bun.lock"
+      - ".github/workflows/desktop.yml"
+  push:
+    branches: [master]
+    paths:
+      - "client/src-tauri/**"
+      - "client/package.json"
+      - "client/bun.lock"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: desktop shell · ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The same runners release.yml builds the deb/AppImage and the Windows
+          # installers on.
+          - name: linux
+            platform: ubuntu-22.04
+          - name: windows
+            platform: windows-latest
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux system dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+          shared-key: desktop-${{ matrix.name }}
+
+      - name: Install client deps
+        working-directory: client
+        run: bun install --frozen-lockfile
+
+      # Debug profile and no bundling: this job proves the shell compiles and links
+      # against the locked crates, not that the installers package. `--locked` fails
+      # the build if Cargo.lock no longer matches Cargo.toml instead of rewriting it.
+      - name: Build the shell (version check, frontend build, cargo build)
+        working-directory: client
+        run: bun run tauri build --debug --no-bundle -- --locked
