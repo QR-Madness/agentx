@@ -649,6 +649,10 @@ a pass. It runs in `security-audit.yml` on any dependency-manifest change, weekl
 it blocks `release:check`. Dependabot raises version updates on a 5-day cooldown: minor+patch grouped
 per directory, JS majors grouped (their toolchains move together and tsc/vitest/build judge the set),
 API Python majors one PR each (each is its own migration; a bundle of eight never went green).
+The desktop shell's Rust crates are a `cargo` entry. Tauri's npm packages must match its crates on
+major.minor (`tauri build` refuses otherwise), so the crates lead and `@tauri-apps/*` is held at
+minor and major: the npm half is added by hand to the crate update's PR, and `desktop.yml`, which
+builds the shell whenever either half changes, fails until it is.
 Security alerts and security-update PRs are a repository setting. **Holds** are `ignore` rules with
 `update-types`, which stop version updates only — security updates for a held package still open PRs.
 Held: Django majors (5.2 LTS, move LTS to LTS), transformers / sentence-transformers majors (one
