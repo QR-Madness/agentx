@@ -16,8 +16,8 @@
 [[advisory]]
 ecosystem = "pypi"
 package = "transformers"
-ids = ["PYSEC-2025-217", "PYSEC-2025-218", "PYSEC-2026-2288", "PYSEC-2026-2289",
-       "PYSEC-2026-2290", "PYSEC-2026-3929", "PYSEC-2026-4174"]
+ids = ["PYSEC-2025-217", "PYSEC-2026-2288", "PYSEC-2026-2289", "PYSEC-2026-2290",
+       "PYSEC-2026-3929", "PYSEC-2026-4174"]
 reason = """
 Fixed only in 5.x (a breaking major that sentence-transformers 5.7 and the
 translation kit haven't moved to), or not fixed at all. AgX never trains, never
@@ -79,12 +79,17 @@ review_by = 2027-01-31
 ecosystem = "npm"
 package = "astro"
 ids = ["GHSA-26w7-cxv4-gfx2", "GHSA-376h-93r7-7g6f", "GHSA-4g3v-8h47-v7g6",
-       "GHSA-7pw4-f3q4-r2p2", "GHSA-98hj-9722-w3j8", "GHSA-f48w-9m4c-m7f5"]
+       "GHSA-7pw4-f3q4-r2p2", "GHSA-98hj-9722-w3j8", "GHSA-f48w-9m4c-m7f5",
+       "GHSA-mh32-jxcr-mh9f", "GHSA-r3h5-4585-7x3w"]
 projects = ["docs-site"]
 reason = """
 Fixed only in astro 7.x (a major). The critical one is RCE in AVIF optimization,
 which needs an attacker-supplied image; the rest are XSS and an auth bypass in
-rendering or SSR paths, fed here only by trusted repo content.
+rendering or SSR paths, fed here only by trusted repo content. The two added
+2026-11-16: XSS through a dynamic tag name taken from request data (no
+component here computes a tag name, and a static build has no request data),
+and a file read through the @astrojs/node image endpoint (not installed; there
+is no adapter).
 """
 review_by = 2027-01-31
 

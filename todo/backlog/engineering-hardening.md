@@ -89,6 +89,14 @@
       embedder/reranker, `task db:schemas:apply`, then `task test:live` — which sets
       `AGENTX_TEST_REQUIRE_LIVE=1` so a missing database or model **fails** instead of skipping.
       Also the safety net for the Neo4j → PostgreSQL consolidation (phase 19).
+- [x] **Desktop shell build in CI** — **shipped** (2026-11-16). Nothing built the Tauri shell
+      outside `release.yml`, and nothing updated its Rust crates. A grouped client update moved
+      Tauri's npm packages to 2.12 while the crates stayed on 2.9, so `tauri build` refused to
+      run from 2026-10-26 with every check green, and the crates carried CVE-2026-42184.
+      `desktop.yml` now builds the shell (debug, no installers, `--locked`) on the release's Linux
+      and Windows runners whenever the shell or the client's dependency manifests change;
+      Dependabot gains a `cargo` entry and holds `@tauri-apps/*` minors so the npm half follows
+      the crates (ADR-20).
 - [×] **(WS-5) TODO-comment pointer-or-perish** — **won't build (doesn't earn its keep).** The whole
       codebase has **2** inline `TODO`s (`mcp/client.py` config-search, `views.py:4095` auth placeholder);
       a gate + ratchet for 2 markers is over-tooling. Revisit only if `grep -rE "TODO|FIXME"` climbs into
