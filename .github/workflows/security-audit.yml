@@ -1,9 +1,14 @@
 name: Security audit
 
 # The dependency advisory gate (`task audit` → scripts/audit_deps.py, Decisions.md ADR-20):
-# the uv locks for both API images and the manager, plus production bun deps, checked
-# against security/audit-allowlist.toml. Runs when a dependency manifest or the gate
-# changes, weekly (new advisories land against unchanged locks), and on demand.
+# the uv locks for both API images and the manager, production bun deps, and the desktop
+# shell's Cargo.lock, checked against security/audit-allowlist.toml. Runs when a
+# dependency manifest or the gate changes, weekly (new advisories land against unchanged
+# locks), and on demand.
+#
+# A failing run on master (the weekly one above all) opens an issue, or comments on the
+# one already open, so it can't sit unnoticed; the next passing run on master closes it.
+# Pull requests show their own red check and never touch the issue.
 
 on:
   pull_request:
@@ -14,6 +19,8 @@ on:
       - "manager/uv.lock"
       - "**/package.json"
       - "**/bun.lock"
+      - "client/src-tauri/Cargo.toml"
+      - "client/src-tauri/Cargo.lock"
       - "security/**"
       - "scripts/audit_deps.py"
       - ".github/workflows/security-audit.yml"
@@ -26,6 +33,8 @@ on:
       - "manager/uv.lock"
       - "**/package.json"
       - "**/bun.lock"
+      - "client/src-tauri/Cargo.toml"
+      - "client/src-tauri/Cargo.lock"
       - "security/**"
       - "scripts/audit_deps.py"
       - ".github/workflows/security-audit.yml"
@@ -39,6 +48,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: write  # the failure alarm below
 
 jobs:
   audit:
@@ -62,4 +72,45 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Audit the lockfiles (exceptions live in security/audit-allowlist.toml)
-        run: task audit
+        run: |
+          set -o pipefail
+          task audit 2>&1 | tee audit.log
+
+      # One issue, titled below, tracks a red gate on master: opened on the first failure,
+      # commented on by each one after, closed by the first pass.
+      - name: Raise the alarm on master
+        if: failure() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TITLE: "Security audit failing on master"
+        run: |
+          {
+            echo "The dependency advisory gate failed on master ([run]($RUN_URL), ${{ github.event_name }})."
+            echo
+            echo '```'
+            grep -E '❌|⚠️' audit.log || tail -n 20 audit.log || echo "(no audit output: the job failed before the audit ran)"
+            echo '```'
+            echo
+            echo "Fix or triage each advisory (security/audit-allowlist.toml, Decisions.md ADR-20)."
+          } > body.md
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number,title \
+            --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body-file body.md
+          fi
+
+      - name: Close the alarm once master passes
+        if: success() && github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TITLE: "Security audit failing on master"
+        run: |
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number,title \
+            --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "The gate passes again ([run]($RUN_URL))."
+          fi
