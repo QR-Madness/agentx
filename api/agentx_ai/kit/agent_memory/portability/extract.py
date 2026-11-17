@@ -17,8 +17,10 @@ While an extract runs, its channels are **consolidation-frozen** via Redis keys
 see ``todo/backlog/cores.md``.
 
 The verify step is envelope-agnostic on purpose: a per-family
-``(name, count_query)`` table, so future core envelopes (Agent/Project Cores)
-plug into the same verify-before-wipe machinery.
+``(name, count_query)`` table (``memory.portability_store._count_queries``), so
+future core envelopes (Agent/Project Cores) plug into the same verify-before-wipe
+machinery. The graph counts and the wipe are ``PortabilityStore``'s; this module
+keeps the freeze, the artifact, the PostgreSQL mirror and the receipt.
 """
 
 from __future__ import annotations
@@ -29,17 +31,16 @@ import logging
 import re
 from datetime import datetime, UTC
 from pathlib import Path
-from typing import cast
 
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from typing import LiteralString
 
 from ..audit import MemoryAuditLogger, MemoryType, OperationType
-from ..connections import Neo4jConnection, RedisConnection, get_postgres_session
-from ..query_utils import CypherFilterBuilder, SQLFilterBuilder
+from ..connections import RedisConnection, get_postgres_session
+from ..memory.portability_store import PortabilityStore
+from ..query_utils import SQLFilterBuilder
 from .exporter import MemoryExporter
-from .importer import wipe_channels, wipe_pg_mirror
+from .importer import wipe_pg_mirror
 from .schema import MemoryExport
 
 logger = logging.getLogger(__name__)
@@ -49,59 +50,6 @@ FREEZE_TTL_S = 600
 _FREEZE_KEY = "extract_freeze:{user_id}:{channel}"
 
 DEFAULT_VAULT_DIR = Path("data") / "vault"
-
-# Envelope-agnostic verify table: (family, live-count Cypher). Every query
-# takes $user_id + $channels and must count with the same exact-channel scope
-# the export and wipe use (include_global=False).
-def _verify_families() -> list[tuple[str, str]]:
-    return [
-        ("conversations", f"""
-            MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
-            WHERE true {_chan_clause('c')}
-            RETURN count(c) AS c"""),
-        ("turns", f"""
-            MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
-                  -[:HAS_TURN]->(t:Turn)
-            WHERE true {_chan_clause('t')}
-            RETURN count(t) AS c"""),
-        ("entities", f"""
-            MATCH (u:User {{id: $user_id}})-[:HAS_ENTITY]->(e:Entity)
-            WHERE true {_chan_clause('e')}
-            RETURN count(e) AS c"""),
-        ("facts", f"""
-            MATCH (u:User {{id: $user_id}})-[:HAS_FACT]->(f:Fact)
-            WHERE true {_chan_clause('f')}
-            RETURN count(f) AS c"""),
-        ("goals", f"""
-            MATCH (u:User {{id: $user_id}})-[:HAS_GOAL]->(g:Goal)
-            WHERE true {_chan_clause('g')}
-            RETURN count(g) AS c"""),
-        ("strategies", f"""
-            MATCH (u:User {{id: $user_id}})-[:HAS_STRATEGY]->(s:Strategy)
-            WHERE true {_chan_clause('s')}
-            RETURN count(s) AS c"""),
-        ("procedures", f"""
-            MATCH (u:User {{id: $user_id}})-[:HAS_PROCEDURE]->(p:Procedure)
-            WHERE true {_chan_clause('p')}
-            RETURN count(p) AS c"""),
-        ("tool_invocations", f"""
-            MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
-                  -[:USED_TOOL]->(inv:ToolInvocation)
-            WHERE true {_chan_clause('inv')}
-            RETURN count(inv) AS c"""),
-    ]
-
-
-def _chan_clause(alias: str) -> str:
-    """Exact-channel inline clause bound to $channels (never includes _global).
-
-    The builder shapes the clause from the list form only — actual channel
-    values bind at query time through the ``$channels`` parameter.
-    """
-    return CypherFilterBuilder(alias).add_channel_filter(
-        ["_shape_only_"], include_global=False
-    ).build_inline()
-
 
 class ExtractError(ValueError):
     """Bad extract request (channels missing / '_all' not allowed in v1)."""
@@ -183,12 +131,7 @@ def _write_artifact(path: Path, export: MemoryExport) -> str:
 
 def _live_counts(user_id: str, channels: list[str]) -> dict[str, int]:
     """Count every family in the live stores under the exact extract scope."""
-    counts: dict[str, int] = {}
-    params = {"user_id": user_id, "channels": channels}
-    with Neo4jConnection.session() as session:
-        for family, query in _verify_families():
-            rec = session.run(cast(LiteralString, query), **params).single()
-            counts[family] = (rec["c"] if rec else 0) or 0
+    counts = PortabilityStore().count_channels(user_id, channels)
 
     for table, family in (
         ("conversation_logs", "pg_conversation_logs"),
@@ -276,14 +219,7 @@ def extract_memory(
             return receipt
 
         # 4. Wipe — only now, and only the verified scope.
-        with Neo4jConnection.session() as session:
-            tx = session.begin_transaction()
-            try:
-                receipt.wiped_counts = wipe_channels(tx, user_id, chans)
-                tx.commit()
-            except Exception:
-                tx.rollback()
-                raise
+        receipt.wiped_counts = PortabilityStore().wipe_channels(user_id, chans)
         receipt.wiped_counts.update(wipe_pg_mirror(chans))
         receipt.wiped = True
         return receipt

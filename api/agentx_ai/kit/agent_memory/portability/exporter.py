@@ -4,7 +4,8 @@ Nodes are dumped as opaque property dicts (datetimes → ISO) sorted by ``id`` f
 deterministic, diffable output. Relationships that aren't already encoded as
 foreign-key-like props are captured as helper keys on the owning node (e.g. a
 fact's ``entity_ids`` from its ABOUT edges, a goal's ``parent_goal_id`` from
-SUBGOAL_OF).
+SUBGOAL_OF). The graph reads are ``memory.portability_store.PortabilityStore``'s;
+this module shapes the envelope and reads the PostgreSQL mirror.
 """
 
 from __future__ import annotations
@@ -13,13 +14,10 @@ import logging
 from typing import Any, cast
 
 from sqlalchemy import bindparam, text
-from typing import LiteralString
 
-from ..connections import Neo4jConnection, get_postgres_session
-from ..query_utils import (
-    CypherFilterBuilder,
-    convert_all_datetimes,
-)
+from ..connections import get_postgres_session
+from ..memory.portability_store import PortabilityStore
+from ..query_utils import convert_all_datetimes
 from .schema import MemoryExport, current_embedder_info
 
 logger = logging.getLogger(__name__)
@@ -58,12 +56,6 @@ class MemoryExporter:
 
     # -- helpers ---------------------------------------------------------
 
-    def _channel_inline(self, alias: str) -> str:
-        """Inline channel-scope clause for `alias` (empty when exporting all channels)."""
-        return CypherFilterBuilder(alias).add_channel_filter(
-            self.channels, include_global=self.include_global
-        ).build_inline()
-
     def _node(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Normalize a Neo4j node property dict for JSON. Exports are text-only:
         the embedding is always dropped (regenerated on import). Every temporal
@@ -83,103 +75,17 @@ class MemoryExporter:
             channels=self.channels if self.channels and len(self.channels) > 1 else None,
             embedder=current_embedder_info(),
         )
-        with Neo4jConnection.session() as session:
-            params = {
-                "user_id": self.user_id,
-                "channel": self.channel,
-                "channels": self.channels,
-            }
-
-            export.conversations = [
-                self._node(r["c"])
-                for r in session.run(cast(LiteralString, f"""
-                    MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
-                    WHERE true {self._channel_inline('c')}
-                    RETURN c ORDER BY c.id
-                """), **params)
-            ]
-
-            for r in session.run(cast(LiteralString, f"""
-                MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
-                      -[:HAS_TURN]->(t:Turn)
-                WHERE true {self._channel_inline('t')}
-                RETURN t, c.id AS conversation_id ORDER BY t.id
-            """), **params):
-                node = self._node(r["t"])
-                node["conversation_id"] = r["conversation_id"]
-                export.turns.append(node)
-
-            export.entities = [
-                self._node(r["e"])
-                for r in session.run(cast(LiteralString, f"""
-                    MATCH (u:User {{id: $user_id}})-[:HAS_ENTITY]->(e:Entity)
-                    WHERE true {self._channel_inline('e')}
-                    RETURN e ORDER BY e.id
-                """), **params)
-            ]
-
-            for r in session.run(cast(LiteralString, f"""
-                MATCH (u:User {{id: $user_id}})-[:HAS_FACT]->(f:Fact)
-                WHERE true {self._channel_inline('f')}
-                OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
-                WITH f, collect(DISTINCT e.id) AS entity_ids
-                RETURN f, entity_ids ORDER BY f.id
-            """), **params):
-                node = self._node(r["f"])
-                node["entity_ids"] = [eid for eid in r["entity_ids"] if eid]
-                export.facts.append(node)
-
-            for r in session.run(cast(LiteralString, f"""
-                MATCH (u:User {{id: $user_id}})-[:HAS_GOAL]->(g:Goal)
-                WHERE true {self._channel_inline('g')}
-                OPTIONAL MATCH (g)-[:SUBGOAL_OF]->(parent:Goal)
-                RETURN g, parent.id AS parent_goal_id ORDER BY g.id
-            """), **params):
-                node = self._node(r["g"])
-                node["parent_goal_id"] = r["parent_goal_id"]
-                export.goals.append(node)
-
-            for r in session.run(cast(LiteralString, f"""
-                MATCH (u:User {{id: $user_id}})-[:HAS_STRATEGY]->(s:Strategy)
-                WHERE true {self._channel_inline('s')}
-                OPTIONAL MATCH (s)-[:USES_TOOL]->(tool:Tool)
-                OPTIONAL MATCH (s)-[:SUCCEEDED_IN]->(sc:Conversation)
-                OPTIONAL MATCH (s)-[:FAILED_IN]->(fc:Conversation)
-                WITH s, collect(DISTINCT tool.name) AS tool_names,
-                     collect(DISTINCT sc.id) AS succeeded_in,
-                     collect(DISTINCT fc.id) AS failed_in
-                RETURN s, tool_names, succeeded_in, failed_in ORDER BY s.id
-            """), **params):
-                node = self._node(r["s"])
-                # USES_TOOL edges are authoritative; fall back to the stored prop.
-                node["tool_sequence"] = (
-                    [t for t in r["tool_names"] if t] or node.get("tool_sequence") or []
-                )
-                node["succeeded_in"] = [c for c in r["succeeded_in"] if c]
-                node["failed_in"] = [c for c in r["failed_in"] if c]
-                export.strategies.append(node)
-
-            for r in session.run(cast(LiteralString, f"""
-                MATCH (u:User {{id: $user_id}})-[:HAS_PROCEDURE]->(p:Procedure)
-                WHERE true {self._channel_inline('p')}
-                OPTIONAL MATCH (p)-[:DISTILLED_FROM]->(c:Conversation)
-                WITH p, collect(DISTINCT c.id) AS conversation_ids
-                RETURN p, conversation_ids ORDER BY p.id
-            """), **params):
-                node = self._node(r["p"])
-                node["conversation_ids"] = [cid for cid in r["conversation_ids"] if cid]
-                export.procedures.append(node)
-
-            for r in session.run(cast(LiteralString, f"""
-                MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
-                      -[:USED_TOOL]->(inv:ToolInvocation)
-                WHERE true {self._channel_inline('inv')}
-                RETURN inv, c.id AS conversation_id
-                ORDER BY c.id, inv.turn_index, inv.tool_name
-            """), **params):
-                node = self._node(r["inv"])
-                node["conversation_id"] = r["conversation_id"]
-                export.tool_invocations.append(node)
+        collections = PortabilityStore().read_collections(
+            self.user_id, self.channels, include_global=self.include_global
+        )
+        export.conversations = [self._node(n) for n in collections["conversations"]]
+        export.turns = [self._node(n) for n in collections["turns"]]
+        export.entities = [self._node(n) for n in collections["entities"]]
+        export.facts = [self._node(n) for n in collections["facts"]]
+        export.goals = [self._node(n) for n in collections["goals"]]
+        export.strategies = [self._node(n) for n in collections["strategies"]]
+        export.procedures = [self._node(n) for n in collections["procedures"]]
+        export.tool_invocations = [self._node(n) for n in collections["tool_invocations"]]
 
         # -- PostgreSQL audit mirror, scoped to the exported conversations ---
         conv_ids = [c["id"] for c in export.conversations]
