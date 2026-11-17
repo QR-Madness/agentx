@@ -644,12 +644,17 @@ install while the default device is CPU. The invariants each guard a silent fail
 **Decision:** `task audit` (`scripts/audit_deps.py`) audits what ships, read from the lockfiles,
 never from an installed environment. Python: each uv lock is exported to pins (the API twice, as the
 CPU set and the `gpu` group, since both images publish), markers are dropped and local tags (`+cpu`,
-`+cu128`) stripped so torch is checked under its public version, then `pip-audit --no-deps` runs.
-JS: `bun audit --production` per bun project. An advisory must be fixed or listed in
+`+cu128`) stripped so torch is checked under its public version, then `pip-audit --no-deps` runs
+against OSV (PyPI's own feed lags it: it missed a Mako advisory OSV had for weeks).
+JS: `bun audit --production` per bun project. Rust: every registry crate in the desktop shell's
+`Cargo.lock`, queried from OSV directly; RustSec `unmaintained` and `notice` entries aren't
+vulnerabilities and aren't gated, `unsound` is (allowlist ecosystem `crates`; a GitHub and a RustSec
+id for one issue merge into one hit). An advisory must be fixed or listed in
 `security/audit-allowlist.toml` with a checkable reason and a `review_by` date; past that date the
 gate fails. It fails closed: a tool that didn't run, or a pin it couldn't check, is an error, never
 a pass. It runs in `security-audit.yml` on any dependency-manifest change, weekly, and on demand, and
-it blocks `release:check`. Dependabot raises version updates on a 5-day cooldown: minor+patch grouped
+it blocks `release:check`. A failing run on master opens an issue (or comments on the one already
+open) and the next passing run closes it. Dependabot raises version updates on a 5-day cooldown: minor+patch grouped
 per directory, JS majors grouped (their toolchains move together and tsc/vitest/build judge the set),
 API Python majors one PR each (each is its own migration; a bundle of eight never went green).
 The desktop shell's Rust crates are a `cargo` entry. Tauri's npm packages must match its crates on
@@ -670,9 +675,10 @@ written down, with a date, keeps it a decision rather than a warning everyone le
 `constraint-dependencies` pin (ADR-19) is something Dependabot can't edit, so no update of either
 kind can succeed and each try fails the run; ignoring it costs nothing. Also rejected: running the
 audit on every PR (a new advisory against an unchanged lock would turn unrelated PRs red; the weekly
-run surfaces it instead). The cost of that choice: a red scheduled run has to be noticed. Master
-sat red for nine days in November 2026 before anyone looked.
-**Guard:** `security-audit.yml` + `release:check`; stale allowlist ids warn (`--strict` fails).
+run surfaces it instead). The cost of that choice was that a red scheduled run had to be noticed:
+master sat red for nine days in November 2026 before anyone looked, hence the issue alarm.
+**Guard:** `security-audit.yml` (with its issue alarm) + `release:check`; stale allowlist ids warn
+(`--strict` fails).
 
 ### ADR-21 — The memory store consolidates into PostgreSQL: plain tables, no graph engine (direction)
 **Decision (ratified 2026-11-12):** the memory store — nodes, relationships, vectors and full-text
@@ -702,5 +708,6 @@ revisions; the Neo4j runner lives until the removal slice).
 **Status:** in progress. Slice 0 (live-database tests in CI) has shipped. The default flips only
 after the recall-parity gate (`eval_recall` on both backends); if parity cannot be reached, the work
 stops after Slice 1 with Neo4j in place and nothing lost.
-**Guard (planned):** from Slice 1, a boundary test that fails on Cypher or a Neo4j session outside
-the store modules; from Slice 3, CI's `backend-live` job runs the suite on both backends.
+**Guard:** `tests_memory.MemoryStoreBoundaryTest` — Cypher strings and Neo4j session openings
+outside the memory classes may only go down (a per-module ratchet; schema-init and migration
+commands exempt). Planned: from Slice 3, CI's `backend-live` job runs the suite on both backends.
