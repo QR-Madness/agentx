@@ -97,6 +97,11 @@
       and Windows runners whenever the shell or the client's dependency manifests change;
       Dependabot gains a `cargo` entry and holds `@tauri-apps/*` minors so the npm half follows
       the crates (ADR-20).
+- [x] **Advisory gate: Rust crates, OSV, an alarm** — **shipped** (2026-11-17). The gate never read
+      `client/src-tauri/Cargo.lock`, which is how the Tauri CVE fixed in #113 went unseen; PyPI's
+      feed missed a Mako advisory that OSV had; and a red weekly run on master had already sat nine
+      days unnoticed. `audit_deps.py` now checks the Rust lock and the Python pins against OSV, and
+      `security-audit.yml` opens an issue when master fails and closes it on the next pass (ADR-20).
 - [×] **(WS-5) TODO-comment pointer-or-perish** — **won't build (doesn't earn its keep).** The whole
       codebase has **2** inline `TODO`s (`mcp/client.py` config-search, `views.py:4095` auth placeholder);
       a gate + ratchet for 2 markers is over-tooling. Revisit only if `grep -rE "TODO|FIXME"` climbs into

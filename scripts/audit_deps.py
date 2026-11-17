@@ -5,8 +5,11 @@ Python: each uv lock is exported to pinned requirements (the API twice, as the
 default CPU set and as the `gpu` group, since both images are published).
 Environment markers are dropped and local version tags (`+cpu`, `+cu128`) are
 stripped, so torch is checked under its public version, then `pip-audit
---no-deps` checks every pin. JS: `bun audit --production` per bun project, so
-dev-only tooling doesn't count.
+--no-deps` checks every pin against OSV (PyPI's own feed lags it: it missed a
+Mako advisory OSV had). JS: `bun audit --production` per bun project, so
+dev-only tooling doesn't count. Rust: every registry crate in the desktop
+shell's Cargo.lock, checked against OSV directly. A RustSec `unmaintained`
+notice is not a vulnerability and isn't gated; `unsound` is.
 
 Every advisory found must be fixed or triaged into security/audit-allowlist.toml
 with a reason and a review_by date (Decisions.md ADR-20).
@@ -14,7 +17,7 @@ with a reason and a review_by date (Decisions.md ADR-20).
 Errors (exit 1). The gate fails closed: an audit that didn't run never reads as clean.
   - an advisory that isn't in the allowlist
   - an allowlist entry past its review_by date, or a malformed entry
-  - an audit tool that failed to run, or a pin it couldn't check (both need network)
+  - an audit tool or OSV query that failed, or a pin it couldn't check (all need network)
 
 Warnings (printed; exit 0 unless --strict):
   - an allowlisted id the audit no longer reports (prune it)
@@ -30,6 +33,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
@@ -45,7 +49,13 @@ UV_PROJECTS = [
 ]
 # (label, bun project dir)
 BUN_PROJECTS = [("client", "client"), ("manager-ui", "manager/ui"), ("docs-site", "docs-site")]
-PROJECTS = {label for label, *_ in UV_PROJECTS + BUN_PROJECTS}
+# (label, Cargo project dir) — the desktop shell's crates ship in every installer.
+CARGO_PROJECTS = [("desktop", "client/src-tauri")]
+PROJECTS = {label for label, *_ in UV_PROJECTS + BUN_PROJECTS + CARGO_PROJECTS}
+ECOSYSTEMS = ("pypi", "npm", "crates")
+OSV_API = "https://api.osv.dev/v1"
+# RustSec notices that aren't vulnerabilities. `unsound` is deliberately not here.
+NOT_GATED = {"unmaintained", "notice"}
 GHSA_RE = re.compile(r"GHSA(?:-[0-9a-z]{4}){3}")
 
 errors: list[str] = []
@@ -110,7 +120,8 @@ def audit_python() -> None:
             fh.write("\n".join(reqs) + "\n")
             fh.flush()
             p = run(["uv", "tool", "run", "pip-audit", "--requirement", fh.name, "--no-deps",
-                     "--disable-pip", "--format", "json", "--progress-spinner", "off"], ROOT)
+                     "--disable-pip", "--vulnerability-service", "osv",
+                     "--format", "json", "--progress-spinner", "off"], ROOT)
         try:
             report = json.loads(p.stdout)
         except json.JSONDecodeError:
@@ -149,6 +160,59 @@ def audit_bun(label: str, project_dir: str) -> None:
                    f"{a.get('severity', '?')}: {a.get('title', '')[:70]}")
 
 
+def osv(path: str, body: dict | None = None) -> dict:
+    """GET (or POST `body` to) the OSV API. Raises on any failure; the caller fails closed."""
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(f"{OSV_API}/{path}", data=data,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.load(r)
+
+
+def audit_cargo(label: str, project_dir: str) -> None:
+    """Every registry crate in the lock against OSV's crates.io advisories.
+
+    One batch query finds the advisory ids; each id's record then supplies its
+    aliases, fixed versions and RustSec kind. GitHub and RustSec often publish
+    the same issue under both ids, so a hit is keyed by its RustSec id when it
+    has one, and the two reports merge into one.
+    """
+    lock_path = ROOT / project_dir / "Cargo.lock"
+    try:
+        lock = tomllib.loads(lock_path.read_text())
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        errors.append(f"{label}: can't read {lock_path.relative_to(ROOT)} ({e})")
+        return
+    crates = sorted({(p["name"], p["version"]) for p in lock.get("package", [])
+                     if p.get("source", "").startswith("registry+")})
+    records: dict[str, dict] = {}
+    try:
+        batch = osv("querybatch", {"queries": [
+            {"package": {"name": n, "ecosystem": "crates.io"}, "version": v} for n, v in crates]})
+        for (name, version), result in zip(crates, batch["results"], strict=True):
+            if result.get("next_page_token"):
+                errors.append(f"{label}: OSV paged its answer for {name} {version}, which the gate"
+                              " doesn't read — extend audit_cargo to follow next_page_token")
+            for hit in result.get("vulns", []):
+                vid = hit["id"]
+                if vid not in records:
+                    records[vid] = osv(f"vulns/{vid}")
+                d = records[vid]
+                affected = [a for a in d.get("affected", [])
+                            if a.get("package", {}).get("name") == name]
+                kinds = {(a.get("database_specific") or {}).get("informational") for a in affected}
+                if d.get("withdrawn") or kinds & NOT_GATED:
+                    continue
+                ids = {vid, *d.get("aliases", [])}
+                primary = next((i for i in sorted(ids) if i.startswith("RUSTSEC-")), vid)
+                fixed = sorted({ev["fixed"] for a in affected for r in a.get("ranges", [])
+                                for ev in r.get("events", []) if "fixed" in ev})
+                record("crates", label, name, version, primary, ids,
+                       f"fixed in: {', '.join(fixed) or 'none yet'}; {d.get('summary', '')[:60]}")
+    except (OSError, ValueError, KeyError) as e:
+        errors.append(f"{label}: OSV query failed ({e}) — it needs network; rerun")
+
+
 def load_allowlist() -> list[dict]:
     if not ALLOWLIST.exists():
         return []
@@ -164,8 +228,8 @@ def load_allowlist() -> list[dict]:
         missing = [k for k in ("ecosystem", "package", "ids", "reason", "review_by") if not raw.get(k)]
         if missing:
             errors.append(f"{where}: missing {', '.join(missing)} — every entry needs all five")
-        elif raw["ecosystem"] not in ("pypi", "npm"):
-            errors.append(f"{where}: ecosystem must be \"pypi\" or \"npm\"")
+        elif raw["ecosystem"] not in ECOSYSTEMS:
+            errors.append(f"{where}: ecosystem must be one of {', '.join(ECOSYSTEMS)}")
         elif not isinstance(raw["review_by"], dt.date):
             errors.append(f"{where}: review_by must be a bare TOML date, e.g. 2027-01-31")
         elif unknown := set(raw.get("projects", [])) - PROJECTS:
@@ -212,6 +276,8 @@ def main() -> int:
     audit_python()
     for label, project_dir in BUN_PROJECTS:
         audit_bun(label, project_dir)
+    for label, project_dir in CARGO_PROJECTS:
+        audit_cargo(label, project_dir)
     allowed = triage(entries)
 
     print("🔒 Dependency audit")

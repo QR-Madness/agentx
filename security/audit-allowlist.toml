@@ -7,9 +7,9 @@
 # reason. An id listed here that the audit no longer reports is flagged as stale;
 # delete it.
 #
-# Fields: ecosystem ("pypi" | "npm"), package, ids (advisory ids or their aliases),
-#         reason, review_by, projects (optional; omit to match in any project:
-#         api, api-gpu, manager, client, manager-ui, docs-site).
+# Fields: ecosystem ("pypi" | "npm" | "crates"), package, ids (advisory ids or
+#         their aliases), reason, review_by, projects (optional; omit to match in
+#         any project: api, api-gpu, manager, client, manager-ui, docs-site, desktop).
 
 # --- Python (API images) ------------------------------------------------------
 
@@ -154,5 +154,21 @@ projects = ["docs-site"]
 reason = """
 Arbitrary file read through the esbuild dev server; production builds never
 start it. The fix (0.28.1) is outside astro 6's ^0.27 range.
+"""
+review_by = 2027-01-31
+
+# --- Desktop shell (Rust crates) ------------------------------------------------
+
+[[advisory]]
+ecosystem = "crates"
+package = "glib"
+ids = ["RUSTSEC-2024-0429", "GHSA-wrw7-89jp-8q8g"]
+projects = ["desktop"]
+reason = """
+Unsound Iterator impls on glib::VariantStrIter. glib 0.18 is the GTK 3
+binding generation that Tauri 2's Linux webview stack pins (webkit2gtk 2.0,
+gtk 0.18, wry, tao); the fix is glib 0.20, which the GTK 3 bindings never
+reached. AgX's own Rust uses glib only to downcast a webview permission
+request, never VariantStrIter. Clears when Tauri moves to GTK 4 bindings.
 """
 review_by = 2027-01-31
