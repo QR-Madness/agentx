@@ -1070,10 +1070,10 @@ def version(request):
 
 def _get_storage_metrics() -> dict:
     """Get storage size metrics for all databases."""
-    from .kit.agent_memory.connections import PostgresConnection, Neo4jConnection, RedisConnection
+    from .kit.agent_memory.connections import PostgresConnection, RedisConnection
     from sqlalchemy import text
 
-    storage = {
+    storage: dict[str, float | None] = {
         "postgres_size_mb": None,
         "neo4j_size_mb": None,
         "redis_memory_mb": None,
@@ -1090,29 +1090,12 @@ def _get_storage_metrics() -> dict:
     except Exception:
         pass
 
-    # Neo4j store size (use dbms.queryJmx or estimate from count)
+    # Neo4j store size (the JMX counter, else an estimate from the node count)
     try:
-        with Neo4jConnection.session() as session:
-            # Get approximate size by counting nodes/relationships
-            result = session.run("""
-                CALL dbms.queryJmx('org.neo4j:instance=kernel#0,name=Store sizes')
-                YIELD attributes
-                RETURN attributes.TotalStoreSize.value AS total_bytes
-            """)
-            record = result.single()
-            if record and record["total_bytes"]:
-                storage["neo4j_size_mb"] = round(record["total_bytes"] / 1024 / 1024, 2)
+        from .kit.agent_memory.memory.cross_user import CrossUserStore
+        storage["neo4j_size_mb"] = CrossUserStore().graph_size_mb()
     except Exception:
-        # Fallback: estimate from node/relationship counts
-        try:
-            with Neo4jConnection.session() as session:
-                result = session.run("MATCH (n) RETURN count(n) as nodes")
-                record = result.single()
-                # Rough estimate: ~500 bytes per node
-                if record:
-                    storage["neo4j_size_mb"] = round(record["nodes"] * 500 / 1024 / 1024, 2)
-        except Exception:
-            pass
+        pass
 
     # Redis memory usage
     try:
@@ -6109,57 +6092,25 @@ def memory_channels(request):
     GET: List all channels with item counts
     POST: Create a new named channel
     """
-    from .kit.agent_memory.connections import Neo4jConnection
+    from .kit.agent_memory.memory.cross_user import CrossUserStore
 
     if request.method == 'GET':
         # List all channels with item counts
         try:
             channels = []
 
-            with Neo4jConnection.session() as session:
-                # Get all distinct channels and their counts
-                result = session.run("""
-                    // Get all channels from different node types
-                    MATCH (n)
-                    WHERE n.channel IS NOT NULL
-                    WITH DISTINCT n.channel AS channel
-
-                    // Count items per channel per type
-                    OPTIONAL MATCH (t:Turn {channel: channel})
-                    WITH channel, count(DISTINCT t) AS turn_count
-
-                    OPTIONAL MATCH (e:Entity {channel: channel})
-                    WITH channel, turn_count, count(DISTINCT e) AS entity_count
-
-                    OPTIONAL MATCH (f:Fact {channel: channel})
-                    WITH channel, turn_count, entity_count, count(DISTINCT f) AS fact_count
-
-                    OPTIONAL MATCH (s:Strategy {channel: channel})
-                    WITH channel, turn_count, entity_count, fact_count, count(DISTINCT s) AS strategy_count
-
-                    OPTIONAL MATCH (g:Goal {channel: channel})
-
-                    RETURN channel,
-                           turn_count AS turns,
-                           entity_count AS entities,
-                           fact_count AS facts,
-                           strategy_count AS strategies,
-                           count(DISTINCT g) AS goals
-                    ORDER BY channel
-                """)
-
-                for record in result:
-                    channels.append({
-                        "name": record["channel"],
-                        "is_default": record["channel"] == "_global",
-                        "item_counts": {
-                            "turns": record["turns"],
-                            "entities": record["entities"],
-                            "facts": record["facts"],
-                            "strategies": record["strategies"],
-                            "goals": record["goals"],
-                        }
-                    })
+            for row in CrossUserStore().list_channels():
+                channels.append({
+                    "name": row["channel"],
+                    "is_default": row["channel"] == "_global",
+                    "item_counts": {
+                        "turns": row["turns"],
+                        "entities": row["entities"],
+                        "facts": row["facts"],
+                        "strategies": row["strategies"],
+                        "goals": row["goals"],
+                    }
+                })
 
             # Ensure _global channel always exists in the list
             if not any(c["name"] == "_global" for c in channels):
@@ -6198,16 +6149,10 @@ def memory_channels(request):
                 }, status=400)
 
             # Check if channel already exists
-            with Neo4jConnection.session() as session:
-                result = session.run("""
-                    MATCH (n {channel: $channel})
-                    RETURN count(n) AS count
-                """, channel=channel_name)
-                record = result.single()
-                if record and record["count"] > 0:
-                    return JsonResponse({
-                        "error": f"Channel '{channel_name}' already exists"
-                    }, status=409)
+            if CrossUserStore().channel_exists(channel_name):
+                return JsonResponse({
+                    "error": f"Channel '{channel_name}' already exists"
+                }, status=409)
 
             # Channel is created implicitly when first item is added
             # For now, just confirm it's valid and doesn't exist
@@ -6487,7 +6432,8 @@ def memory_conversation_delete(request, conversation_id):
 
     DELETE: Remove the conversation's turns from Neo4j, PostgreSQL, and Redis.
     """
-    from .kit.agent_memory.connections import Neo4jConnection, PostgresConnection, RedisConnection
+    from .kit.agent_memory.connections import PostgresConnection, RedisConnection
+    from .kit.agent_memory.memory.episodic import EpisodicMemory
 
     if request.method == 'OPTIONS':
         return JsonResponse({}, status=200)
@@ -6505,27 +6451,7 @@ def memory_conversation_delete(request, conversation_id):
 
         # Delete from Neo4j: conversation node and its turns
         try:
-            with Neo4jConnection.session() as session:
-                # Delete turns linked to this conversation
-                result = session.run("""
-                    MATCH (c:Conversation {id: $conv_id})-[:HAS_TURN]->(t:Turn)
-                    WITH t, count(t) AS cnt
-                    DETACH DELETE t
-                    RETURN cnt
-                """, conv_id=conversation_id)
-                record = result.single()
-                if record:
-                    deleted_counts["turns"] = record["cnt"] or 0
-
-                # Delete the conversation node itself
-                result = session.run("""
-                    MATCH (c:Conversation {id: $conv_id})
-                    DETACH DELETE c
-                    RETURN count(c) AS cnt
-                """, conv_id=conversation_id)
-                record = result.single()
-                if record:
-                    deleted_counts["conversation"] = record["cnt"] or 0
+            deleted_counts.update(EpisodicMemory().delete_conversation(conversation_id))
         except Exception as e:
             logger.warning(f"Error deleting conversation from Neo4j: {e}")
 
@@ -6649,7 +6575,8 @@ def memory_channel_delete(request, name):
 
     DELETE: Remove the channel and all associated data
     """
-    from .kit.agent_memory.connections import Neo4jConnection, PostgresConnection, RedisConnection
+    from .kit.agent_memory.connections import PostgresConnection, RedisConnection
+    from .kit.agent_memory.memory.cross_user import CrossUserStore
 
     if request.method == 'OPTIONS':
         return JsonResponse({}, status=200)
@@ -6676,72 +6603,7 @@ def memory_channel_delete(request, name):
         }
 
         # Delete from Neo4j
-        with Neo4jConnection.session() as session:
-            # Delete turns
-            result = session.run("""
-                MATCH (t:Turn {channel: $channel})
-                WITH t, count(t) AS cnt
-                DETACH DELETE t
-                RETURN cnt
-            """, channel=name)
-            record = result.single()
-            if record:
-                deleted_counts["turns"] = record["cnt"] or 0
-
-            # Delete entities
-            result = session.run("""
-                MATCH (e:Entity {channel: $channel})
-                WITH e, count(e) AS cnt
-                DETACH DELETE e
-                RETURN cnt
-            """, channel=name)
-            record = result.single()
-            if record:
-                deleted_counts["entities"] = record["cnt"] or 0
-
-            # Delete facts
-            result = session.run("""
-                MATCH (f:Fact {channel: $channel})
-                WITH f, count(f) AS cnt
-                DETACH DELETE f
-                RETURN cnt
-            """, channel=name)
-            record = result.single()
-            if record:
-                deleted_counts["facts"] = record["cnt"] or 0
-
-            # Delete strategies
-            result = session.run("""
-                MATCH (s:Strategy {channel: $channel})
-                WITH s, count(s) AS cnt
-                DETACH DELETE s
-                RETURN cnt
-            """, channel=name)
-            record = result.single()
-            if record:
-                deleted_counts["strategies"] = record["cnt"] or 0
-
-            # Delete goals
-            result = session.run("""
-                MATCH (g:Goal {channel: $channel})
-                WITH g, count(g) AS cnt
-                DETACH DELETE g
-                RETURN cnt
-            """, channel=name)
-            record = result.single()
-            if record:
-                deleted_counts["goals"] = record["cnt"] or 0
-
-            # Delete conversations
-            result = session.run("""
-                MATCH (c:Conversation {channel: $channel})
-                WITH c, count(c) AS cnt
-                DETACH DELETE c
-                RETURN cnt
-            """, channel=name)
-            record = result.single()
-            if record:
-                deleted_counts["conversations"] = record["cnt"] or 0
+        deleted_counts.update(CrossUserStore().delete_channel(name))
 
         # Delete from PostgreSQL
         try:
@@ -7390,101 +7252,20 @@ def memory_stats(request):
         return JsonResponse({'error': 'GET only'}, status=405)
 
     try:
-        from .kit.agent_memory.connections import Neo4jConnection
+        from .kit.agent_memory.memory.overview import MemoryOverview
 
-        with Neo4jConnection.session() as session:
-            # Get totals - query each type separately since they have different structures
-            # Entity, Fact, Strategy have user_id property
-            # Turn is linked via User -> Conversation -> Turn
-            totals = {"entities": 0, "facts": 0, "strategies": 0, "procedures": 0, "turns": 0}
+        totals, by_channel = MemoryOverview().counts(DEFAULT_USER_ID)
 
-            entity_count = session.run("""
-                MATCH (e:Entity {user_id: $user_id})
-                RETURN count(e) AS cnt
-            """, user_id=DEFAULT_USER_ID).single()
-            totals["entities"] = entity_count["cnt"] if entity_count else 0
-
-            fact_count = session.run("""
-                MATCH (f:Fact {user_id: $user_id})
-                RETURN count(f) AS cnt
-            """, user_id=DEFAULT_USER_ID).single()
-            totals["facts"] = fact_count["cnt"] if fact_count else 0
-
-            strategy_count = session.run("""
-                MATCH (s:Strategy {user_id: $user_id})
-                RETURN count(s) AS cnt
-            """, user_id=DEFAULT_USER_ID).single()
-            totals["strategies"] = strategy_count["cnt"] if strategy_count else 0
-
-            # Distilled procedures (Slice 1 — procedural memory).
-            procedure_count = session.run("""
-                MATCH (p:Procedure {user_id: $user_id})
-                RETURN count(p) AS cnt
-            """, user_id=DEFAULT_USER_ID).single()
-            totals["procedures"] = procedure_count["cnt"] if procedure_count else 0
-
-            # Turn is linked through Conversation, not directly to user_id property
-            turn_count = session.run("""
-                MATCH (u:User {id: $user_id})-[:HAS_CONVERSATION]->(c:Conversation)-[:HAS_TURN]->(t:Turn)
-                RETURN count(t) AS cnt
-            """, user_id=DEFAULT_USER_ID).single()
-            totals["turns"] = turn_count["cnt"] if turn_count else 0
-
-            # Procedural-memory candidates staged but not yet distilled (Slice 0).
-            try:
-                from .kit.agent_memory.connections import get_postgres_session
-                from sqlalchemy import text as _sa_text
-                with get_postgres_session() as _pg:
-                    totals["procedure_candidates"] = int(_pg.execute(
-                        _sa_text("SELECT COUNT(*) FROM procedure_candidates WHERE status = 'pending'")
-                    ).scalar() or 0)
-            except Exception:
-                totals["procedure_candidates"] = 0
-
-            # Get per-channel breakdown
-            by_channel = {}
-
-            # Query each type separately for accurate per-channel counts
-            entity_result = session.run("""
-                MATCH (e:Entity {user_id: $user_id})
-                RETURN e.channel AS channel, count(e) AS cnt
-            """, user_id=DEFAULT_USER_ID)
-            for record in entity_result:
-                ch = record["channel"] or "_global"
-                if ch not in by_channel:
-                    by_channel[ch] = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
-                by_channel[ch]["entities"] = record["cnt"]
-
-            fact_result = session.run("""
-                MATCH (f:Fact {user_id: $user_id})
-                RETURN f.channel AS channel, count(f) AS cnt
-            """, user_id=DEFAULT_USER_ID)
-            for record in fact_result:
-                ch = record["channel"] or "_global"
-                if ch not in by_channel:
-                    by_channel[ch] = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
-                by_channel[ch]["facts"] = record["cnt"]
-
-            strategy_result = session.run("""
-                MATCH (s:Strategy {user_id: $user_id})
-                RETURN s.channel AS channel, count(s) AS cnt
-            """, user_id=DEFAULT_USER_ID)
-            for record in strategy_result:
-                ch = record["channel"] or "_global"
-                if ch not in by_channel:
-                    by_channel[ch] = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
-                by_channel[ch]["strategies"] = record["cnt"]
-
-            # Turn linked through Conversation
-            turn_result = session.run("""
-                MATCH (u:User {id: $user_id})-[:HAS_CONVERSATION]->(c:Conversation)-[:HAS_TURN]->(t:Turn)
-                RETURN t.channel AS channel, count(t) AS cnt
-            """, user_id=DEFAULT_USER_ID)
-            for record in turn_result:
-                ch = record["channel"] or "_global"
-                if ch not in by_channel:
-                    by_channel[ch] = {"entities": 0, "facts": 0, "strategies": 0, "turns": 0}
-                by_channel[ch]["turns"] = record["cnt"]
+        # Procedural-memory candidates staged but not yet distilled (Slice 0).
+        try:
+            from .kit.agent_memory.connections import get_postgres_session
+            from sqlalchemy import text as _sa_text
+            with get_postgres_session() as _pg:
+                totals["procedure_candidates"] = int(_pg.execute(
+                    _sa_text("SELECT COUNT(*) FROM procedure_candidates WHERE status = 'pending'")
+                ).scalar() or 0)
+        except Exception:
+            totals["procedure_candidates"] = 0
 
         return JsonResponse({
             "totals": totals,

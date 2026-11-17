@@ -6834,7 +6834,6 @@ class MemoryStoreBoundaryTest(TestCase):
         "management/commands/dedupe_entities.py": (6, 1),
         "management/commands/eval_consolidation.py": (11, 5),
         "management/commands/eval_recall.py": (3, 2),
-        "views.py": (20, 7),
     }
 
     _CYPHER = re.compile(
@@ -7127,3 +7126,169 @@ class PortabilityStoreTest(TestCase):
         count.assert_called_once_with("u1", ["proj"])
         self.assertEqual(counts["facts"], 3)
         self.assertEqual(counts["pg_conversation_logs"], 0)
+
+
+class MemoryViewStoreMethodsTest(TestCase):
+    """The store methods the memory endpoints call (consolidation Slice 1b): the
+    queries moved from views.py unchanged; these pin the shaping around them."""
+
+    @staticmethod
+    def _cm(session):
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        return cm
+
+    def _store_session(self, run):
+        session = MagicMock()
+        session.run.side_effect = run
+        return patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session',
+                     return_value=self._cm(session)), session
+
+    def test_graph_size_prefers_jmx_and_estimates_only_when_jmx_fails(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+
+        def jmx_ok(query, **_):
+            r = MagicMock()
+            r.single.return_value = {"total_bytes": 3 * 1024 * 1024}
+            return r
+        p, _ = self._store_session(jmx_ok)
+        with p:
+            self.assertEqual(CrossUserStore().graph_size_mb(), 3.0)
+
+        def jmx_empty(query, **_):
+            r = MagicMock()
+            r.single.return_value = {"total_bytes": None}
+            return r
+        p, session = self._store_session(jmx_empty)
+        with p:
+            self.assertIsNone(CrossUserStore().graph_size_mb())
+        self.assertEqual(session.run.call_count, 1)  # no estimate unless JMX raised
+
+        def jmx_raises(query, **_):
+            if "queryJmx" in query:
+                raise RuntimeError("no JMX")
+            r = MagicMock()
+            r.single.return_value = {"nodes": 2 * 1024 * 1024 // 500}
+            return r
+        p, _ = self._store_session(jmx_raises)
+        with p:
+            self.assertAlmostEqual(CrossUserStore().graph_size_mb(), 2.0, places=1)
+
+        p, _ = self._store_session(lambda *a, **k: (_ for _ in ()).throw(RuntimeError("down")))
+        with p:
+            self.assertIsNone(CrossUserStore().graph_size_mb())
+
+    def test_channel_listing_existence_and_deletion(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        row = {"channel": "proj", "turns": 4, "entities": 3, "facts": 2, "strategies": 1, "goals": 0}
+        p, _ = self._store_session(lambda q, **k: [row])
+        with p:
+            self.assertEqual(CrossUserStore().list_channels(), [row])
+
+        def exists(query, **params):
+            r = MagicMock()
+            r.single.return_value = {"count": 1 if params["channel"] == "proj" else 0}
+            return r
+        p, _ = self._store_session(exists)
+        with p:
+            self.assertTrue(CrossUserStore().channel_exists("proj"))
+            self.assertFalse(CrossUserStore().channel_exists("nope"))
+
+        def delete(query, **params):
+            r = MagicMock()
+            r.single.return_value = {"cnt": 2}
+            return r
+        p, session = self._store_session(delete)
+        with p:
+            deleted = CrossUserStore().delete_channel("proj")
+        self.assertEqual(deleted, {"turns": 2, "entities": 2, "facts": 2, "strategies": 2,
+                                   "goals": 2, "conversations": 2})
+        labels = [re.search(r"MATCH \(\w+:(\w+)", c.args[0]).group(1) for c in session.run.call_args_list]
+        self.assertEqual(labels, ["Turn", "Entity", "Fact", "Strategy", "Goal", "Conversation"])
+
+    def test_delete_conversation_counts_turns_and_the_node(self):
+        from agentx_ai.kit.agent_memory.memory.episodic import EpisodicMemory
+        replies = iter([{"cnt": 5}, {"cnt": 1}])
+
+        def run(query, **params):
+            self.assertEqual(params, {"conv_id": "c9"})
+            r = MagicMock()
+            r.single.return_value = next(replies)
+            return r
+        p, _ = self._store_session(run)
+        with p:
+            self.assertEqual(EpisodicMemory().delete_conversation("c9"), {"turns": 5, "conversation": 1})
+
+    def test_overview_counts_totals_and_buckets_unlabelled_nodes_as_global(self):
+        from agentx_ai.kit.agent_memory.memory.overview import MemoryOverview
+
+        def run(query, **params):
+            self.assertEqual(params, {"user_id": "u1"})
+            r = MagicMock()
+            if "AS channel" in query:
+                return [{"channel": None, "cnt": 2}, {"channel": "proj", "cnt": 1}]
+            r.single.return_value = {"cnt": 3}
+            return r
+        p, _ = self._store_session(run)
+        with p:
+            totals, by_channel = MemoryOverview().counts("u1")
+        self.assertEqual(totals, {"entities": 3, "facts": 3, "strategies": 3, "procedures": 3, "turns": 3})
+        self.assertEqual(by_channel["_global"], {"entities": 2, "facts": 2, "strategies": 2, "turns": 2})
+        self.assertEqual(by_channel["proj"], {"entities": 1, "facts": 1, "strategies": 1, "turns": 1})
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)  # endpoint tests don't auth; stay green regardless of local .env
+class MemoryViewsUseTheStoreTest(TestCase):
+    """The memory endpoints answer from the store methods, with unchanged responses."""
+
+    def test_stats_combines_the_overview_with_pending_candidates(self):
+        pg = MagicMock()
+        pg.__enter__.return_value.execute.return_value.scalar.return_value = 4
+        with patch('agentx_ai.kit.agent_memory.memory.overview.MemoryOverview.counts',
+                   return_value=({"entities": 1, "facts": 2, "strategies": 0, "procedures": 0, "turns": 9},
+                                 {"_global": {"entities": 1, "facts": 2, "strategies": 0, "turns": 9}})), \
+             patch('agentx_ai.kit.agent_memory.connections.get_postgres_session', return_value=pg):
+            res = self.client.get("/api/memory/stats")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["totals"]["turns"], 9)
+        self.assertEqual(body["totals"]["procedure_candidates"], 4)
+        self.assertEqual(body["by_channel"]["_global"]["facts"], 2)
+
+    def test_stats_degrades_when_the_store_is_down(self):
+        with patch('agentx_ai.kit.agent_memory.memory.overview.MemoryOverview.counts',
+                   side_effect=RuntimeError("neo4j down")):
+            res = self.client.get("/api/memory/stats")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["unavailable"])
+
+    def test_channel_list_and_create_use_the_cross_user_store(self):
+        rows = [{"channel": "proj", "turns": 1, "entities": 0, "facts": 0, "strategies": 0, "goals": 0}]
+        with patch('agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore.list_channels', return_value=rows):
+            res = self.client.get("/api/memory/channels")
+        names = [c["name"] for c in res.json()["channels"]]
+        self.assertEqual(names, ["_global", "proj"])  # _global is always listed
+        with patch('agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore.channel_exists', return_value=True):
+            res = self.client.post("/api/memory/channels", data={"name": "proj"}, content_type="application/json")
+        self.assertEqual(res.status_code, 409)
+
+    def test_channel_and_conversation_deletes_report_the_store_counts(self):
+        with patch('agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore.delete_channel',
+                   return_value={"turns": 2, "entities": 1, "facts": 0, "strategies": 0, "goals": 0,
+                                 "conversations": 1}) as delete_channel:
+            res = self.client.delete("/api/memory/channels/proj")
+        delete_channel.assert_called_once_with("proj")
+        self.assertEqual(res.json()["deleted"]["turns"], 2)
+        with patch('agentx_ai.kit.agent_memory.memory.episodic.EpisodicMemory.delete_conversation',
+                   return_value={"turns": 3, "conversation": 1}), \
+             patch('agentx_ai.agent.conversation_meta.delete_meta'):
+            res = self.client.delete("/api/memory/conversations/c9")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["deleted"]["turns"], 3)
+        self.assertEqual(res.json()["deleted"]["conversation"], 1)
+
+    def test_storage_metrics_take_the_graph_size_from_the_store(self):
+        from agentx_ai.views import _get_storage_metrics
+        with patch('agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore.graph_size_mb', return_value=12.5):
+            self.assertEqual(_get_storage_metrics()["neo4j_size_mb"], 12.5)

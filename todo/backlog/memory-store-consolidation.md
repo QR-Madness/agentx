@@ -151,6 +151,28 @@ runs the suite against both backends.
         `list_user_ids`, `wipe_all` and `rename_agent_entities`; `portability/cluster.py` and the
         profile manager's rename propagation now call it (guard rows for both removed; 123 strings
         and 33 openings remain).
+  - [x] **1c — portability** (2026-11-17): `memory/portability_store.py::PortabilityStore` holds
+        every graph query of export, import and Extract (34 strings, 4 openings): `read_collections`,
+        `write_collections` (one transaction: the replace-mode wipe, every family, the turn chains),
+        `count_channels` and `wipe_channels`. Like the cross-user store it is a memory class of its
+        own, because these operations move a whole user's memory against one envelope rather than
+        one record at a time; its PostgreSQL twin reads and writes the same envelope. The exporter,
+        importer and Extract keep envelope assembly, embedding regeneration, the PostgreSQL mirror,
+        artifacts and receipts. Every moved query is unchanged apart from whitespace (checked
+        string by string), and the full live suite passed against real databases (1,643 tests).
+        89 strings and 29 openings remain, in 9 modules.
+  - [x] **1b — `views.py`** (2026-11-17): the five memory handlers that queried Neo4j now call
+        the store (21 queries, moved unchanged). The channel list, channel-existence check, channel
+        delete and storage-size estimate went to `CrossUserStore`, because they span users today;
+        conversation delete went to `EpisodicMemory.delete_conversation`; the stats view's counts went
+        to a small `memory/overview.py::MemoryOverview`. 69 strings and 22 openings remain, in 8
+        modules (the consolidation jobs and the management commands).
+        **Found while moving, not fixed here (behaviour-neutral slice):** `GET/POST
+        /api/memory/channels` and `DELETE /api/memory/channels/{name}` span every user's memory
+        (the list, the existence check and the delete have no user filter), and the channel delete
+        leaves the channel's procedures behind; `DELETE /api/memory/conversations/{id}` doesn't
+        check the conversation's owner. All single-user today; each becomes a real leak with a
+        second user. Scope them when RLS lands (Slice 2/3), or sooner if multi-user comes first.
 - [ ] **Slice 2 — schema and RLS** (1–2 days). Alembic revisions for the tables, indexes and
       policies. Empty tables; nothing reads them yet.
 - [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`.
