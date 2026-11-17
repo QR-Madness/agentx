@@ -8,7 +8,8 @@
 **NOTE**: UI must be highly responsive between PC and mobile devices.
 
 **Versioning**: `versions.yaml` is the single source of truth (run `task versions:sync` after
-editing it). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
+editing it; it stops, and puts `uv.lock` back, if your uv is older than the one that wrote the lock,
+since an older uv rewrites it in an older format). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
 bump `protocol_version` only on breaking API changes. Current: **0.21.281** (protocol 1).
 
