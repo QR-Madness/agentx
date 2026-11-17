@@ -6805,3 +6805,123 @@ class PromptTemplateRenderTest(TestCase):
                     f"{key}: unsubstituted placeholders {leftovers} — "
                     "un-doubled brace or missing variable",
                 )
+
+
+class MemoryStoreBoundaryTest(TestCase):
+    """The memory classes are the only door to the memory store (ADR-21, Slice 1 of
+    todo/backlog/memory-store-consolidation.md). Outside them, a module may hold no
+    more Cypher strings and open no more Neo4j sessions than it did when this guard
+    landed; each sub-slice moves some behind a memory-class method and lowers its
+    row here. The baseline only shrinks: the second test fails when a count drops
+    and the row wasn't lowered with it.
+
+    Counting is token-based, so comments and docstrings that merely mention Cypher
+    don't count. Schema-init and migration commands stay backend-specific (the plan
+    keeps them per store), and tests are out of scope.
+    """
+
+    BASE = Path(__file__).resolve().parent
+    STORE = ("kit/agent_memory/memory/", "kit/agent_memory/query_utils.py", "kit/agent_memory/connections.py")
+    BACKEND_SPECIFIC = ("management/commands/init_memory_schema.py", "management/commands/migrate_schema.py")
+
+    # module → (Cypher strings, Neo4j session/driver openings), measured 2026-11-17.
+    BASELINE: dict[str, tuple[int, int]] = {
+        "agent/profiles.py": (1, 1),
+        "kit/agent_memory/consolidation/jobs.py": (42, 10),
+        "kit/agent_memory/maintenance/entity_merge.py": (3, 0),
+        "kit/agent_memory/portability/cluster.py": (3, 3),
+        "kit/agent_memory/portability/exporter.py": (8, 1),
+        "kit/agent_memory/portability/extract.py": (8, 2),
+        "kit/agent_memory/portability/importer.py": (18, 1),
+        "management/commands/backfill_agent_attribution.py": (2, 1),
+        "management/commands/bootstrap.py": (0, 1),
+        "management/commands/debug_attribution.py": (2, 2),
+        "management/commands/dedupe_entities.py": (6, 1),
+        "management/commands/eval_consolidation.py": (11, 5),
+        "management/commands/eval_recall.py": (3, 2),
+        "views.py": (20, 7),
+    }
+
+    _CYPHER = re.compile(
+        r"\b(?:OPTIONAL\s+MATCH|MATCH|MERGE|CREATE)\s*\(|\bCALL\s+(?:db|apoc|gds)\."
+        r"|\bUNWIND\s+\$|\bDETACH\s+DELETE\b"
+    )
+    _OPENERS = {"session", "get_driver"}
+
+    @classmethod
+    def _measure(cls, source: str) -> tuple[int, int]:
+        """(Cypher string literals, `Neo4jConnection.session(`/`.get_driver(` calls)."""
+        import io
+        import tokenize
+
+        cypher = openers = 0
+        fstring: list[str] | None = None
+        tail: list[str] = []  # the last three significant tokens, for NAME . NAME (
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+            if tok.type == tokenize.STRING:
+                cypher += bool(cls._CYPHER.search(tok.string))
+            elif tok.type == tokenize.FSTRING_START:
+                fstring = [tok.string]
+            elif tok.type == tokenize.FSTRING_MIDDLE and fstring is not None:
+                fstring.append(tok.string)
+            elif tok.type == tokenize.FSTRING_END and fstring is not None:
+                cypher += bool(cls._CYPHER.search("".join(fstring)))
+                fstring = None
+            if tok.type in (tokenize.NAME, tokenize.OP):
+                tail = [*tail[-2:], tok.string]
+                if len(tail) == 3 and tail[0] == "Neo4jConnection" and tail[1] == "." and tail[2] in cls._OPENERS:
+                    openers += 1
+        return cypher, openers
+
+    def _counts(self) -> dict[str, tuple[int, int]]:
+        counts = {}
+        for path in sorted(self.BASE.rglob("*.py")):
+            rel = path.relative_to(self.BASE).as_posix()
+            if (path.name.startswith("tests") or path.name == "test_utils.py"
+                    or rel.startswith(self.STORE) or rel in self.BACKEND_SPECIFIC):
+                continue
+            found = self._measure(path.read_text(encoding="utf-8"))
+            if any(found):
+                counts[rel] = found
+        return counts
+
+    def test_measure_counts_queries_and_openers_not_prose(self):
+        source = (
+            '# MATCH (n) in a comment is not a query\n'
+            'def f(uid):\n'
+            '    """Runs MATCH (u:User) — a docstring is still a string literal."""\n'
+            '    with Neo4jConnection.session() as s:\n'
+            '        s.run("MATCH (u:User {id: $uid}) RETURN u", uid=uid)\n'
+            '        s.run(f"MERGE (c:Conversation {{id: \'{uid}\'}})")\n'
+            '    driver = Neo4jConnection.get_driver()\n'
+            '    return "matches (if any)"\n'
+        )
+        # The docstring counts: a string literal is a string literal. Keep Cypher
+        # out of docstrings in non-store modules, or describe it in prose.
+        self.assertEqual(self._measure(source), (3, 2))
+
+    def test_no_new_cypher_or_sessions_outside_the_memory_classes(self):
+        over = {
+            module: {"now": found, "allowed": self.BASELINE.get(module, (0, 0))}
+            for module, found in self._counts().items()
+            if any(n > a for n, a in zip(found, self.BASELINE.get(module, (0, 0)), strict=True))
+        }
+        self.assertEqual(
+            over, {},
+            "Cypher or a Neo4j session outside the memory classes. Add a method to the "
+            "memory class that owns the data and call it instead (ADR-21, Slice 1). "
+            "Counts are (Cypher strings, session/driver openings).",
+        )
+
+    def test_baseline_only_shrinks(self):
+        counts = self._counts()
+        stale = {
+            module: {"baseline": allowed, "now": counts.get(module, (0, 0))}
+            for module, allowed in self.BASELINE.items()
+            if counts.get(module, (0, 0)) != allowed
+        }
+        self.assertEqual(
+            stale, {},
+            "A module now holds less Cypher than its baseline row allows. Lower the row "
+            "(delete it at (0, 0)) so the gain can't be spent again.",
+        )

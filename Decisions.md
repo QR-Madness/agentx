@@ -699,5 +699,6 @@ revisions; the Neo4j runner lives until the removal slice).
 **Status:** in progress. Slice 0 (live-database tests in CI) has shipped. The default flips only
 after the recall-parity gate (`eval_recall` on both backends); if parity cannot be reached, the work
 stops after Slice 1 with Neo4j in place and nothing lost.
-**Guard (planned):** from Slice 1, a boundary test that fails on Cypher or a Neo4j session outside
-the store modules; from Slice 3, CI's `backend-live` job runs the suite on both backends.
+**Guard:** `tests_memory.MemoryStoreBoundaryTest` — Cypher strings and Neo4j session openings
+outside the memory classes may only go down (a per-module ratchet; schema-init and migration
+commands exempt). Planned: from Slice 3, CI's `backend-live` job runs the suite on both backends.
