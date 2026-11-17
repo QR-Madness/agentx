@@ -51,7 +51,7 @@ Creator** — so "research this" or "make me an image of…" delegates out of th
 
 For a workflow you run repeatedly (a lead that always orchestrates a fixed set of specialists):
 
-1. Command palette (`⌘K`) → **Manage agent teams** → **New team**.
+1. Command palette (`⌘K`) → **Open Organization** → **New team**.
 2. Pick a **Lead** — the agent that owns the conversation and decides when to delegate. Give it
    a capable model; the orchestration is only as good as the lead.
 3. **Add member** for each specialist, each with an optional hint about what to send it.
@@ -70,6 +70,43 @@ When an agent delegates, its teammate's work renders **inline** as a delegation 
 transcript — you watch the subtask run, not just its result. A **Trace** on the conversation opens
 the **Team Run Trace**: who delegated to whom, and each step's tokens, cost, and wall-clock time.
 Nothing happens off-screen.
+
+## Organizations
+
+A team can belong to an **organization**: give it a **manager**, and the manager delegates to the
+team's lead, the lead works its own members, and a member can escalate to its lead. For everyone on
+a managed team, this **chain of command** replaces the flat roster as the list of agents they can
+hand work to: one step down, or for a member one step up to its lead, never sideways and never past
+a level. Teams without a manager, and agents on no team, work exactly as described above.
+
+**Roles** live on the profile: [Agent Profiles](/docs/features/agent-profiles) → **Team
+membership** → **Role** (Agent, Lead or Manager). The teams decide the structure; the role decides
+how an agent behaves in it. **Manager** adds the manager charter to the agent's prompt and blocks its
+hands-on tools (document writes, shell, media generation), so it directs and reports rather than
+doing the work itself. You can re-enable any of those tools on the **Tools** tab.
+
+### The Organization surface
+
+Command palette (`⌘K`) → **Open Organization**, or **Manage Teams…** in the agent picker's
+**Teams** tab. It draws the whole organization as one chart:
+
+- the **ambassador** at the top, above the chain and outside it (it can dispatch to anyone);
+- a reserved **executive** band, empty for now;
+- each **manager** above the teams it owns, with a line to each team's lead;
+- each **team** as a column, lead first and members below;
+- teams **without a manager**, then the **independent** agents that are on no team.
+
+Select a team to edit it in the side panel: name, lead, manager, members and their hints. The
+member list shows where each candidate already sits, so putting an agent on a second team is a
+choice, not an accident. Select an agent to see its teams, who it reports to and who it directs,
+with a link to its profile.
+
+**Needs attention** lists anything that won't work as intended: a member id that no longer matches
+an agent, a team with no members, or an agent that manages a team without the Manager role (so the
+charter and tool limits don't apply to it).
+
+The chart is for reading and selecting; boxes can't be moved yet. On a narrow screen the same
+structure appears as an outline.
 
 ## Data Model
 
@@ -219,7 +256,8 @@ Shipped (v1 plus the routing/delegation waves through v0.21.5):
 - **Ad-hoc agent-to-agent delegation** — `delegate_to` in workflow-less chats, gated by `alloy.allow_adhoc_delegation` (depth-limited, no self-delegation)
 - **First-class conversational delegation** — a `delegation_roster` system-prompt block (teammates + specialties from the opt-in roster, same source as the tool enum), per-profile `delegation_hint`, opt-in `available_for_delegation` (default off), the global gate default-ON, and a per-conversation Solo/Team toggle (`disable_delegation`)
 - **@-mention routing** — an inline `@agent-id` / `@name` routes a turn; `AgentParticipant` graph nodes + a client `@`-autocomplete composer
+- **Organizations** — managers, roles and the chain of command (`v0.21.240`), and the **Organization** surface: the whole org as one chart, with team editing beside it (`v0.21.280`)
 
-Deferred (see [Roadmap → Phase 16](../roadmap.md)): the visual **Factory canvas** editor,
-execution of declarative `routes` (accepted and stored but ignored), async (background)
+Deferred (see [Roadmap → Phase 16](../roadmap.md)): editing the organization chart directly
+(arranging boxes, drawing reporting lines), execution of declarative `routes` (accepted and stored but ignored), async (background)
 delegation, and per-workflow tool subsetting.

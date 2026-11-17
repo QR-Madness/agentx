@@ -29,7 +29,7 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   unifiedProfileEditor: lazy(() => import('./stubs').then(m => ({ default: m.UnifiedProfileEditorModalContent }))),
   promptLibrary: lazy(() => import('./PromptLibraryModal').then(m => ({ default: m.PromptLibraryModal }))),
   toolOutput: lazy(() => import('./stubs').then(m => ({ default: m.ToolOutputDrawer }))),
-  alloyFactory: lazy(() => import('./AlloyFactoryModal').then(m => ({ default: m.AlloyFactoryModal as ComponentType<ModalComponentProps> }))),
+  orgManager: lazy(() => import('../org/OrgManager').then(m => ({ default: m.OrgManager as unknown as ComponentType<ModalComponentProps> }))),
   alloyRunTrace: lazy(() => import('../alloy/AlloyRunTraceModal').then(m => ({ default: m.AlloyRunTraceModal as ComponentType<ModalComponentProps> }))),
   changePassword: lazy(() => import('./ChangePasswordModal').then(m => ({ default: m.ChangePasswordModal }))),
   conversations: lazy(() => import('./stubs').then(m => ({ default: m.ConversationsDrawerContent }))),
@@ -54,7 +54,7 @@ const SELF_CLOSING = new Set<string>([
   'ambassadorDeck',
   'changePassword',
   'toolOutput',
-  'alloyFactory',
+  'orgManager',
   'alloyRunTrace',
   'workspaces',
   'agentRoster',
@@ -84,6 +84,7 @@ const FULLSCREEN_SURFACES = new Set<string>([
   'memory',
   'ambassadorDeck',
   'agentRoster',
+  'orgManager',
 ]);
 
 function ModalRenderer({ modal }: { modal: ModalInstance }) {

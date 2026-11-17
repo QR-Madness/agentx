@@ -29,9 +29,10 @@
 ### 16.x Deferred / Next
 
 - [-] Factory canvas frontend (Tauri client) — backend exposes everything needed → realized at
-      **org scope** by the Organization Manager canvas
-      ([backlog/agentic-organizations.md](../backlog/agentic-organizations.md)); `Workflow.canvas`
-      stays reserved for a future per-team editor
+      **org scope** by the Organization surface
+      ([backlog/agentic-organizations.md](../backlog/agentic-organizations.md)): the read-only chart
+      shipped `[v0.21.280]`, editing on the chart is Slice 4b. `Workflow.canvas` stays reserved
+      for a future per-team editor
 - [-] Declarative route execution (`on_complete`, `on_match:<predicate>`, `on_failure`) — schema accepted but ignored in v1
 - [ ] Loop nodes (specialist iterates over a list)
 - [ ] Human-in-the-loop checkpoint nodes

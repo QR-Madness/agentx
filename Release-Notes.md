@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.279 -->
+<!-- release-version: 0.21.280 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,11 +21,12 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
-- **Settings you can navigate, and that explain themselves** — search jumps to individual settings; the new **Overview** says what to set up first; all 210 say what they do and when to leave them alone, in the same words as the new Settings Reference.
-- **Link your OpenRouter account in one click** — sign in once, no key pasting; the card shows balance and spend, and repairs models OpenRouter renamed (real context read as 8k, compacting far too early).
-- **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint (Groq, DeepSeek, Ollama, your own) as `yourid:model`. Backends show if they're reachable, and a **supply line** states where turns really go: resolving provider, context, price, fallback.
-- **Extract: move memory out, safely** — evict a channel to the server vault with verified deletion: export → verify → wipe → receipt; nothing deletes unless it verifies.
-- **Agents read the web far more cheaply** — `web_extract` returns only the passages answering your query (3.8% of a real article), sub-questions batch, seen pages return as stubs. Per-turn budgets cap spend in *calls and dollars*.
+- **Settings you can navigate, and that explain themselves** — search jumps to individual settings, the new **Overview** says what to set up first, and all 210 explain themselves, matching the new Settings Reference.
+- **Link your OpenRouter account in one click** — sign in once, no key pasting; the card shows balance and spend, and repairs models OpenRouter renamed (their context read as 8k, so chats compacted early).
+- **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint (Groq, DeepSeek, Ollama, your own) as `yourid:model`. A **supply line** shows where turns really go: provider, context, price, fallback.
+- **The whole organization on one chart** — **Open Organization** charts managers, teams and independent agents, edits teams in place, flags what won't work.
+- **Extract: move memory out, safely** — evict a channel to the server vault: export → verify → wipe → receipt; nothing deletes unless it verifies.
+- **Agents read the web far more cheaply** — `web_extract` returns only the passages that answer your query (3.8% of a real article); per-turn budgets cap spend in *calls and dollars*.
 - **The server image is CPU-only and ~85% smaller to pull** — GPU hosts use `latest-gpu` (`docker-compose.gpu.yml` selects it); `docker run --gpus` users must switch tags.
 
 ### Fixes

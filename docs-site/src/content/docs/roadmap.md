@@ -21,6 +21,6 @@ Where AgentX is and where it's headed — intentionally high-level. For per-rele
 - **Memory hardening** — event-sourced write path, bitemporal facts, a capability registry
 - **File Workspaces & Document RAG** — hand agents a corpus, not just memory + web
 - **Settings Advisor + Manifest** — a self-tuning control plane
-- **Factory canvas** — a visual multi-agent workflow editor
+- **Organization canvas** — arrange the org chart and draw reporting lines directly on it
 
 > This page only moves when the *direction* does. Version-by-version detail lives in the release notes.
