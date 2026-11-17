@@ -268,6 +268,34 @@ class EpisodicMemory:
 
             return [Turn(**dict(record["t"])) for record in result]
 
+    def delete_conversation(self, conversation_id: str) -> dict[str, int]:
+        """Delete a conversation node and its turns, by id. Returns the counts
+        (``turns``, ``conversation``). The PostgreSQL log, Redis and sidecars are the
+        caller's to clear."""
+        deleted = {"turns": 0, "conversation": 0}
+        with Neo4jConnection.session() as session:
+            # Delete turns linked to this conversation
+            result = session.run("""
+                MATCH (c:Conversation {id: $conv_id})-[:HAS_TURN]->(t:Turn)
+                WITH t, count(t) AS cnt
+                DETACH DELETE t
+                RETURN cnt
+            """, conv_id=conversation_id)
+            record = result.single()
+            if record:
+                deleted["turns"] = record["cnt"] or 0
+
+            # Delete the conversation node itself
+            result = session.run("""
+                MATCH (c:Conversation {id: $conv_id})
+                DETACH DELETE c
+                RETURN count(c) AS cnt
+            """, conv_id=conversation_id)
+            record = result.single()
+            if record:
+                deleted["conversation"] = record["cnt"] or 0
+        return deleted
+
     def get_conversation_turns(
         self,
         conversation_id: str,

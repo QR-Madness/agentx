@@ -9,7 +9,7 @@ security lets past.
 """
 
 import logging
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 from ..connections import Neo4jConnection, get_postgres_session
 
@@ -26,7 +26,13 @@ class WipeResult(NamedTuple):
 
 
 class CrossUserStore:
-    """Operations across every user. Callers own any safety gating (see `wipe_all`)."""
+    """Operations across every user. Callers own any safety gating (see `wipe_all`).
+
+    Some of these back API endpoints that ought to be scoped to the requesting user
+    (the channel list, channel existence, channel deletion). They span users today and
+    moved here as they are, so the gap sits in one visible place until row-level
+    security scopes them (ADR-21).
+    """
 
     def count_conversations(self) -> int:
         """Conversations stored, across all users."""
@@ -83,3 +89,152 @@ class CrossUserStore:
                 old_name=old_name,
                 new_name=new_name,
             )
+
+    def graph_size_mb(self) -> float | None:
+        """Approximate graph store size in MB: Neo4j's JMX store-size counter, or, if
+        that query fails, an estimate of about 500 bytes a node. None if neither works."""
+        try:
+            with Neo4jConnection.session() as session:
+                record = session.run("""
+                    CALL dbms.queryJmx('org.neo4j:instance=kernel#0,name=Store sizes')
+                    YIELD attributes
+                    RETURN attributes.TotalStoreSize.value AS total_bytes
+                """).single()
+                if record and record["total_bytes"]:
+                    return round(record["total_bytes"] / 1024 / 1024, 2)
+            return None
+        except Exception:  # noqa: BLE001 — JMX is often unavailable; estimate instead
+            try:
+                with Neo4jConnection.session() as session:
+                    record = session.run("MATCH (n) RETURN count(n) as nodes").single()
+                    if record:
+                        return round(record["nodes"] * 500 / 1024 / 1024, 2)
+                return None
+            except Exception:  # noqa: BLE001
+                return None
+
+    def list_channels(self) -> list[dict[str, Any]]:
+        """Every channel any node carries, with its turn, entity, fact, strategy and goal
+        counts, ordered by name."""
+        with Neo4jConnection.session() as session:
+            result = session.run("""
+                    // Get all channels from different node types
+                    MATCH (n)
+                    WHERE n.channel IS NOT NULL
+                    WITH DISTINCT n.channel AS channel
+
+                    // Count items per channel per type
+                    OPTIONAL MATCH (t:Turn {channel: channel})
+                    WITH channel, count(DISTINCT t) AS turn_count
+
+                    OPTIONAL MATCH (e:Entity {channel: channel})
+                    WITH channel, turn_count, count(DISTINCT e) AS entity_count
+
+                    OPTIONAL MATCH (f:Fact {channel: channel})
+                    WITH channel, turn_count, entity_count, count(DISTINCT f) AS fact_count
+
+                    OPTIONAL MATCH (s:Strategy {channel: channel})
+                    WITH channel, turn_count, entity_count, fact_count, count(DISTINCT s) AS strategy_count
+
+                    OPTIONAL MATCH (g:Goal {channel: channel})
+
+                    RETURN channel,
+                           turn_count AS turns,
+                           entity_count AS entities,
+                           fact_count AS facts,
+                           strategy_count AS strategies,
+                           count(DISTINCT g) AS goals
+                    ORDER BY channel
+                """)
+            return [
+                {
+                    "channel": record["channel"],
+                    "turns": record["turns"],
+                    "entities": record["entities"],
+                    "facts": record["facts"],
+                    "strategies": record["strategies"],
+                    "goals": record["goals"],
+                }
+                for record in result
+            ]
+
+    def channel_exists(self, channel: str) -> bool:
+        """Whether any node carries `channel`."""
+        with Neo4jConnection.session() as session:
+            record = session.run("""
+                    MATCH (n {channel: $channel})
+                    RETURN count(n) AS count
+                """, channel=channel).single()
+        return bool(record and record["count"] > 0)
+
+    def delete_channel(self, channel: str) -> dict[str, int]:
+        """Delete every turn, entity, fact, strategy, goal and conversation in `channel`.
+        Returns how many of each went. Procedures in the channel are not touched."""
+        deleted = {"turns": 0, "entities": 0, "facts": 0, "strategies": 0, "goals": 0, "conversations": 0}
+        with Neo4jConnection.session() as session:
+            # Delete turns
+            result = session.run("""
+                MATCH (t:Turn {channel: $channel})
+                WITH t, count(t) AS cnt
+                DETACH DELETE t
+                RETURN cnt
+            """, channel=channel)
+            record = result.single()
+            if record:
+                deleted["turns"] = record["cnt"] or 0
+
+            # Delete entities
+            result = session.run("""
+                MATCH (e:Entity {channel: $channel})
+                WITH e, count(e) AS cnt
+                DETACH DELETE e
+                RETURN cnt
+            """, channel=channel)
+            record = result.single()
+            if record:
+                deleted["entities"] = record["cnt"] or 0
+
+            # Delete facts
+            result = session.run("""
+                MATCH (f:Fact {channel: $channel})
+                WITH f, count(f) AS cnt
+                DETACH DELETE f
+                RETURN cnt
+            """, channel=channel)
+            record = result.single()
+            if record:
+                deleted["facts"] = record["cnt"] or 0
+
+            # Delete strategies
+            result = session.run("""
+                MATCH (s:Strategy {channel: $channel})
+                WITH s, count(s) AS cnt
+                DETACH DELETE s
+                RETURN cnt
+            """, channel=channel)
+            record = result.single()
+            if record:
+                deleted["strategies"] = record["cnt"] or 0
+
+            # Delete goals
+            result = session.run("""
+                MATCH (g:Goal {channel: $channel})
+                WITH g, count(g) AS cnt
+                DETACH DELETE g
+                RETURN cnt
+            """, channel=channel)
+            record = result.single()
+            if record:
+                deleted["goals"] = record["cnt"] or 0
+
+            # Delete conversations
+            result = session.run("""
+                MATCH (c:Conversation {channel: $channel})
+                WITH c, count(c) AS cnt
+                DETACH DELETE c
+                RETURN cnt
+            """, channel=channel)
+            record = result.single()
+            if record:
+                deleted["conversations"] = record["cnt"] or 0
+        return deleted
