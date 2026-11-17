@@ -188,7 +188,8 @@ directives.
 ### Slice 4 — Organization Manager panel (visualize-first)
 
 > Replaces `AlloyFactoryModal` outright — the "Factory Canvas — coming soon" banner finally pays
-> off, at org scope. Needs Slice 1 only.
+> off, at org scope. Needs Slice 1 only. Split in two: **4a** (the surface, client-only, derived
+> layout) shipped `[v0.21.280]`; **4b** (stored layout, editing on the chart) is open.
 
 > **Commonwealth-readiness (decided 2026-07-20):** this surface is the seed of the Pillar-8
 > **Commonwealth** view ([cognitive-os.md](cognitive-os.md) — the governed whole: orgs +
@@ -199,31 +200,52 @@ directives.
 > profile editor stays the *identity* surface; this canvas is the *structure/governance* surface
 > with quick-edit deep-links. No new `PageId`s.
 
+#### 4a — the surface `[v0.21.280]` ✅
+
+Walkthrough first (2026-11-16, a scratch instance with a copy of the real org): structure was only
+visible one agent or one team at a time, across three unlinked surfaces (Roster, profile editor,
+Teams modal); the add-member picker clipped off-screen on a short window and gave no hint that a
+candidate already sat on another team; and role mismatches were invisible (the server only logs
+them), so a manager without the Manager role silently lacked its tool limits and charter.
+
+- [x] **`lib/orgChart.ts`** — the whole org as one derived model (`buildOrgModel`: managers with
+      their teams, teams without a manager, independents, ambassadors, highest structural tier per
+      agent) plus the **issues** it can see: unresolved ids (dangling or ambassador), empty teams,
+      `role-not-applied` (mirrors the server's warn-only checks, and like them only for teams with a
+      manager) and `role-without-place`. `layoutOrgChart` is a deterministic tiered layout: apex,
+      executive band, managers centred over their teams, one column per team (lead, members
+      indented on a spine), teams without a manager, then the **independent lane under the teams**
+      (a wrapped grid as wide as the teams — a side lane made the chart too wide to read at a fitted
+      zoom). `affiliations()` phrases where an agent already sits. 25 tests.
+- [x] **`components/org/OrgManager`** (surface `orgManager`; full-screen, `FULLSCREEN_SURFACES` +
+      `SELF_CLOSING`) — header (counts, search, outline toggle, New team), React Flow chart
+      (`OrgCanvas`, read-only: real `<button>` boxes with accessible names, React Flow's own focus
+      and selection off; refits on a `ResizeObserver`), optional outline rail (`OrgOutline`, the
+      default below 860px where it replaces the chart), and a dock: **overview** (counts, Needs
+      attention, legend), **team editor** (`TeamEditor`, the absorbed AlloyFactory form: inline
+      member picker with each candidate's affiliation, explicit save, unsaved-changes guard on
+      every exit), or **agent panel** (teams, reports to / directs, Edit profile, Dossier, New team
+      for a manager). Profile editor and Roster stack above it; it hides while covered.
+- [x] **Surface rewiring** — `SURFACES.teams` → `org-manager`/`orgManager`; palette **Open
+      Organization** (keywords incl. organization, org chart, agent teams, a2a manager); the agent
+      picker's Teams footer follows. `AlloyFactoryModal` deleted.
+- [x] **Docs**: docs-site multi-agent **Organizations** section + agent-profiles Role note
+      (Slices 1–2 had no user docs), roadmap, phase-16 cross-link, Development-Notes surface map,
+      INV-9 client mirrors.
+
+#### 4b — stored layout and editing on the chart (open)
+
 - [ ] **Org layout store** — new `alloy/organization.py` (WorkflowManager-shaped load/save) owning
       `data/organization.yaml`: **layout only** (canvas node positions keyed `agent:{agent_id}` /
       `team:{workflow_id}` — INV-3-safe; membership/edges always derive). Exposed as
       `GET/PUT /api/alloy/organization`. `Workflow.canvas` stays untouched/reserved for the future
-      per-team factory editor.
-- [ ] **OrgManagerModal** — full-screen takeover: left roster sidebar (Ambassador / Managers /
-      Leads / Members / Unaffiliated, delegable badges); center React Flow canvas (precedent:
-      `MemoryGraphView.tsx`; `@xyflow/react` already a dep) — **ambassador apex pinned**
-      top-center, non-draggable; reserved empty **executive band** below it (label only); managers;
-      **team subflow groups** containing lead + members; unaffiliated delegable agents in a side
-      lane; solid chain edges (manager→lead, lead→member) with the member→lead escalation rendered
-      as a dashed up-chevron on the same edge; a subtle ambassador **dispatch halo** — visually
-      distinct because dispatch is *not* a chain edge; right contextual dock — team editor (the
-      absorbed AlloyFactory form over the existing `/api/alloy/workflows` CRUD), profile
-      quick-edit (role, Specialty, delegability, "open full editor"), read-only edge inspector.
-      Node drags debounce-PUT positions.
-- [ ] **Surface rewiring** — repoint `SURFACES.teams` → `{id:'org-manager',
-      component:'orgManager', size:'full'}`; add `orgManager` to `MODAL_REGISTRY` +
-      `SELF_CLOSING` + `FULLSCREEN_SURFACES` in `ModalPortal.tsx` (the UnifiedSettings takeover
-      pattern — AlloyFactory never was); extend the `open-teams` command keywords with
-      `['organization','org','a2a','a2a manager','agent teams','manager']` (palette aliases:
-      "Agent Teams", "A2A Manager"); `AgentSelectorDropdown.handleManageWorkflows()` follows via
-      the shared surface. Delete `AlloyFactoryModal.tsx`.
-- [ ] **Docs**: `OpenApi.yaml` + `endpoints.md` (new organization endpoint); phase-16 Factory-
-      canvas cross-link.
+      per-team factory editor. Node drags debounce-PUT positions; the derived layout stays the
+      default for anything without a stored position.
+- [ ] **Profile quick-edit in the dock** — role, Specialty, delegability, without leaving for the
+      full editor.
+- [ ] **Chart detail** — the member→lead escalation as a dashed up-chevron on its edge, a read-only
+      edge inspector, delegable badges in the outline.
+- [ ] **Docs**: `OpenApi.yaml` + `endpoints.md` (new organization endpoint).
 
 ### Slice 5 — Live org activity & thread grouping
 

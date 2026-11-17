@@ -30,8 +30,9 @@ function matches(profile: AgentProfile, query: string): boolean {
 }
 
 export function OrgOutline({ model, selection, query, onSelectAgent, onSelectTeam }: OrgOutlineProps) {
-  const agentRow = (profile: AgentProfile, tier: ChipTier | null, key: string, indent = 0) => {
-    if (!matches(profile, query)) return null;
+  /** `shown` keeps a row that doesn't match on its own (its team's name did). */
+  const agentRow = (profile: AgentProfile, tier: ChipTier | null, key: string, indent = 0, shown = false) => {
+    if (!shown && !matches(profile, query)) return null;
     const active = selection.kind === 'agent' && selection.agentId === profile.agentId;
     return (
       <button
@@ -51,10 +52,11 @@ export function OrgOutline({ model, selection, query, onSelectAgent, onSelectTea
   };
 
   const teamBlock = (team: OrgTeam, indent: number) => {
+    // A team found by its name shows all its people, as the chart does.
     const teamMatches = !query || team.name.toLowerCase().includes(query);
     const rows = [
-      team.lead ? agentRow(team.lead, 'lead', `${team.id}/lead`, indent + 1) : null,
-      ...team.members.map((m) => agentRow(m, null, `${team.id}/${m.agentId}`, indent + 2)),
+      team.lead ? agentRow(team.lead, 'lead', `${team.id}/lead`, indent + 1, teamMatches) : null,
+      ...team.members.map((m) => agentRow(m, null, `${team.id}/${m.agentId}`, indent + 2, teamMatches)),
     ].filter(Boolean);
     if (!teamMatches && rows.length === 0) return null;
     const active = selection.kind === 'team' && selection.teamId === team.id;

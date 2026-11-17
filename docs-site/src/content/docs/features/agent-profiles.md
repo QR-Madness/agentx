@@ -84,6 +84,12 @@ one-line **Specialty** so teammates know what it's good at ("Turns messy finding
 cited brief"). Off by default — nothing delegates to an agent until it opts in. This is the
 front door to [Agent Teams](/docs/features/multi-agent).
 
+**Role** (Agent, Lead or Manager) is the agent's place in an
+[organization](/docs/features/multi-agent#organizations). Choosing **Manager** adds the manager
+charter and blocks hands-on tools, so the agent directs rather than does. Once an agent is on a
+managed team, the chain of command decides whom *it* can delegate to; the roster setting above
+still decides whether agents outside the organization can hand it work.
+
 ## Tools — what the agent can reach
 
 The **Tools** tab controls the agent's hands. Turn tools on or off wholesale, then optionally

@@ -149,10 +149,13 @@ already in view). **Guard:** `ConversationStateDurabilityTest` + `ReadThreadCurr
 ### INV-9 — The org is derivable; there is no org-membership database
 Agentic Organizations derive entirely from the two existing stores: the profile declares its
 tier (`AgentProfile.org_level`), the workflow declares its owner (`Workflow.manager_agent_id`),
-and **everything else** (chain edges, roster grouping, `in_org`, the future canvas) derives via
-`alloy/org_chart.py` — the single derivation source. `org_level` plays **no** role in edge
-derivation (tier mismatches are warn-only at workflow save). A future layout store may hold
-canvas *positions* only — never membership or edges. **Guard:** `OrgChartTest`.
+and **everything else** (chain edges, roster grouping, `in_org`, the Organization chart) derives via
+`alloy/org_chart.py` — the single derivation source. The client mirrors it from the same two stores
+(`lib/orgPlacement.ts` for one agent's place, `lib/orgChart.ts` for the whole chart) and stores
+nothing either. `org_level` plays **no** role in edge derivation (tier mismatches are warn-only at
+workflow save; the Organization surface lists them under Needs attention). A future layout store
+may hold canvas *positions* only — never membership or edges. **Guard:** `OrgChartTest`;
+client: `orgPlacement.test.ts`, `orgChart.test.ts`.
 
 ### INV-10 — Chain of command is enforced at the tool enum AND the executor; adjacency only
 For org participants (with `alloy.chain_of_command` on), legal delegation targets are exactly

@@ -166,8 +166,10 @@ export function buildOrgModel(profiles: AgentProfile[], workflows: AlloyWorkflow
         message: `${team.name} has no members, so its lead has no one to delegate to.`,
       });
     }
-    // The server only log-warns on these (alloy/manager.py); the role is what
-    // applies the manager's report-only tool limits and charter.
+    // Mirrors the server's soft checks (alloy/manager.py), which only log, and
+    // only for teams with a manager: a team outside the organization needs no
+    // roles. The Manager role is what applies the report-only tool limits and
+    // the manager charter.
     if (team.manager && team.manager.orgLevel !== 'manager') {
       issues.push({
         kind: 'role-not-applied',
@@ -176,7 +178,7 @@ export function buildOrgModel(profiles: AgentProfile[], workflows: AlloyWorkflow
         message: `${team.manager.name} manages ${team.name}, but its role is ${roleLabel(team.manager)}. Set the role to Manager so the report-only tool limits and the manager charter apply.`,
       });
     }
-    if (team.lead && team.lead.orgLevel !== 'lead' && team.lead.orgLevel !== 'manager') {
+    if (team.manager && team.lead && team.lead.orgLevel !== 'lead') {
       issues.push({
         kind: 'role-not-applied',
         teamId: team.id,

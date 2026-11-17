@@ -256,7 +256,7 @@ export function AgentSelectorDropdown({ isOpen, onClose, anchorRef }: AgentSelec
           ) : (
             <button className="agent-create-button" onClick={handleManageWorkflows}>
               <Settings size={14} />
-              <span>Organization & teams…</span>
+              <span>Manage Teams…</span>
             </button>
           )}
         </div>

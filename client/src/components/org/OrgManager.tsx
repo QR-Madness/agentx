@@ -14,10 +14,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ListTree, Network, Plus, Search, X } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, LayoutDashboard, ListTree, Network, Plus, Search, X } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useModal } from '../../contexts/ModalContext';
+import { useNotify } from '../../contexts/NotificationContext';
 import type { AgentProfile } from '../../lib/api';
 import { buildOrgModel, layoutOrgChart, type OrgIssue } from '../../lib/orgChart';
 import { orgPlacement } from '../../lib/orgPlacement';
@@ -69,6 +70,7 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
   const { profiles } = useAgentProfile();
   const { workflows, createWorkflow, updateWorkflow, deleteWorkflow } = useAlloyWorkflow();
   const { openModal, modals } = useModal();
+  const { notifyError } = useNotify();
   const confirm = useConfirm();
 
   const narrow = useMediaQuery(NARROW_QUERY);
@@ -119,8 +121,13 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
     return ok;
   }, [confirm, editingName]);
 
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+
   const select = useCallback(
     async (next: OrgSelection) => {
+      // Re-selecting what is already open is not leaving it.
+      if (JSON.stringify(next) === JSON.stringify(selectionRef.current)) return;
       if (await mayLeaveEditor()) setSelection(next);
     },
     [mayLeaveEditor],
@@ -128,6 +135,7 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
   const selectAgent = useCallback((agentId: string) => void select({ kind: 'agent', agentId }), [select]);
   const selectTeam = useCallback((teamId: string) => void select({ kind: 'team', teamId }), [select]);
   const clearSelection = useCallback(() => void select({ kind: 'none' }), [select]);
+  const showOverview = useCallback(() => void select({ kind: 'overview' }), [select]);
   const newTeam = useCallback(
     (managerAgentId?: string) => void select({ kind: 'new-team', managerAgentId }),
     [select],
@@ -195,11 +203,14 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
         danger: true,
       });
       if (!ok) return;
-      await deleteWorkflow(teamId);
+      if (!(await deleteWorkflow(teamId))) {
+        notifyError(new Error(`The ${teamName} team could not be deleted. It is unchanged.`), 'Delete team');
+        return;
+      }
       dirtyRef.current = false;
       setSelection({ kind: 'none' });
     },
-    [confirm, deleteWorkflow],
+    [confirm, deleteWorkflow, notifyError],
   );
 
   const editProfile = useCallback(
@@ -278,7 +289,12 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
         onOpenDossier={openDossier}
       />
     ) : (
-      <OrgOverview model={model} onOpenIssue={openIssue} onNewTeam={() => newTeam()} />
+      <OrgOverview
+        model={model}
+        showLegend={!narrow}
+        onOpenIssue={openIssue}
+        onNewTeam={() => newTeam()}
+      />
     );
 
   const hasSelection = selection.kind !== 'none';
@@ -287,20 +303,14 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
   const agentCount = profiles.filter((p) => p.kind === 'agent').length;
 
   // The profile editor and the Roster open above this surface and are partly
-  // see-through, so step out of sight while one is up; the state stays mounted
-  // and is there again when it closes.
-  const coveredStyle = isTop ? undefined : ({ visibility: 'hidden' } as const);
+  // see-through, so step out of sight while one is up (`is-covered`); the state
+  // stays mounted and is there again when it closes.
+  const covered = isTop ? '' : ' is-covered';
 
   return (
     <>
-      <div className="org-backdrop" style={coveredStyle} onClick={() => void close()} aria-hidden />
-      <div
-        className="org-container"
-        style={coveredStyle}
-        role="dialog"
-        aria-label="Organization"
-        aria-modal="true"
-      >
+      <div className={`org-backdrop${covered}`} onClick={() => void close()} aria-hidden />
+      <div className={`org-container${covered}`} role="dialog" aria-label="Organization" aria-modal="true">
         <header className="org-header">
           <div className="org-title-group">
             <h1 className="org-title">
@@ -319,7 +329,7 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Find an agent or team…"
+              placeholder={narrow ? 'Find…' : 'Find an agent or team…'}
               aria-label="Find an agent or team"
             />
             {!narrow && (
@@ -345,6 +355,18 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
         <div className={`org-body${narrow ? ' is-narrow' : ''}`}>
           {showStructure && showOutline && (
             <aside className="org-rail">
+              {narrow && (
+                <button type="button" className="org-outline-row org-outline-row--overview" onClick={showOverview}>
+                  <LayoutDashboard size={14} />
+                  <span className="org-outline-name">Overview</span>
+                  {model.issues.length > 0 && (
+                    <span className="org-outline-attention" title="Needs attention">
+                      <AlertTriangle size={12} />
+                      {model.issues.length}
+                    </span>
+                  )}
+                </button>
+              )}
               <OrgOutline
                 model={model}
                 selection={selection}

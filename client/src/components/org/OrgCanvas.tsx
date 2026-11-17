@@ -70,7 +70,13 @@ const AgentNode = memo(function AgentNode({ data }: NodeProps<Node<AgentNodeData
     <>
       <Handle id="t" type="target" position={Position.Top} className="org-handle" isConnectable={false} />
       <Handle id="l" type="target" position={Position.Left} className="org-handle" isConnectable={false} />
-      <button type="button" className={cls} aria-pressed={selected} onClick={() => onSelect(profile.agentId)}>
+      <button
+        type="button"
+        className={cls}
+        aria-pressed={selected}
+        aria-label={`${profile.name}, ${kind}${flagged ? ', needs attention' : ''}`}
+        onClick={() => onSelect(profile.agentId)}
+      >
         <span className="org-node-avatar" aria-hidden>
           <AgentAvatar avatar={profile.avatar} size={18} fill />
         </span>

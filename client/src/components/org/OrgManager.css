@@ -24,6 +24,12 @@
   animation: org-rise 0.2s ease-out;
 }
 
+/* Another surface is open on top. !important because React Flow sets an inline
+   `visibility: visible` on every chart box, which would otherwise show through. */
+.org-backdrop.is-covered,
+.org-container.is-covered,
+.org-container.is-covered * { visibility: hidden !important; }
+
 @keyframes org-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes org-rise {
   from { opacity: 0; transform: translateY(10px); }
@@ -327,6 +333,17 @@
 .org-outline-row--team svg { flex-shrink: 0; color: var(--text-muted); }
 .org-outline-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .org-outline-count { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); }
+.org-outline-row--overview { margin: 0.5rem 0.5rem 0; width: calc(100% - 1rem); border-color: var(--border-default); }
+.org-outline-row--overview svg { flex-shrink: 0; color: var(--text-muted); }
+.org-outline-attention {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--feedback-warning);
+}
+.org-outline-attention svg { color: var(--feedback-warning); }
 
 /* ── Team editor ────────────────────────────────────────────────────────── */
 
@@ -567,6 +584,7 @@ button.org-group-head:focus-visible { outline: 2px solid var(--focus-ring); outl
 }
 @media (max-width: 600px) {
   .org-header { padding: 0.5rem 0.6rem; gap: 0.4rem; }
+  .org-outline-row { min-height: var(--hit-target, 44px); }
   .org-new span { display: none; }
   .org-dock-scroll { padding: 0.85rem 0.85rem 1.5rem; }
 }

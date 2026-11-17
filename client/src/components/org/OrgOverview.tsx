@@ -9,11 +9,13 @@ import { Button } from '../ui/Button';
 
 interface OrgOverviewProps {
   model: OrgModel;
+  /** The legend explains the chart, so it is left out where no chart is shown. */
+  showLegend?: boolean;
   onOpenIssue: (issue: OrgIssue) => void;
   onNewTeam: () => void;
 }
 
-export function OrgOverview({ model, onOpenIssue, onNewTeam }: OrgOverviewProps) {
+export function OrgOverview({ model, showLegend = true, onOpenIssue, onNewTeam }: OrgOverviewProps) {
   const inTeams = model.tierByAgentId.size;
   const stats: Array<[string, number]> = [
     ['Managers', model.managers.length],
@@ -70,23 +72,25 @@ export function OrgOverview({ model, onOpenIssue, onNewTeam }: OrgOverviewProps)
         )}
       </section>
 
-      <section className="org-section">
-        <h3 className="org-eyebrow">Reading the chart</h3>
-        <ul className="org-legend">
-          <li>
-            <span className="org-legend-line" aria-hidden /> A line runs from whoever delegates to
-            whoever receives the work.
-          </li>
-          <li>
-            <span className="org-legend-apex" aria-hidden /> The ambassador sits above the chain and
-            outside it: it can dispatch to anyone.
-          </li>
-          <li>
-            <span className="org-legend-lane" aria-hidden /> Independent agents are on no team and keep
-            the flat roster.
-          </li>
-        </ul>
-      </section>
+      {showLegend && (
+        <section className="org-section">
+          <h3 className="org-eyebrow">Reading the chart</h3>
+          <ul className="org-legend">
+            <li>
+              <span className="org-legend-line" aria-hidden /> A line runs from whoever delegates to
+              whoever receives the work.
+            </li>
+            <li>
+              <span className="org-legend-apex" aria-hidden /> The ambassador sits above the chain and
+              outside it: it can dispatch to anyone.
+            </li>
+            <li>
+              <span className="org-legend-lane" aria-hidden /> Independent agents are on no team and keep
+              the flat roster.
+            </li>
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

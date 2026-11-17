@@ -127,8 +127,9 @@ describe('buildOrgModel issues', () => {
     expect(flagged).toEqual(['m', 'l1']);
   });
 
-  it('accepts a manager-role profile leading a team', () => {
-    const model = buildOrgModel(profiles, [team('t1', 'm', ['a1'])]);
+  it('asks for no roles on a team outside the organization', () => {
+    const plain = profiles.map((p) => ({ ...p, orgLevel: 'agent' as const }));
+    const model = buildOrgModel(plain, [team('t1', 'l1', ['a1'])]);
     expect(model.issues.filter((i) => i.kind === 'role-not-applied')).toEqual([]);
   });
 
