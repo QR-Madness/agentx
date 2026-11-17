@@ -49,8 +49,9 @@ export const SURFACES: Record<SurfaceKey, ModalConfig> = {
   // structured working-memory surface for that conversation.
   conversationState: { id: 'conversation-state-drawer', type: 'drawer', component: 'conversationState', position: 'right', size: 'lg' },
   workspaces: { id: 'workspaces-drawer', type: 'drawer', component: 'workspaces', position: 'right', size: 'xxl' },
-  // User-facing name: "Agent Teams" (internal: Alloy) — precedent: Workspaces→Projects.
-  teams: { id: 'alloy-factory', type: 'modal', component: 'alloyFactory', size: 'full' },
+  // The Organization surface — the whole org as a chart, with team editing in
+  // its dock. Teams are internally Alloy workflows; the key stays `teams`.
+  teams: { id: 'org-manager', type: 'modal', component: 'orgManager', size: 'full' },
   // The full two-pane agent Roster — org chart + live dossier. Browse-and-pick
   // sibling of the composer's compact AgentSelectorDropdown.
   roster: { id: 'agent-roster', type: 'modal', component: 'agentRoster', size: 'full' },

@@ -60,7 +60,7 @@ export function ChainStrip({ profile, onHop }: ChainStripProps) {
       <div className="chain-strip">
         <span className="chain-strip__caption">
           {profile.orgLevel !== 'agent'
-            ? 'No team yet — give this officer a team in Agent Teams'
+            ? 'No team yet — give this officer a team in Organization'
             : 'Org-free — engages the org through its officers'}
           {' · '}
           {profile.availableForDelegation ? 'on the flat roster' : 'off the flat roster'}
