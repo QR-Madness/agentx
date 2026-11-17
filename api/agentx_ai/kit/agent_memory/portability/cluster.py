@@ -22,35 +22,24 @@ def _noop_log(_msg: str) -> None:
 
 
 def count_conversations() -> int:
-    """Number of Conversation nodes in the connected cluster."""
-    from agentx_ai.kit.agent_memory.connections import Neo4jConnection
-    with Neo4jConnection.session() as s:
-        rec = s.run("MATCH (c:Conversation) RETURN count(c) AS n").single()
-    return rec["n"] if rec else 0
+    """Number of conversations in the connected cluster."""
+    from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+    return CrossUserStore().count_conversations()
 
 
 def wipe_cluster(log: Log = _noop_log, err: Log = _noop_log) -> None:
     """DESTROY all memory data: every Neo4j node + the PG mirror tables."""
-    from agentx_ai.kit.agent_memory.connections import Neo4jConnection, get_postgres_session
-    from sqlalchemy import text
-    with Neo4jConnection.session() as s:
-        rec = s.run("MATCH (n) DETACH DELETE n RETURN count(n) AS n").single()
-        neo = rec["n"] if rec else 0
-    pg = 0
-    try:
-        with get_postgres_session() as ses:
-            for tbl in ("conversation_logs", "memory_audit_log"):
-                pg += ses.execute(text(f"DELETE FROM {tbl}")).rowcount  # pyright: ignore[reportAttributeAccessIssue]
-    except Exception as e:
-        err(f"  postgres wipe note: {e}")
-    log(f"  wiped Neo4j nodes={neo}, postgres rows={pg}")
+    from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+    result = CrossUserStore().wipe_all()
+    if result.pg_error:
+        err(f"  postgres wipe note: {result.pg_error}")
+    log(f"  wiped Neo4j nodes={result.graph_nodes}, postgres rows={result.pg_rows}")
 
 
 def list_user_ids() -> list[str]:
-    """Every User id in the graph. Snapshots are cluster-wide because the wipe is."""
-    from agentx_ai.kit.agent_memory.connections import Neo4jConnection
-    with Neo4jConnection.session() as s:
-        return [r["uid"] for r in s.run("MATCH (u:User) RETURN u.id AS uid") if r["uid"]]
+    """Every user id in the store. Snapshots are cluster-wide because the wipe is."""
+    from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+    return CrossUserStore().list_user_ids()
 
 
 def testing_core_path(name: str) -> Path:
