@@ -8,22 +8,25 @@ portable across embedding models).
 
 Modes:
     - ``merge``   — upsert; leaves nodes outside the envelope untouched.
-    - ``replace`` — scoped ``DETACH DELETE`` of the target channel(s) first, so
+    - ``replace`` — deletes the user's nodes in the target channel(s) first, so
       the channel ends up matching the envelope exactly.
+
+The graph writes are ``memory.portability_store.PortabilityStore``'s; this module
+regenerates embeddings, restores the PostgreSQL mirror and reports.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import bindparam, text
-from typing import Literal, LiteralString
+from typing import Literal
 
-from ..connections import Neo4jConnection, get_postgres_session
+from ..connections import get_postgres_session
 from ..embeddings import get_embedder
-from ..query_utils import CypherFilterBuilder
+from ..memory.portability_store import PortabilityStore
 from .schema import SCHEMA_VERSION, MemoryExport
 
 logger = logging.getLogger(__name__)
@@ -34,69 +37,6 @@ ImportMode = Literal["merge", "replace"]
 # remote input caps) with a generous background wait (ingestion precedent).
 _IMPORT_EMBED_CHUNK = 128
 _IMPORT_EMBED_TIMEOUT_S = 600.0
-
-
-def wipe_channels(tx, user_id: str, channel: str | list[str] | None) -> dict[str, int]:
-    """Scoped DETACH DELETE of `user_id`'s nodes in `channel` (exact match, no
-    _global spill). Accepts a single channel or a channel set; None / "_all"
-    wipes every channel for the user. Returns per-family deleted counts.
-
-    Shared by replace-mode import and Extract (which reconciles these counts
-    against the artifact it just verified).
-    """
-    chan: str | list[str] | None = None if channel in (None, "_all") else channel
-
-    def f(alias: str) -> str:
-        # include_global=False → exact channel match (don't nuke _global).
-        return CypherFilterBuilder(alias).add_channel_filter(
-            chan, include_global=False
-        ).build_inline()
-
-    params = {
-        "user_id": user_id,
-        "channel": chan if isinstance(chan, str) else None,
-        "channels": list(chan) if isinstance(chan, (list, tuple)) else None,
-    }
-    wiped: dict[str, int] = {}
-    for family, label, rel in (
-        ("facts", "Fact", "HAS_FACT"),
-        ("entities", "Entity", "HAS_ENTITY"),
-        ("strategies", "Strategy", "HAS_STRATEGY"),
-        ("goals", "Goal", "HAS_GOAL"),
-        ("procedures", "Procedure", "HAS_PROCEDURE"),
-    ):
-        rec = tx.run(cast(LiteralString, f"""
-            MATCH (u:User {{id: $user_id}})-[:{rel}]->(n:{label})
-            WHERE true {f('n')}
-            DETACH DELETE n
-            RETURN count(n) AS c
-        """), **params).single()
-        wiped[family] = (rec["c"] if rec else 0) or 0
-
-    # Conversations + their turns / tool-invocations / participants.
-    # Count first (same tx — nothing writes in between), then reuse the
-    # proven cascade delete shape.
-    rec = tx.run(cast(LiteralString, f"""
-        MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
-        WHERE true {f('c')}
-        OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
-        OPTIONAL MATCH (c)-[:USED_TOOL]->(inv:ToolInvocation)
-        RETURN count(DISTINCT c) AS convs, count(DISTINCT t) AS turns,
-               count(DISTINCT inv) AS invs
-    """), **params).single()
-    wiped["conversations"] = (rec["convs"] if rec else 0) or 0
-    wiped["turns"] = (rec["turns"] if rec else 0) or 0
-    wiped["tool_invocations"] = (rec["invs"] if rec else 0) or 0
-
-    tx.run(cast(LiteralString, f"""
-        MATCH (u:User {{id: $user_id}})-[:HAS_CONVERSATION]->(c:Conversation)
-        WHERE true {f('c')}
-        OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
-        OPTIONAL MATCH (c)-[:USED_TOOL]->(inv:ToolInvocation)
-        OPTIONAL MATCH (ap:AgentParticipant)-[:PARTICIPATED_IN]->(c)
-        DETACH DELETE t, inv, ap, c
-    """), **params)
-    return wiped
 
 
 def wipe_pg_mirror(channel: str | list[str] | None) -> dict[str, int]:
@@ -154,26 +94,10 @@ class MemoryImporter:
         wipe_channel: str | list[str] | None = (
             channel if channel is not None else (export.channels or export.channel)
         )
-        results: dict[str, tuple[int, int]] = {}
-
-        with Neo4jConnection.session() as session:
-            tx = session.begin_transaction()
-            try:
-                if mode == "replace":
-                    self._wipe(tx, wipe_channel)
-                results["entities"] = self._import_entities(tx, export.entities)
-                results["conversations"] = self._import_conversations(tx, export.conversations)
-                results["turns"] = self._import_turns(tx, export.turns)
-                results["facts"] = self._import_facts(tx, export.facts)
-                results["goals"] = self._import_goals(tx, export.goals)
-                results["strategies"] = self._import_strategies(tx, export.strategies)
-                results["procedures"] = self._import_procedures(tx, export.procedures)
-                results["tool_invocations"] = self._import_tool_invocations(tx, export.tool_invocations)
-                self._rebuild_turn_chains(tx, [c["id"] for c in export.conversations])
-                tx.commit()
-            except Exception:
-                tx.rollback()
-                raise
+        # One graph transaction: the replace-mode wipe, every family, the turn chains.
+        results = PortabilityStore().write_collections(
+            self.user_id, export, replace=(mode == "replace"), channel=wipe_channel
+        )
 
         # Replace mode also resets the PG mirror for the wiped channel(s) —
         # leaving it stale was the observed Neo4j/PG asymmetry.
@@ -235,305 +159,7 @@ class MemoryImporter:
             for row, vec in zip(rows, vectors, strict=True):
                 row["embedding"] = vec
 
-    # -- replace-mode wipe ----------------------------------------------
 
-    def _wipe(self, tx, channel: str | list[str] | None) -> None:
-        """Scoped wipe — see the module-level :func:`wipe_channels`."""
-        wipe_channels(tx, self.user_id, channel)
-
-    # -- node writers ----------------------------------------------------
-
-    @staticmethod
-    def _counts(result) -> tuple[int, int]:
-        rec = result.single()
-        if rec is None:
-            return (0, 0)
-        return (rec["created"] or 0, rec["total"] or 0)
-
-    def _import_entities(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        if not rows:
-            return (0, 0)
-        return self._counts(tx.run("""
-            UNWIND $rows AS row
-            OPTIONAL MATCH (ex:Entity {id: row.id})
-            WITH row, ex IS NOT NULL AS existed
-            MERGE (e:Entity {id: row.id})
-            SET e.name = row.name,
-                e.type = row.type,
-                e.aliases = row.aliases,
-                e.description = row.description,
-                e.embedding = row.embedding,
-                e.salience = row.salience,
-                e.user_id = $user_id,
-                e.channel = row.channel,
-                e.access_count = row.access_count,
-                e.properties = row.properties,
-                e.first_seen = CASE WHEN row.first_seen IS NULL
-                    THEN coalesce(e.first_seen, datetime()) ELSE datetime(row.first_seen) END,
-                e.last_accessed = CASE WHEN row.last_accessed IS NULL
-                    THEN coalesce(e.last_accessed, datetime()) ELSE datetime(row.last_accessed) END
-            MERGE (u:User {id: $user_id})
-            MERGE (u)-[:HAS_ENTITY]->(e)
-            RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
-        """, rows=rows, user_id=self.user_id))
-
-    def _import_conversations(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        if not rows:
-            return (0, 0)
-        return self._counts(tx.run("""
-            UNWIND $rows AS row
-            OPTIONAL MATCH (ex:Conversation {id: row.id})
-            WITH row, ex IS NOT NULL AS existed
-            MERGE (c:Conversation {id: row.id})
-            SET c.user_id = $user_id,
-                c.channel = row.channel,
-                c.agent_id = row.agent_id,
-                c.started_at = CASE WHEN row.started_at IS NULL
-                    THEN coalesce(c.started_at, datetime()) ELSE datetime(row.started_at) END,
-                c.consolidated = CASE WHEN row.consolidated IS NULL
-                    THEN c.consolidated ELSE datetime(row.consolidated) END,
-                c.self_consolidated = CASE WHEN row.self_consolidated IS NULL
-                    THEN c.self_consolidated ELSE datetime(row.self_consolidated) END
-            MERGE (u:User {id: $user_id})
-            MERGE (u)-[:HAS_CONVERSATION]->(c)
-            RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
-        """, rows=rows, user_id=self.user_id))
-
-    def _import_turns(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        if not rows:
-            return (0, 0)
-        return self._counts(tx.run("""
-            UNWIND $rows AS row
-            OPTIONAL MATCH (ex:Turn {id: row.id})
-            WITH row, ex IS NOT NULL AS existed
-            MERGE (c:Conversation {id: row.conversation_id})
-            MERGE (u:User {id: $user_id})
-            MERGE (u)-[:HAS_CONVERSATION]->(c)
-            MERGE (t:Turn {id: row.id})
-            SET t.index = row.index,
-                t.role = row.role,
-                t.content = row.content,
-                t.embedding = row.embedding,
-                t.token_count = row.token_count,
-                t.channel = row.channel,
-                t.user_id = $user_id,
-                t.agent_id = row.agent_id,
-                t.timestamp = CASE WHEN row.timestamp IS NULL
-                    THEN coalesce(t.timestamp, datetime()) ELSE datetime(row.timestamp) END,
-                // Preserve turn-level consolidation state so a re-imported bundle
-                // resumes where it left off instead of re-consolidating everything.
-                // Absent in pre-0.21 exports → keep any existing value.
-                t.consolidated = CASE WHEN row.consolidated IS NULL
-                    THEN t.consolidated ELSE datetime(row.consolidated) END,
-                t.self_consolidated = CASE WHEN row.self_consolidated IS NULL
-                    THEN t.self_consolidated ELSE datetime(row.self_consolidated) END
-            MERGE (c)-[:HAS_TURN]->(t)
-            RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
-        """, rows=rows, user_id=self.user_id))
-
-    def _import_facts(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        if not rows:
-            return (0, 0)
-        counts = self._counts(tx.run("""
-            UNWIND $rows AS row
-            OPTIONAL MATCH (ex:Fact {id: row.id})
-            WITH row, ex IS NOT NULL AS existed
-            MERGE (f:Fact {id: row.id})
-            SET f.claim = row.claim,
-                f.claim_hash = row.claim_hash,
-                f.confidence = row.confidence,
-                f.source = row.source,
-                f.source_turn_id = row.source_turn_id,
-                f.embedding = row.embedding,
-                f.user_id = $user_id,
-                f.channel = row.channel,
-                f.access_count = row.access_count,
-                f.salience = row.salience,
-                f.temporal_context = row.temporal_context,
-                f.superseded_by_id = row.superseded_by_id,
-                f.supersedes_id = row.supersedes_id,
-                f.flagged_for_review = row.flagged_for_review,
-                f.created_at = CASE WHEN row.created_at IS NULL
-                    THEN coalesce(f.created_at, datetime()) ELSE datetime(row.created_at) END,
-                f.last_accessed = CASE WHEN row.last_accessed IS NULL
-                    THEN coalesce(f.last_accessed, datetime()) ELSE datetime(row.last_accessed) END,
-                f.superseded_at = CASE WHEN row.superseded_at IS NULL
-                    THEN null ELSE datetime(row.superseded_at) END
-            MERGE (u:User {id: $user_id})
-            MERGE (u)-[:HAS_FACT]->(f)
-            FOREACH (eid IN row.entity_ids |
-                MERGE (e:Entity {id: eid})
-                MERGE (f)-[:ABOUT]->(e)
-            )
-            FOREACH (_ IN CASE WHEN row.source_turn_id IS NOT NULL THEN [1] ELSE [] END |
-                MERGE (st:Turn {id: row.source_turn_id})
-                MERGE (f)-[:DERIVED_FROM]->(st)
-            )
-            RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
-        """, rows=rows, user_id=self.user_id))
-
-        # Supersession edges (second pass — both facts must exist first).
-        supersedes = [r for r in rows if r.get("supersedes_id")]
-        if supersedes:
-            tx.run("""
-                UNWIND $rows AS row
-                MATCH (new:Fact {id: row.id}), (old:Fact {id: row.supersedes_id})
-                MERGE (new)-[:SUPERSEDES]->(old)
-            """, rows=supersedes)
-        return counts
-
-    def _import_goals(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        if not rows:
-            return (0, 0)
-        counts = self._counts(tx.run("""
-            UNWIND $rows AS row
-            OPTIONAL MATCH (ex:Goal {id: row.id})
-            WITH row, ex IS NOT NULL AS existed
-            MERGE (g:Goal {id: row.id})
-            SET g.description = row.description,
-                g.status = row.status,
-                g.priority = row.priority,
-                g.channel = row.channel,
-                g.embedding = row.embedding,
-                g.created_at = CASE WHEN row.created_at IS NULL
-                    THEN coalesce(g.created_at, datetime()) ELSE datetime(row.created_at) END,
-                g.deadline = CASE WHEN row.deadline IS NULL
-                    THEN null ELSE datetime(row.deadline) END
-            MERGE (u:User {id: $user_id})
-            MERGE (u)-[:HAS_GOAL]->(g)
-            RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
-        """, rows=rows, user_id=self.user_id))
-
-        children = [r for r in rows if r.get("parent_goal_id")]
-        if children:
-            tx.run("""
-                UNWIND $rows AS row
-                MATCH (child:Goal {id: row.id}), (parent:Goal {id: row.parent_goal_id})
-                MERGE (child)-[:SUBGOAL_OF]->(parent)
-            """, rows=children)
-        return counts
-
-    def _import_strategies(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        if not rows:
-            return (0, 0)
-        return self._counts(tx.run("""
-            UNWIND $rows AS row
-            OPTIONAL MATCH (ex:Strategy {id: row.id})
-            WITH row, ex IS NOT NULL AS existed
-            MERGE (s:Strategy {id: row.id})
-            SET s.description = row.description,
-                s.context_pattern = row.context_pattern,
-                s.tool_sequence = row.tool_sequence,
-                s.embedding = row.embedding,
-                s.success_count = row.success_count,
-                s.failure_count = row.failure_count,
-                s.user_id = $user_id,
-                s.channel = row.channel,
-                s.last_used = CASE WHEN row.last_used IS NULL
-                    THEN null ELSE datetime(row.last_used) END
-            MERGE (u:User {id: $user_id})
-            MERGE (u)-[:HAS_STRATEGY]->(s)
-            FOREACH (tn IN row.tool_sequence |
-                MERGE (tool:Tool {name: tn})
-                MERGE (s)-[:USES_TOOL]->(tool)
-            )
-            FOREACH (cid IN row.succeeded_in |
-                MERGE (c:Conversation {id: cid})
-                MERGE (s)-[:SUCCEEDED_IN]->(c)
-            )
-            FOREACH (cid IN row.failed_in |
-                MERGE (c:Conversation {id: cid})
-                MERGE (s)-[:FAILED_IN]->(c)
-            )
-            RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
-        """, rows=rows, user_id=self.user_id))
-
-    def _import_procedures(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        if not rows:
-            return (0, 0)
-        counts = self._counts(tx.run("""
-            UNWIND $rows AS row
-            OPTIONAL MATCH (ex:Procedure {id: row.id})
-            WITH row, ex IS NOT NULL AS existed
-            MERGE (p:Procedure {id: row.id})
-            SET p.trigger = row.trigger,
-                p.trigger_features = row.trigger_features,
-                p.body = row.body,
-                p.rationale = row.rationale,
-                // Written as twins by learn_procedure; tolerate either in old data.
-                p.channel = coalesce(row.channel, row.scope),
-                p.scope = coalesce(row.scope, row.channel),
-                p.agent_id = row.agent_id,
-                p.strength = row.strength,
-                p.evidence_refs = row.evidence_refs,
-                p.signal_kinds = row.signal_kinds,
-                p.embedding = row.embedding,
-                p.user_id = $user_id,
-                p.created_at = CASE WHEN row.created_at IS NULL
-                    THEN coalesce(p.created_at, datetime()) ELSE datetime(row.created_at) END,
-                p.last_reinforced = CASE WHEN row.last_reinforced IS NULL
-                    THEN coalesce(p.last_reinforced, datetime()) ELSE datetime(row.last_reinforced) END
-            MERGE (u:User {id: $user_id})
-            MERGE (u)-[:HAS_PROCEDURE]->(p)
-            RETURN sum(CASE WHEN existed THEN 0 ELSE 1 END) AS created, count(*) AS total
-        """, rows=rows, user_id=self.user_id))
-
-        # DISTILLED_FROM edges (second pass; MATCH not MERGE — mirrors the write
-        # path, which never mints a Conversation for an absent evidence id).
-        distilled = [r for r in rows if r.get("conversation_ids")]
-        if distilled:
-            tx.run("""
-                UNWIND $rows AS row
-                UNWIND row.conversation_ids AS cid
-                MATCH (p:Procedure {id: row.id}), (c:Conversation {id: cid})
-                MERGE (p)-[:DISTILLED_FROM]->(c)
-            """, rows=distilled)
-        return counts
-
-    def _import_tool_invocations(self, tx, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        # id-less node → MERGE on a natural key (conversation + tool + turn + ts).
-        rows = [r for r in rows if r.get("timestamp") and r.get("conversation_id")]
-        if not rows:
-            return (0, 0)
-        tx.run("""
-            UNWIND $rows AS row
-            MATCH (c:Conversation {id: row.conversation_id})
-            MERGE (c)-[:USED_TOOL]->(inv:ToolInvocation {
-                tool_name: row.tool_name,
-                turn_index: row.turn_index,
-                timestamp: datetime(row.timestamp)
-            })
-            ON CREATE SET inv.success = row.success,
-                          inv.latency_ms = row.latency_ms,
-                          inv.channel = row.channel
-            MERGE (tool:Tool {name: row.tool_name})
-            MERGE (inv)-[:INVOKED]->(tool)
-        """, rows=rows)
-        return (0, len(rows))
-
-    def _rebuild_turn_chains(self, tx, conv_ids: list[str]) -> None:
-        """Re-derive FOLLOWED_BY (from turn index) and AgentParticipant for imported convos."""
-        if not conv_ids:
-            return
-        tx.run("""
-            UNWIND $conv_ids AS cid
-            MATCH (c:Conversation {id: cid})-[:HAS_TURN]->(a:Turn),
-                  (c)-[:HAS_TURN]->(b:Turn)
-            WHERE b.index = a.index + 1
-            MERGE (a)-[:FOLLOWED_BY]->(b)
-        """, conv_ids=conv_ids)
-        tx.run("""
-            UNWIND $conv_ids AS cid
-            MATCH (c:Conversation {id: cid})-[:HAS_TURN]->(t:Turn)
-            WHERE t.agent_id IS NOT NULL
-            MERGE (ap:AgentParticipant {id: cid + ':' + t.agent_id})
-            ON CREATE SET ap.conversation_id = cid,
-                          ap.agent_id = t.agent_id,
-                          ap.user_id = $user_id,
-                          ap.channel = c.channel,
-                          ap.first_seen = datetime()
-            MERGE (ap)-[:PARTICIPATED_IN]->(c)
-        """, conv_ids=conv_ids, user_id=self.user_id)
 
     # -- PostgreSQL ------------------------------------------------------
 

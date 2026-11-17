@@ -6828,9 +6828,6 @@ class MemoryStoreBoundaryTest(TestCase):
     BASELINE: dict[str, tuple[int, int]] = {
         "kit/agent_memory/consolidation/jobs.py": (42, 10),
         "kit/agent_memory/maintenance/entity_merge.py": (3, 0),
-        "kit/agent_memory/portability/exporter.py": (8, 1),
-        "kit/agent_memory/portability/extract.py": (8, 2),
-        "kit/agent_memory/portability/importer.py": (18, 1),
         "management/commands/backfill_agent_attribution.py": (2, 1),
         "management/commands/bootstrap.py": (0, 1),
         "management/commands/debug_attribution.py": (2, 2),
@@ -7014,3 +7011,119 @@ class CrossUserStoreTest(TestCase):
             cluster.wipe_cluster(log, err)
         err.assert_called_once_with("  postgres wipe note: pg down")
         log.assert_called_once_with("  wiped Neo4j nodes=4, postgres rows=2")
+
+
+class PortabilityStoreTest(TestCase):
+    """memory/portability_store.py — one user's memory in bulk (export, import, Extract).
+    The live round-trip and Extract tests cover the queries against Neo4j; these pin
+    the glue around them: transactions, the replace-mode wipe, and result shaping."""
+
+    @staticmethod
+    def _session_with_tx():
+        tx = MagicMock()
+        session = MagicMock()
+        session.begin_transaction.return_value = tx
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        return cm, session, tx
+
+    @staticmethod
+    def _export(**families):
+        from types import SimpleNamespace
+        names = ("entities", "conversations", "turns", "facts", "goals",
+                 "strategies", "procedures", "tool_invocations")
+        return SimpleNamespace(**{n: families.get(n, []) for n in names})
+
+    def test_write_collections_is_one_transaction_and_wipes_only_on_replace(self):
+        from agentx_ai.kit.agent_memory.memory.portability_store import PortabilityStore
+        store = PortabilityStore()
+        cm, _, tx = self._session_with_tx()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm), \
+             patch.object(PortabilityStore, '_wipe') as wipe:
+            results = store.write_collections("u1", self._export())
+        wipe.assert_not_called()
+        tx.commit.assert_called_once()
+        tx.rollback.assert_not_called()
+        self.assertEqual(set(results), {"entities", "conversations", "turns", "facts", "goals",
+                                        "strategies", "procedures", "tool_invocations"})
+
+        cm, _, tx = self._session_with_tx()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm), \
+             patch.object(PortabilityStore, '_wipe') as wipe:
+            store.write_collections("u1", self._export(), replace=True, channel=["proj"])
+        wipe.assert_called_once_with(tx, "u1", ["proj"])
+        tx.commit.assert_called_once()
+
+    def test_write_collections_rolls_back_everything_on_any_error(self):
+        from agentx_ai.kit.agent_memory.memory.portability_store import PortabilityStore
+        cm, _, tx = self._session_with_tx()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm), \
+             patch.object(PortabilityStore, '_write_facts', side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                PortabilityStore().write_collections("u1", self._export(facts=[{"id": "f1"}]))
+        tx.rollback.assert_called_once()
+        tx.commit.assert_not_called()
+
+    def test_wipe_channels_commits_its_own_transaction(self):
+        from agentx_ai.kit.agent_memory.memory.portability_store import PortabilityStore
+        cm, _, tx = self._session_with_tx()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm), \
+             patch.object(PortabilityStore, '_wipe', return_value={"facts": 2}) as wipe:
+            self.assertEqual(PortabilityStore().wipe_channels("u1", ["proj"]), {"facts": 2})
+        wipe.assert_called_once_with(tx, "u1", ["proj"])
+        tx.commit.assert_called_once()
+
+    def test_read_collections_shapes_relationship_keys(self):
+        from agentx_ai.kit.agent_memory.memory.portability_store import PortabilityStore
+        replies = {
+            "RETURN c ORDER BY c.id": [{"c": {"id": "c1"}}],
+            "RETURN t, c.id AS conversation_id": [{"t": {"id": "t1"}, "conversation_id": "c1"}],
+            "RETURN e ORDER BY e.id": [{"e": {"id": "e1"}}],
+            "RETURN f, entity_ids": [{"f": {"id": "f1"}, "entity_ids": ["e1", None]}],
+            "RETURN g, parent.id": [{"g": {"id": "g1"}, "parent_goal_id": None}],
+            "RETURN s, tool_names": [
+                {"s": {"id": "s1", "tool_sequence": ["stored"]}, "tool_names": [],
+                 "succeeded_in": ["c1", None], "failed_in": []},
+                {"s": {"id": "s2"}, "tool_names": ["web_search", None],
+                 "succeeded_in": [], "failed_in": ["c1"]},
+            ],
+            "RETURN p, conversation_ids": [{"p": {"id": "p1"}, "conversation_ids": [None, "c1"]}],
+            "RETURN inv, c.id AS conversation_id": [{"inv": {"tool_name": "x"}, "conversation_id": "c1"}],
+        }
+
+        def run(query, **params):
+            self.assertEqual(params["channels"], ["proj"])
+            self.assertEqual(params["channel"], "proj")
+            return next(rows for marker, rows in replies.items() if marker in query)
+
+        session = MagicMock()
+        session.run.side_effect = run
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            out = PortabilityStore().read_collections("u1", ["proj"], include_global=False)
+
+        self.assertEqual(out["turns"], [{"id": "t1", "conversation_id": "c1"}])
+        self.assertEqual(out["facts"][0]["entity_ids"], ["e1"])
+        self.assertEqual(out["procedures"][0]["conversation_ids"], ["c1"])
+        # USES_TOOL edges win; with none, the stored property stands.
+        self.assertEqual(out["strategies"][0]["tool_sequence"], ["stored"])
+        self.assertEqual(out["strategies"][1]["tool_sequence"], ["web_search"])
+        self.assertEqual(out["strategies"][0]["succeeded_in"], ["c1"])
+        self.assertEqual(out["tool_invocations"], [{"tool_name": "x", "conversation_id": "c1"}])
+        # Exact scope: no `_global` spill in any clause.
+        for call in session.run.call_args_list:
+            self.assertNotIn("'_global'", call.args[0])
+
+    def test_extract_counts_and_wipe_go_through_the_store(self):
+        from agentx_ai.kit.agent_memory.portability import extract as extract_mod
+        with patch('agentx_ai.kit.agent_memory.memory.portability_store.PortabilityStore.count_channels',
+                   return_value={"facts": 3}) as count, \
+             patch.object(extract_mod, 'get_postgres_session') as pg:
+            pg.return_value.__enter__.return_value.execute.return_value.first.return_value = None
+            counts = extract_mod._live_counts("u1", ["proj"])
+        count.assert_called_once_with("u1", ["proj"])
+        self.assertEqual(counts["facts"], 3)
+        self.assertEqual(counts["pg_conversation_logs"], 0)
