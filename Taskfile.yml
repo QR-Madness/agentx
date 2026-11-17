@@ -1139,7 +1139,22 @@ tasks:
         # Lockfiles record the project version — refresh them HERE so they ride
         # the same commit as the manifests (otherwise they drift until the next
         # `uv run`/cargo build dirties the tree mid-session).
-        uv lock --quiet && echo "  ✓ uv.lock"
+        # An older uv rewrites uv.lock in an older format (revision 5 → 3) and churns
+        # its markers, so a lock whose revision drops is put back and the task stops.
+        lock_backup=$(mktemp)
+        cp uv.lock "$lock_backup"
+        rev_before=$(sed -n 's/^revision = //p' uv.lock | head -n 1)
+        uv lock --quiet
+        rev_after=$(sed -n 's/^revision = //p' uv.lock | head -n 1)
+        if [ "${rev_after:-0}" -lt "${rev_before:-0}" ]; then
+          cp "$lock_backup" uv.lock
+          rm -f "$lock_backup"
+          echo "  ✗ uv.lock: $(uv --version) writes lock revision ${rev_after}, older than the file's ${rev_before}." >&2
+          echo "    uv.lock is restored. Update uv (uv self update) and run task versions:sync again." >&2
+          exit 1
+        fi
+        rm -f "$lock_backup"
+        echo "  ✓ uv.lock"
         (cd client/src-tauri && cargo update -p agentx-client --quiet 2>/dev/null) \
           && echo "  ✓ client/src-tauri/Cargo.lock" \
           || echo "  ~ Cargo.lock skipped (cargo unavailable — next build refreshes it)"
