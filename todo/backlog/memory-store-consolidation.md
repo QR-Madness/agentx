@@ -135,6 +135,12 @@ runs the suite against both backends.
       the memory classes, not the whole kit — and it ships that section's guard: a boundary test
       that fails on a Cypher string or a Neo4j session outside the store modules, with a short
       allowlist that only shrinks.
+  - [x] **The guard** (2026-11-17): `tests_memory.MemoryStoreBoundaryTest`. A ratchet of
+        (Cypher strings, `Neo4jConnection.session`/`get_driver` openings) per module outside the
+        memory classes, counted from tokens so comments don't count. Baseline: **127 strings and
+        37 openings in 14 modules** (the earlier 125 used a looser regex). A new module with Cypher
+        fails it; so does a lowered count that wasn't written back, so gains can't be spent again.
+        Schema-init and migration commands are exempt (backend-specific by design).
 - [ ] **Slice 2 — schema and RLS** (1–2 days). Alembic revisions for the tables, indexes and
       policies. Empty tables; nothing reads them yet.
 - [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`.
