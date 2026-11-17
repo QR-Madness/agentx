@@ -26,35 +26,16 @@ def _propagate_agent_rename(agent_id: str, old_name: str, new_name: str) -> None
     """Rename the agent's first-class memory entity and keep the old name as an alias.
 
     Best-effort and lazily imported so profile CRUD never hard-depends on the
-    memory layer (or a running Neo4j). Updates every ``agent:{agent_id}`` Entity
-    node across all users/channels in one statement; agent_id is the stable key,
-    so the rename is unambiguous.
+    memory layer (or a running Neo4j). The rename reaches every user's
+    ``agent:{agent_id}`` entity, so it goes through the cross-user store.
     """
     try:
-        from ..kit.agent_memory.connections import Neo4jConnection
+        from ..kit.agent_memory.memory.cross_user import CrossUserStore
     except Exception as e:  # noqa: BLE001
         logger.debug(f"agent rename propagation skipped (no memory layer): {e}")
         return
     try:
-        with Neo4jConnection.session() as session:
-            session.run(
-                """
-                MATCH (e:Entity)
-                WHERE coalesce(e.type, '') = 'Agent'
-                  AND e.id ENDS WITH (':' + $agent_id)
-                SET e.aliases = CASE
-                        WHEN $old_name IS NULL
-                             OR toLower($old_name) = toLower($new_name)
-                             OR toLower($old_name) IN [a IN coalesce(e.aliases, []) | toLower(a)]
-                        THEN coalesce(e.aliases, [])
-                        ELSE coalesce(e.aliases, []) + [$old_name]
-                    END,
-                    e.name = $new_name
-                """,
-                agent_id=agent_id,
-                old_name=old_name,
-                new_name=new_name,
-            )
+        CrossUserStore().rename_agent_entities(agent_id, old_name, new_name)
     except Exception as e:  # noqa: BLE001 — a rename must never break profile save
         logger.warning(f"Failed to propagate agent rename for {agent_id}: {e}")
 

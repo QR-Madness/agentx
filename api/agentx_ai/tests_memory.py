@@ -6826,10 +6826,8 @@ class MemoryStoreBoundaryTest(TestCase):
 
     # module → (Cypher strings, Neo4j session/driver openings), measured 2026-11-17.
     BASELINE: dict[str, tuple[int, int]] = {
-        "agent/profiles.py": (1, 1),
         "kit/agent_memory/consolidation/jobs.py": (42, 10),
         "kit/agent_memory/maintenance/entity_merge.py": (3, 0),
-        "kit/agent_memory/portability/cluster.py": (3, 3),
         "kit/agent_memory/portability/exporter.py": (8, 1),
         "kit/agent_memory/portability/extract.py": (8, 2),
         "kit/agent_memory/portability/importer.py": (18, 1),
@@ -6925,3 +6923,94 @@ class MemoryStoreBoundaryTest(TestCase):
             "A module now holds less Cypher than its baseline row allows. Lower the row "
             "(delete it at (0, 0)) so the gain can't be spent again.",
         )
+
+
+class CrossUserStoreTest(TestCase):
+    """memory/cross_user.py — the one memory class whose operations span every user."""
+
+    @staticmethod
+    def _session(run_result):
+        session = MagicMock()
+        session.run.return_value = run_result
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        return cm, session
+
+    def test_count_conversations_reads_the_count_or_zero(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        result = MagicMock()
+        result.single.return_value = {"n": 7}
+        cm, _ = self._session(result)
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            self.assertEqual(CrossUserStore().count_conversations(), 7)
+        result.single.return_value = None
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            self.assertEqual(CrossUserStore().count_conversations(), 0)
+
+    def test_list_user_ids_skips_empty_ids(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        cm, _ = self._session([{"uid": "u1"}, {"uid": None}, {"uid": ""}, {"uid": "u2"}])
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            self.assertEqual(CrossUserStore().list_user_ids(), ["u1", "u2"])
+
+    def test_wipe_all_counts_the_graph_and_both_mirror_tables(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore, WipeResult
+        graph = MagicMock()
+        graph.single.return_value = {"n": 5}
+        cm, _ = self._session(graph)
+        pg = MagicMock()
+        pg.execute.return_value.rowcount = 3
+        pg_cm = MagicMock()
+        pg_cm.__enter__.return_value = pg
+        pg_cm.__exit__.return_value = False
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm), \
+             patch('agentx_ai.kit.agent_memory.memory.cross_user.get_postgres_session', return_value=pg_cm):
+            self.assertEqual(CrossUserStore().wipe_all(), WipeResult(5, 6, None))
+        tables = [str(c.args[0]) for c in pg.execute.call_args_list]
+        self.assertEqual(tables, ["DELETE FROM conversation_logs", "DELETE FROM memory_audit_log"])
+
+    def test_wipe_all_reports_a_postgres_failure_after_the_graph_wipe(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore, WipeResult
+        graph = MagicMock()
+        graph.single.return_value = {"n": 5}
+        cm, session = self._session(graph)
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm), \
+             patch('agentx_ai.kit.agent_memory.memory.cross_user.get_postgres_session',
+                   side_effect=RuntimeError("pg down")):
+            self.assertEqual(CrossUserStore().wipe_all(), WipeResult(5, 0, "pg down"))
+        session.run.assert_called_once()
+
+    def test_rename_agent_entities_targets_the_agent_id_across_users(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        cm, session = self._session(MagicMock())
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            CrossUserStore().rename_agent_entities("bold-cosmic-falcon", "Atlas", "Mobius")
+        query = session.run.call_args.args[0]
+        self.assertIn("e.id ENDS WITH (':' + $agent_id)", query)
+        self.assertNotIn("user_id", query)  # every user's copy of the agent
+        self.assertEqual(
+            session.run.call_args.kwargs,
+            {"agent_id": "bold-cosmic-falcon", "old_name": "Atlas", "new_name": "Mobius"},
+        )
+
+    def test_agent_rename_on_profile_save_goes_through_the_store_and_never_raises(self):
+        from agentx_ai.agent.profiles import _propagate_agent_rename
+        target = 'agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore.rename_agent_entities'
+        with patch(target) as rename:
+            _propagate_agent_rename("bold-cosmic-falcon", "Atlas", "Mobius")
+        rename.assert_called_once_with("bold-cosmic-falcon", "Atlas", "Mobius")
+        with patch(target, side_effect=RuntimeError("neo4j down")), \
+             self.assertLogs('agentx_ai.agent.profiles', level='WARNING') as logs:
+            _propagate_agent_rename("bold-cosmic-falcon", "Atlas", "Mobius")
+        self.assertIn("Failed to propagate agent rename", logs.output[0])
+
+    def test_cluster_wipe_reports_both_halves_as_before(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import WipeResult
+        from agentx_ai.kit.agent_memory.portability import cluster
+        log, err = MagicMock(), MagicMock()
+        with patch('agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore.wipe_all',
+                   return_value=WipeResult(4, 2, "pg down")):
+            cluster.wipe_cluster(log, err)
+        err.assert_called_once_with("  postgres wipe note: pg down")
+        log.assert_called_once_with("  wiped Neo4j nodes=4, postgres rows=2")

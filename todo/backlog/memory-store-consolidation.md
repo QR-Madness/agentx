@@ -114,6 +114,12 @@ Ratified 2026-11-12 as recommended.
   application filter. Jobs that legitimately cross users (consolidation discovery, admin and eval
   commands) run under one explicit, named system scope — a separate database role — and nothing
   else may use it.
+- **Cross-user operations have their own memory class** (decided 2026-11-17, Slice 1):
+  `memory/cross_user.py::CrossUserStore`. Everything else in the memory classes works within a user;
+  anything that spans users (cluster counts, wipes and snapshots, agent renames that reach every
+  user's copy, and as Slice 1 proceeds consolidation discovery and the admin and eval commands) is a
+  method there. Its PostgreSQL twin is then the one and only user of the system role, which makes
+  "nothing else may use it" checkable rather than a convention.
 - **Search.** Vector: cosine over HNSW with `hnsw.iterative_scan` and the scope in `WHERE`.
   Keyword: `websearch_to_tsquery('simple', …)` with `ts_rank`. Fusion and reranking are already
   store-independent Python and do not change.
@@ -141,6 +147,10 @@ runs the suite against both backends.
         37 openings in 14 modules** (the earlier 125 used a looser regex). A new module with Cypher
         fails it; so does a lowered count that wasn't written back, so gains can't be spent again.
         Schema-init and migration commands are exempt (backend-specific by design).
+  - [x] **The cross-user store** (2026-11-17): `CrossUserStore` with `count_conversations`,
+        `list_user_ids`, `wipe_all` and `rename_agent_entities`; `portability/cluster.py` and the
+        profile manager's rename propagation now call it (guard rows for both removed; 123 strings
+        and 33 openings remain).
 - [ ] **Slice 2 — schema and RLS** (1–2 days). Alembic revisions for the tables, indexes and
       policies. Empty tables; nothing reads them yet.
 - [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`.
