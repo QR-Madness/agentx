@@ -40,64 +40,21 @@ Usage:
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from django.core.management.base import BaseCommand, CommandError
 
 # The merge machinery (survivor-field fold, relationship re-home, parallel-rel
 # collapse) lives in the shared maintenance module so future write-path /
-# janitor mergers reuse it. This command keeps candidate *discovery* only.
+# janitor mergers reuse it. This command keeps candidate *discovery* only; every
+# query runs through the store's EntityMaintenance transaction.
 from agentx_ai.kit.agent_memory.maintenance.entity_merge import merge_entity_group
+
+if TYPE_CHECKING:
+    from agentx_ai.kit.agent_memory.memory.entity_maintenance import EntityMaintenance
 
 
 logger = logging.getLogger(__name__)
-
-
-# Cypher: entities eligible for semantic pairing (embedded, non-Agent, scoped).
-ENUMERATE_EMBEDDED = """
-MATCH (e:Entity)
-WHERE e.embedding IS NOT NULL
-  AND e.name IS NOT NULL
-  AND coalesce(e.type, '') <> 'Agent'
-  AND ($user_id IS NULL OR e.user_id = $user_id)
-  AND ($channel IS NULL OR e.channel = $channel)
-RETURN e.id AS id, e.name AS name, coalesce(e.type, '') AS type,
-       e.user_id AS user_id, e.embedding AS embedding
-"""
-
-
-# Cypher: count entities the semantic pass cannot see (embedding backlog).
-COUNT_UNEMBEDDED = """
-MATCH (e:Entity)
-WHERE e.embedding IS NULL AND e.name IS NOT NULL
-  AND ($user_id IS NULL OR e.user_id = $user_id)
-RETURN count(e) AS n
-"""
-
-
-# Cypher: vector neighbors of one entity (filtered in Python: same user/type,
-# non-Agent, score >= threshold).
-SEMANTIC_NEIGHBORS = """
-CALL db.index.vector.queryNodes('entity_embeddings', $k, $embedding)
-YIELD node AS n, score
-WHERE n.id <> $id
-RETURN n.id AS id, n.name AS name, coalesce(n.type, '') AS type,
-       n.user_id AS user_id, score
-"""
-
-
-# Cypher: per-group field fetch, survivor-first (same ordering as the name passes).
-FETCH_GROUP_FIELDS = """
-MATCH (e:Entity) WHERE e.id IN $ids
-WITH e
-ORDER BY coalesce(e.salience, 0.5) DESC,
-         coalesce(e.access_count, 0) DESC,
-         coalesce(e.first_seen, datetime('1970-01-01T00:00:00Z')) ASC
-RETURN collect(e.id) AS ids,
-       collect(e.name) AS names,
-       collect(coalesce(e.aliases, [])) AS alias_lists,
-       collect(e.description) AS descriptions,
-       collect(coalesce(e.access_count, 0)) AS access_counts
-"""
 
 
 def _group_semantic_pairs(pairs: list[tuple[str, str]]) -> list[set[str]]:
@@ -120,63 +77,6 @@ def _group_semantic_pairs(pairs: list[tuple[str, str]]) -> list[set[str]]:
     for node in parent:
         groups.setdefault(find(node), set()).add(node)
     return [g for g in groups.values() if len(g) > 1]
-
-
-# Cypher: enumerate in-channel duplicate groups.
-#
-# For each (user_id, channel, lower(name)) group we return the member ids
-# ordered survivor-first (salience DESC, access_count DESC, first_seen ASC)
-# plus the per-node fields we need to fold into the survivor.
-ENUMERATE_IN_CHANNEL = """
-MATCH (e:Entity)
-WHERE e.name IS NOT NULL
-  AND coalesce(e.type, '') <> 'Agent'
-  AND ($user_id IS NULL OR e.user_id = $user_id)
-  AND ($channel IS NULL OR e.channel = $channel)
-WITH e
-ORDER BY coalesce(e.salience, 0.5) DESC,
-         coalesce(e.access_count, 0) DESC,
-         coalesce(e.first_seen, datetime('1970-01-01T00:00:00Z')) ASC
-WITH e.user_id AS user_id,
-     e.channel AS channel,
-     toLower(e.name) AS key,
-     collect(e) AS nodes
-WHERE size(nodes) > 1
-RETURN user_id, channel, key,
-       [n IN nodes | n.id] AS ids,
-       [n IN nodes | n.name] AS names,
-       [n IN nodes | coalesce(n.aliases, [])] AS alias_lists,
-       [n IN nodes | n.description] AS descriptions,
-       [n IN nodes | coalesce(n.access_count, 0)] AS access_counts
-"""
-
-
-# Cypher: enumerate cross-channel duplicate groups.
-#
-# Survivor preference: `_global` first, then by salience. We surface
-# channels for the summary report.
-ENUMERATE_CROSS_CHANNEL = """
-MATCH (e:Entity)
-WHERE e.name IS NOT NULL
-  AND coalesce(e.type, '') <> 'Agent'
-  AND ($user_id IS NULL OR e.user_id = $user_id)
-WITH e
-ORDER BY CASE WHEN e.channel = '_global' THEN 0 ELSE 1 END ASC,
-         coalesce(e.salience, 0.5) DESC,
-         coalesce(e.access_count, 0) DESC,
-         coalesce(e.first_seen, datetime('1970-01-01T00:00:00Z')) ASC
-WITH e.user_id AS user_id,
-     toLower(e.name) AS key,
-     collect(e) AS nodes
-WHERE size(nodes) > 1
-RETURN user_id, key,
-       [n IN nodes | n.id] AS ids,
-       [n IN nodes | n.channel] AS channels,
-       [n IN nodes | n.name] AS names,
-       [n IN nodes | coalesce(n.aliases, [])] AS alias_lists,
-       [n IN nodes | n.description] AS descriptions,
-       [n IN nodes | coalesce(n.access_count, 0)] AS access_counts
-"""
 
 
 class Command(BaseCommand):
@@ -257,49 +157,43 @@ class Command(BaseCommand):
             self.stdout.write(f"  semantic pass: ENABLED (threshold {threshold})")
 
         try:
-            from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+            from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
         except ImportError as e:
-            raise CommandError(f"Could not import Neo4jConnection: {e}") from e
-
-        driver = Neo4jConnection.get_driver()
+            raise CommandError(f"Could not import the memory store: {e}") from e
 
         # Run everything inside a single explicit transaction so dry-run
-        # rollback covers both passes atomically.
-        with driver.session() as session:
-            tx = session.begin_transaction()
-            try:
-                in_channel_summary = self._run_in_channel_pass(
-                    tx,
+        # rollback covers both passes atomically. Leaving the block without a
+        # commit (an exception included) rolls it back.
+        with CrossUserStore().entity_maintenance() as store:
+            in_channel_summary = self._run_in_channel_pass(
+                store,
+                user_id=user_id,
+                channel=channel,
+                verbose=verbose,
+            )
+            cross_summary = None
+            if cross_channel:
+                cross_summary = self._run_cross_channel_pass(
+                    store,
                     user_id=user_id,
-                    channel=channel,
                     verbose=verbose,
                 )
-                cross_summary = None
-                if cross_channel:
-                    cross_summary = self._run_cross_channel_pass(
-                        tx,
-                        user_id=user_id,
-                        verbose=verbose,
-                    )
-                semantic_summary = None
-                if semantic:
-                    semantic_summary = self._run_semantic_pass(
-                        tx,
-                        user_id=user_id,
-                        channel=channel,
-                        threshold=threshold,
-                        verbose=verbose,
-                    )
+            semantic_summary = None
+            if semantic:
+                semantic_summary = self._run_semantic_pass(
+                    store,
+                    user_id=user_id,
+                    channel=channel,
+                    threshold=threshold,
+                    verbose=verbose,
+                )
 
-                if apply:
-                    tx.commit()
-                    self.stdout.write(self.style.SUCCESS("Committed."))  # type: ignore[attr-defined]
-                else:
-                    tx.rollback()
-                    self.stdout.write(self.style.WARNING("Rolled back (dry-run)."))  # type: ignore[attr-defined]
-            except Exception:
-                tx.rollback()
-                raise
+            if apply:
+                store.commit()
+                self.stdout.write(self.style.SUCCESS("Committed."))  # type: ignore[attr-defined]
+            else:
+                store.rollback()
+                self.stdout.write(self.style.WARNING("Rolled back (dry-run)."))  # type: ignore[attr-defined]
 
         self._print_summary("In-channel", in_channel_summary)
         if cross_summary is not None:
@@ -317,14 +211,12 @@ class Command(BaseCommand):
 
     def _run_in_channel_pass(
         self,
-        tx,
+        store: EntityMaintenance,
         user_id: str | None,
         channel: str | None,
         verbose: bool,
     ) -> dict[str, int]:
-        groups = list(
-            tx.run(ENUMERATE_IN_CHANNEL, user_id=user_id, channel=channel)
-        )
+        groups = store.in_channel_groups(user_id, channel)
         summary = {
             "groups": 0,
             "duplicates": 0,
@@ -334,7 +226,7 @@ class Command(BaseCommand):
         for record in groups:
             summary["groups"] += 1
             merged = self._merge_one_group(
-                tx,
+                store,
                 ids=record["ids"],
                 names=record["names"],
                 alias_lists=record["alias_lists"],
@@ -354,11 +246,11 @@ class Command(BaseCommand):
 
     def _run_cross_channel_pass(
         self,
-        tx,
+        store: EntityMaintenance,
         user_id: str | None,
         verbose: bool,
     ) -> dict[str, int]:
-        groups = list(tx.run(ENUMERATE_CROSS_CHANNEL, user_id=user_id))
+        groups = store.cross_channel_groups(user_id)
         summary = {
             "groups": 0,
             "duplicates": 0,
@@ -368,7 +260,7 @@ class Command(BaseCommand):
         for record in groups:
             summary["groups"] += 1
             merged = self._merge_one_group(
-                tx,
+                store,
                 ids=record["ids"],
                 names=record["names"],
                 alias_lists=record["alias_lists"],
@@ -388,7 +280,7 @@ class Command(BaseCommand):
 
     def _run_semantic_pass(
         self,
-        tx,
+        store: EntityMaintenance,
         user_id: str | None,
         channel: str | None,
         threshold: float,
@@ -400,16 +292,13 @@ class Command(BaseCommand):
         Neighbors come from the `entity_embeddings` vector index, so only
         embedded entities participate (the summary reports the blind spot).
         """
-        unembedded_rec = tx.run(COUNT_UNEMBEDDED, user_id=user_id).single()
-        unembedded = int(unembedded_rec["n"] or 0) if unembedded_rec else 0
+        unembedded = store.count_unembedded(user_id)
 
-        entities = list(tx.run(ENUMERATE_EMBEDDED, user_id=user_id, channel=channel))
+        entities = store.embedded_entities(user_id, channel)
         pairs: list[tuple[str, str]] = []
         pair_scores: dict[tuple[str, str], float] = {}
         for ent in entities:
-            neighbors = tx.run(
-                SEMANTIC_NEIGHBORS, k=6, embedding=ent["embedding"], id=ent["id"],
-            )
+            neighbors = store.semantic_neighbors(ent["id"], ent["embedding"], 6)
             for nb in neighbors:
                 if float(nb["score"] or 0.0) < threshold:
                     continue
@@ -435,12 +324,12 @@ class Command(BaseCommand):
             "unembedded": unembedded,
         }
         for group in _group_semantic_pairs(pairs):
-            fields = tx.run(FETCH_GROUP_FIELDS, ids=sorted(group)).single()
+            fields = store.group_fields(sorted(group))
             if not fields or len(fields["ids"]) < 2:
                 continue
             summary["groups"] += 1
             merged = self._merge_one_group(
-                tx,
+                store,
                 ids=fields["ids"],
                 names=fields["names"],
                 alias_lists=fields["alias_lists"],
@@ -459,8 +348,8 @@ class Command(BaseCommand):
 
     # -- group merge (delegates to maintenance.entity_merge) ------------------
 
-    def _merge_one_group(self, tx, **group_fields) -> dict[str, int]:
-        return merge_entity_group(tx, **group_fields)
+    def _merge_one_group(self, store: EntityMaintenance, **group_fields) -> dict[str, int]:
+        return merge_entity_group(store, **group_fields)
 
     # -- reporting -----------------------------------------------------------
 

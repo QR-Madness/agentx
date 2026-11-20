@@ -14,9 +14,14 @@ pending at close, and the driver's ``Session.close()`` swallows it there.
 """
 
 import logging
-from typing import Any, NamedTuple
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ..connections import Neo4jConnection, get_postgres_session
+
+if TYPE_CHECKING:
+    from .entity_maintenance import EntityMaintenance
 
 logger = logging.getLogger(__name__)
 
@@ -676,3 +681,53 @@ class CrossUserStore:
                    c.agent_id AS agent_id,
                    [t IN turns | {content: t.content, id: t.id, agent_id: t.agent_id}] AS turns
         """, only=only_conversation_id))
+
+    # Entity maintenance: deduplication, and the agent-attribution backfill.
+
+    @contextmanager
+    def entity_maintenance(self) -> Iterator[EntityMaintenance]:
+        """One transaction for entity dedupe and merge (`EntityMaintenance`). Nothing
+        persists unless the caller calls ``commit()``; leaving the block any other
+        way, including by an exception, rolls the transaction back."""
+        from .entity_maintenance import EntityMaintenance
+
+        with Neo4jConnection.session() as session:
+            tx = session.begin_transaction()
+            try:
+                yield EntityMaintenance(tx)
+            finally:
+                if not tx.closed():
+                    tx.rollback()
+
+    def generic_agent_fact_candidates(self, channel: str) -> list[Any]:
+        """Facts in `channel`, from every user, whose claim starts with a generic
+        "agent" or "the agent" (a cheap prefilter; the caller decides): ``id``,
+        ``claim``, ``user_id``. Claims are stored trimmed."""
+        with Neo4jConnection.session() as session:
+            return list(session.run("""
+MATCH (f:Fact {channel: $channel})
+WHERE f.claim IS NOT NULL
+  AND (toLower(f.claim) STARTS WITH 'agent'
+       OR toLower(f.claim) STARTS WITH 'the agent')
+RETURN f.id AS id, f.claim AS claim, f.user_id AS user_id
+""", channel=channel))
+
+    def attribute_fact_to_agent(
+        self, fact_id: str, claim: str, claim_hash: str, agent_entity_id: str,
+    ) -> None:
+        """Rewrite a fact's claim (and its hash) to name the agent, and link the fact
+        to the agent's entity. Re-running adds no second link."""
+        with Neo4jConnection.session() as session:
+            session.run(
+                """
+                            MATCH (f:Fact {id: $id})
+                            SET f.claim = $claim, f.claim_hash = $hash
+                            WITH f
+                            MATCH (e:Entity {id: $eid})
+                            MERGE (f)-[:ABOUT]->(e)
+                            """,
+                id=fact_id,
+                claim=claim,
+                hash=claim_hash,
+                eid=agent_entity_id,
+            ).consume()

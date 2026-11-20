@@ -43,15 +43,8 @@ logger = logging.getLogger(__name__)
 # Captures the trailing possessive so "Agent's" → "Mobius's".
 _GENERIC_AGENT_RE = re.compile(r"^\s*(?:the\s+)?agent('s)?\b", re.IGNORECASE)
 
-# Candidate facts per channel (cheap server-side prefilter; the Python _rename
-# below is the authoritative check). Claims are stored trimmed.
-_FETCH_CANDIDATES = """
-MATCH (f:Fact {channel: $channel})
-WHERE f.claim IS NOT NULL
-  AND (toLower(f.claim) STARTS WITH 'agent'
-       OR toLower(f.claim) STARTS WITH 'the agent')
-RETURN f.id AS id, f.claim AS claim, f.user_id AS user_id
-"""
+# Candidate facts per channel come from CrossUserStore.generic_agent_fact_candidates
+# (a cheap server-side prefilter; the Python _rename below is the authoritative check).
 
 
 class Command(BaseCommand):
@@ -93,7 +86,7 @@ class Command(BaseCommand):
         )
 
         try:
-            from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+            from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
             from agentx_ai.kit.agent_memory.models import Entity, compute_claim_hash
             from agentx_ai.kit.agent_memory.memory.interface import AgentMemory
             from agentx_ai.agent.profiles import get_profile_manager
@@ -106,69 +99,58 @@ class Command(BaseCommand):
             if not profiles:
                 raise CommandError(f"No profile with agent_id {only_agent!r}")
 
-        driver = Neo4jConnection.get_driver()
+        store = CrossUserStore()
         totals = {"facts_renamed": 0, "links_added": 0, "entities_ensured": 0}
         # Cache of (user_id, agent_id) → ensured, so we embed each Agent entity once.
         ensured: set[tuple[str, str]] = set()
 
-        with driver.session() as session:
-            for profile in profiles:
-                agent_id = profile.agent_id
-                name = profile.name
-                channel = f"_self_{agent_id}"
+        for profile in profiles:
+            agent_id = profile.agent_id
+            name = profile.name
+            channel = f"_self_{agent_id}"
 
-                candidates = list(session.run(_FETCH_CANDIDATES, channel=channel))
-                if not candidates:
-                    continue
+            candidates = store.generic_agent_fact_candidates(channel)
+            if not candidates:
+                continue
 
-                for rec in candidates:
-                    fid = rec["id"]
-                    claim = rec["claim"]
-                    user_id = rec["user_id"] or "default"
-                    # Agent entities live in _global, one per (user, agent).
-                    ent_id = f"agent:{user_id}:{agent_id}"
+            for rec in candidates:
+                fid = rec["id"]
+                claim = rec["claim"]
+                user_id = rec["user_id"] or "default"
+                # Agent entities live in _global, one per (user, agent).
+                ent_id = f"agent:{user_id}:{agent_id}"
 
-                    new_claim = self._rename(claim, name)
-                    if new_claim is None:
-                        continue  # already named / not a generic-agent claim
+                new_claim = self._rename(claim, name)
+                if new_claim is None:
+                    continue  # already named / not a generic-agent claim
 
-                    if verbose:
-                        self.stdout.write(f"  [{agent_id}] {claim!r} → {new_claim!r}")
+                if verbose:
+                    self.stdout.write(f"  [{agent_id}] {claim!r} → {new_claim!r}")
 
-                    # Ensure the Agent entity exists in _global (once per user, embedded).
-                    if (user_id, agent_id) not in ensured:
-                        ensured.add((user_id, agent_id))
-                        if apply:
-                            try:
-                                AgentMemory(user_id=user_id, channel="_global").upsert_entity(
-                                    Entity(
-                                        id=ent_id,
-                                        name=name,
-                                        type="Agent",
-                                        description=f"AI agent (id {agent_id})",
-                                        properties={"agent_id": agent_id},
-                                    )
-                                )
-                            except Exception as e:  # noqa: BLE001
-                                logger.warning(f"ensure agent entity failed ({agent_id}): {e}")
-                        totals["entities_ensured"] += 1
-
-                    totals["facts_renamed"] += 1
-                    totals["links_added"] += 1
+                # Ensure the Agent entity exists in _global (once per user, embedded).
+                if (user_id, agent_id) not in ensured:
+                    ensured.add((user_id, agent_id))
                     if apply:
-                        session.run(
-                            """
-                            MATCH (f:Fact {id: $id})
-                            SET f.claim = $claim, f.claim_hash = $hash
-                            WITH f
-                            MATCH (e:Entity {id: $eid})
-                            MERGE (f)-[:ABOUT]->(e)
-                            """,
-                            id=fid,
-                            claim=new_claim,
-                            hash=compute_claim_hash(new_claim),
-                            eid=ent_id,
-                        )
+                        try:
+                            AgentMemory(user_id=user_id, channel="_global").upsert_entity(
+                                Entity(
+                                    id=ent_id,
+                                    name=name,
+                                    type="Agent",
+                                    description=f"AI agent (id {agent_id})",
+                                    properties={"agent_id": agent_id},
+                                )
+                            )
+                        except Exception as e:  # noqa: BLE001
+                            logger.warning(f"ensure agent entity failed ({agent_id}): {e}")
+                    totals["entities_ensured"] += 1
+
+                totals["facts_renamed"] += 1
+                totals["links_added"] += 1
+                if apply:
+                    store.attribute_fact_to_agent(
+                        fid, new_claim, compute_claim_hash(new_claim), ent_id,
+                    )
 
         self.stdout.write(
             "  facts_renamed={facts_renamed} links_added={links_added} "
