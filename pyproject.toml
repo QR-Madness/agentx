@@ -1,6 +1,6 @@
 [project]
 name = "agentx-source"
-version = "0.21.281"
+version = "0.21.282"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.14"
 dependencies = [
@@ -11,8 +11,7 @@ dependencies = [
     # `cpu` / `gpu` dependency groups below (see [tool.uv.sources]).
     "transformers>=4.57.1",
     "sentencepiece>=0.2.1",
-    # Vector & Graph Databases
-    "faiss-cpu>=1.13.0",
+    # Graph & relational databases
     "neo4j>=6.0.3",
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",
