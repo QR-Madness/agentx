@@ -1,17 +1,25 @@
 /**
  * AgentPanel — one agent's place in the organization, in the dock: which teams
- * it is on and in what role, who it reports to and directs, and the links out
- * to the surfaces that own the rest (the profile editor for identity, the
+ * it is on and in what role, who it reports to and directs, a quick edit of the
+ * profile fields the organization reads (role, roster, specialty), and the links
+ * out to the surfaces that own the rest (the profile editor for identity, the
  * Roster for the full dossier).
  */
 
+import { useEffect, useState } from 'react';
 import { ArrowUpRight, PenLine, Plus, UserRound } from 'lucide-react';
-import type { AgentProfile } from '../../lib/api';
+import { useAgentProfile } from '../../contexts/AgentProfileContext';
+import { useNotify } from '../../contexts/NotificationContext';
+import type { AgentProfile, AgentProfileCreate } from '../../lib/api';
 import { modelShortLabel } from '../../lib/modelLabel';
+import { editableOrgRole, ORG_ROLE_OPTIONS } from '../../lib/orgRoles';
 import type { OrgIssue, StructuralTier } from '../../lib/orgChart';
 import type { OrgPlacement } from '../../lib/orgPlacement';
 import { AgentAvatar } from '../common/AgentAvatar';
 import { Button } from '../ui/Button';
+import { Input } from '../ui/Field';
+import { SegmentedControl } from '../ui/SegmentedControl';
+import { Switch } from '../ui/Switch';
 import { TierChip } from './TierChip';
 
 interface AgentPanelProps {
@@ -25,13 +33,6 @@ interface AgentPanelProps {
   onEditProfile: (profileId: string) => void;
   onOpenDossier: (profileId: string) => void;
 }
-
-const ROLE_NAME: Record<NonNullable<AgentProfile['orgLevel']>, string> = {
-  executive: 'Executive',
-  manager: 'Manager',
-  lead: 'Lead',
-  agent: 'Agent',
-};
 
 export function AgentPanel({
   profile,
@@ -109,9 +110,14 @@ export function AgentPanel({
 
       <section className="org-section">
         <h3 className="org-eyebrow">Profile</h3>
+        {!isAmbassador && <QuickEdit profile={profile} />}
         <dl className="org-kv">
-          <dt>Role</dt>
-          <dd>{isAmbassador ? 'Ambassador' : ROLE_NAME[profile.orgLevel ?? 'agent']}</dd>
+          {isAmbassador && (
+            <>
+              <dt>Role</dt>
+              <dd>Ambassador</dd>
+            </>
+          )}
           <dt>Model</dt>
           <dd>{modelShortLabel(profile.defaultModel) ?? 'Inherits the default'}</dd>
         </dl>
@@ -160,3 +166,87 @@ function ChipLine({
     </div>
   );
 }
+
+/**
+ * The profile fields the organization reads, edited in place: role, roster and
+ * specialty. Role and roster save as soon as they change; the specialty saves on
+ * request. Choosing Manager makes the server apply the report-only tool limits, as
+ * the profile editor does.
+ */
+function QuickEdit({ profile }: { profile: AgentProfile }) {
+  const { updateProfile } = useAgentProfile();
+  const { notifyError } = useNotify();
+  const [saving, setSaving] = useState<'role' | 'roster' | 'specialty' | null>(null);
+  const [specialty, setSpecialty] = useState(profile.delegationHint ?? '');
+  useEffect(() => setSpecialty(profile.delegationHint ?? ''), [profile.id, profile.delegationHint]);
+
+  const role = editableOrgRole(profile.orgLevel);
+  const specialtyDirty = specialty.trim() !== (profile.delegationHint ?? '').trim();
+
+  const save = async (
+    field: 'role' | 'roster' | 'specialty',
+    updates: Partial<AgentProfileCreate>,
+    what: string,
+  ) => {
+    setSaving(field);
+    const saved = await updateProfile(profile.id, updates);
+    setSaving(null);
+    if (!saved) {
+      notifyError(new Error(`${profile.name}'s ${what} could not be saved. It is unchanged.`), 'Quick edit');
+    }
+  };
+
+  return (
+    <div className="org-quick">
+      <div className="org-quick-row">
+        <span className="org-quick-label">Role</span>
+        <SegmentedControl
+          size="sm"
+          ariaLabel={`${profile.name}'s role`}
+          value={role}
+          options={ORG_ROLE_OPTIONS}
+          onChange={(next) => {
+            if (next !== role && saving === null) void save('role', { org_level: next }, 'role');
+          }}
+        />
+      </div>
+      {role !== 'manager' && (
+        <p className="org-quick-hint">Manager also applies the report-only tool limits.</p>
+      )}
+      <div className="org-quick-row">
+        <span className="org-quick-label" id={`roster-${profile.id}`}>
+          Join the team roster
+        </span>
+        <Switch
+          aria-labelledby={`roster-${profile.id}`}
+          checked={Boolean(profile.availableForDelegation)}
+          disabled={saving === 'roster'}
+          onCheckedChange={(on) => void save('roster', { available_for_delegation: on }, 'roster setting')}
+        />
+      </div>
+      <div className="org-quick-field">
+        <span className="org-quick-label">Specialty</span>
+        <div className="org-quick-inline">
+          <Input
+            value={specialty}
+            maxLength={200}
+            onChange={(e) => setSpecialty(e.target.value)}
+            placeholder="What this agent is best at"
+            aria-label={`${profile.name}'s specialty`}
+          />
+          {specialtyDirty && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={saving === 'specialty'}
+              onClick={() => void save('specialty', { delegation_hint: specialty.trim() || null }, 'specialty')}
+            >
+              Save
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
