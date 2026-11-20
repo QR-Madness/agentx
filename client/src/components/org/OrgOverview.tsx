@@ -81,6 +81,10 @@ export function OrgOverview({ model, showLegend = true, onOpenIssue, onNewTeam }
               whoever receives the work.
             </li>
             <li>
+              <span className="org-legend-escalate" aria-hidden /> A chevron at a lead marks that its
+              members can escalate back to it.
+            </li>
+            <li>
               <span className="org-legend-apex" aria-hidden /> The ambassador sits above the chain and
               outside it: it can dispatch to anyone.
             </li>

@@ -93,7 +93,8 @@ Command palette (`⌘K`) → **Open Organization**, or **Manage Teams…** in th
 - the **ambassador** at the top, above the chain and outside it (it can dispatch to anyone);
 - a reserved **executive** band, empty for now;
 - each **manager** above the teams it owns, with a line to each team's lead;
-- each **team** as a column, lead first and members below;
+- each **team** as a column, lead first and members below, with a chevron where the line leaves the
+  lead: its members can escalate back to it;
 - teams **without a manager**, then the **independent** agents that are on no team.
 
 Select a team to edit it in the side panel: name, lead, manager, members and their hints. The
@@ -112,7 +113,8 @@ Drag the ambassador, a manager or a whole team to arrange the chart; a team's le
 move with it. The arrangement is saved on the server and keeps its place when an agent or team is
 renamed. **Reset the chart layout** (the circular-arrow button in the header) puts every box back
 in its automatic place. Dragging never changes the structure itself; that is edited in the side
-panel. On a narrow screen the same structure appears as an outline.
+panel. On a narrow screen the same structure appears as an outline, where a small share icon marks
+agents on the team roster (other agents can hand them subtasks).
 
 ## Data Model
 

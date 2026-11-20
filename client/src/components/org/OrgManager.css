@@ -303,6 +303,12 @@
 .org-legend-line { margin-top: 0.55rem; height: 0; border-top: 1.5px solid var(--border-emphasis); }
 .org-legend-apex, .org-legend-lane { margin-top: 0.2rem; width: 14px; height: 10px; border-radius: 3px; }
 .org-legend-apex { border: 1px solid var(--accent-secondary); }
+.org-legend-escalate {
+  margin-top: 0.45rem; width: 7px; height: 7px; flex-shrink: 0;
+  border-top: 1.5px solid var(--border-emphasis); border-left: 1.5px solid var(--border-emphasis);
+  transform: rotate(45deg);
+}
+.org-outline-roster { display: inline-flex; align-items: center; margin-inline-start: auto; color: var(--text-muted); }
 .org-legend-lane { border: 1px dashed var(--border-emphasis); }
 
 /* ── Outline ────────────────────────────────────────────────────────────── */

@@ -10,7 +10,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow,
+  Background, Controls, Handle, MarkerType, Position, ReactFlow, ReactFlowProvider, useReactFlow,
   type BuiltInEdge, type Node, type NodeChange, type NodeProps, type XYPosition,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -302,6 +302,18 @@ function CanvasInner({
         targetHandle: e.kind === 'works' ? 'l' : 't',
         type: 'smoothstep',
         pathOptions: e.kind === 'works' ? { offset: SPINE_OFFSET, borderRadius: 6 } : { borderRadius: 10 },
+        // A member can escalate back to its lead: a chevron at the lead's end of
+        // the line (a start marker points back toward the source).
+        ...(e.kind === 'works'
+          ? {
+              markerStart: {
+                type: MarkerType.Arrow,
+                width: 14,
+                height: 14,
+                color: active ? 'var(--accent-primary)' : 'var(--border-emphasis)',
+              },
+            }
+          : {}),
         className: `org-edge org-edge--${e.kind}${active ? ' is-active' : ''}`,
         focusable: false,
         selectable: false,
