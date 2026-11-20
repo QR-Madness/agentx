@@ -151,10 +151,14 @@ methods where a query **cannot exist without `(user_id, ChannelRef)`**, + a CI g
 `Neo4jConnection.session()` / `raw_connection()` outside the kit. Do this *before* the
 Settings Manifest / multi-user waves so the audit surface is one module.
 
-**Being built** as Slice 1 of
+**Cypher half delivered** (2026-11-20) as Slice 1 of
 [todo/backlog/memory-store-consolidation.md](todo/backlog/memory-store-consolidation.md) (ADR-21),
 with a tighter line than the one above: the memory classes, not the whole kit, because the
-consolidation jobs and the portability code have to run on either store.
+consolidation jobs and the portability code have to run on either store. No module outside them
+holds Cypher or opens a Neo4j session (`tests_memory.MemoryStoreBoundaryTest`, empty baseline).
+**Still open:** raw SQL outside the kit (the eval harnesses' PostgreSQL cleanup, parts of
+`views.py`), and methods that cannot exist without `(user_id, ChannelRef)`; the channel and
+conversation endpoints still span users (tenancy findings in the plan), due with RLS.
 
 ### 1.6 Redis durability tiers `[REFINES: Todo "Redis/Postgres-backed live session store" + "Rolling summary as a first-class conversations column"]`
 

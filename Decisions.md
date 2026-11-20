@@ -705,9 +705,12 @@ already are one.
 **Does not change:** INV-4 (exports stay text-only; the copy command is a one-time move between two
 stores on the same embedder, not an export format) and ADR-9 (PostgreSQL changes are Alembic
 revisions; the Neo4j runner lives until the removal slice).
-**Status:** in progress. Slice 0 (live-database tests in CI) has shipped. The default flips only
-after the recall-parity gate (`eval_recall` on both backends); if parity cannot be reached, the work
-stops after Slice 1 with Neo4j in place and nothing lost.
-**Guard:** `tests_memory.MemoryStoreBoundaryTest` — Cypher strings and Neo4j session openings
-outside the memory classes may only go down (a per-module ratchet; schema-init and migration
-commands exempt). Planned: from Slice 3, CI's `backend-live` job runs the suite on both backends.
+**Status:** in progress. Slices 0 (live-database tests in CI) and 1 (one door: every Cypher query
+behind the memory classes) have shipped. The default flips only after the recall-parity gate
+(`eval_recall` on both backends); if parity cannot be reached, the work stops here with Neo4j in
+place and nothing lost.
+**Guard:** `tests_memory.MemoryStoreBoundaryTest` — no Cypher string or Neo4j session opening
+outside the memory classes (the ratchet's baseline reached zero with Slice 1; schema-init and
+migration commands exempt). Cross-user work enters only through `CrossUserStore` (its
+`entity_maintenance()` and `eval_harness()` included), the one future user of the RLS system role.
+Planned: from Slice 3, CI's `backend-live` job runs the suite on both backends.

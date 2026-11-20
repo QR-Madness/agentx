@@ -22,6 +22,7 @@ from ..connections import Neo4jConnection, get_postgres_session
 
 if TYPE_CHECKING:
     from .entity_maintenance import EntityMaintenance
+    from .eval_harness import EvalHarness
 
 logger = logging.getLogger(__name__)
 
@@ -731,3 +732,12 @@ RETURN f.id AS id, f.claim AS claim, f.user_id AS user_id
                 hash=claim_hash,
                 eid=agent_entity_id,
             ).consume()
+
+    # The eval and debug harnesses (management commands on a sterile cluster).
+
+    def eval_harness(self) -> EvalHarness:
+        """Seeding, readouts and wipes for ``eval_consolidation``, ``eval_recall`` and
+        ``debug_attribution``. Most of it spans users, so it comes through here."""
+        from .eval_harness import EvalHarness
+
+        return EvalHarness()

@@ -42,7 +42,7 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 
 from .init_memory_schema import VECTOR_INDEXES
-from .migrate_schema import _extract_version, get_neo4j_version
+from .migrate_schema import _extract_version, neo4j_schema_state
 
 
 def _find_alembic_ini() -> Path | None:
@@ -128,7 +128,7 @@ class Command(BaseCommand):
         migration, all vector indexes ONLINE, Redis answers PING. No model
         load, no writes. Any doubt → False (full init is idempotent)."""
         try:
-            from agentx_ai.kit.agent_memory.connections import Neo4jConnection, RedisConnection
+            from agentx_ai.kit.agent_memory.connections import RedisConnection
 
             migrations_dir = Path(__file__).resolve().parents[4] / "queries" / "neo4j_migrations"
             versions = [
@@ -137,18 +137,12 @@ class Command(BaseCommand):
             ]
             latest = max(versions, default=0)
 
-            driver = Neo4jConnection.get_driver()
-            with driver.session() as session:
-                current = get_neo4j_version(session)
-                if current < latest:
-                    self.stdout.write(
-                        f"  memory stamps: Neo4j schema v{current} < v{latest} — full init"
-                    )
-                    return False
-                index_states = {
-                    r["name"]: r["state"]
-                    for r in session.run("SHOW INDEXES YIELD name, state RETURN name, state")
-                }
+            current, index_states = neo4j_schema_state()
+            if current < latest:
+                self.stdout.write(
+                    f"  memory stamps: Neo4j schema v{current} < v{latest} — full init"
+                )
+                return False
             stale = [
                 n for n in VECTOR_INDEXES
                 if index_states.get(n) != "ONLINE"

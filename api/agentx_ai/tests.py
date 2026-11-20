@@ -19296,7 +19296,7 @@ class _BootstrapTestBase(TestCase):
         with patch("agentx_ai.management.commands.bootstrap.call_command", nested), \
              patch("agentx_ai.management.commands.bootstrap.Command._alembic_upgrade",
                    return_value="testhead"), \
-             patch("agentx_ai.management.commands.bootstrap.get_neo4j_version",
+             patch("agentx_ai.management.commands.migrate_schema.get_neo4j_version",
                    return_value=neo4j_version), \
              patch("agentx_ai.kit.agent_memory.connections.Neo4jConnection.get_driver",
                    return_value=driver), \
