@@ -408,13 +408,12 @@ class Command(BaseCommand):
         MERGE it directly, record the tool invocations, then seed the Outcome
         that detect_patterns() gates on.
         """
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
         from agentx_ai.kit.agent_memory.memory.procedural import ProceduralMemory
         channel = CHANNEL_PREFIX + case.name
         conv_id = str(uuid4())
-        with Neo4jConnection.session() as s:
-            s.run("MERGE (c:Conversation {id:$id}) SET c.channel = $ch",
-                  id=conv_id, ch=channel).consume()
+        harness = CrossUserStore().eval_harness()
+        harness.seed_conversation(conv_id, channel)
         proc = ProceduralMemory()
         for i, tool in enumerate(case.tool_sequence):
             proc.record_invocation(
@@ -422,34 +421,18 @@ class Command(BaseCommand):
                 tool_input={}, tool_output="ok", success=True, latency_ms=10,
                 channel=channel, turn_index=i,
             )
-        with Neo4jConnection.session() as s:
-            s.run(
-                """
-                MATCH (c:Conversation {id:$id})
-                CREATE (o:Outcome {success:$success, task_type:$task_type, channel:$ch})
-                MERGE (c)-[:RESULTED_IN]->(o)
-                """,
-                id=conv_id, success=case.outcome_success,
-                task_type=case.task_type, ch=channel,
-            ).consume()
+        harness.seed_outcome(conv_id, case.outcome_success, case.task_type, channel)
 
     # -- scoring -------------------------------------------------------------
     @staticmethod
     def _stored(channel):
         """Structured channel contents: entities carry aliases (dedup-quality
         assertions need them), facts carry provenance, plus RELATES_TO pairs."""
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
-        with Neo4jConnection.session() as s:
-            facts = [{"claim": r["c"], "source_turn_id": r["st"]} for r in s.run(
-                "MATCH (f:Fact {channel:$ch}) RETURN f.claim AS c, "
-                "f.source_turn_id AS st", ch=channel)]
-            ents = [{"id": r["id"], "name": r["n"], "aliases": r["a"] or []}
-                    for r in s.run(
-                        "MATCH (e:Entity {channel:$ch}) RETURN e.id AS id, "
-                        "e.name AS n, coalesce(e.aliases, []) AS a", ch=channel)]
-            rels = [(r["src"], r["t"], r["tgt"]) for r in s.run(
-                "MATCH (a:Entity {channel:$ch})-[r:RELATES_TO]->(b:Entity {channel:$ch}) "
-                "RETURN a.name AS src, r.type AS t, b.name AS tgt", ch=channel)]
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        fact_rows, entity_rows, rel_rows = CrossUserStore().eval_harness().channel_contents(channel)
+        facts = [{"claim": r["c"], "source_turn_id": r["st"]} for r in fact_rows]
+        ents = [{"id": r["id"], "name": r["n"], "aliases": r["a"] or []} for r in entity_rows]
+        rels = [(r["src"], r["t"], r["tgt"]) for r in rel_rows]
         return {"facts": facts, "entities": ents, "relationships": rels}
 
     @staticmethod
@@ -564,15 +547,8 @@ class Command(BaseCommand):
         through the edge back to the eval Conversation (which IS channel-tagged)
         rather than by channel/context_pattern.
         """
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
-        with Neo4jConnection.session() as s:
-            rec = s.run(
-                """
-                MATCH (c:Conversation {channel:$ch})<-[:SUCCEEDED_IN]-(s:Strategy)
-                RETURN s.tool_sequence AS tools, s.description AS d LIMIT 1
-                """,
-                ch=channel,
-            ).single()
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        rec = CrossUserStore().eval_harness().learned_strategy(channel)
         if not rec:
             return None
         return {"tools": rec["tools"] or [], "description": rec["d"] or ""}
@@ -609,23 +585,15 @@ class Command(BaseCommand):
 
     # -- cleanup -------------------------------------------------------------
     def _cleanup(self, cases):
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection, get_postgres_session
+        from agentx_ai.kit.agent_memory.connections import get_postgres_session
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
         from sqlalchemy import text
         # Tools created by procedural cases are global (no channel) — collect
-        # their names so we can delete them explicitly.
+        # their names so we can delete them explicitly. Strategies aren't
+        # channel-tagged; the store deletes them through the SUCCEEDED_IN edge
+        # back to the eval conversations BEFORE those conversations are gone.
         eval_tools = sorted({t for c in cases if c.is_procedural for t in c.tool_sequence})
-        with Neo4jConnection.session() as s:
-            # Strategies aren't channel-tagged — delete via the SUCCEEDED_IN edge
-            # back to the eval conversations BEFORE those conversations are gone.
-            s.run("""
-                MATCH (c:Conversation) WHERE c.channel STARTS WITH $p
-                MATCH (c)<-[:SUCCEEDED_IN]-(s:Strategy) DETACH DELETE s
-            """, p=CHANNEL_PREFIX).consume()
-            s.run("MATCH (n) WHERE n.channel STARTS WITH $p DETACH DELETE n", p=CHANNEL_PREFIX).consume()
-            s.run("MATCH (c:Conversation) WHERE c.channel STARTS WITH $p DETACH DELETE c", p=CHANNEL_PREFIX).consume()
-            s.run("MATCH (u:User {id:$uid}) DETACH DELETE u", uid=EVAL_USER).consume()
-            if eval_tools:
-                s.run("MATCH (t:Tool) WHERE t.name IN $names DETACH DELETE t", names=eval_tools).consume()
+        CrossUserStore().eval_harness().wipe_eval_run(CHANNEL_PREFIX, EVAL_USER, eval_tools)
         try:
             with get_postgres_session() as ses:
                 for tbl in ("conversation_logs", "tool_invocations"):

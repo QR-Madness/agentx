@@ -47,6 +47,22 @@ def get_neo4j_version(session) -> int:
         return 0
 
 
+def neo4j_schema_state() -> tuple[int, dict[str, str]]:
+    """The applied Neo4j schema version and each index's state (``ONLINE`` …), for
+    the bootstrap command's readiness check. Schema introspection is backend-specific,
+    so it lives here with the migrations, outside the memory store."""
+    from agentx_ai.kit.agent_memory.connections import Neo4jConnection
+
+    driver = Neo4jConnection.get_driver()
+    with driver.session() as session:
+        current = get_neo4j_version(session)
+        index_states = {
+            r["name"]: r["state"]
+            for r in session.run("SHOW INDEXES YIELD name, state RETURN name, state")
+        }
+    return current, index_states
+
+
 class Command(BaseCommand):
     help = "Apply pending Neo4j schema migrations (PostgreSQL is managed by Alembic)"
 

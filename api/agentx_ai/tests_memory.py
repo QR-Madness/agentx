@@ -6827,13 +6827,10 @@ class MemoryStoreBoundaryTest(TestCase):
     STORE = ("kit/agent_memory/memory/", "kit/agent_memory/query_utils.py", "kit/agent_memory/connections.py")
     BACKEND_SPECIFIC = ("management/commands/init_memory_schema.py", "management/commands/migrate_schema.py")
 
-    # module → (Cypher strings, Neo4j session/driver openings), measured 2026-11-17.
-    BASELINE: dict[str, tuple[int, int]] = {
-        "management/commands/bootstrap.py": (0, 1),
-        "management/commands/debug_attribution.py": (2, 2),
-        "management/commands/eval_consolidation.py": (11, 5),
-        "management/commands/eval_recall.py": (3, 2),
-    }
+    # module → (Cypher strings, Neo4j session/driver openings). Measured 2026-11-17 at
+    # 127 strings and 37 openings in 14 modules; empty since 2026-11-20 (Slice 1 done):
+    # no module outside the memory classes may hold Cypher or open a Neo4j session.
+    BASELINE: dict[str, tuple[int, int]] = {}
 
     _CYPHER = re.compile(
         r"\b(?:OPTIONAL\s+MATCH|MATCH|MERGE|CREATE)\s*\(|\bCALL\s+(?:db|apoc|gds)\."
@@ -7780,3 +7777,80 @@ class EntityMaintenanceTest(TestCase):
                         "f1", renamed, compute_claim_hash(renamed), "agent:u1:a1")
                 else:
                     attribute.assert_not_called()  # a dry run writes nothing
+
+
+class EvalHarnessStoreTest(TestCase):
+    """memory/eval_harness.py via CrossUserStore.eval_harness(): the eval and debug
+    harnesses' seeding, readouts and wipes (ADR-21, Slice 1d). The live
+    EvalRecallSeedAndArmTest runs the user and prefix wipes for real; these pin the
+    glue."""
+
+    @staticmethod
+    def _session():
+        session = MagicMock()
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        return cm, session
+
+    def _harness(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        from agentx_ai.kit.agent_memory.memory.eval_harness import EvalHarness
+        harness = CrossUserStore().eval_harness()
+        self.assertIsInstance(harness, EvalHarness)
+        return harness
+
+    def test_eval_run_wipe_runs_in_order_and_skips_tools_when_none(self):
+        harness = self._harness()
+        cm, session = self._session()
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            harness.wipe_eval_run("_evalc_", "eval-user", ["search", "calc"])
+            queries = [c.args[0] for c in session.run.call_args_list]
+            self.assertEqual(len(queries), 5)
+            self.assertIn("SUCCEEDED_IN", queries[0])  # strategies before their conversations
+            self.assertIn("MATCH (n) WHERE n.channel STARTS WITH $p", queries[1])
+            self.assertIn("MATCH (c:Conversation) WHERE c.channel STARTS WITH $p DETACH DELETE c", queries[2])
+            self.assertIn("MATCH (u:User {id:$uid})", queries[3])
+            self.assertEqual(session.run.call_args_list[4].kwargs, {"names": ["search", "calc"]})
+            session.run.reset_mock()
+            harness.wipe_eval_run("_evalc_", "eval-user", [])
+            self.assertEqual(session.run.call_count, 4)  # no tool wipe without names
+
+    def test_channel_contents_reads_three_families_in_one_session(self):
+        harness = self._harness()
+        cm, session = self._session()
+        session.run.side_effect = [iter([{"c": "claim", "st": "t1"}]),
+                                   iter([{"id": "e1", "n": "Kyoto", "a": []}]),
+                                   iter([{"src": "Kyoto", "t": "near", "tgt": "Osaka"}])]
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session',
+                   return_value=cm) as opener:
+            facts, entities, rels = harness.channel_contents("_evalc_case")
+        opener.assert_called_once()
+        self.assertEqual((facts[0]["c"], entities[0]["n"], rels[0]["t"]), ("claim", "Kyoto", "near"))
+        self.assertEqual([c.kwargs for c in session.run.call_args_list], [{"ch": "_evalc_case"}] * 3)
+
+    def test_writes_raise_their_own_errors(self):
+        harness = self._harness()
+        cm, session = self._session()
+        session.run.return_value.consume.side_effect = RuntimeError("write failed")
+        writes = {
+            "wipe_user": lambda: harness.wipe_user("u"),
+            "reset_access_stats": lambda: harness.reset_access_stats("u"),
+            "wipe_channel_prefix": lambda: harness.wipe_channel_prefix("_eval"),
+            "seed_conversation": lambda: harness.seed_conversation("c1", "_eval_x"),
+            "seed_outcome": lambda: harness.seed_outcome("c1", True, "research", "_eval_x"),
+            "wipe_eval_run": lambda: harness.wipe_eval_run("_eval", "u", []),
+        }
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            for name, write in writes.items():
+                with self.subTest(write=name), self.assertRaises(RuntimeError):
+                    write()
+
+    def test_debug_harness_reads_live_facts_with_their_entities(self):
+        from agentx_ai.management.commands.debug_attribution import Command
+        rows = [{"claim": "Mobius prefers brevity", "about": ["Mobius", None]}]
+        with patch('agentx_ai.kit.agent_memory.memory.eval_harness.EvalHarness.live_facts_about',
+                   return_value=rows) as read:
+            facts = Command()._facts_in("debug-user", "_default")
+        read.assert_called_once_with("debug-user", "_default")
+        self.assertEqual(facts, [{"claim": "Mobius prefers brevity", "about": ["Mobius"]}])

@@ -133,7 +133,7 @@ runs the suite against both backends.
 
 - [x] **Slice 0 — live tests in CI** (PR #96, 2026-11-11). The database-backed tests now run
       against real services on every PR. Without this, nothing below could be verified.
-- [ ] **Slice 1 — one door** (4–6 days). Move the 125 Cypher strings outside the memory classes
+- [x] **Slice 1 — one door** (4–6 days; done 2026-11-20, PRs #116 and #119–#125). Move the 125 Cypher strings outside the memory classes
       behind methods on them: 1a consolidation jobs, 1b `views.py`, 1c portability, 1d commands and
       maintenance. No behaviour change; tests move from query text to store calls. Schema-init and
       migration commands stay backend-specific. This is
@@ -213,6 +213,16 @@ runs the suite against both backends.
         unchanged apart from whitespace; a throwaway-stack smoke passed (dry-run rollback,
         in-channel, cross-channel and semantic merges, the backfill). 16 strings and 10 openings
         remain, in 4 modules: the eval and debug harnesses and `bootstrap` (1d, part 2).
+  - [x] **1d, part 2 — the harnesses and bootstrap** (2026-11-20): `eval_consolidation`,
+        `eval_recall` and `debug_attribution` seed, read back and wipe through
+        `memory/eval_harness.py::EvalHarness`, reachable only via `CrossUserStore().eval_harness()`
+        (prefix wipes, channel readouts and user-less seeds span users). 16 queries moved
+        unchanged apart from whitespace, but for one deliberate merge: the two copies of the
+        user wipe (`$u` and `$uid`) are now one method. `bootstrap`'s readiness check reads the
+        schema version and index states through `migrate_schema.neo4j_schema_state()`, beside the
+        migrations, instead of opening a session itself. A throwaway-stack smoke passed (7 checks).
+        **The guard's baseline is now empty: no module outside the memory classes holds Cypher
+        or opens a Neo4j session**, schema tooling aside. Slice 1 is done.
 - [ ] **Slice 2 — schema and RLS** (1–2 days). Alembic revisions for the tables, indexes and
       policies. Empty tables; nothing reads them yet.
 - [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`.

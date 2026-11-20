@@ -185,22 +185,13 @@ class Command(BaseCommand):
         return conv_id
 
     def _wipe_user(self, user_id: str) -> None:
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
-        with Neo4jConnection.session() as s:
-            s.run("MATCH (n) WHERE n.user_id = $u DETACH DELETE n", u=user_id)
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        CrossUserStore().eval_harness().wipe_user(user_id)
 
     # ── reporting ─────────────────────────────────────────────────────────────
     def _facts_in(self, user_id: str, channel: str):
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
-        with Neo4jConnection.session() as s:
-            rows = s.run(
-                """
-                MATCH (f:Fact {user_id: $u, channel: $c})
-                WHERE f.superseded_at IS NULL
-                OPTIONAL MATCH (f)-[:ABOUT]->(e:Entity)
-                RETURN f.claim AS claim, collect(e.name) AS about
-                ORDER BY claim
-                """, u=user_id, c=channel).data()
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        rows = CrossUserStore().eval_harness().live_facts_about(user_id, channel)
         return [{"claim": r["claim"], "about": [a for a in r["about"] if a]} for r in rows]
 
     def handle(self, *args, **opts):

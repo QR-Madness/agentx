@@ -195,21 +195,16 @@ class Command(BaseCommand):
 
     def _reset_access_stats(self):
         """Zero the access reinforcement recall writes as a side effect (D4)."""
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection
-        with Neo4jConnection.session() as s:
-            s.run(
-                "MATCH (n) WHERE n.user_id = $uid "
-                "SET n.access_count = 0, n.last_accessed = null",
-                uid=EVAL_USER,
-            ).consume()
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        CrossUserStore().eval_harness().reset_access_stats(EVAL_USER)
 
     def _cleanup(self):
-        from agentx_ai.kit.agent_memory.connections import Neo4jConnection, get_postgres_session
+        from agentx_ai.kit.agent_memory.connections import get_postgres_session
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
         from sqlalchemy import text
-        with Neo4jConnection.session() as s:
-            s.run("MATCH (n) WHERE n.user_id = $uid DETACH DELETE n", uid=EVAL_USER).consume()
-            s.run("MATCH (n) WHERE n.channel STARTS WITH $p DETACH DELETE n",
-                  p=CHANNEL_PREFIX).consume()
+        harness = CrossUserStore().eval_harness()
+        harness.wipe_user(EVAL_USER)
+        harness.wipe_channel_prefix(CHANNEL_PREFIX)
         try:
             with get_postgres_session() as ses:
                 for tbl in ("conversation_logs", "memory_audit_log"):
