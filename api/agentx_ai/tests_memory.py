@@ -7854,3 +7854,26 @@ class EvalHarnessStoreTest(TestCase):
             facts = Command()._facts_in("debug-user", "_default")
         read.assert_called_once_with("debug-user", "_default")
         self.assertEqual(facts, [{"claim": "Mobius prefers brevity", "about": ["Mobius"]}])
+
+
+class EmbeddingDimensionTest(TestCase):
+    """EmbeddingProvider.output_dimensions across sentence-transformers' rename of
+    get_sentence_embedding_dimension (5.x warns on the old name; <5 lacks the new one)."""
+
+    @staticmethod
+    def _provider(model):
+        from agentx_ai.kit.agent_memory.embeddings import EmbeddingProvider
+        provider = EmbeddingProvider.__new__(EmbeddingProvider)  # no settings read
+        provider.provider = "local"
+        provider._model = model
+        return provider
+
+    def test_prefers_the_new_name_and_falls_back_to_the_old(self):
+        current = MagicMock(spec=["get_embedding_dimension", "get_sentence_embedding_dimension"])
+        current.get_embedding_dimension.return_value = 1024
+        self.assertEqual(self._provider(current).output_dimensions, 1024)
+        current.get_sentence_embedding_dimension.assert_not_called()  # no FutureWarning path
+
+        older = MagicMock(spec=["get_sentence_embedding_dimension"])
+        older.get_sentence_embedding_dimension.return_value = 768
+        self.assertEqual(self._provider(older).output_dimensions, 768)
