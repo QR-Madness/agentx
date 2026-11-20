@@ -8835,6 +8835,39 @@ def alloy_workflows_list(request):
 
 
 @csrf_exempt
+def alloy_organization(request):
+    """
+    GET /api/alloy/organization — the org chart's stored layout.
+    PUT /api/alloy/organization — replace it: ``{"layout": {"positions": {key: {x, y}}}}``,
+        keys ``agent:{agent_id}`` / ``team:{workflow_id}``. Empty positions reset the
+        chart to its derived layout. Layout only: structure always derives.
+    """
+    from .alloy.organization import get_organization_layout_store
+
+    if request.method == 'OPTIONS':
+        return JsonResponse({}, status=200)
+
+    store = get_organization_layout_store()
+
+    if request.method == 'GET':
+        return JsonResponse({"layout": store.layout()})
+
+    if request.method == 'PUT':
+        data, error = parse_json_body(request)
+        if error:
+            return error
+        layout = data.get("layout") if isinstance(data, dict) else None
+        if not isinstance(layout, dict) or "positions" not in layout:
+            return json_error("Body must be {\"layout\": {\"positions\": {...}}}", status=400)
+        try:
+            return JsonResponse({"layout": store.replace(layout["positions"])})
+        except ValueError as e:
+            return json_error(str(e), status=400)
+
+    return json_error("Method not allowed", status=405)
+
+
+@csrf_exempt
 def alloy_workflow_detail(request, workflow_id):
     """
     GET    /api/alloy/workflows/{id} — fetch a workflow.

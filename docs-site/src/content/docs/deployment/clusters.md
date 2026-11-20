@@ -30,6 +30,7 @@ clusters/
     │   ├── agent_profiles.yaml
     │   ├── prompt_templates.yaml
     │   ├── workflows.yaml
+    │   ├── organization.yaml # org chart layout, created on the first drag
     │   └── memory_settings.json
     ├── db/                   # bind-mounted database storage
     │   ├── neo4j/  postgres/  redis/

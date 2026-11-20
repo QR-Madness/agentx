@@ -14,13 +14,17 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, ChevronLeft, LayoutDashboard, ListTree, Network, Plus, Search, X } from 'lucide-react';
+import {
+  AlertTriangle, ChevronLeft, LayoutDashboard, ListTree, Network, Plus, RotateCcw, Search, X,
+} from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
 import { useModal } from '../../contexts/ModalContext';
 import { useNotify } from '../../contexts/NotificationContext';
-import type { AgentProfile } from '../../lib/api';
-import { buildOrgModel, layoutOrgChart, type OrgIssue } from '../../lib/orgChart';
+import { api, type AgentProfile, type LayoutPositions } from '../../lib/api';
+import {
+  buildOrgModel, layoutOrgChart, pruneLayoutPositions, type OrgIssue,
+} from '../../lib/orgChart';
 import { orgPlacement } from '../../lib/orgPlacement';
 import { SURFACES } from '../../lib/surfaces';
 import { Button } from '../ui/Button';
@@ -95,6 +99,74 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
     for (const p of profiles) map.set(p.agentId, p);
     return map;
   }, [profiles]);
+
+  // Where the user dragged boxes on the chart (the org layout store). Until it
+  // loads, or when the server predates it, the chart is the derived layout and
+  // nothing moves.
+  const [positions, setPositions] = useState<LayoutPositions>({});
+  const [layoutReady, setLayoutReady] = useState(false);
+  const [fitKey, setFitKey] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    api.getOrganizationLayout()
+      .then(({ layout: stored }) => {
+        if (cancelled) return;
+        setPositions(stored.positions ?? {});
+        setLayoutReady(true);
+        setFitKey((k) => k + 1);
+      })
+      .catch(() => {
+        // No layout store on this server: keep the derived chart, read-only.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Drags save together a moment after the last one; closing flushes the save.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingLayout = useRef<LayoutPositions | null>(null);
+  const flushLayout = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const next = pendingLayout.current;
+    pendingLayout.current = null;
+    if (next) api.putOrganizationLayout(next).catch((err) => notifyError(err, 'Save chart layout'));
+  }, [notifyError]);
+  useEffect(() => flushLayout, [flushLayout]);
+
+  const moveNode = useCallback(
+    (key: string, position: { x: number; y: number }) => {
+      setPositions((prev) => {
+        const next = pruneLayoutPositions({ ...prev, [key]: position }, layout);
+        pendingLayout.current = next;
+        return next;
+      });
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(flushLayout, 400);
+    },
+    [layout, flushLayout],
+  );
+
+  const resetLayout = useCallback(async () => {
+    const ok = await confirm({
+      title: 'Reset the chart layout?',
+      body: 'Every box you moved goes back to its automatic place. The organization itself is unchanged.',
+      confirmLabel: 'Reset layout',
+      danger: true,
+    });
+    if (!ok) return;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    pendingLayout.current = null;
+    setPositions({});
+    setFitKey((k) => k + 1);
+    api.putOrganizationLayout({}).catch((err) => notifyError(err, 'Reset chart layout'));
+  }, [confirm, notifyError]);
 
   // Unsaved edits live in the team editor; it reports them here so every way
   // out of the editor asks first.
@@ -332,6 +404,15 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
               placeholder={narrow ? 'Find…' : 'Find an agent or team…'}
               aria-label="Find an agent or team"
             />
+            {!narrow && layoutReady && Object.keys(positions).length > 0 && (
+              <IconButton
+                aria-label="Reset the chart layout"
+                title="Reset the chart layout"
+                onClick={() => void resetLayout()}
+              >
+                <RotateCcw size={16} />
+              </IconButton>
+            )}
             {!narrow && (
               <IconButton
                 active={showOutline}
@@ -387,6 +468,9 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
               onSelectAgent={selectAgent}
               onSelectTeam={selectTeam}
               onClear={clearSelection}
+              positions={positions}
+              onMoveNode={layoutReady ? moveNode : undefined}
+              fitKey={fitKey}
             />
           )}
 

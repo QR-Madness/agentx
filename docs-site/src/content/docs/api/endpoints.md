@@ -1114,6 +1114,8 @@ POST   /api/alloy/workflows
 GET    /api/alloy/workflows/{workflow_id}
 PATCH  /api/alloy/workflows/{workflow_id}
 DELETE /api/alloy/workflows/{workflow_id}
+GET    /api/alloy/organization
+PUT    /api/alloy/organization
 ```
 
 **Workflow object** (responses wrap a single workflow as `{"workflow": {...}}`):
@@ -1150,6 +1152,19 @@ only (enforced at the tool enum AND the executor), and a delegated lead works it
 members as nested `delegation_*` events (`parent_delegation_id` links them). PATCHing
 `manager_agent_id: null` makes the team org-free again — org-free installs keep the flat
 opt-in roster unchanged.
+
+**Organization chart layout** (`/api/alloy/organization`) stores where the user dragged boxes
+on the Organization chart — **layout only**; the structure always derives from profiles and
+workflows. `GET` returns `{"layout": {"positions": {...}}}` (empty until the first drag);
+`PUT` with the same body **replaces** every position, and empty `positions` resets the chart
+to its derived layout. Keys are ids, never names, so a rename keeps its place: `agent:{agent_id}`
+for managers and ambassadors, `team:{workflow_id}` for whole teams (leads and members move with
+their team). `400` on a key of any other shape, a non-numeric or out-of-range coordinate (±1e6),
+or more than 2,000 entries. Persisted to `data/organization.yaml`.
+```json
+{ "layout": { "positions": { "agent:bold-cosmic-falcon": { "x": 120, "y": 40 },
+                             "team:research-team": { "x": 400, "y": 300 } } } }
+```
 
 ---
 

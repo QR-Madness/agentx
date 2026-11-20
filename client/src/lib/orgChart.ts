@@ -13,7 +13,7 @@
  * canvas does not jump between renders.
  */
 
-import type { AgentProfile, AlloyWorkflow } from './api/types';
+import type { AgentProfile, AlloyWorkflow, LayoutPositions } from './api/types';
 
 export type StructuralTier = 'manager' | 'lead' | 'member';
 
@@ -291,6 +291,34 @@ function groupHeight(leadCount: number, memberCount: number): number {
   const rows = leadCount * (CHART.agentH + CHART.memberGap) + memberCount * (CHART.memberH + CHART.memberGap);
   // Header, the rows, and bottom padding (the last row's gap doubles as part of it).
   return CHART.teamHeadH + Math.max(rows, CHART.memberH) + CHART.teamPad;
+}
+
+/**
+ * The stored-layout key of a box the user may drag, or null for one that stays where
+ * the derived layout puts it. Only top-level boxes move — ambassadors, managers and
+ * whole teams; leads, members and lane cards sit inside a parent. Keys are ids, never
+ * names, so a rename keeps its position (INV-3).
+ */
+export function layoutKeyOf(node: ChartNode): string | null {
+  if (node.parentId) return null;
+  if (node.kind === 'team' && node.teamId) return `team:${node.teamId}`;
+  if ((node.kind === 'manager' || node.kind === 'ambassador') && node.agentId) {
+    return `agent:${node.agentId}`;
+  }
+  return null;
+}
+
+/** Keep only the positions of boxes still on the chart (a deleted team, a demoted manager). */
+export function pruneLayoutPositions(
+  positions: LayoutPositions,
+  layout: OrgChartLayout,
+): LayoutPositions {
+  const live = new Set<string>();
+  for (const node of layout.nodes) {
+    const key = layoutKeyOf(node);
+    if (key) live.add(key);
+  }
+  return Object.fromEntries(Object.entries(positions).filter(([key]) => live.has(key)));
 }
 
 export const chartNodeId = {
