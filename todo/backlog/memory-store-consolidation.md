@@ -173,6 +173,20 @@ runs the suite against both backends.
         leaves the channel's procedures behind; `DELETE /api/memory/conversations/{id}` doesn't
         check the conversation's owner. All single-user today; each becomes a real leak with a
         second user. Scope them when RLS lands (Slice 2/3), or sooner if multi-user comes first.
+  - [x] **1a, part 1 — the background jobs** (2026-11-19): decay, cleanup, reset, promotion to
+        `_global`, pattern detection, the conversation-owner lookup and the entity-link backfill
+        (with its embedding backfill) now call `CrossUserStore`, because each one spans every
+        user; the backfill's per-scope name index reads `SemanticMemory.entity_name_rows`.
+        25 queries moved unchanged apart from whitespace (checked string by string); the jobs
+        keep their names, return dicts and log lines. The store's writes now consume their
+        results: with one session per call, an error arriving after `run()` returns (a failed
+        auto-commit) would otherwise be swallowed when the session closes. 44 strings and 14
+        openings remain, in 8 modules: the consolidation sweep (1a part 2, whose helpers share
+        one session) and the management commands (1d).
+        **Gap for Slice 3:** no live test covers these methods. They span every user and some
+        destroy data, so they can't run against a developer's live store. A one-off smoke on a
+        throwaway stack passed (11 checks); the PostgreSQL twin needs them as live contract
+        tests gated on a sterile store.
 - [ ] **Slice 2 — schema and RLS** (1–2 days). Alembic revisions for the tables, indexes and
       policies. Empty tables; nothing reads them yet.
 - [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`.

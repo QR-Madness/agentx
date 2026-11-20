@@ -193,6 +193,27 @@ class SemanticMemory:
                 return None
             return dict(record)
 
+    def entity_name_rows(self, user_id: str, channel: str) -> list[dict[str, Any]]:
+        """Every entity in `channel` plus ``_global`` for one user, as ``id``, ``name``,
+        ``aliases`` and ``salience``, least salient first.
+
+        The bulk counterpart of :meth:`find_entity_by_name_or_alias`: the entity-link
+        backfill builds one name index per (user, channel) from these rows, and the
+        ascending order lets a more salient entity overwrite a less salient one that
+        shares a name.
+        """
+        with Neo4jConnection.session() as session:
+            rows = session.run("""
+        MATCH (e:Entity)
+        WHERE e.user_id = $user_id
+          AND (e.channel = $channel OR e.channel = '_global')
+        RETURN e.id AS id, e.name AS name,
+               coalesce(e.aliases, []) AS aliases,
+               coalesce(e.salience, 0.5) AS salience
+        ORDER BY coalesce(e.salience, 0.5) ASC
+    """, user_id=user_id, channel=channel)
+            return [dict(r) for r in rows]
+
     def merge_entity_aliases(
         self,
         entity_id: str,
