@@ -65,7 +65,11 @@ class EmbeddingProvider:
             self._init_local()
             assert self._model is not None
 
-        dims = self._model.get_sentence_embedding_dimension()
+        # sentence-transformers 5.x renamed get_sentence_embedding_dimension to
+        # get_embedding_dimension (the old name still works but warns); older
+        # versions (pyproject allows >=2.2) only have the old name.
+        get_dims = getattr(self._model, "get_embedding_dimension", None)
+        dims = get_dims() if get_dims else self._model.get_sentence_embedding_dimension()
         assert dims is not None, "Model did not report embedding dimensions"
         return dims
 
