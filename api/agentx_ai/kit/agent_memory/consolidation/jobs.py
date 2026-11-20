@@ -2303,66 +2303,33 @@ def detect_patterns() -> dict[str, Any]:
     Returns:
         Dictionary with pattern detection metrics
     """
+    from ..memory.cross_user import CrossUserStore
+
     patterns_extracted = 0
+    store = CrossUserStore()
 
-    with Neo4jConnection.session() as session:
-        # Find conversations with successful outcomes
-        result = session.run("""
-            MATCH (c:Conversation)-[:RESULTED_IN]->(o:Outcome {success: true})
-            WHERE c.patterns_extracted IS NULL
-            WITH c, o
-            MATCH (c)-[:USED_TOOL]->(inv:ToolInvocation)-[:INVOKED]->(t:Tool)
-            WITH c, o, collect(DISTINCT t.name) AS tools
-            WHERE size(tools) > 0
-            RETURN c.id AS conversation_id,
-                   tools,
-                   o.task_type AS task_type
-            LIMIT 20
-        """)
+    # Conversations with successful outcomes whose pattern isn't extracted yet (≤20).
+    records = store.successful_conversations_without_patterns()
 
-        embedder = get_embedder()
+    embedder = get_embedder()
 
-        # Materialize (≤20 by LIMIT) and embed every strategy description in one
-        # batched call instead of one embed per record.
-        records = list(result)
-        descs = [
-            f"Use {', '.join(r['tools'])} for {r.get('task_type', 'general')} tasks"
-            for r in records
-        ]
-        embeddings = embedder.embed(descs, timeout=_BG_EMBED_TIMEOUT_S) if records else []
+    # Embed every strategy description in one batched call instead of one embed
+    # per record.
+    descs = [
+        f"Use {', '.join(r['tools'])} for {r.get('task_type', 'general')} tasks"
+        for r in records
+    ]
+    embeddings = embedder.embed(descs, timeout=_BG_EMBED_TIMEOUT_S) if records else []
 
-        for record, strategy_desc, embedding in zip(records, descs, embeddings, strict=True):
-            conv_id = record["conversation_id"]
-            tools = record["tools"]
-            task_type = record.get("task_type", "general")
+    for record, strategy_desc, embedding in zip(records, descs, embeddings, strict=True):
+        conv_id = record["conversation_id"]
+        tools = record["tools"]
+        task_type = record.get("task_type", "general")
 
-            session.run("""
-                MERGE (s:Strategy {context_pattern: $task_type, tool_sequence: $tools})
-                ON CREATE SET
-                    s.id = randomUUID(),
-                    s.description = $description,
-                    s.embedding = $embedding,
-                    s.success_count = 1,
-                    s.failure_count = 0,
-                    s.created_at = datetime()
-                ON MATCH SET
-                    s.success_count = s.success_count + 1,
-                    s.last_used = datetime()
+        store.record_pattern_success(task_type, tools, strategy_desc, embedding, conv_id)
 
-                WITH s
-                MATCH (c:Conversation {id: $conv_id})
-                MERGE (s)-[:SUCCEEDED_IN]->(c)
-                SET c.patterns_extracted = true
-            """,
-                task_type=task_type,
-                tools=tools,
-                description=strategy_desc,
-                embedding=embedding,
-                conv_id=conv_id
-            )
-
-            patterns_extracted += 1
-            logger.info(f"Extracted pattern from {conv_id}: {tools}")
+        patterns_extracted += 1
+        logger.info(f"Extracted pattern from {conv_id}: {tools}")
 
     return {"items_processed": patterns_extracted}
 
@@ -2383,17 +2350,12 @@ def _derive_procedure_scope(signal: str, channel: str | None, agent_id: str | No
 
 def _resolve_user_for_conversation(conversation_id: Any) -> str:
     """Resolve the owning user_id for a conversation (defaults to 'default')."""
+    from ..memory.cross_user import CrossUserStore
+
     try:
-        with Neo4jConnection.session() as session:
-            rec = session.run(
-                """
-                MATCH (u:User)-[:HAS_CONVERSATION]->(c:Conversation {id: $id})
-                RETURN u.id AS uid LIMIT 1
-            """,
-                id=str(conversation_id),
-            ).single()
-            if rec and rec["uid"]:
-                return rec["uid"]
+        uid = CrossUserStore().owner_of_conversation(str(conversation_id))
+        if uid:
+            return uid
     except Exception as e:  # noqa: BLE001
         logger.debug(f"User resolve for conversation {conversation_id} failed: {e}")
     return "default"
@@ -2537,35 +2499,16 @@ def apply_memory_decay() -> dict[str, Any]:
     Returns:
         Dictionary with decay metrics
     """
+    from ..memory.cross_user import CrossUserStore
+
     decay_rate = get_settings().salience_decay_rate
-    entities_decayed = 0
-    facts_decayed = 0
 
-    with Neo4jConnection.session() as session:
-        # Decay entity salience
-        result = session.run("""
-            MATCH (e:Entity)
-            WHERE e.last_accessed < datetime() - duration('P1D')
-            SET e.salience = e.salience * $decay_rate
-            RETURN count(e) AS decayed_count
-        """, decay_rate=decay_rate)
-
-        record = result.single()
-        entities_decayed = record["decayed_count"] if record else 0
-        logger.info(f"Decayed {entities_decayed} entities")
-
-        # Decay fact confidence (slower decay)
-        result = session.run("""
-            MATCH (f:Fact)
-            WHERE f.created_at < datetime() - duration('P7D')
-              AND f.source = 'inferred'
-            SET f.confidence = f.confidence * $decay_rate
-            RETURN count(f) AS decayed_count
-        """, decay_rate=decay_rate ** 0.5)  # Slower decay for facts
-
-        record = result.single()
-        facts_decayed = record["decayed_count"] if record else 0
-        logger.info(f"Decayed {facts_decayed} facts")
+    # Facts decay more slowly than entities: the square root of the entity rate.
+    entities_decayed, facts_decayed = CrossUserStore().decay_salience(
+        decay_rate, decay_rate ** 0.5,
+    )
+    logger.info(f"Decayed {entities_decayed} entities")
+    logger.info(f"Decayed {facts_decayed} facts")
 
     return {
         "items_processed": entities_decayed + facts_decayed,
@@ -2591,6 +2534,7 @@ def promote_to_global() -> dict[str, Any]:
         Dictionary with promotion results
     """
     from ..audit import MemoryAuditLogger
+    from ..memory.cross_user import CrossUserStore
 
     settings = get_settings()
     min_confidence = settings.promotion_min_confidence
@@ -2604,163 +2548,80 @@ def promote_to_global() -> dict[str, Any]:
     errors: list[str] = []
 
     audit_logger = MemoryAuditLogger(settings)
+    store = CrossUserStore()
 
-    with Neo4jConnection.session() as session:
-        # Find entities meeting promotion criteria
-        result = session.run("""
-            MATCH (e:Entity)
-            WHERE e.channel IS NOT NULL
-              AND e.channel <> '_global'
-              AND coalesce(e.salience, 0) >= $min_confidence
-              AND coalesce(e.access_count, 0) >= $min_access
-            WITH e
-            OPTIONAL MATCH (c:Conversation)-[:MENTIONS]->(e)
-            WITH e, count(DISTINCT c) AS conv_count
-            WHERE conv_count >= $min_conversations
-            RETURN e.id AS id,
-                   e.name AS name,
-                   e.type AS type,
-                   e.description AS description,
-                   e.salience AS salience,
-                   e.access_count AS access_count,
-                   e.channel AS source_channel,
-                   conv_count
-        """, min_confidence=min_confidence, min_access=min_access, min_conversations=min_conversations)
+    # Find entities meeting promotion criteria
+    for record in store.promotable_entities(min_confidence, min_access, min_conversations):
+        entity_name = record["name"]
+        source_channel = record["source_channel"]
 
-        for record in result:
-            entity_name = record["name"]
-            source_channel = record["source_channel"]
+        try:
+            # Check if entity already exists in _global
+            existing = store.global_entity_named(entity_name)
 
-            try:
-                # Check if entity already exists in _global
-                existing = session.run("""
-                    MATCH (e:Entity {name: $name, channel: '_global'})
-                    RETURN e.id AS id, e.salience AS salience
-                """, name=entity_name).single()
+            if existing:
+                # Update salience if higher
+                if record["salience"] > existing["salience"]:
+                    store.raise_promoted_entity(existing["id"], record["salience"], source_channel)
+                    entities_updated += 1
+            else:
+                # Create new entity in _global
+                new_id = str(uuid4())
+                store.create_global_entity(
+                    new_id, entity_name, record["type"], record["description"],
+                    record["salience"], source_channel,
+                )
+                entities_promoted += 1
 
-                if existing:
-                    # Update salience if higher
-                    if record["salience"] > existing["salience"]:
-                        session.run("""
-                            MATCH (e:Entity {id: $id})
-                            SET e.salience = $salience,
-                                e.last_promoted = datetime(),
-                                e.promoted_from = coalesce(e.promoted_from, []) + $source
-                        """, id=existing["id"], salience=record["salience"], source=source_channel)
-                        entities_updated += 1
-                else:
-                    # Create new entity in _global
-                    new_id = str(uuid4())
-                    session.run("""
-                        CREATE (e:Entity {
-                            id: $id,
-                            name: $name,
-                            type: $type,
-                            description: $description,
-                            salience: $salience,
-                            access_count: 0,
-                            channel: '_global',
-                            promoted_from: [$source],
-                            promoted_at: datetime(),
-                            created_at: datetime()
-                        })
-                    """,
-                        id=new_id,
-                        name=entity_name,
-                        type=record["type"],
-                        description=record["description"],
-                        salience=record["salience"],
-                        source=source_channel
-                    )
-                    entities_promoted += 1
+                # Log promotion
+                audit_logger.log_promotion(
+                    source_channel=source_channel,
+                    promoted_ids=[new_id],
+                    promoted_type="entity",
+                    confidence=float(record["salience"]),
+                    access_count=int(record["access_count"]),
+                    conversation_count=int(record["conv_count"]),
+                )
 
-                    # Log promotion
-                    audit_logger.log_promotion(
-                        source_channel=source_channel,
-                        promoted_ids=[new_id],
-                        promoted_type="entity",
-                        confidence=float(record["salience"]),
-                        access_count=int(record["access_count"]),
-                        conversation_count=int(record["conv_count"]),
-                    )
+        except Exception as e:
+            logger.warning(f"Failed to promote entity {entity_name}: {e}")
+            errors.append(f"entity:{entity_name}:{e}")
 
-            except Exception as e:
-                logger.warning(f"Failed to promote entity {entity_name}: {e}")
-                errors.append(f"entity:{entity_name}:{e}")
+    # Find facts meeting promotion criteria
+    for record in store.promotable_facts(min_confidence, min_access):
+        claim = record["claim"]
+        source_channel = record["source_channel"]
 
-        # Find facts meeting promotion criteria
-        result = session.run("""
-            MATCH (f:Fact)
-            WHERE f.channel IS NOT NULL
-              AND f.channel <> '_global'
-              AND coalesce(f.confidence, 0) >= $min_confidence
-              AND coalesce(f.access_count, 0) >= $min_access
-            RETURN f.id AS id,
-                   f.claim AS claim,
-                   f.confidence AS confidence,
-                   f.access_count AS access_count,
-                   f.source AS source,
-                   f.channel AS source_channel
-        """, min_confidence=min_confidence, min_access=min_access)
+        try:
+            # Check if fact already exists in _global (by claim text)
+            existing = store.global_fact_with_claim(claim)
 
-        for record in result:
-            claim = record["claim"]
-            source_channel = record["source_channel"]
+            if existing:
+                # Update confidence if higher
+                if record["confidence"] > existing["confidence"]:
+                    store.raise_promoted_fact(existing["id"], record["confidence"], source_channel)
+                    facts_updated += 1
+            else:
+                # Create new fact in _global
+                new_id = str(uuid4())
+                store.create_global_fact(
+                    new_id, claim, record["confidence"], record["source"], source_channel,
+                )
+                facts_promoted += 1
 
-            try:
-                # Check if fact already exists in _global (by claim text)
-                existing = session.run("""
-                    MATCH (f:Fact {claim: $claim, channel: '_global'})
-                    RETURN f.id AS id, f.confidence AS confidence
-                """, claim=claim).single()
+                # Log promotion
+                audit_logger.log_promotion(
+                    source_channel=source_channel,
+                    promoted_ids=[new_id],
+                    promoted_type="fact",
+                    confidence=float(record["confidence"]),
+                    access_count=int(record["access_count"]),
+                    conversation_count=0,  # Facts don't track conversation count
+                )
 
-                if existing:
-                    # Update confidence if higher
-                    if record["confidence"] > existing["confidence"]:
-                        session.run("""
-                            MATCH (f:Fact {id: $id})
-                            SET f.confidence = $confidence,
-                                f.last_promoted = datetime(),
-                                f.promoted_from = coalesce(f.promoted_from, []) + $source
-                        """, id=existing["id"], confidence=record["confidence"], source=source_channel)
-                        facts_updated += 1
-                else:
-                    # Create new fact in _global
-                    new_id = str(uuid4())
-                    session.run("""
-                        CREATE (f:Fact {
-                            id: $id,
-                            claim: $claim,
-                            confidence: $confidence,
-                            access_count: 0,
-                            source: $fact_source,
-                            channel: '_global',
-                            promoted_from: [$source_channel],
-                            promoted_at: datetime(),
-                            created_at: datetime()
-                        })
-                    """,
-                        id=new_id,
-                        claim=claim,
-                        confidence=record["confidence"],
-                        fact_source=record["source"],
-                        source_channel=source_channel
-                    )
-                    facts_promoted += 1
-
-                    # Log promotion
-                    audit_logger.log_promotion(
-                        source_channel=source_channel,
-                        promoted_ids=[new_id],
-                        promoted_type="fact",
-                        confidence=float(record["confidence"]),
-                        access_count=int(record["access_count"]),
-                        conversation_count=0,  # Facts don't track conversation count
-                    )
-
-            except Exception as e:
-                logger.warning(f"Failed to promote fact: {e}")
-                errors.append(f"fact:{claim[:50]}:{e}")
+        except Exception as e:
+            logger.warning(f"Failed to promote fact: {e}")
+            errors.append(f"fact:{claim[:50]}:{e}")
 
     total_promoted = entities_promoted + facts_promoted
     total_updated = entities_updated + facts_updated
@@ -2787,37 +2648,14 @@ def promote_to_global() -> dict[str, Any]:
 
 def cleanup_old_memories() -> dict[str, Any]:
     """Archive or delete old, low-salience memories."""
+    from ..memory.cross_user import CrossUserStore
+
     retention_days = get_settings().episodic_retention_days
-    archived_count = 0
-    deleted_count = 0
 
-    with Neo4jConnection.session() as session:
-        # Archive old episodic memories
-        result = session.run("""
-            MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
-            WHERE c.started_at < datetime() - duration('P' + $days + 'D')
-              AND c.archived IS NULL
-            SET c.archived = true, t.archived = true
-            RETURN count(DISTINCT c) AS archived_count
-        """, days=str(retention_days))
-
-        record = result.single()
-        archived_count = record["archived_count"] if record else 0
-        logger.info(f"Archived {archived_count} old conversations")
-
-        # Delete very low salience entities
-        result = session.run("""
-            MATCH (e:Entity)
-            WHERE e.salience < 0.1
-              AND e.last_accessed < datetime() - duration('P30D')
-              AND NOT EXISTS { (e)<-[:ABOUT]-(:Fact) }
-            DETACH DELETE e
-            RETURN count(e) AS deleted_count
-        """)
-
-        record = result.single()
-        deleted_count = record["deleted_count"] if record else 0
-        logger.info(f"Cleaned up {deleted_count} low-salience orphan entities")
+    # Archive old episodic memories, then delete very low salience orphan entities.
+    archived_count, deleted_count = CrossUserStore().archive_and_prune(retention_days)
+    logger.info(f"Archived {archived_count} old conversations")
+    logger.info(f"Cleaned up {deleted_count} low-salience orphan entities")
 
     return {
         "archived_conversations": archived_count,
@@ -2839,71 +2677,30 @@ def reset_consolidation(delete_memories: bool = False) -> dict[str, Any]:
     Returns:
         Dictionary with reset metrics
     """
+    from ..memory.cross_user import CrossUserStore
+
+    store = CrossUserStore()
     memories_deleted = 0
 
-    with Neo4jConnection.session() as session:
-        # Reset consolidation timestamps (conversation-level coarse markers)
-        result = session.run("""
-            MATCH (c:Conversation)
-            WHERE c.consolidated IS NOT NULL OR c.self_consolidated IS NOT NULL
-            REMOVE c.consolidated, c.self_consolidated
-            RETURN count(c) AS reset_count
-        """)
+    # Clears the conversation-level markers and the turn-level ones (the real gate),
+    # so the next sweep re-consolidates every turn.
+    reset_count = store.reset_consolidation_markers()
 
-        record = result.single()
-        reset_count = record["reset_count"] if record else 0
+    if delete_memories:
+        facts_deleted, entities_deleted, strategies_deleted = store.delete_semantic_memories()
+        memories_deleted = facts_deleted + entities_deleted + strategies_deleted
+        logger.info(
+            f"Deleted memories: {facts_deleted} facts, {entities_deleted} entities, "
+            f"{strategies_deleted} strategies"
+        )
 
-        # Turn-level markers are the real gate now — clear them (batched) so the
-        # next sweep actually re-consolidates every turn. Without this, reset is a
-        # no-op (turns stay marked → nothing reprocesses).
-        session.run("""
-            MATCH (t:Turn)
-            WHERE t.consolidated IS NOT NULL OR t.self_consolidated IS NOT NULL
-            CALL { WITH t REMOVE t.consolidated, t.self_consolidated }
-            IN TRANSACTIONS OF 10000 ROWS
-        """)
+    logger.info(f"Reset consolidation for {reset_count} conversations")
 
-        if delete_memories:
-            # Delete all Facts
-            result = session.run("""
-                MATCH (f:Fact)
-                DETACH DELETE f
-                RETURN count(f) AS deleted
-            """)
-            record = result.single()
-            facts_deleted = record["deleted"] if record else 0
-
-            # Delete all Entities
-            result = session.run("""
-                MATCH (e:Entity)
-                DETACH DELETE e
-                RETURN count(e) AS deleted
-            """)
-            record = result.single()
-            entities_deleted = record["deleted"] if record else 0
-
-            # Delete all Strategies
-            result = session.run("""
-                MATCH (s:Strategy)
-                DETACH DELETE s
-                RETURN count(s) AS deleted
-            """)
-            record = result.single()
-            strategies_deleted = record["deleted"] if record else 0
-
-            memories_deleted = facts_deleted + entities_deleted + strategies_deleted
-            logger.info(
-                f"Deleted memories: {facts_deleted} facts, {entities_deleted} entities, "
-                f"{strategies_deleted} strategies"
-            )
-
-        logger.info(f"Reset consolidation for {reset_count} conversations")
-
-        return {
-            "conversations_reset": reset_count,
-            "memories_deleted": memories_deleted if delete_memories else None,
-            "success": True
-        }
+    return {
+        "conversations_reset": reset_count,
+        "memories_deleted": memories_deleted if delete_memories else None,
+        "success": True
+    }
 
 
 def trigger_reflection(
@@ -3053,26 +2850,18 @@ def _slug(text: str) -> str:
     return "".join(ch for ch in text.lower() if ch.isalnum())
 
 
-def _build_entity_index(session, user_id: str, channel: str) -> dict[str, str]:
+def _build_entity_index(user_id: str, channel: str) -> dict[str, str]:
     """Map name/alias (lowercased) and slug → entity id for a (user, channel) scope.
 
     Scoped to ``channel`` + ``_global`` and ranked by salience so a name shared by
     two entities resolves to the more salient one (mirrors the live resolver's
     ordering). Built once per channel and reused across that channel's facts.
     """
-    rows = session.run("""
-        MATCH (e:Entity)
-        WHERE e.user_id = $user_id
-          AND (e.channel = $channel OR e.channel = '_global')
-        RETURN e.id AS id, e.name AS name,
-               coalesce(e.aliases, []) AS aliases,
-               coalesce(e.salience, 0.5) AS salience
-        ORDER BY coalesce(e.salience, 0.5) ASC
-    """, user_id=user_id, channel=channel)
+    from ..memory.semantic import SemanticMemory
 
     # Ascending salience so higher-salience entries overwrite lower ones on key collision.
     index: dict[str, str] = {}
-    for r in rows:
+    for r in SemanticMemory().entity_name_rows(user_id, channel):
         names = [r["name"], *(r["aliases"] or [])]
         for nm in names:
             if not nm:
@@ -3117,32 +2906,19 @@ def _backfill_entity_embeddings(limit: int) -> int:
     dedupe) to them. The live path now embeds at store time; this self-healing
     sweep converges the backlog. Returns the number embedded.
     """
-    from ..connections import Neo4jConnection
-    with Neo4jConnection.session() as session:
-        rows = list(session.run(
-            """
-            MATCH (e:Entity)
-            WHERE e.embedding IS NULL AND e.name IS NOT NULL
-            RETURN e.id AS id, e.name AS name, e.description AS description,
-                   coalesce(e.type, 'Concept') AS type
-            LIMIT $limit
-            """, limit=limit,
-        ))
-        if not rows:
-            return 0
-        texts = [Entity.compute_embedding_text(r["name"], r["description"], r["type"])
-                 for r in rows]
-        vectors = get_embedder().embed(texts)
-        session.run(
-            """
-            UNWIND $items AS item
-            MATCH (e:Entity {id: item.id})
-            SET e.embedding = item.embedding
-            """,
-            items=[{"id": r["id"], "embedding": v}
-                   for r, v in zip(rows, vectors, strict=True)],
-        ).consume()
-        return len(rows)
+    from ..memory.cross_user import CrossUserStore
+
+    store = CrossUserStore()
+    rows = store.entities_missing_embeddings(limit)
+    if not rows:
+        return 0
+    texts = [Entity.compute_embedding_text(r["name"], r["description"], r["type"])
+             for r in rows]
+    vectors = get_embedder().embed(texts)
+    store.set_entity_embeddings(
+        [{"id": r["id"], "embedding": v} for r, v in zip(rows, vectors, strict=True)]
+    )
+    return len(rows)
 
 
 def link_facts_to_entities() -> dict[str, Any]:
@@ -3162,6 +2938,8 @@ def link_facts_to_entities() -> dict[str, Any]:
         Dict with items_processed, links_created, facts_still_orphan,
         embeddings_backfilled, errors.
     """
+    from ..memory.cross_user import CrossUserStore
+
     settings = get_settings()
     if not settings.entity_linking_enabled:
         logger.debug("Entity linking is disabled")
@@ -3182,65 +2960,48 @@ def link_facts_to_entities() -> dict[str, Any]:
     facts_processed = 0
     facts_still_orphan = 0
     errors: list[str] = []
+    store = CrossUserStore()
 
-    with Neo4jConnection.session() as session:
-        # All orphan facts (no 7-day window) — bounded by a config cap.
-        facts_to_link = list(session.run("""
-            MATCH (f:Fact)
-            WHERE NOT (f)-[:ABOUT]->(:Entity)
-            RETURN f.id AS fact_id,
-                   f.claim AS claim,
-                   coalesce(f.user_id, 'default') AS user_id,
-                   coalesce(f.channel, '_default') AS channel
-            ORDER BY f.user_id, f.channel, f.id
-            LIMIT $cap
-        """, cap=settings.entity_linking_max_facts))
-        logger.info(f"Entity-link backfill: found {len(facts_to_link)} unlinked facts")
+    # All orphan facts (no 7-day window) — bounded by a config cap.
+    facts_to_link = store.orphan_facts(settings.entity_linking_max_facts)
+    logger.info(f"Entity-link backfill: found {len(facts_to_link)} unlinked facts")
 
-        # Cache one entity index per (user_id, channel) across the batch.
-        index_cache: dict[tuple[str, str], dict[str, str]] = {}
+    # Cache one entity index per (user_id, channel) across the batch.
+    index_cache: dict[tuple[str, str], dict[str, str]] = {}
 
-        for record in facts_to_link:
-            fact_id = record["fact_id"]
-            claim = record["claim"] or ""
-            user_id = record["user_id"]
-            channel = record["channel"]
-            facts_processed += 1
+    for record in facts_to_link:
+        fact_id = record["fact_id"]
+        claim = record["claim"] or ""
+        user_id = record["user_id"]
+        channel = record["channel"]
+        facts_processed += 1
 
-            try:
-                cache_key = (user_id, channel)
-                index = index_cache.get(cache_key)
-                if index is None:
-                    index = _build_entity_index(session, user_id, channel)
-                    index_cache[cache_key] = index
+        try:
+            cache_key = (user_id, channel)
+            index = index_cache.get(cache_key)
+            if index is None:
+                index = _build_entity_index(user_id, channel)
+                index_cache[cache_key] = index
 
-                matched_ids: list[str] = []
-                seen_ids: set = set()
-                for phrase in _claim_entity_candidates(claim, max_ngram):
-                    eid = index.get(phrase.lower()) or index.get(_slug(phrase))
-                    if eid and eid not in seen_ids:
-                        seen_ids.add(eid)
-                        matched_ids.append(eid)
+            matched_ids: list[str] = []
+            seen_ids: set = set()
+            for phrase in _claim_entity_candidates(claim, max_ngram):
+                eid = index.get(phrase.lower()) or index.get(_slug(phrase))
+                if eid and eid not in seen_ids:
+                    seen_ids.add(eid)
+                    matched_ids.append(eid)
 
-                if not matched_ids:
-                    facts_still_orphan += 1
-                    continue
+            if not matched_ids:
+                facts_still_orphan += 1
+                continue
 
-                session.run("""
-                    MATCH (f:Fact {id: $fact_id})
-                    UNWIND $entity_ids AS eid
-                    MATCH (e:Entity {id: eid})
-                    MERGE (f)-[r:ABOUT]->(e)
-                    ON CREATE SET r.confidence = 0.85,
-                                  r.linked_at = datetime(),
-                                  r.method = 'backfill_namematch'
-                """, fact_id=fact_id, entity_ids=matched_ids)
-                links_created += len(matched_ids)
-                logger.debug(f"Backfill linked fact '{claim[:50]}...' to {len(matched_ids)} entities")
+            store.link_fact_to_entities(fact_id, matched_ids)
+            links_created += len(matched_ids)
+            logger.debug(f"Backfill linked fact '{claim[:50]}...' to {len(matched_ids)} entities")
 
-            except Exception as e:
-                logger.warning(f"Failed to link fact {fact_id}: {e}")
-                errors.append(f"{fact_id}:{e}")
+        except Exception as e:
+            logger.warning(f"Failed to link fact {fact_id}: {e}")
+            errors.append(f"{fact_id}:{e}")
 
     logger.info(
         f"Entity-link backfill complete: {facts_processed} processed, "

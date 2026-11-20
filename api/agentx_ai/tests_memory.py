@@ -2293,12 +2293,16 @@ class EntityLinkBackfillTest(TestCase):
         self.assertLess(lc.index("acme corp"), lc.index("acme"))  # longest-first
 
     def test_build_entity_index(self) -> None:
-        session = MagicMock()
-        session.run.return_value = [
+        rows = [
             {"id": "e1", "name": "Acme Corp", "aliases": ["Acme"], "salience": 0.9},
             {"id": "e2", "name": "Python", "aliases": [], "salience": 0.5},
         ]
-        idx = _build_entity_index(session, "u1", "_default")
+        with patch(
+            "agentx_ai.kit.agent_memory.memory.semantic.SemanticMemory.entity_name_rows",
+            return_value=rows,
+        ) as name_rows:
+            idx = _build_entity_index("u1", "_default")
+        name_rows.assert_called_once_with("u1", "_default")
         self.assertEqual(idx["acme corp"], "e1")   # name
         self.assertEqual(idx["acme"], "e1")         # alias
         self.assertEqual(idx["acmecorp"], "e1")     # slug
@@ -6826,7 +6830,7 @@ class MemoryStoreBoundaryTest(TestCase):
 
     # module → (Cypher strings, Neo4j session/driver openings), measured 2026-11-17.
     BASELINE: dict[str, tuple[int, int]] = {
-        "kit/agent_memory/consolidation/jobs.py": (42, 10),
+        "kit/agent_memory/consolidation/jobs.py": (17, 2),
         "kit/agent_memory/maintenance/entity_merge.py": (3, 0),
         "management/commands/backfill_agent_attribution.py": (2, 1),
         "management/commands/bootstrap.py": (0, 1),
@@ -7010,6 +7014,99 @@ class CrossUserStoreTest(TestCase):
             cluster.wipe_cluster(log, err)
         err.assert_called_once_with("  postgres wipe note: pg down")
         log.assert_called_once_with("  wiped Neo4j nodes=4, postgres rows=2")
+
+    # The consolidation background jobs' queries (Slice 1a, part 1).
+
+    def test_decay_salience_runs_each_rate_against_its_own_query(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        entities, facts = MagicMock(), MagicMock()
+        entities.single.return_value = {"decayed_count": 3}
+        facts.single.return_value = None
+        cm, session = self._session(None)
+        session.run.side_effect = [entities, facts]
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            self.assertEqual(CrossUserStore().decay_salience(0.9, 0.95), (3, 0))
+        entity_call, fact_call = session.run.call_args_list
+        self.assertIn("MATCH (e:Entity)", entity_call.args[0])
+        self.assertEqual(entity_call.kwargs, {"decay_rate": 0.9})
+        self.assertIn("MATCH (f:Fact)", fact_call.args[0])
+        self.assertEqual(fact_call.kwargs, {"decay_rate": 0.95})
+
+    def test_archive_and_prune_passes_the_retention_as_text(self):
+        # The query builds the duration as 'P' + $days + 'D', which needs a string.
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        archived, pruned = MagicMock(), MagicMock()
+        archived.single.return_value = {"archived_count": 2}
+        pruned.single.return_value = {"deleted_count": 5}
+        cm, session = self._session(None)
+        session.run.side_effect = [archived, pruned]
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            self.assertEqual(CrossUserStore().archive_and_prune(90), (2, 5))
+        self.assertEqual(session.run.call_args_list[0].kwargs, {"days": "90"})
+
+    def test_reset_markers_clears_the_turns_too(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        conversations = MagicMock()
+        conversations.single.return_value = {"reset_count": 4}
+        cm, session = self._session(None)
+        session.run.side_effect = [conversations, MagicMock()]
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            self.assertEqual(CrossUserStore().reset_consolidation_markers(), 4)
+        turn_query = session.run.call_args_list[1].args[0]
+        self.assertIn("MATCH (t:Turn)", turn_query)
+        self.assertIn("IN TRANSACTIONS OF 10000 ROWS", turn_query)
+
+    def test_owner_of_conversation_is_none_without_an_owner(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        result = MagicMock()
+        cm, session = self._session(result)
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            result.single.return_value = {"uid": "u7"}
+            self.assertEqual(CrossUserStore().owner_of_conversation("c1"), "u7")
+            result.single.return_value = {"uid": None}
+            self.assertIsNone(CrossUserStore().owner_of_conversation("c1"))
+            result.single.return_value = None
+            self.assertIsNone(CrossUserStore().owner_of_conversation("c1"))
+        self.assertEqual(session.run.call_args.kwargs, {"id": "c1"})
+
+    def test_set_entity_embeddings_consumes_the_write(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        result = MagicMock()
+        cm, session = self._session(result)
+        items = [{"id": "e1", "embedding": [0.1, 0.2]}]
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            CrossUserStore().set_entity_embeddings(items)
+        self.assertEqual(session.run.call_args.kwargs, {"items": items})
+        result.consume.assert_called_once()
+
+    def test_writes_raise_their_own_errors(self):
+        # An error that arrives after run() returns (a failed auto-commit, say) is
+        # still pending when the session closes, and the driver's Session.close()
+        # swallows it. Each write consumes, so that error reaches the caller.
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        result = MagicMock()
+        result.consume.side_effect = RuntimeError("constraint violated")
+        cm, _ = self._session(result)
+        store = CrossUserStore()
+        writes = {
+            "rename_agent_entities": lambda: store.rename_agent_entities("a1", "Old", "New"),
+            "reset_consolidation_markers": store.reset_consolidation_markers,
+            "raise_promoted_entity": lambda: store.raise_promoted_entity("e1", 0.9, "proj"),
+            "create_global_entity": lambda: store.create_global_entity(
+                "e1", "Kyoto", "Location", None, 0.9, "proj"),
+            "raise_promoted_fact": lambda: store.raise_promoted_fact("f1", 0.9, "proj"),
+            "create_global_fact": lambda: store.create_global_fact(
+                "f1", "A claim", 0.9, "stated", "proj"),
+            "record_pattern_success": lambda: store.record_pattern_success(
+                "research", ["search"], "Use search", [0.1], "c1"),
+            "link_fact_to_entities": lambda: store.link_fact_to_entities("f1", ["e1"]),
+            "set_entity_embeddings": lambda: store.set_entity_embeddings(
+                [{"id": "e1", "embedding": [0.1]}]),
+        }
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            for name, write in writes.items():
+                with self.subTest(write=name), self.assertRaises(RuntimeError):
+                    write()
 
 
 class PortabilityStoreTest(TestCase):
@@ -7292,3 +7389,144 @@ class MemoryViewsUseTheStoreTest(TestCase):
         from agentx_ai.views import _get_storage_metrics
         with patch('agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore.graph_size_mb', return_value=12.5):
             self.assertEqual(_get_storage_metrics()["neo4j_size_mb"], 12.5)
+
+
+class ConsolidationJobsUseTheStoreTest(TestCase):
+    """The scheduled consolidation jobs query through the store (ADR-21, Slice 1a). The
+    store methods are patched, so these pin the job-side glue: the arguments passed, the
+    per-record control flow, and the return dicts the job registry reports."""
+
+    CU = 'agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore'
+
+    def test_decay_gives_facts_the_square_root_of_the_entity_rate(self):
+        override = get_settings().model_copy(update={"salience_decay_rate": 0.81})
+        with pin_memory_settings(override), \
+             patch(f'{self.CU}.decay_salience', return_value=(3, 2)) as decay:
+            result = apply_memory_decay()
+        decay.assert_called_once_with(0.81, 0.81 ** 0.5)
+        self.assertEqual(result, {"items_processed": 5, "entities_decayed": 3, "facts_decayed": 2})
+
+    def test_cleanup_reports_the_store_counts(self):
+        override = get_settings().model_copy(update={"episodic_retention_days": 45})
+        with pin_memory_settings(override), \
+             patch(f'{self.CU}.archive_and_prune', return_value=(2, 7)) as prune:
+            result = consolidation_jobs_module.cleanup_old_memories()
+        prune.assert_called_once_with(45)
+        self.assertEqual(result, {"archived_conversations": 2, "deleted_entities": 7})
+
+    def test_reset_deletes_semantic_memory_only_when_asked(self):
+        reset = consolidation_jobs_module.reset_consolidation
+        with patch(f'{self.CU}.reset_consolidation_markers', return_value=4), \
+             patch(f'{self.CU}.delete_semantic_memories', return_value=(5, 3, 1)) as wipe:
+            self.assertEqual(
+                reset(), {"conversations_reset": 4, "memories_deleted": None, "success": True},
+            )
+            wipe.assert_not_called()
+            self.assertEqual(
+                reset(delete_memories=True),
+                {"conversations_reset": 4, "memories_deleted": 9, "success": True},
+            )
+        wipe.assert_called_once()
+
+    def test_entity_promotion_raises_creates_and_carries_on_past_a_failure(self):
+        entities = [
+            {"id": "e1", "name": "Kyoto", "type": "Location", "description": None,
+             "salience": 0.9, "access_count": 4, "source_channel": "proj", "conv_count": 3},
+            {"id": "e2", "name": "Osaka", "type": "Location", "description": "city",
+             "salience": 0.8, "access_count": 5, "source_channel": "proj", "conv_count": 2},
+            {"id": "e3", "name": "Nara", "type": "Location", "description": None,
+             "salience": 0.7, "access_count": 3, "source_channel": "proj", "conv_count": 2},
+        ]
+
+        def global_named(name):
+            if name == "Kyoto":
+                return {"id": "g1", "salience": 0.5}  # weaker _global copy → raised
+            if name == "Nara":
+                raise RuntimeError("neo4j hiccup")
+            return None  # Osaka has no _global copy → created
+
+        override = get_settings().model_copy(update={
+            "promotion_min_confidence": 0.6, "promotion_min_access_count": 2,
+            "promotion_min_conversations": 2,
+        })
+        audit = MagicMock()
+        with pin_memory_settings(override), \
+             patch(f'{self.CU}.promotable_entities', return_value=entities) as promotable, \
+             patch(f'{self.CU}.global_entity_named', side_effect=global_named), \
+             patch(f'{self.CU}.raise_promoted_entity') as raise_entity, \
+             patch(f'{self.CU}.create_global_entity') as create_entity, \
+             patch(f'{self.CU}.promotable_facts', return_value=[]) as promotable_facts, \
+             patch('agentx_ai.kit.agent_memory.audit.MemoryAuditLogger', return_value=audit), \
+             self.assertLogs('agentx_ai.kit.agent_memory.consolidation.jobs', level='WARNING'):
+            result = promote_to_global()
+        promotable.assert_called_once_with(0.6, 2, 2)
+        promotable_facts.assert_called_once_with(0.6, 2)
+        raise_entity.assert_called_once_with("g1", 0.9, "proj")
+        new_id, *created = create_entity.call_args.args
+        self.assertEqual(created, ["Osaka", "Location", "city", 0.8, "proj"])
+        audit.log_promotion.assert_called_once()
+        self.assertEqual(audit.log_promotion.call_args.kwargs["promoted_ids"], [new_id])
+        self.assertEqual(result["entities_promoted"], 1)
+        self.assertEqual(result["entities_updated"], 1)
+        self.assertEqual(len(result["errors"]), 1)
+        self.assertTrue(result["errors"][0].startswith("entity:Nara:"))
+
+    def test_fact_promotion_leaves_a_stronger_global_copy_alone(self):
+        facts = [
+            {"id": "f1", "claim": "Kyoto was the capital", "confidence": 0.7,
+             "access_count": 3, "source": "inferred", "source_channel": "proj"},
+            {"id": "f2", "claim": "Nara came first", "confidence": 0.9,
+             "access_count": 4, "source": "stated", "source_channel": "proj"},
+        ]
+        stronger = {"Kyoto was the capital": {"id": "g1", "confidence": 0.8}}
+        audit = MagicMock()
+        with patch(f'{self.CU}.promotable_entities', return_value=[]), \
+             patch(f'{self.CU}.promotable_facts', return_value=facts), \
+             patch(f'{self.CU}.global_fact_with_claim', side_effect=stronger.get), \
+             patch(f'{self.CU}.raise_promoted_fact') as raise_fact, \
+             patch(f'{self.CU}.create_global_fact') as create_fact, \
+             patch('agentx_ai.kit.agent_memory.audit.MemoryAuditLogger', return_value=audit):
+            result = promote_to_global()
+        raise_fact.assert_not_called()
+        _, *created = create_fact.call_args.args
+        self.assertEqual(created, ["Nara came first", 0.9, "stated", "proj"])
+        self.assertEqual(audit.log_promotion.call_args.kwargs["promoted_type"], "fact")
+        self.assertEqual(
+            (result["facts_promoted"], result["facts_updated"], result["items_processed"]),
+            (1, 0, 1),
+        )
+
+    def test_pattern_detection_records_each_strategy_with_its_embedding(self):
+        rows = [{"conversation_id": "c1", "tools": ["search"], "task_type": "research"}]
+        embedder = MagicMock()
+        embedder.embed.return_value = [[0.5, 0.5]]
+        with patch(f'{self.CU}.successful_conversations_without_patterns', return_value=rows), \
+             patch(f'{self.CU}.record_pattern_success') as record, \
+             patch.object(consolidation_jobs_module, 'get_embedder', return_value=embedder):
+            self.assertEqual(detect_patterns(), {"items_processed": 1})
+        record.assert_called_once_with(
+            "research", ["search"], "Use search for research tasks", [0.5, 0.5], "c1",
+        )
+
+    def test_conversation_owner_falls_back_to_default(self):
+        resolve = consolidation_jobs_module._resolve_user_for_conversation
+        with patch(f'{self.CU}.owner_of_conversation', return_value="u7") as owner:
+            self.assertEqual(resolve(42), "u7")
+        owner.assert_called_once_with("42")
+        with patch(f'{self.CU}.owner_of_conversation', return_value=None):
+            self.assertEqual(resolve("c1"), "default")
+        with patch(f'{self.CU}.owner_of_conversation', side_effect=RuntimeError("neo4j down")):
+            self.assertEqual(resolve("c1"), "default")
+
+    def test_entity_name_rows_cover_the_channel_and_global_for_one_user(self):
+        from agentx_ai.kit.agent_memory.memory.semantic import SemanticMemory
+        session = MagicMock()
+        session.run.return_value = [{"id": "e1", "name": "Acme", "aliases": [], "salience": 0.5}]
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            rows = SemanticMemory().entity_name_rows("u1", "proj")
+        self.assertEqual(rows, [{"id": "e1", "name": "Acme", "aliases": [], "salience": 0.5}])
+        self.assertEqual(session.run.call_args.kwargs, {"user_id": "u1", "channel": "proj"})
+        self.assertIn("e.channel = '_global'", session.run.call_args.args[0])
