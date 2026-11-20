@@ -1,7 +1,14 @@
 // User-facing name: "Agent Teams" (internal: Alloy — wire format stays /api/alloy/*).
 // Precedent: Workspaces→Projects (strings renamed, internal ids kept).
 import { request as apiRequest } from './core';
-import type { AlloyWorkflow, AlloyWorkflowCreate, AlloyWorkflowUpdate, ServerWorkflow } from './types';
+import type {
+  AlloyWorkflow,
+  AlloyWorkflowCreate,
+  AlloyWorkflowUpdate,
+  LayoutPositions,
+  OrganizationLayout,
+  ServerWorkflow,
+} from './types';
 
 // Map the server's snake_case workflow shape to/from the client camelCase model.
 // Exported for tests (round-trip pins on org fields).
@@ -93,6 +100,20 @@ export const alloyApi = {
   async deleteAlloyWorkflow(id: string): Promise<{ deleted: boolean }> {
     return apiRequest(`/api/alloy/workflows/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    });
+  },
+
+  // === Organization chart layout ===
+
+  async getOrganizationLayout(): Promise<{ layout: OrganizationLayout }> {
+    return apiRequest('/api/alloy/organization');
+  },
+
+  /** Replace the stored layout; empty positions reset the chart to its derived layout. */
+  async putOrganizationLayout(positions: LayoutPositions): Promise<{ layout: OrganizationLayout }> {
+    return apiRequest('/api/alloy/organization', {
+      method: 'PUT',
+      body: JSON.stringify({ layout: { positions } }),
     });
   },
 };

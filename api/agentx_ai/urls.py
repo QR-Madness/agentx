@@ -155,6 +155,7 @@ urlpatterns = [
     path("agent/profiles/<str:profile_id>/set-default", views.agent_profile_set_default, name="agent-profile-set-default"),
     path("agent/profiles/<str:profile_id>/set-default-ambassador", views.agent_profile_set_default_ambassador, name="agent-profile-set-default-ambassador"),
     # Agent Alloy (multi-agent workflow) endpoints
+    path("alloy/organization", views.alloy_organization, name="alloy-organization"),
     path("alloy/workflows", views.alloy_workflows_list, name="alloy-workflows-list"),
     path("alloy/workflows/<str:workflow_id>", views.alloy_workflow_detail, name="alloy-workflow-detail"),
     # Prompt management endpoints

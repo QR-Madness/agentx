@@ -21808,3 +21808,74 @@ class OpenRouterAccountSnapshotTest(TestCase):
             self.oauth.clear_account_cache()
             self.oauth.account_snapshot("sk-or-test")
             self.assertEqual(ctor.call_count, 2)
+
+
+@override_settings(AGENTX_AUTH_ENABLED=False)
+class OrganizationLayoutTest(TestCase):
+    """alloy/organization.py + /api/alloy/organization: where the user dragged things on
+    the org chart (layout only; structure always derives)."""
+
+    @staticmethod
+    def _store():
+        import tempfile
+        from pathlib import Path
+        from agentx_ai.alloy.organization import OrganizationLayoutStore
+        path = Path(tempfile.mkdtemp()) / "organization.yaml"
+        return OrganizationLayoutStore(config_path=path), path
+
+    def test_round_trip_and_reset(self):
+        from agentx_ai.alloy.organization import OrganizationLayoutStore
+        store, path = self._store()
+        self.assertEqual(store.layout(), {"positions": {}})  # no file = the derived layout
+        store.replace({"agent:bold-cosmic-falcon": {"x": 10, "y": -20.5},
+                       "team:wf_1": {"x": 0, "y": 300}})
+        reloaded = OrganizationLayoutStore(config_path=path)
+        self.assertEqual(reloaded.layout()["positions"]["agent:bold-cosmic-falcon"],
+                         {"x": 10.0, "y": -20.5})
+        store.replace({})
+        self.assertEqual(OrganizationLayoutStore(config_path=path).layout(), {"positions": {}})
+        self.assertFalse(path.with_name(path.name + ".tmp").exists())  # the atomic write cleaned up
+
+    def test_validation_rejects_names_and_bad_numbers(self):
+        from agentx_ai.alloy.organization import validate_positions
+        bad = [
+            {"Mobius": {"x": 1, "y": 1}},               # a display name, not agent:/team: (INV-3)
+            {"agent:a": {"x": "1", "y": 1}},           # a string coordinate
+            {"agent:a": {"x": True, "y": 1}},          # bool is not a number
+            {"agent:a": {"x": float("nan"), "y": 1}},  # not finite
+            {"agent:a": {"x": 2e6, "y": 1}},           # out of range
+            {"agent:a": {"x": 1}},                     # missing y
+            ["agent:a"],                               # not an object
+        ]
+        for positions in bad:
+            with self.subTest(positions=positions), self.assertRaises(ValueError):
+                validate_positions(positions)
+
+    def test_a_bad_file_falls_back_to_the_derived_layout(self):
+        from agentx_ai.alloy.organization import OrganizationLayoutStore
+        _, path = self._store()
+        path.write_text("layout: {positions: {Mobius: {x: 1, y: 1}}}")
+        self.assertEqual(OrganizationLayoutStore(config_path=path).layout(), {"positions": {}})
+
+    def test_endpoint_get_put_and_errors(self):
+        store, _ = self._store()
+        target = "agentx_ai.alloy.organization.get_organization_layout_store"
+        with patch(target, return_value=store):
+            self.assertEqual(self.client.get("/api/alloy/organization").json(),
+                             {"layout": {"positions": {}}})
+            body = {"layout": {"positions": {"team:wf_1": {"x": 5, "y": 6}}}}
+            res = self.client.put("/api/alloy/organization", data=json.dumps(body),
+                                  content_type="application/json")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json()["layout"]["positions"]["team:wf_1"], {"x": 5.0, "y": 6.0})
+            res = self.client.put("/api/alloy/organization", data=json.dumps({"positions": {}}),
+                                  content_type="application/json")
+            self.assertEqual(res.status_code, 400)  # the layout wrapper is required
+            res = self.client.put(
+                "/api/alloy/organization",
+                data=json.dumps({"layout": {"positions": {"Mobius": {"x": 1, "y": 1}}}}),
+                content_type="application/json")
+            self.assertEqual(res.status_code, 400)
+            self.assertIn("agent:{id}", res.json()["error"])
+            self.assertEqual(self.client.post("/api/alloy/organization").status_code, 405)
+            self.assertEqual(store.layout()["positions"], {"team:wf_1": {"x": 5.0, "y": 6.0}})

@@ -105,8 +105,11 @@ with a link to its profile.
 an agent, a team with no members, or an agent that manages a team without the Manager role (so the
 charter and tool limits don't apply to it).
 
-The chart is for reading and selecting; boxes can't be moved yet. On a narrow screen the same
-structure appears as an outline.
+Drag the ambassador, a manager or a whole team to arrange the chart; a team's lead and members
+move with it. The arrangement is saved on the server and keeps its place when an agent or team is
+renamed. **Reset the chart layout** (the circular-arrow button in the header) puts every box back
+in its automatic place. Dragging never changes the structure itself; that is edited in the side
+panel. On a narrow screen the same structure appears as an outline.
 
 ## Data Model
 
@@ -256,8 +259,8 @@ Shipped (v1 plus the routing/delegation waves through v0.21.5):
 - **Ad-hoc agent-to-agent delegation** — `delegate_to` in workflow-less chats, gated by `alloy.allow_adhoc_delegation` (depth-limited, no self-delegation)
 - **First-class conversational delegation** — a `delegation_roster` system-prompt block (teammates + specialties from the opt-in roster, same source as the tool enum), per-profile `delegation_hint`, opt-in `available_for_delegation` (default off), the global gate default-ON, and a per-conversation Solo/Team toggle (`disable_delegation`)
 - **@-mention routing** — an inline `@agent-id` / `@name` routes a turn; `AgentParticipant` graph nodes + a client `@`-autocomplete composer
-- **Organizations** — managers, roles and the chain of command (`v0.21.240`), and the **Organization** surface: the whole org as one chart, with team editing beside it (`v0.21.280`)
+- **Organizations** — managers, roles and the chain of command (`v0.21.240`), and the **Organization** surface: the whole org as one chart, with team editing beside it (`v0.21.280`), and arranging it by dragging (`v0.21.283`)
 
 Deferred (see [Roadmap → Phase 16](../roadmap.md)): editing the organization chart directly
-(arranging boxes, drawing reporting lines), execution of declarative `routes` (accepted and stored but ignored), async (background)
+(drawing reporting lines), execution of declarative `routes` (accepted and stored but ignored), async (background)
 delegation, and per-workflow tool subsetting.

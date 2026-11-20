@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AgentProfile, AlloyWorkflow, AlloyWorkflowMember } from '../../lib/api';
 
@@ -13,10 +13,26 @@ const state = vi.hoisted(() => ({
   createWorkflow: vi.fn(),
   updateWorkflow: vi.fn(),
   deleteWorkflow: vi.fn(),
+  getLayout: vi.fn(),
+  putLayout: vi.fn(),
+  canvasProps: null as null | { onMoveNode?: (key: string, p: { x: number; y: number }) => void },
 }));
 
 // React Flow needs layout APIs jsdom lacks; the chart is covered by orgChart.test.ts.
-vi.mock('./OrgCanvas', () => ({ OrgCanvas: () => <div data-testid="org-canvas" /> }));
+// The stub keeps the props so a test can drive a drag's end (onMoveNode).
+vi.mock('./OrgCanvas', () => ({
+  OrgCanvas: (props: typeof state.canvasProps) => {
+    state.canvasProps = props;
+    return <div data-testid="org-canvas" />;
+  },
+}));
+vi.mock('../../lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/api')>();
+  return {
+    ...actual,
+    api: { ...actual.api, getOrganizationLayout: state.getLayout, putOrganizationLayout: state.putLayout },
+  };
+});
 vi.mock('../../contexts/AgentProfileContext', () => ({
   useAgentProfile: () => ({ profiles: state.profiles }),
 }));
@@ -71,6 +87,9 @@ beforeEach(() => {
   for (const fn of [state.confirm, state.notifyError, state.openModal, state.createWorkflow, state.updateWorkflow, state.deleteWorkflow]) {
     fn.mockReset();
   }
+  state.getLayout.mockReset().mockResolvedValue({ layout: { positions: {} } });
+  state.putLayout.mockReset().mockResolvedValue({ layout: { positions: {} } });
+  state.canvasProps = null;
   setNarrow(false);
 });
 
@@ -156,5 +175,36 @@ describe('OrgManager', () => {
     expect(state.openModal).toHaveBeenCalledWith(
       expect.objectContaining({ component: 'unifiedProfileEditor', props: { initialProfileId: 'a1' } }),
     );
+  });
+  it('saves dragged boxes a moment after the last drag, and resets the layout when confirmed', async () => {
+    render(<OrgManager onClose={vi.fn()} />);
+    await vi.waitFor(() => expect(state.canvasProps?.onMoveNode).toBeTypeOf('function'));
+    act(() => state.canvasProps!.onMoveNode!('agent:m', { x: 10, y: 20 }));
+    expect(state.putLayout).not.toHaveBeenCalled(); // debounced
+    await vi.waitFor(() => expect(state.putLayout).toHaveBeenCalledWith({ 'agent:m': { x: 10, y: 20 } }));
+
+    state.confirm.mockResolvedValue(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Reset the chart layout' }));
+    expect(state.confirm).toHaveBeenCalledWith(expect.objectContaining({ danger: true }));
+    expect(state.putLayout).toHaveBeenLastCalledWith({});
+    expect(screen.queryByRole('button', { name: 'Reset the chart layout' })).toBeNull();
+  });
+
+  it('saves a pending drag when it closes', async () => {
+    const { unmount } = render(<OrgManager onClose={vi.fn()} />);
+    await vi.waitFor(() => expect(state.canvasProps?.onMoveNode).toBeTypeOf('function'));
+    act(() => state.canvasProps!.onMoveNode!('team:t1', { x: 5, y: 6 }));
+    unmount();
+    expect(state.putLayout).toHaveBeenCalledWith({ 'team:t1': { x: 5, y: 6 } });
+  });
+
+  it('keeps the chart read-only when the server has no layout store', async () => {
+    state.getLayout.mockRejectedValue(new Error('Not found'));
+    render(<OrgManager onClose={vi.fn()} />);
+    await vi.waitFor(() => expect(state.getLayout).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(state.canvasProps?.onMoveNode).toBeUndefined();
+    expect(screen.queryByRole('button', { name: 'Reset the chart layout' })).toBeNull();
+    expect(state.notifyError).not.toHaveBeenCalled();
   });
 });

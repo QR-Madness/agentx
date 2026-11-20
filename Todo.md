@@ -11,7 +11,7 @@
 editing it; it stops, and puts `uv.lock` back, if your uv is older than the one that wrote the lock,
 since an older uv rewrites it in an older format). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.282** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.283** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 

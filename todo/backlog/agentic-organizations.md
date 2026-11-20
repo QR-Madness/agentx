@@ -235,17 +235,18 @@ them), so a manager without the Manager role silently lacked its tool limits and
 
 #### 4b — stored layout and editing on the chart (open)
 
-- [ ] **Org layout store** — new `alloy/organization.py` (WorkflowManager-shaped load/save) owning
+- [x] **Org layout store** `[v0.21.283]` — new `alloy/organization.py` (WorkflowManager-shaped load/save) owning
       `data/organization.yaml`: **layout only** (canvas node positions keyed `agent:{agent_id}` /
       `team:{workflow_id}` — INV-3-safe; membership/edges always derive). Exposed as
       `GET/PUT /api/alloy/organization`. `Workflow.canvas` stays untouched/reserved for the future
       per-team factory editor. Node drags debounce-PUT positions; the derived layout stays the
-      default for anything without a stored position.
+      default for anything without a stored position. Shipped for top-level boxes (ambassador,
+      managers, whole teams; a team's lead and members move with it), with a confirmed Reset.
 - [ ] **Profile quick-edit in the dock** — role, Specialty, delegability, without leaving for the
       full editor.
 - [ ] **Chart detail** — the member→lead escalation as a dashed up-chevron on its edge, a read-only
       edge inspector, delegable badges in the outline.
-- [ ] **Docs**: `OpenApi.yaml` + `endpoints.md` (new organization endpoint).
+- [x] **Docs**: `OpenApi.yaml` + `endpoints.md` (new organization endpoint) `[v0.21.283]`.
 
 ### Slice 5 — Live org activity & thread grouping
 

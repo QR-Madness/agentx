@@ -832,6 +832,18 @@ export interface AlloyWorkflowRoute {
   when: string;
 }
 
+/**
+ * Where the user dragged boxes on the org chart (`/api/alloy/organization`), keyed
+ * `agent:{agentId}` (managers, ambassadors) or `team:{workflowId}`. Layout only: the
+ * structure always derives from profiles and teams; a box without an entry sits where
+ * the derived layout puts it.
+ */
+export type LayoutPositions = Record<string, { x: number; y: number }>;
+
+export interface OrganizationLayout {
+  positions: LayoutPositions;
+}
+
 export interface AlloyWorkflow {
   id: string;
   name: string;

@@ -3816,6 +3816,59 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /alloy/organization:
+    get:
+      tags: [Multi-Agent]
+      operationId: alloyOrganizationLayoutGet
+      summary: Get the org chart's stored layout
+      description: >-
+        Where the user dragged boxes on the organization chart. Layout only: the
+        structure always derives from profiles and workflows. Empty until the first
+        drag; a box without a stored position sits in the derived layout.
+      responses:
+        '200':
+          description: The stored layout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  layout:
+                    $ref: '#/components/schemas/OrganizationLayout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      tags: [Multi-Agent]
+      operationId: alloyOrganizationLayoutPut
+      summary: Replace the org chart's stored layout
+      description: >-
+        Replaces every stored position. Empty `positions` resets the chart to its
+        derived layout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [layout]
+              properties:
+                layout:
+                  $ref: '#/components/schemas/OrganizationLayout'
+      responses:
+        '200':
+          description: The stored layout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  layout:
+                    $ref: '#/components/schemas/OrganizationLayout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
   /alloy/workflows:
     get:
       tags: [Multi-Agent]
@@ -7018,6 +7071,25 @@ components:
           format: date-time
           nullable: true
 
+    OrganizationLayout:
+      type: object
+      required: [positions]
+      properties:
+        positions:
+          type: object
+          description: >-
+            Positions by box, keyed `agent:{agent_id}` (managers, ambassadors) or
+            `team:{workflow_id}`: ids, never names. At most 2000 entries; coordinates
+            are finite numbers within ±1e6.
+          maxProperties: 2000
+          additionalProperties:
+            type: object
+            required: [x, y]
+            properties:
+              x:
+                type: number
+              y:
+                type: number
     Workflow:
       type: object
       required: [id, name, supervisor_agent_id, members]

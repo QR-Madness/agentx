@@ -1,22 +1,25 @@
 /**
- * OrgCanvas — the organization drawn as a chart (React Flow, read-only in this
- * version: boxes select, they don't move or connect). Positions come from
- * `layoutOrgChart`, so the chart is the same every time for the same org.
+ * OrgCanvas — the organization drawn as a chart (React Flow). Positions come from
+ * `layoutOrgChart`, so the chart is the same every time for the same org, except
+ * where the user dragged a top-level box (an ambassador, a manager, a whole team):
+ * those come from the stored layout (`layoutKeyOf`). Nothing connects.
  *
  * Every box is a real button, so the chart works from the keyboard; React
  * Flow's own node focus and selection are switched off in its favour.
  */
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background, Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow,
-  type BuiltInEdge, type Node, type NodeProps,
+  type BuiltInEdge, type Node, type NodeChange, type NodeProps, type XYPosition,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { AlertTriangle, UserRound, Users } from 'lucide-react';
-import type { AgentProfile } from '../../lib/api';
+import type { AgentProfile, LayoutPositions } from '../../lib/api';
 import { modelShortLabel } from '../../lib/modelLabel';
-import { CHART, type ChartNode, type OrgChartLayout, type OrgModel } from '../../lib/orgChart';
+import {
+  CHART, layoutKeyOf, type ChartNode, type OrgChartLayout, type OrgModel,
+} from '../../lib/orgChart';
 import { AgentAvatar } from '../common/AgentAvatar';
 import { TierChip, type ChipTier } from './TierChip';
 import type { OrgSelection } from './types';
@@ -158,6 +161,12 @@ interface OrgCanvasProps {
   onSelectAgent: (agentId: string) => void;
   onSelectTeam: (teamId: string) => void;
   onClear: () => void;
+  /** Stored positions of dragged boxes, by `layoutKeyOf` key. */
+  positions: LayoutPositions;
+  /** Called when a drag ends; without it nothing moves (no layout store to save to). */
+  onMoveNode?: (key: string, position: XYPosition) => void;
+  /** Changes when the stored layout loads or resets: the chart refits (never after a drag). */
+  fitKey: number;
 }
 
 function agentMatches(profile: AgentProfile, query: string): boolean {
@@ -170,8 +179,22 @@ function agentMatches(profile: AgentProfile, query: string): boolean {
 
 function CanvasInner({
   model, layout, profilesByAgentId, selection, query, box, onSelectAgent, onSelectTeam, onClear,
+  positions, onMoveNode, fitKey,
 }: OrgCanvasProps & { box: string }) {
   const { fitView } = useReactFlow();
+
+  // Where a box is while it's being dragged (by node id); committed on drop.
+  const [dragging, setDragging] = useState<Record<string, XYPosition>>({});
+  // The click that ends a drag lands on the box's button; it mustn't also select it.
+  const justDragged = useRef(false);
+  const selectAgent = useCallback(
+    (agentId: string) => { if (!justDragged.current) onSelectAgent(agentId); },
+    [onSelectAgent],
+  );
+  const selectTeam = useCallback(
+    (teamId: string) => { if (!justDragged.current) onSelectTeam(teamId); },
+    [onSelectTeam],
+  );
 
   // A role problem is fixed on the agent; a broken reference or an empty team on the team.
   const flaggedAgents = useMemo(
@@ -199,16 +222,19 @@ function CanvasInner({
     const selectedTeam = selection.kind === 'team' ? selection.teamId : null;
     const out: Node[] = [];
 
-    const base = (n: ChartNode) => ({
-      id: n.id,
-      position: { x: n.x, y: n.y },
-      width: n.width,
-      height: n.height,
-      style: { width: n.width, height: n.height },
-      draggable: false,
-      selectable: false,
-      ...(n.parentId ? { parentId: n.parentId, extent: 'parent' as const } : {}),
-    });
+    const base = (n: ChartNode) => {
+      const key = onMoveNode ? layoutKeyOf(n) : null;
+      return {
+        id: n.id,
+        position: dragging[n.id] ?? (key ? positions[key] : undefined) ?? { x: n.x, y: n.y },
+        width: n.width,
+        height: n.height,
+        style: { width: n.width, height: n.height },
+        draggable: key !== null,
+        selectable: false,
+        ...(n.parentId ? { parentId: n.parentId, extent: 'parent' as const } : {}),
+      };
+    };
 
     for (const n of layout.nodes) {
       if (n.kind === 'band') {
@@ -236,7 +262,7 @@ function CanvasInner({
             dimmed: Boolean(query) && !nameHit && !childHit,
             flagged: n.teamId !== undefined && flaggedTeams.has(n.teamId),
             empty: count === 0,
-            onSelect: onSelectTeam,
+            onSelect: selectTeam,
           } satisfies GroupNodeData,
         });
       } else if (n.agentId) {
@@ -253,13 +279,13 @@ function CanvasInner({
             selected: n.agentId === selectedAgent,
             dimmed: Boolean(query) && !teamHit && !agentMatches(profile, query),
             flagged: flaggedAgents.has(n.agentId),
-            onSelect: onSelectAgent,
+            onSelect: selectAgent,
           } satisfies AgentNodeData,
         });
       }
     }
     return out;
-  }, [layout.nodes, model.independents, teamsById, profilesByAgentId, selection, query, flaggedAgents, flaggedTeams, onSelectAgent, onSelectTeam]);
+  }, [layout.nodes, model.independents, teamsById, profilesByAgentId, selection, query, flaggedAgents, flaggedTeams, selectAgent, selectTeam, onMoveNode, positions, dragging]);
 
   const edges = useMemo<BuiltInEdge[]>(() => {
     const selectedAgent = selection.kind === 'agent' ? selection.agentId : null;
@@ -285,9 +311,50 @@ function CanvasInner({
 
   // Keep the whole chart in view when it changes size or the space around it
   // does (the window, or the outline beside it).
+  // ...and when the stored layout loads or resets (`fitKey`), but never after a drag.
   useEffect(() => {
     void fitView({ padding: 0.1, duration: 180 });
-  }, [fitView, box, layout.width, layout.height]);
+  }, [fitView, box, layout.width, layout.height, fitKey]);
+
+  const keyByNodeId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of layout.nodes) {
+      const key = layoutKeyOf(n);
+      if (key) map.set(n.id, key);
+    }
+    return map;
+  }, [layout.nodes]);
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setDragging((prev) => {
+      let next = prev;
+      for (const change of changes) {
+        if (change.type !== 'position') continue;
+        if (next === prev) next = { ...prev };
+        // Only an in-progress drag is held here; the final change (dragging: false)
+        // clears it whichever order it arrives in relative to onNodeDragStop.
+        if (change.dragging && change.position) next[change.id] = change.position;
+        else delete next[change.id];
+      }
+      return next;
+    });
+  }, []);
+
+  const onNodeDragStop = useCallback(
+    (_event: unknown, node: Node) => {
+      const key = keyByNodeId.get(node.id);
+      if (key && onMoveNode) {
+        onMoveNode(key, { x: Math.round(node.position.x), y: Math.round(node.position.y) });
+      }
+      setDragging((prev) => {
+        const { [node.id]: _dropped, ...rest } = prev;
+        return rest;
+      });
+      justDragged.current = true;
+      setTimeout(() => { justDragged.current = false; }, 0);
+    },
+    [keyByNodeId, onMoveNode],
+  );
 
   return (
     <ReactFlow
@@ -298,7 +365,9 @@ function CanvasInner({
       fitViewOptions={{ padding: 0.1 }}
       minZoom={0.3}
       maxZoom={1.6}
-      nodesDraggable={false}
+      nodesDraggable={Boolean(onMoveNode)}
+      onNodesChange={onNodesChange}
+      onNodeDragStop={onNodeDragStop}
       nodesConnectable={false}
       nodesFocusable={false}
       edgesFocusable={false}

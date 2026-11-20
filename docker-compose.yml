@@ -4,8 +4,8 @@
 # - AGENTX_CLUSTER_NAME: Unique cluster identifier (default: agent)
 # - AGENTX_CONFIG_DIR:  Per-cluster app config dir, mounted at /app/data in
 #                       the API container. Holds agent_profiles.yaml,
-#                       prompt_templates.yaml, workflows.yaml, config.json,
-#                       memory_settings.json. (default: ./data)
+#                       prompt_templates.yaml, workflows.yaml, organization.yaml,
+#                       config.json, memory_settings.json. (default: ./data)
 # - AGENTX_DB_DIR:      Per-cluster database storage dir holding
 #                       neo4j/, postgres/, redis/ subdirs. (default: ./data)
 # - Both default to ./data so the dev stack keeps working unchanged.

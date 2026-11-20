@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildOrgModel, chartNodeId, layoutOrgChart, CHART, type ChartNode } from './orgChart';
+import {
+  buildOrgModel, chartNodeId, layoutKeyOf, layoutOrgChart, pruneLayoutPositions, CHART,
+  type ChartNode,
+} from './orgChart';
 import type { AgentProfile, AlloyWorkflow, AlloyWorkflowMember } from './api/types';
 
 // The same abstract org as orgPlacement.test.ts: one manager with two teams,
@@ -288,3 +291,35 @@ describe('layoutOrgChart', () => {
     ]);
   });
 });
+
+describe('stored layout keys', () => {
+  const layout = layoutOrgChart(buildOrgModel(profiles, workflows));
+  const keyOf = (id: string) => layoutKeyOf(layout.nodes.find((n) => n.id === id) as ChartNode);
+
+  it('lets only top-level boxes move, keyed by id', () => {
+    expect(keyOf(chartNodeId.manager('m'))).toBe('agent:m');
+    expect(keyOf(chartNodeId.ambassador('amb'))).toBe('agent:amb');
+    expect(keyOf(chartNodeId.team('t1'))).toBe('team:t1');
+    expect(keyOf(chartNodeId.team('t3'))).toBe('team:t3'); // a team without a manager too
+    // Inside a parent: leads, members, lane cards. Structure: band, lane.
+    expect(keyOf(chartNodeId.lead('t1', 'l1'))).toBeNull();
+    expect(keyOf(chartNodeId.member('t1', 'a1'))).toBeNull();
+    expect(keyOf(chartNodeId.independent('free'))).toBeNull();
+    expect(keyOf(chartNodeId.lane)).toBeNull();
+    expect(keyOf(chartNodeId.band)).toBeNull();
+  });
+
+  it('prunes positions whose box left the chart', () => {
+    const stored = {
+      'agent:m': { x: 1, y: 2 },
+      'team:t2': { x: 3, y: 4 },
+      'team:deleted': { x: 5, y: 6 }, // a deleted team
+      'agent:a1': { x: 7, y: 8 }, // a member, never draggable
+    };
+    expect(pruneLayoutPositions(stored, layout)).toEqual({
+      'agent:m': { x: 1, y: 2 },
+      'team:t2': { x: 3, y: 4 },
+    });
+  });
+});
+
