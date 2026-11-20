@@ -10,7 +10,7 @@ import json
 import re
 import time
 
-from ..connections import Neo4jConnection, get_postgres_session, RedisConnection
+from ..connections import get_postgres_session, RedisConnection
 from ..embeddings import get_embedder
 from ..config import get_settings
 from ..extraction.service import get_extraction_service
@@ -18,6 +18,7 @@ from ..models import Entity, compute_claim_hash
 from .metrics import ConsolidationMetrics
 
 if TYPE_CHECKING:
+    from ..memory.consolidation_store import ConsolidationStore
     from ..memory.interface import AgentMemory
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 _BG_EMBED_TIMEOUT_S = 300.0
 
 
-def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
+def _is_duplicate_fact(store: ConsolidationStore, claim: str, user_id: str, channel: str) -> bool:
     """
     Check if a fact with the same or very similar claim already exists.
 
@@ -36,7 +37,7 @@ def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
     string comparison for legacy facts without hash.
 
     Args:
-        session: Neo4j session
+        store: The sweep's ConsolidationStore
         claim: The fact claim text
         user_id: User ID
         channel: Memory channel
@@ -47,35 +48,16 @@ def _is_duplicate_fact(session, claim: str, user_id: str, channel: str) -> bool:
     claim_hash = compute_claim_hash(claim)
 
     # Check for duplicate using indexed claim_hash (fast path)
-    result = session.run("""
-        MATCH (f:Fact)
-        WHERE f.user_id = $user_id
-          AND (f.channel = $channel OR f.channel = '_global')
-          AND f.claim_hash = $claim_hash
-        RETURN f.id AS id
-        LIMIT 1
-    """, user_id=user_id, channel=channel, claim_hash=claim_hash)
-
-    if result.single() is not None:
+    if store.fact_with_hash_exists(user_id, channel, claim_hash):
         return True
 
     # Fallback check for legacy facts without claim_hash
     normalized = " ".join(claim.lower().split())
-    result = session.run("""
-        MATCH (f:Fact)
-        WHERE f.user_id = $user_id
-          AND (f.channel = $channel OR f.channel = '_global')
-          AND f.claim_hash IS NULL
-          AND toLower(trim(f.claim)) = $normalized_claim
-        RETURN f.id AS id
-        LIMIT 1
-    """, user_id=user_id, channel=channel, normalized_claim=normalized)
-
-    return result.single() is not None
+    return store.legacy_fact_with_claim_exists(user_id, channel, normalized)
 
 
 def _is_semantic_duplicate(
-    session,
+    store: ConsolidationStore,
     claim_embedding: list[float],
     user_id: str,
     channel: str,
@@ -84,12 +66,12 @@ def _is_semantic_duplicate(
     """
     Check if a semantically identical fact already exists via vector search.
 
-    Uses the Neo4j fact_embeddings index for fast cosine similarity lookup.
+    Uses the fact_embeddings vector index for fast cosine similarity lookup.
     A threshold of 0.92 catches paraphrases like "User likes Python" vs
     "The user enjoys Python" while avoiding false positives.
 
     Args:
-        session: Neo4j session
+        store: The sweep's ConsolidationStore
         claim_embedding: Embedding vector for the new claim
         user_id: User ID
         channel: Memory channel
@@ -99,17 +81,7 @@ def _is_semantic_duplicate(
         True if a semantically identical fact exists
     """
     try:
-        result = session.run("""
-            CALL db.index.vector.queryNodes('fact_embeddings', 3, $embedding)
-            YIELD node, score
-            WHERE score > $threshold
-              AND node.user_id = $user_id
-              AND (node.channel = $channel OR node.channel = '_global')
-              AND node.superseded_at IS NULL
-            RETURN node.id AS id, score
-            LIMIT 1
-        """, embedding=claim_embedding, threshold=threshold, user_id=user_id, channel=channel)
-        return result.single() is not None
+        return store.similar_fact_exists(claim_embedding, user_id, channel, threshold)
     except Exception as e:
         logger.warning(
             f"Semantic duplicate check failed [{type(e).__name__}] "
@@ -120,7 +92,7 @@ def _is_semantic_duplicate(
 
 
 def _get_contradiction_candidates(
-    session,
+    store: ConsolidationStore,
     claim: str,
     claim_embedding: list[float],
     entity_names: list[str],
@@ -139,7 +111,7 @@ def _get_contradiction_candidates(
     3. Merge + deduplicate, order by similarity descending
 
     Args:
-        session: Neo4j session
+        store: The sweep's ConsolidationStore
         claim: The new fact claim text
         claim_embedding: Embedding vector for the new claim
         entity_names: Entity names mentioned in the new fact
@@ -158,20 +130,9 @@ def _get_contradiction_candidates(
     if entity_names:
         entity_names_lower = [n.lower() for n in entity_names]
         try:
-            entity_result = session.run("""
-                MATCH (e:Entity)
-                WHERE toLower(e.name) IN $entity_names
-                MATCH (f:Fact)-[:ABOUT]->(e)
-                WHERE f.user_id = $user_id
-                  AND (f.channel = $channel OR f.channel = '_global')
-                  AND f.superseded_at IS NULL
-                RETURN DISTINCT f.id AS id, f.claim AS claim,
-                       f.confidence AS confidence,
-                       f.temporal_context AS temporal_context,
-                       1.0 AS similarity_score
-                LIMIT $limit
-            """, entity_names=entity_names_lower, user_id=user_id,
-                channel=channel, limit=max_candidates)
+            entity_result = store.facts_about_entities(
+                entity_names_lower, user_id, channel, max_candidates,
+            )
             for record in entity_result:
                 fid = record["id"]
                 if fid not in seen_ids:
@@ -182,21 +143,9 @@ def _get_contradiction_candidates(
 
     # Strategy 2: Embedding similarity search
     try:
-        vector_result = session.run("""
-            CALL db.index.vector.queryNodes('fact_embeddings', $k, $embedding)
-            YIELD node, score
-            WHERE score > $threshold
-              AND node.user_id = $user_id
-              AND (node.channel = $channel OR node.channel = '_global')
-              AND node.superseded_at IS NULL
-            RETURN node.id AS id, node.claim AS claim,
-                   node.confidence AS confidence,
-                   node.temporal_context AS temporal_context,
-                   score AS similarity_score
-            LIMIT $limit
-        """, k=max_candidates, embedding=claim_embedding,
-            threshold=similarity_threshold, user_id=user_id,
-            channel=channel, limit=max_candidates)
+        vector_result = store.similar_facts(
+            claim_embedding, user_id, channel, similarity_threshold, max_candidates,
+        )
         for record in vector_result:
             fid = record["id"]
             if fid not in seen_ids:
@@ -252,7 +201,7 @@ def _get_memory_for_user(user_id: str, channel: str = "_default") -> AgentMemory
 
 
 def _get_recent_facts(
-    session,
+    store: ConsolidationStore,
     user_id: str,
     channel: str,
     limit: int = 30,
@@ -261,7 +210,7 @@ def _get_recent_facts(
     Get recent facts for a user/channel for contradiction detection.
 
     Args:
-        session: Neo4j session
+        store: The sweep's ConsolidationStore
         user_id: User ID
         channel: Memory channel
         limit: Maximum facts to return
@@ -269,25 +218,12 @@ def _get_recent_facts(
     Returns:
         List of facts with id, claim, confidence, created_at
     """
-    result = session.run("""
-        MATCH (f:Fact)
-        WHERE f.user_id = $user_id
-          AND (f.channel = $channel OR f.channel = '_global')
-          AND f.superseded_at IS NULL
-        RETURN f.id AS id,
-               f.claim AS claim,
-               f.confidence AS confidence,
-               f.created_at AS created_at
-        ORDER BY f.created_at DESC
-        LIMIT $limit
-    """, user_id=user_id, channel=channel, limit=limit)
-
-    return [dict(record) for record in result]
+    return store.recent_facts(user_id, channel, limit)
 
 
 def _handle_user_correction(
     memory: AgentMemory,
-    session,
+    store: ConsolidationStore,
     correction,
     user_id: str,
     channel: str,
@@ -297,7 +233,7 @@ def _handle_user_correction(
 
     Args:
         memory: AgentMemory instance
-        session: Neo4j session
+        store: The sweep's ConsolidationStore
         correction: CorrectionResult with original_claim and corrected_claim
         user_id: User ID
         channel: Memory channel
@@ -314,18 +250,7 @@ def _handle_user_correction(
     # Find facts that might match the original claim (fuzzy match)
     original_lower = correction.original_claim.strip().lower()
 
-    result = session.run("""
-        MATCH (f:Fact)
-        WHERE f.user_id = $user_id
-          AND (f.channel = $channel OR f.channel = '_global')
-          AND f.superseded_at IS NULL
-          AND toLower(f.claim) CONTAINS $original_lower
-        RETURN f.id AS id, f.claim AS claim
-        ORDER BY f.created_at DESC
-        LIMIT 5
-    """, user_id=user_id, channel=channel, original_lower=original_lower[:50])
-
-    matching_facts = list(result)
+    matching_facts = store.facts_containing(user_id, channel, original_lower[:50])
 
     if not matching_facts:
         logger.debug(f"No matching fact found for correction: {original_lower[:50]}...")
@@ -362,7 +287,7 @@ def _handle_user_correction(
 
 def _handle_contradiction(
     memory: AgentMemory,
-    session,
+    store: ConsolidationStore,
     fact_dict: dict[str, Any],
     contradiction,
     user_id: str,
@@ -373,7 +298,7 @@ def _handle_contradiction(
 
     Args:
         memory: AgentMemory instance
-        session: Neo4j session
+        store: The sweep's ConsolidationStore (unused; the semantic memory writes)
         fact_dict: The new fact data
         contradiction: ContradictionResult with resolution
         user_id: User ID
@@ -648,17 +573,17 @@ def _resolve_and_prepare_entities(
 
 
 def _batch_store_entities(
-    session,
+    store: ConsolidationStore,
     entities: list[Entity],
     conv_id: str,
     user_id: str,
     channel: str,
 ) -> int:
     """
-    Store multiple entities in a single Neo4j transaction using UNWIND.
+    Store multiple entities in one batched write.
 
     Args:
-        session: Neo4j session
+        store: The sweep's ConsolidationStore
         entities: List of Entity objects to store
         conv_id: Conversation ID for MENTIONS relationship
         user_id: User ID
@@ -670,52 +595,8 @@ def _batch_store_entities(
     if not entities:
         return 0
 
-    # Convert entities to dictionaries for Neo4j
-    entity_data = [
-        {
-            "id": e.id,
-            "name": e.name,
-            "type": e.type,
-            "description": e.description,
-            "salience": e.salience,
-            "aliases": e.aliases,
-            "embedding": e.embedding,
-            "user_id": user_id,
-            "channel": channel,
-        }
-        for e in entities
-    ]
-
     # Batch upsert entities and create MENTIONS relationships
-    session.run("""
-        UNWIND $entities AS e
-        MERGE (entity:Entity {id: e.id})
-        ON CREATE SET
-            entity.name = e.name,
-            entity.type = e.type,
-            entity.description = e.description,
-            entity.salience = e.salience,
-            entity.aliases = e.aliases,
-            entity.embedding = e.embedding,
-            entity.user_id = e.user_id,
-            entity.channel = e.channel,
-            entity.first_seen = datetime(),
-            entity.last_accessed = datetime(),
-            entity.access_count = 1
-        ON MATCH SET
-            entity.name = e.name,
-            entity.type = e.type,
-            entity.description = coalesce(e.description, entity.description),
-            entity.salience = e.salience,
-            entity.last_accessed = datetime(),
-            entity.access_count = entity.access_count + 1
-        WITH entity, e
-        MERGE (u:User {id: e.user_id})
-        MERGE (u)-[:HAS_ENTITY]->(entity)
-        WITH entity
-        MATCH (c:Conversation {id: $conv_id})
-        MERGE (c)-[:MENTIONS]->(entity)
-    """, entities=entity_data, conv_id=conv_id)
+    store.store_entities(entities, conv_id, user_id, channel)
 
     return len(entities)
 
@@ -758,7 +639,7 @@ def _resolve_relationship_endpoint(
 
 
 def _batch_store_relationships(
-    session,
+    store: ConsolidationStore,
     relationships: list[dict[str, Any]],
     entity_map: dict[str, str],
     memory: AgentMemory | None = None,
@@ -767,7 +648,7 @@ def _batch_store_relationships(
     metrics: ConsolidationMetrics | None = None,
 ) -> int:
     """
-    Store multiple relationships in a single Neo4j transaction using UNWIND.
+    Store multiple relationships in one batched write.
 
     Endpoints missing from `entity_map` are recovered via store lookup + the
     semantic auto-band when `memory` is provided; irrecoverable relationships
@@ -775,7 +656,7 @@ def _batch_store_relationships(
     were dropped silently (a hidden cause of graph edge sparsity).
 
     Args:
-        session: Neo4j session
+        store: The sweep's ConsolidationStore
         relationships: List of relationship dictionaries
         entity_map: Map of lowercase entity name to entity ID
         memory/user_id/channel/metrics: enable endpoint recovery when given
@@ -816,18 +697,7 @@ def _batch_store_relationships(
     if not valid_rels:
         return 0
 
-    session.run("""
-        UNWIND $rels AS r
-        MATCH (source:Entity {id: r.source_id}),
-              (target:Entity {id: r.target_id})
-        MERGE (source)-[rel:RELATES_TO {type: r.rel_type}]->(target)
-        ON CREATE SET rel.confidence = r.confidence,
-                      rel.created_at = datetime()
-        ON MATCH SET rel.confidence =
-            CASE WHEN rel.confidence < r.confidence
-                 THEN r.confidence
-                 ELSE rel.confidence END
-    """, rels=valid_rels)
+    store.store_relationships(valid_rels)
 
     return len(valid_rels)
 
@@ -898,7 +768,7 @@ def _make_subject_router(
 
 
 def _ensure_agent_entities(
-    session,
+    store: ConsolidationStore,
     memory_cache: dict[str, AgentMemory],
     user_id: str,
     roster: list[dict[str, str]],
@@ -927,10 +797,7 @@ def _ensure_agent_entities(
         ent_id = f"agent:{user_id}:{agent_id}"
         name = member.get("name") or agent_id
         try:
-            exists = session.run(
-                "MATCH (e:Entity {id: $id}) RETURN e.id LIMIT 1", id=ent_id,
-            ).single()
-            if exists:
+            if store.entity_exists(ent_id):
                 continue
             mem = _get_or_create_memory(memory_cache, user_id, "_global")
             mem.upsert_entity(Entity(
@@ -946,7 +813,7 @@ def _ensure_agent_entities(
 
 def _resolve_fact_entity_ids(
     memory: AgentMemory,
-    session,
+    store: ConsolidationStore,
     entity_names: list[str],
     entity_map: dict[str, str],
     user_id: str,
@@ -1005,7 +872,7 @@ def _resolve_fact_entity_ids(
                     salience=0.3,
                 )
                 # Persist immediately so the subsequent learn_fact MATCH finds it.
-                _batch_store_entities(session, [stub], conv_id, user_id, channel)
+                _batch_store_entities(store, [stub], conv_id, user_id, channel)
                 eid = stub.id
                 entity_map[key] = eid
                 metrics.fact_entity_stubs_created += 1
@@ -1132,7 +999,8 @@ def _build_scope_context(
 #
 # `consolidate_episodic_to_semantic` below is a thin coordinator. The work of a
 # single conversation is split across the helpers in this section so each stage
-# is independently testable. All helpers share the open Neo4j ``session`` and
+# is independently testable. All helpers share the phase's open ``store`` (a
+# ``ConsolidationStore``: every query the sweep runs, behind one store session) and
 # mutate the passed-in ``metrics`` / ``errors`` in place (mirroring the existing
 # ``_resolve_and_prepare_entities`` convention) — this keeps the decomposition a
 # pure relocation of the original god-function's behavior.
@@ -1164,22 +1032,21 @@ class _FactStoreResult:
 
 
 def _fetch_pending_conversations(
-    session, only_conversation_id: str | None = None,
+    only_conversation_id: str | None = None,
 ) -> tuple[list[Any], int]:
     """Discover conversations with unconsolidated user turns.
 
     Returns ``(records, total_in_neo4j)`` where ``records`` are the
     conversations needing processing (limit 10) and ``total_in_neo4j`` is the
-    count seen by the debug census query.
+    count seen by the debug census query. Discovery spans every user, so it
+    reads through ``CrossUserStore``.
     """
+    from ..memory.cross_user import CrossUserStore
+
+    cross_user = CrossUserStore()
+
     # First, check what conversations exist at all (for debugging)
-    debug_result = session.run("""
-        MATCH (c:Conversation)
-        OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
-        RETURN c.id AS id, c.consolidated AS consolidated, count(t) AS turn_count
-        LIMIT 20
-    """)
-    conversations_found = list(debug_result)
+    conversations_found = cross_user.conversation_census()
     logger.info(f"Consolidation: Found {len(conversations_found)} conversations in Neo4j")
     for conv in conversations_found:
         logger.debug(f"  - {conv['id']}: {conv['turn_count']} turns, consolidated={conv['consolidated']}")
@@ -1192,26 +1059,7 @@ def _fetch_pending_conversations(
     # user turns not yet marked ``t.consolidated`` and collect only those — an
     # already-fully-consolidated conversation yields no rows, so an idempotent
     # re-sweep is a no-op (no re-pouring old turns; dedup is not the safety net).
-    result = session.run("""
-        MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
-        WHERE t.role = 'user'
-          AND t.consolidated IS NULL
-          AND ($only IS NULL OR c.id = $only)
-        OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
-        OPTIONAL MATCH (t)-[:FOLLOWED_BY]->(resp:Turn)
-        WITH c, u, t, resp
-        ORDER BY t.index
-        WITH c, u, collect({id: t.id, content: t.content, responder_agent_id: resp.agent_id}) AS turns
-        ORDER BY c.started_at DESC
-        LIMIT 10
-        RETURN c.id AS conversation_id,
-               coalesce(u.id, 'default') AS user_id,
-               coalesce(c.channel, '_default') AS channel,
-               c.agent_id AS agent_id,
-               turns
-    """, only=only_conversation_id)
-
-    records = list(result)
+    records = cross_user.pending_user_conversations(only_conversation_id)
 
     # Channels under an active Extract are consolidation-frozen: a sweep landing
     # facts mid-extract would be silent loss (they'd miss the verified artifact
@@ -1309,7 +1157,7 @@ def _accumulate_registry(
 
 
 async def _extract_from_conversation(
-    turns, memory, session, extraction_service, user_id, channel,
+    turns, memory, store: ConsolidationStore, extraction_service, user_id, channel,
     conv_id, metrics, errors, roster=None, default_agent_id=None,
 ) -> _ConvExtraction:
     """Apply correction detection + combined relevance/extraction over a
@@ -1327,19 +1175,19 @@ async def _extract_from_conversation(
     """
     if get_settings().extraction_windowing_enabled:
         return await _extract_windowed(
-            turns, memory, session, extraction_service, user_id, channel,
+            turns, memory, store, extraction_service, user_id, channel,
             conv_id, metrics, errors, roster=roster,
             default_agent_id=default_agent_id,
         )
     return await _extract_per_turn(
-        turns, memory, session, extraction_service, user_id, channel,
+        turns, memory, store, extraction_service, user_id, channel,
         conv_id, metrics, errors, roster=roster,
         default_agent_id=default_agent_id,
     )
 
 
 async def _extract_windowed(
-    turns, memory, session, extraction_service, user_id, channel,
+    turns, memory, store: ConsolidationStore, extraction_service, user_id, channel,
     conv_id, metrics, errors, roster=None, default_agent_id=None,
 ) -> _ConvExtraction:
     """Windowed extraction: pre-filter → per-turn corrections → windows with
@@ -1363,7 +1211,7 @@ async def _extract_windowed(
             correction = await extraction_service.check_correction(turn["content"])
             metrics.correction_calls += 1
             if correction.is_correction:
-                if _handle_user_correction(memory, session, correction, user_id, channel):
+                if _handle_user_correction(memory, store, correction, user_id, channel):
                     out.corrections_applied += 1
                     metrics.corrections_applied += 1
                 # Still extract from the turn — it may have new info
@@ -1455,7 +1303,7 @@ async def _extract_windowed(
 
 
 async def _extract_per_turn(
-    turns, memory, session, extraction_service, user_id, channel,
+    turns, memory, store: ConsolidationStore, extraction_service, user_id, channel,
     conv_id, metrics, errors, roster=None, default_agent_id=None,
 ) -> _ConvExtraction:
     """Legacy per-turn extraction (flag-off fallback; pre-Slice-1 behavior)."""
@@ -1472,7 +1320,7 @@ async def _extract_per_turn(
             correction = await extraction_service.check_correction(content)
             metrics.correction_calls += 1
             if correction.is_correction:
-                if _handle_user_correction(memory, session, correction, user_id, channel):
+                if _handle_user_correction(memory, store, correction, user_id, channel):
                     out.corrections_applied += 1
                     metrics.corrections_applied += 1
                 # Still extract from the turn - it may have new info
@@ -1528,7 +1376,7 @@ async def _extract_per_turn(
 
 
 def _store_conversation_entities(
-    session, memory, extracted_entities, entity_map,
+    store: ConsolidationStore, memory, extracted_entities, entity_map,
     user_id, channel, conv_id, metrics, errors,
 ) -> int:
     """Resolve extracted entities against existing ones and batch-store the new
@@ -1567,7 +1415,7 @@ def _store_conversation_entities(
     # Batch store only the genuinely new entities
     try:
         stored_count = _batch_store_entities(
-            session, entities_to_store, conv_id, user_id, channel
+            store, entities_to_store, conv_id, user_id, channel
         )
         metrics.entities_stored += stored_count
         entity_count = stored_count + entities_reused
@@ -1581,7 +1429,7 @@ def _store_conversation_entities(
 
 
 async def _store_facts_with_verification(
-    session, route, extraction_service, extracted_facts, entity_map,
+    store: ConsolidationStore, route, extraction_service, extracted_facts, entity_map,
     user_id, active_channel, conv_id, metrics, errors,
 ) -> _FactStoreResult:
     """Run the four-layer fact pipeline (LLM-refine → hash gate → semantic gate
@@ -1646,7 +1494,7 @@ async def _store_facts_with_verification(
                 in_scope = bool(target) and target_channel in (fact_channel, "_global")
                 if in_scope:
                     _handle_contradiction(
-                        fact_memory, session, fact_dict,
+                        fact_memory, store, fact_dict,
                         type('Result', (), {
                             'has_contradiction': True,
                             'contradicting_fact_id': refines_id,
@@ -1669,7 +1517,7 @@ async def _store_facts_with_verification(
             # === Layer 1: Fast Gate (no LLM) ===
 
             # 1a. Exact hash duplicate check
-            if _is_duplicate_fact(session, claim, user_id, fact_channel):
+            if _is_duplicate_fact(store, claim, user_id, fact_channel):
                 res.skipped_duplicates += 1
                 metrics.duplicates_skipped += 1
                 logger.debug(f"Skipping hash duplicate: {claim[:50]}...")
@@ -1684,7 +1532,7 @@ async def _store_facts_with_verification(
 
             # 1b. Semantic duplicate check (cosine > threshold)
             if _is_semantic_duplicate(
-                session, claim_embedding, user_id, fact_channel,
+                store, claim_embedding, user_id, fact_channel,
                 threshold=settings.semantic_duplicate_threshold,
             ):
                 res.skipped_duplicates += 1
@@ -1697,7 +1545,7 @@ async def _store_facts_with_verification(
             if settings.contradiction_detection_enabled:
                 entity_names = fact_dict.get("entity_names", [])
                 candidates = _get_contradiction_candidates(
-                    session, claim, claim_embedding, entity_names,
+                    store, claim, claim_embedding, entity_names,
                     user_id, fact_channel,
                     similarity_threshold=settings.contradiction_similarity_threshold,
                     max_candidates=settings.contradiction_max_candidates,
@@ -1712,7 +1560,7 @@ async def _store_facts_with_verification(
                         if _is_temporal_progression(fact_dict, candidate):
                             # Auto-supersede without LLM call
                             _handle_contradiction(
-                                fact_memory, session, fact_dict,
+                                fact_memory, store, fact_dict,
                                 type('Result', (), {
                                     'has_contradiction': True,
                                     'contradicting_fact_id': candidate['id'],
@@ -1745,7 +1593,7 @@ async def _store_facts_with_verification(
                         res.contradictions_found += 1
                         metrics.contradictions_found += 1
                         action = _handle_contradiction(
-                            fact_memory, session, fact_dict, contradiction, user_id, fact_channel
+                            fact_memory, store, fact_dict, contradiction, user_id, fact_channel
                         )
                         if action == "skipped":
                             res.skipped_contradictions += 1
@@ -1758,7 +1606,7 @@ async def _store_facts_with_verification(
 
             # Link fact to mentioned entities — batch map → store lookup → stub.
             entity_ids = _resolve_fact_entity_ids(
-                fact_memory, session, fact_dict.get("entity_names", []),
+                fact_memory, store, fact_dict.get("entity_names", []),
                 fact_entity_map, user_id, fact_channel, conv_id, metrics,
             )
 
@@ -1783,7 +1631,7 @@ async def _store_facts_with_verification(
 
 
 def _link_facts_and_relationships(
-    session, conv_id, stored_fact_ids, extracted_relationships,
+    store: ConsolidationStore, conv_id, stored_fact_ids, extracted_relationships,
     entity_map, metrics, errors, memory=None, user_id=None, channel=None,
 ) -> int:
     """Batch-create DERIVED_FROM edges for stored facts and batch-store the
@@ -1791,18 +1639,14 @@ def _link_facts_and_relationships(
     # Batch create DERIVED_FROM relationships for all stored facts
     if stored_fact_ids:
         try:
-            session.run("""
-                UNWIND $fact_ids AS fid
-                MATCH (c:Conversation {id: $conv_id}), (f:Fact {id: fid})
-                MERGE (f)-[:DERIVED_FROM]->(c)
-            """, conv_id=conv_id, fact_ids=stored_fact_ids)
+            store.link_facts_to_conversation(conv_id, stored_fact_ids)
         except Exception as e:
             logger.warning(f"Batch DERIVED_FROM creation failed: {e}")
 
     # Batch store relationships using UNWIND (with endpoint recovery)
     try:
         rel_count = _batch_store_relationships(
-            session, extracted_relationships, entity_map,
+            store, extracted_relationships, entity_map,
             memory=memory, user_id=user_id, channel=channel, metrics=metrics,
         )
         metrics.relationships_stored += rel_count
@@ -1815,21 +1659,18 @@ def _link_facts_and_relationships(
     return rel_count
 
 
-def _mark_turns_consolidated(session, turn_ids: list[str], prop: str) -> None:
+def _mark_turns_consolidated(store: ConsolidationStore, turn_ids: list[str], prop: str) -> None:
     """Stamp ``t.<prop> = datetime()`` on the given turns so they are never
     re-consolidated. ``prop`` is ``consolidated`` (user turns) or
     ``self_consolidated`` (assistant turns). No-op on an empty list.
     """
     if not turn_ids:
         return
-    session.run(
-        f"UNWIND $ids AS tid MATCH (t:Turn {{id: tid}}) SET t.{prop} = datetime()",
-        ids=turn_ids,
-    )
+    store.mark_turns(turn_ids, prop)
 
 
 async def _consolidate_user_conversation(
-    record, conv_idx, total, session, memory_cache,
+    record, conv_idx, total, store: ConsolidationStore, memory_cache,
     extraction_service, metrics, errors, progress_callback,
 ) -> None:
     """Consolidate one user conversation: extract → store entities → verify and
@@ -1865,11 +1706,11 @@ async def _consolidate_user_conversation(
     agent_id = record.get("agent_id")
     roster = memory.get_conversation_roster(conv_id)
     if roster:
-        _ensure_agent_entities(session, memory_cache, user_id, roster)
+        _ensure_agent_entities(store, memory_cache, user_id, roster)
 
     # Filter turns by relevance and extract entities/facts
     extracted = await _extract_from_conversation(
-        turns, memory, session, extraction_service, user_id, channel,
+        turns, memory, store, extraction_service, user_id, channel,
         conv_id, metrics, errors, roster=roster, default_agent_id=agent_id,
     )
 
@@ -1880,12 +1721,9 @@ async def _consolidate_user_conversation(
         # sweep instead of being skipped with their facts lost. Turns of a *failed*
         # window are already absent from processed_turn_ids and retry regardless.
         # Keep c.consolidated as a coarse "last-touched" marker.
-        _mark_turns_consolidated(session, extracted.processed_turn_ids, "consolidated")
+        _mark_turns_consolidated(store, extracted.processed_turn_ids, "consolidated")
         if extracted.processed_turn_ids:
-            session.run(
-                "MATCH (c:Conversation {id: $conv_id}) SET c.consolidated = datetime()",
-                conv_id=conv_id,
-            )
+            store.mark_conversation_consolidated(conv_id)
 
     if not extracted.relevant_turns:
         logger.debug(f"No relevant turns in conversation {conv_id}, skipping extraction")
@@ -1917,7 +1755,7 @@ async def _consolidate_user_conversation(
         })
 
     entity_count = _store_conversation_entities(
-        session, memory, extracted.entities, entity_map,
+        store, memory, extracted.entities, entity_map,
         user_id, channel, conv_id, metrics, errors,
     )
 
@@ -1927,12 +1765,12 @@ async def _consolidate_user_conversation(
     # and roster were resolved above.)
     route = _make_subject_router(memory_cache, user_id, channel, agent_id)
     fact_result = await _store_facts_with_verification(
-        session, route, extraction_service, extracted.facts, entity_map,
+        store, route, extraction_service, extracted.facts, entity_map,
         user_id, channel, conv_id, metrics, errors,
     )
 
     rel_count = _link_facts_and_relationships(
-        session, conv_id, fact_result.stored_fact_ids, extracted.relationships,
+        store, conv_id, fact_result.stored_fact_ids, extracted.relationships,
         entity_map, metrics, errors, memory=memory, user_id=user_id, channel=channel,
     )
 
@@ -1963,7 +1801,7 @@ async def _consolidate_user_conversation(
 
 
 async def _consolidate_assistant_conversation(
-    record, session, self_memory_cache, extraction_service, metrics, errors,
+    record, store: ConsolidationStore, self_memory_cache, extraction_service, metrics, errors,
 ) -> None:
     """Extract assistant self-knowledge into each producing agent's
     ``_self_{agent_id}`` channel and mark the conversation self-consolidated.
@@ -1983,7 +1821,7 @@ async def _consolidate_assistant_conversation(
     roster_memory = _get_or_create_memory(self_memory_cache, user_id, active_channel)
     roster = roster_memory.get_conversation_roster(conv_id)
     if roster:
-        _ensure_agent_entities(session, self_memory_cache, user_id, roster)
+        _ensure_agent_entities(store, self_memory_cache, user_id, roster)
 
     # Assistant turns marked ``self_consolidated`` (once), so they never re-process:
     # a deterministic skip (no agent / too short) or a clean extraction; a failed
@@ -2068,7 +1906,7 @@ async def _consolidate_assistant_conversation(
         if entities_to_store:
             try:
                 _batch_store_entities(
-                    session, entities_to_store, conv_id, user_id, self_channel,
+                    store, entities_to_store, conv_id, user_id, self_channel,
                 )
             except Exception as e:
                 logger.warning(f"Self-extraction entity storage failed: {e}")
@@ -2098,11 +1936,11 @@ async def _consolidate_assistant_conversation(
             fact_memory, fact_channel = route(fact_dict)
             fact_entity_map = entity_maps.setdefault(fact_channel, {})
 
-            if _is_duplicate_fact(session, claim, user_id, fact_channel):
+            if _is_duplicate_fact(store, claim, user_id, fact_channel):
                 continue
 
             entity_ids = _resolve_fact_entity_ids(
-                fact_memory, session, fact_dict.get("entity_names", []),
+                fact_memory, store, fact_dict.get("entity_names", []),
                 fact_entity_map, user_id, fact_channel, conv_id, metrics,
             )
 
@@ -2123,7 +1961,7 @@ async def _consolidate_assistant_conversation(
         if result.relationships:
             try:
                 _batch_store_relationships(
-                    session, result.relationships, entity_map,
+                    store, result.relationships, entity_map,
                     memory=memory, user_id=user_id, channel=self_channel,
                     metrics=metrics,
                 )
@@ -2133,12 +1971,9 @@ async def _consolidate_assistant_conversation(
     # Mark the processed assistant turns (never re-consolidated); a failed turn is
     # omitted and retries next sweep. c.self_consolidated is a coarse last-touched
     # marker, no longer the gate.
-    _mark_turns_consolidated(session, processed_ids, "self_consolidated")
+    _mark_turns_consolidated(store, processed_ids, "self_consolidated")
     if processed_ids:
-        session.run(
-            "MATCH (c:Conversation {id: $conv_id}) SET c.self_consolidated = datetime()",
-            conv_id=conv_id,
-        )
+        store.mark_conversation_self_consolidated(conv_id)
 
 
 async def consolidate_episodic_to_semantic(
@@ -2162,6 +1997,9 @@ async def consolidate_episodic_to_semantic(
     Returns:
         Dictionary with consolidation metrics
     """
+    from ..memory.consolidation_store import ConsolidationStore
+    from ..memory.cross_user import CrossUserStore
+
     job_start = time.perf_counter()
     job_id = str(uuid4())[:8]
 
@@ -2178,8 +2016,8 @@ async def consolidate_episodic_to_semantic(
     # =========================================================================
     # Phase 1: User-turn consolidation into semantic memory
     # =========================================================================
-    with Neo4jConnection.session() as session:
-        records, total_in_neo4j = _fetch_pending_conversations(session, only_conversation_id)
+    with ConsolidationStore.open() as store:
+        records, total_in_neo4j = _fetch_pending_conversations(only_conversation_id)
 
         if progress_callback:
             progress_callback("discovery", {
@@ -2190,7 +2028,7 @@ async def consolidate_episodic_to_semantic(
         extraction_service = get_extraction_service()
         for conv_idx, record in enumerate(records):
             await _consolidate_user_conversation(
-                record, conv_idx, len(records), session,
+                record, conv_idx, len(records), store,
                 memory_cache, extraction_service, metrics, errors,
                 progress_callback,
             )
@@ -2216,34 +2054,18 @@ async def consolidate_episodic_to_semantic(
     # =========================================================================
     self_memory_cache: dict[str, AgentMemory] = {}
 
-    with Neo4jConnection.session() as session:
+    with ConsolidationStore.open() as store:
         # Turn-level idempotency (assistant self-knowledge): only assistant turns
-        # not yet marked ``t.self_consolidated``; collect only those.
-        assistant_result = session.run("""
-            MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
-            WHERE t.role = 'assistant'
-              AND t.self_consolidated IS NULL
-              AND c.agent_id IS NOT NULL
-              AND ($only IS NULL OR c.id = $only)
-            OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
-            WITH c, u, collect(t) AS turns
-            ORDER BY c.started_at DESC
-            LIMIT 10
-            RETURN c.id AS conversation_id,
-                   coalesce(u.id, 'default') AS user_id,
-                   coalesce(c.channel, '_default') AS channel,
-                   c.agent_id AS agent_id,
-                   [t IN turns | {content: t.content, id: t.id, agent_id: t.agent_id}] AS turns
-        """, only=only_conversation_id)
-
-        assistant_records = list(assistant_result)
+        # not yet marked ``t.self_consolidated``; collect only those. Discovery
+        # spans every user, so it reads through CrossUserStore.
+        assistant_records = CrossUserStore().pending_assistant_conversations(only_conversation_id)
         logger.info(f"Self-extraction: {len(assistant_records)} conversations with assistant turns")
 
         extraction_service = get_extraction_service()
 
         for record in assistant_records:
             await _consolidate_assistant_conversation(
-                record, session, self_memory_cache, extraction_service, metrics, errors,
+                record, store, self_memory_cache, extraction_service, metrics, errors,
             )
 
         if assistant_records:

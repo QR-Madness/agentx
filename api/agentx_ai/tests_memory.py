@@ -60,6 +60,7 @@ from agentx_ai.kit.agent_memory.consolidation.metrics import (
     AggregatedMetrics,
     ConsolidationMetrics,
 )
+from agentx_ai.kit.agent_memory.memory.consolidation_store import ConsolidationStore
 from agentx_ai.kit.agent_memory.extraction import (
     ContradictionResult,
     CorrectionResult,
@@ -2180,7 +2181,7 @@ class ConsolidationCorrectionHandlerTest(TestCase):
         ]))
         mock_session.run.return_value = mock_result
 
-        facts = _get_recent_facts(mock_session, "user-123", "_default")
+        facts = _get_recent_facts(ConsolidationStore(mock_session), "user-123", "_default")
 
         self.assertEqual(len(facts), 2)
         self.assertEqual(facts[0]["id"], "fact-1")
@@ -6233,7 +6234,7 @@ class StoreTimeEntityEmbeddingTest(TestCase):
             update={"semantic_entity_linking_enabled": band})
         with pin_memory_settings(override):
             count = jobs_mod._store_conversation_entities(
-                session, memory,
+                ConsolidationStore(session), memory,
                 [{"name": "Kyoto", "type": "Location"}, {"name": "Lisbon", "type": "Location"}],
                 {}, "u", "_global", "c", metrics, [],
             )
@@ -6353,7 +6354,7 @@ class RelationshipEndpointRecoveryTest(TestCase):
         session = MagicMock()
         metrics = ConsolidationMetrics(job_id="t", started_at=datetime.now(UTC))
         count = _batch_store_relationships(
-            session, rels, entity_map,
+            ConsolidationStore(session), rels, entity_map,
             memory=memory, user_id="u", channel="_global", metrics=metrics,
         )
         return count, metrics, session
@@ -6830,7 +6831,6 @@ class MemoryStoreBoundaryTest(TestCase):
 
     # module → (Cypher strings, Neo4j session/driver openings), measured 2026-11-17.
     BASELINE: dict[str, tuple[int, int]] = {
-        "kit/agent_memory/consolidation/jobs.py": (17, 2),
         "kit/agent_memory/maintenance/entity_merge.py": (3, 0),
         "management/commands/backfill_agent_attribution.py": (2, 1),
         "management/commands/bootstrap.py": (0, 1),
@@ -7530,3 +7530,147 @@ class ConsolidationJobsUseTheStoreTest(TestCase):
         self.assertEqual(rows, [{"id": "e1", "name": "Acme", "aliases": [], "salience": 0.5}])
         self.assertEqual(session.run.call_args.kwargs, {"user_id": "u1", "channel": "proj"})
         self.assertIn("e.channel = '_global'", session.run.call_args.args[0])
+
+
+class ConsolidationStoreTest(TestCase):
+    """memory/consolidation_store.py — the sweep's queries over one store session
+    (ADR-21, Slice 1a part 2). The sweep's own tests drive these through mocked
+    sessions; these pin the store's glue: result shapes, the marker allow-list,
+    the row mapping, and that writes surface their errors."""
+
+    @staticmethod
+    def _store(run_result=None):
+        session = MagicMock()
+        session.run.return_value = run_result if run_result is not None else MagicMock()
+        return ConsolidationStore(session), session
+
+    def test_open_holds_one_session_for_the_phase(self):
+        session = MagicMock()
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session',
+                   return_value=cm) as opener:
+            with ConsolidationStore.open() as store:
+                store.mark_conversation_consolidated("c1")
+                store.mark_conversation_self_consolidated("c1")
+            cm.__exit__.assert_called_once()
+        opener.assert_called_once()
+        self.assertEqual(session.run.call_count, 2)
+
+    def test_mark_turns_writes_only_a_known_marker(self):
+        store, session = self._store()
+        store.mark_turns(["t1", "t2"], "self_consolidated")
+        query = session.run.call_args.args[0]
+        self.assertIn("SET t.self_consolidated = datetime()", query)
+        self.assertEqual(session.run.call_args.kwargs, {"ids": ["t1", "t2"]})
+        with self.assertRaises(ValueError):
+            store.mark_turns(["t1"], "consolidated = null, t.x")
+        self.assertEqual(session.run.call_count, 1)  # nothing ran for the bad marker
+
+    def test_store_entities_maps_each_entity_to_a_row_for_the_user(self):
+        store, session = self._store()
+        kyoto = Entity(id="e1", name="Kyoto", type="Location", description="city",
+                       salience=0.8, aliases=["Kyōto"])
+        store.store_entities([kyoto], "c1", "u1", "proj")
+        kwargs = session.run.call_args.kwargs
+        self.assertEqual(kwargs["conv_id"], "c1")
+        row = kwargs["entities"][0]
+        self.assertEqual(
+            {k: row[k] for k in ("id", "name", "type", "description", "salience",
+                                 "aliases", "user_id", "channel")},
+            {"id": "e1", "name": "Kyoto", "type": "Location", "description": "city",
+             "salience": 0.8, "aliases": ["Kyōto"], "user_id": "u1", "channel": "proj"},
+        )
+
+    def test_existence_checks_read_one_record(self):
+        result = MagicMock()
+        store, _ = self._store(result)
+        checks = {
+            "fact_with_hash_exists": lambda: store.fact_with_hash_exists("u", "c", "h"),
+            "legacy_fact_with_claim_exists": lambda: store.legacy_fact_with_claim_exists("u", "c", "x"),
+            "similar_fact_exists": lambda: store.similar_fact_exists([0.1], "u", "c", 0.92),
+            "entity_exists": lambda: store.entity_exists("e1"),
+        }
+        for name, check in checks.items():
+            with self.subTest(check=name):
+                result.single.return_value = None
+                self.assertFalse(check())
+                result.single.return_value = {"id": "x"}
+                self.assertTrue(check())
+
+    def test_reads_return_plain_rows_and_pass_their_limits(self):
+        rows = [{"id": "f1", "claim": "A claim", "confidence": 0.9}]
+        store, session = self._store()
+        session.run.side_effect = lambda *a, **k: iter(rows)
+        self.assertEqual(store.recent_facts("u", "c", 30), rows)
+        self.assertEqual(session.run.call_args.kwargs["limit"], 30)
+        self.assertEqual(store.facts_containing("u", "c", "kyoto"), rows)
+        self.assertEqual(session.run.call_args.kwargs["original_lower"], "kyoto")
+        self.assertEqual(store.facts_about_entities(["kyoto"], "u", "c", 10), rows)
+        self.assertEqual(session.run.call_args.kwargs["limit"], 10)
+        self.assertEqual(store.similar_facts([0.1], "u", "c", 0.5, 7), rows)
+        # The vector index's k and the row limit are both the candidate cap.
+        self.assertEqual((session.run.call_args.kwargs["k"], session.run.call_args.kwargs["limit"]), (7, 7))
+        self.assertIsInstance(store.recent_facts("u", "c", 1)[0], dict)
+
+    def test_writes_raise_their_own_errors(self):
+        result = MagicMock()
+        result.consume.side_effect = RuntimeError("commit failed")
+        store, _ = self._store(result)
+        writes = {
+            "store_entities": lambda: store.store_entities(
+                [Entity(id="e1", name="Kyoto", type="Location")], "c1", "u1", "proj"),
+            "store_relationships": lambda: store.store_relationships(
+                [{"source_id": "a", "target_id": "b", "rel_type": "near", "confidence": 0.7}]),
+            "link_facts_to_conversation": lambda: store.link_facts_to_conversation("c1", ["f1"]),
+            "mark_turns": lambda: store.mark_turns(["t1"], "consolidated"),
+            "mark_conversation_consolidated": lambda: store.mark_conversation_consolidated("c1"),
+            "mark_conversation_self_consolidated":
+                lambda: store.mark_conversation_self_consolidated("c1"),
+        }
+        for name, write in writes.items():
+            with self.subTest(write=name), self.assertRaises(RuntimeError):
+                write()
+
+    def test_discovery_reads_through_the_cross_user_store(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        session = MagicMock()
+        session.run.return_value = iter([])
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
+            store = CrossUserStore()
+            self.assertEqual(store.conversation_census(), [])
+            self.assertEqual(session.run.call_args.kwargs, {})
+            session.run.return_value = iter([])
+            store.pending_user_conversations("c9")
+            self.assertEqual(session.run.call_args.kwargs, {"only": "c9"})
+            self.assertIn("t.consolidated IS NULL", session.run.call_args.args[0])
+            session.run.return_value = iter([])
+            store.pending_assistant_conversations(None)
+            self.assertEqual(session.run.call_args.kwargs, {"only": None})
+            self.assertIn("t.self_consolidated IS NULL", session.run.call_args.args[0])
+
+    def test_sweep_opens_one_store_per_phase(self):
+        from contextlib import contextmanager
+        opened = []
+
+        @contextmanager
+        def _open():
+            store = MagicMock(spec=ConsolidationStore)
+            opened.append(store)
+            yield store
+
+        cu = 'agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore'
+        with patch.object(ConsolidationStore, 'open', side_effect=_open), \
+             patch(f'{cu}.conversation_census', return_value=[]), \
+             patch(f'{cu}.pending_user_conversations', return_value=[]) as user_side, \
+             patch(f'{cu}.pending_assistant_conversations', return_value=[]) as agent_side, \
+             patch.object(consolidation_jobs_module, 'get_extraction_service'):
+            result = asyncio.run(consolidate_episodic_to_semantic(only_conversation_id="c9"))
+        self.assertEqual(len(opened), 2)  # Phase 1 (user turns), Phase 2 (assistant turns)
+        user_side.assert_called_once_with("c9")
+        agent_side.assert_called_once_with("c9")
+        self.assertEqual(result["items_processed"], 0)
