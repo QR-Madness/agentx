@@ -187,6 +187,20 @@ runs the suite against both backends.
         destroy data, so they can't run against a developer's live store. A one-off smoke on a
         throwaway stack passed (11 checks); the PostgreSQL twin needs them as live contract
         tests gated on a sterile store.
+  - [x] **1a, part 2 — the sweep** (2026-11-20): `consolidate_episodic_to_semantic` and its
+        helpers no longer touch Neo4j. Each phase opens a
+        `memory/consolidation_store.py::ConsolidationStore` and threads it through the helpers
+        as `store` (typed, so a leftover raw query fails type-checking); it holds the 14
+        per-conversation queries (duplicate and contradiction checks, entity, relationship and
+        provenance writes, the turn and conversation markers). Discovery (the census and the
+        pending user and assistant conversations) spans every user, so it went to
+        `CrossUserStore`. 17 queries moved unchanged apart from whitespace (checked string by
+        string, the marker f-string included); `mark_turns` now refuses any marker but the two
+        the sweep stamps; the writes consume their results, as in part 1. `jobs.py` holds no
+        Cypher and opens no sessions, so its guard row is gone: 27 strings and 12 openings
+        remain, in 7 modules (the management commands and `maintenance/entity_merge.py`, 1d).
+        Same gap as part 1: no live test runs the sweep's queries; a store-level smoke on a
+        throwaway stack passed (9 check groups, every moved query).
 - [ ] **Slice 2 — schema and RLS** (1–2 days). Alembic revisions for the tables, indexes and
       policies. Empty tables; nothing reads them yet.
 - [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`.

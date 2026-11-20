@@ -611,3 +611,68 @@ class CrossUserStore:
                                   r.method = 'backfill_namematch'
                 """, fact_id=fact_id, entity_ids=entity_ids).consume()
 
+
+    # The consolidation sweep's discovery: which conversations have turns to consolidate.
+    # The per-conversation work then runs through memory/consolidation_store.py.
+
+    def conversation_census(self) -> list[Any]:
+        """Up to 20 conversations with their ``consolidated`` marker and
+        ``turn_count``, for the sweep's debug log."""
+        with Neo4jConnection.session() as session:
+            return list(session.run("""
+        MATCH (c:Conversation)
+        OPTIONAL MATCH (c)-[:HAS_TURN]->(t:Turn)
+        RETURN c.id AS id, c.consolidated AS consolidated, count(t) AS turn_count
+        LIMIT 20
+    """))
+
+    def pending_user_conversations(self, only_conversation_id: str | None) -> list[Any]:
+        """The 10 most recently started conversations with user turns not yet
+        consolidated: ``conversation_id``, ``user_id``, ``channel``, ``agent_id`` and
+        ``turns`` (``id``, ``content`` and ``responder_agent_id``, the agent of the
+        turn that follows, in turn order). Only the unmarked user turns are collected,
+        so a fully consolidated conversation yields nothing. `only_conversation_id`
+        restricts the search to one conversation."""
+        with Neo4jConnection.session() as session:
+            return list(session.run("""
+        MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
+        WHERE t.role = 'user'
+          AND t.consolidated IS NULL
+          AND ($only IS NULL OR c.id = $only)
+        OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
+        OPTIONAL MATCH (t)-[:FOLLOWED_BY]->(resp:Turn)
+        WITH c, u, t, resp
+        ORDER BY t.index
+        WITH c, u, collect({id: t.id, content: t.content, responder_agent_id: resp.agent_id}) AS turns
+        ORDER BY c.started_at DESC
+        LIMIT 10
+        RETURN c.id AS conversation_id,
+               coalesce(u.id, 'default') AS user_id,
+               coalesce(c.channel, '_default') AS channel,
+               c.agent_id AS agent_id,
+               turns
+    """, only=only_conversation_id))
+
+    def pending_assistant_conversations(self, only_conversation_id: str | None) -> list[Any]:
+        """The 10 most recently started conversations, with an agent, whose
+        assistant turns aren't yet self-consolidated: ``conversation_id``,
+        ``user_id``, ``channel``, ``agent_id`` and ``turns`` (``content``, ``id``,
+        ``agent_id``). Only the unmarked assistant turns are collected.
+        `only_conversation_id` restricts the search to one conversation."""
+        with Neo4jConnection.session() as session:
+            return list(session.run("""
+            MATCH (c:Conversation)-[:HAS_TURN]->(t:Turn)
+            WHERE t.role = 'assistant'
+              AND t.self_consolidated IS NULL
+              AND c.agent_id IS NOT NULL
+              AND ($only IS NULL OR c.id = $only)
+            OPTIONAL MATCH (u:User)-[:HAS_CONVERSATION]->(c)
+            WITH c, u, collect(t) AS turns
+            ORDER BY c.started_at DESC
+            LIMIT 10
+            RETURN c.id AS conversation_id,
+                   coalesce(u.id, 'default') AS user_id,
+                   coalesce(c.channel, '_default') AS channel,
+                   c.agent_id AS agent_id,
+                   [t IN turns | {content: t.content, id: t.id, agent_id: t.agent_id}] AS turns
+        """, only=only_conversation_id))
