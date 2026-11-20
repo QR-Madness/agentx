@@ -242,8 +242,9 @@ them), so a manager without the Manager role silently lacked its tool limits and
       per-team factory editor. Node drags debounce-PUT positions; the derived layout stays the
       default for anything without a stored position. Shipped for top-level boxes (ambassador,
       managers, whole teams; a team's lead and members move with it), with a confirmed Reset.
-- [ ] **Profile quick-edit in the dock** — role, Specialty, delegability, without leaving for the
-      full editor.
+- [x] **Profile quick-edit in the dock** `[v0.21.284]` — role, Specialty, delegability, without leaving for the
+      full editor. Role and roster save at once, the specialty on Save; the role options are shared with
+      the profile editor (`lib/orgRoles.ts`), and the server applies the manager tool template.
 - [ ] **Chart detail** — the member→lead escalation as a dashed up-chevron on its edge, a read-only
       edge inspector, delegable badges in the outline.
 - [x] **Docs**: `OpenApi.yaml` + `endpoints.md` (new organization endpoint) `[v0.21.283]`.

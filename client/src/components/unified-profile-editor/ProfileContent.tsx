@@ -37,6 +37,7 @@ import { PromptEditor } from '../common/PromptEditor';
 import { EffectivePromptPreview } from '../common/EffectivePromptPreview';
 import { OverridablePromptField } from '../common/OverridablePromptField';
 import { api } from '../../lib/api';
+import { editableOrgRole, ORG_ROLE_OPTIONS } from '../../lib/orgRoles';
 import { ChainStrip } from './ChainStrip';
 import { NameDeck } from './NameDeck';
 import { PromptLibraryPanel } from './PromptLibraryPanel';
@@ -547,13 +548,9 @@ export function ProfileContent({
                       <SegmentedControl
                         size="sm"
                         ariaLabel="Organization role"
-                        value={orgLevel === 'executive' ? 'agent' : orgLevel}
+                        value={editableOrgRole(orgLevel)}
                         onChange={(v) => setRole(v)}
-                        options={[
-                          { value: 'agent', label: 'Agent', title: 'A team member — works tasks handed down by its lead' },
-                          { value: 'lead', label: 'Lead', title: 'Runs a team hands-on: works its members, may do manual work' },
-                          { value: 'manager', label: 'Manager', title: 'Staffing director — reports and directives only, delegates to the leads of its teams' },
-                        ]}
+                        options={ORG_ROLE_OPTIONS}
                       />
                       <span className="profile-form-hint">
                         Once this agent is part of an organization (a team with a manager), the
