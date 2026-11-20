@@ -6111,11 +6111,14 @@ class EntityMergeUtilTest(TestCase):
         self.assertIsNone(first_non_empty([None, ""]))
 
     def test_merge_entity_group_query_sequence(self) -> None:
+        from unittest.mock import call
         from agentx_ai.kit.agent_memory.maintenance import entity_merge as em
-        tx = MagicMock()
-        tx.run.return_value.single.return_value = {"rewritten": 3, "collapsed_groups": 1}
+        from agentx_ai.kit.agent_memory.memory.entity_maintenance import EntityMaintenance
+        store = MagicMock(spec=EntityMaintenance)
+        store.rewrite_and_delete_duplicate.return_value = 3
+        store.collapse_parallel_relationships.return_value = 1
         result = em.merge_entity_group(
-            tx,
+            store,
             ids=["surv", "dup1", "dup2"],
             names=["RAG", "Retrieval-Augmented Generation", "rag"],
             alias_lists=[[], [], []],
@@ -6125,18 +6128,18 @@ class EntityMergeUtilTest(TestCase):
         self.assertEqual(result["duplicates"], 2)
         self.assertEqual(result["rewritten"], 6)  # 3 per dup
         self.assertEqual(result["collapsed"], 1)
-        # First call folds survivor fields with the merged alias union + summed counts.
-        first = tx.run.call_args_list[0]
-        self.assertIs(first.args[0], em.APPLY_SURVIVOR_FIELDS)
-        self.assertEqual(first.kwargs["merged_access_count"], 6)
-        self.assertEqual(first.kwargs["merged_description"], "a retrieval pattern")
-        self.assertIn("Retrieval-Augmented Generation", first.kwargs["merged_aliases"])
-        # Then one rewrite per dup, then the parallel-rel collapse.
-        queries = [c.args[0] for c in tx.run.call_args_list[1:]]
+        # First the survivor fields fold in the merged alias union + summed counts,
+        # then one rewrite per dup, then the parallel-rel collapse.
         self.assertEqual(
-            queries,
-            [em.REWRITE_AND_DELETE_DUP, em.REWRITE_AND_DELETE_DUP, em.DEDUPE_PARALLEL_RELS],
+            [c[0] for c in store.method_calls],
+            ["apply_survivor_fields", "rewrite_and_delete_duplicate",
+             "rewrite_and_delete_duplicate", "collapse_parallel_relationships"],
         )
+        survivor_id, aliases, description, access_count = store.apply_survivor_fields.call_args.args
+        self.assertEqual((survivor_id, description, access_count), ("surv", "a retrieval pattern", 6))
+        self.assertIn("Retrieval-Augmented Generation", aliases)
+        self.assertEqual(store.rewrite_and_delete_duplicate.call_args_list,
+                         [call("surv", "dup1"), call("surv", "dup2")])
 
     def test_command_delegates(self) -> None:
         from agentx_ai.management.commands.dedupe_entities import Command
@@ -6696,26 +6699,21 @@ class SemanticDedupePairingTest(TestCase):
             "access_counts": [3, 1],
         }
 
-        def _run(query, **params):
-            res = MagicMock()
-            if query is de.COUNT_UNEMBEDDED:
-                res.single.return_value = {"n": 7}
-            elif query is de.ENUMERATE_EMBEDDED:
-                res.__iter__ = MagicMock(return_value=iter(ents))
-            elif query is de.SEMANTIC_NEIGHBORS:
-                rows = neighbors_e1 if params["id"] == "e1" else neighbors_e2
-                res.__iter__ = MagicMock(return_value=iter(rows))
-            elif query is de.FETCH_GROUP_FIELDS:
-                res.single.return_value = group_fields
-            return res
-
-        tx = MagicMock()
-        tx.run.side_effect = _run
+        from agentx_ai.kit.agent_memory.memory.entity_maintenance import EntityMaintenance
+        store = MagicMock(spec=EntityMaintenance)
+        store.count_unembedded.return_value = 7
+        store.embedded_entities.return_value = ents
+        store.semantic_neighbors.side_effect = (
+            lambda entity_id, embedding, k: neighbors_e1 if entity_id == "e1" else neighbors_e2
+        )
+        store.group_fields.return_value = group_fields
         with patch.object(cmd, "_merge_one_group",
                           return_value={"duplicates": 1, "rewritten": 2, "collapsed": 0}
                           ) as mock_merge:
             summary = cmd._run_semantic_pass(
-                tx, user_id="u", channel=None, threshold=0.90, verbose=False)
+                store, user_id="u", channel=None, threshold=0.90, verbose=False)
+        store.embedded_entities.assert_called_once_with("u", None)
+        self.assertEqual(store.semantic_neighbors.call_args_list[0].args, ("e1", [0.1], 6))
         self.assertEqual(summary["groups"], 1)
         self.assertEqual(summary["duplicates"], 1)
         self.assertEqual(summary["unembedded"], 7)
@@ -6831,11 +6829,8 @@ class MemoryStoreBoundaryTest(TestCase):
 
     # module → (Cypher strings, Neo4j session/driver openings), measured 2026-11-17.
     BASELINE: dict[str, tuple[int, int]] = {
-        "kit/agent_memory/maintenance/entity_merge.py": (3, 0),
-        "management/commands/backfill_agent_attribution.py": (2, 1),
         "management/commands/bootstrap.py": (0, 1),
         "management/commands/debug_attribution.py": (2, 2),
-        "management/commands/dedupe_entities.py": (6, 1),
         "management/commands/eval_consolidation.py": (11, 5),
         "management/commands/eval_recall.py": (3, 2),
     }
@@ -7102,6 +7097,8 @@ class CrossUserStoreTest(TestCase):
             "link_fact_to_entities": lambda: store.link_fact_to_entities("f1", ["e1"]),
             "set_entity_embeddings": lambda: store.set_entity_embeddings(
                 [{"id": "e1", "embedding": [0.1]}]),
+            "attribute_fact_to_agent": lambda: store.attribute_fact_to_agent(
+                "f1", "Mobius forgets names", "hash", "agent:u1:a1"),
         }
         with patch('agentx_ai.kit.agent_memory.connections.Neo4jConnection.session', return_value=cm):
             for name, write in writes.items():
@@ -7674,3 +7671,112 @@ class ConsolidationStoreTest(TestCase):
         user_side.assert_called_once_with("c9")
         agent_side.assert_called_once_with("c9")
         self.assertEqual(result["items_processed"], 0)
+
+
+class EntityMaintenanceTest(TestCase):
+    """memory/entity_maintenance.py + CrossUserStore.entity_maintenance(): entity dedupe
+    and merge in one transaction (ADR-21, Slice 1d). The dedupe command's own tests
+    drive the passes with a store mock; these pin the transaction and the glue."""
+
+    @staticmethod
+    def _session_with_tx():
+        tx = MagicMock()
+        tx.closed.return_value = False
+        session = MagicMock()
+        session.begin_transaction.return_value = tx
+        cm = MagicMock()
+        cm.__enter__.return_value = session
+        cm.__exit__.return_value = False
+        return cm, tx
+
+    def test_nothing_persists_unless_committed(self):
+        from agentx_ai.kit.agent_memory.memory.cross_user import CrossUserStore
+        target = 'agentx_ai.kit.agent_memory.connections.Neo4jConnection.session'
+        cm, tx = self._session_with_tx()
+        with patch(target, return_value=cm):
+            with CrossUserStore().entity_maintenance():
+                pass
+        tx.rollback.assert_called_once()  # left without a commit
+        tx.commit.assert_not_called()
+
+        cm, tx = self._session_with_tx()
+        with patch(target, return_value=cm):
+            with self.assertRaises(RuntimeError):
+                with CrossUserStore().entity_maintenance():
+                    raise RuntimeError("merge failed")
+        tx.rollback.assert_called_once()  # an exception rolls back too
+
+        cm, tx = self._session_with_tx()
+        with patch(target, return_value=cm):
+            with CrossUserStore().entity_maintenance() as store:
+                store.commit()
+                tx.closed.return_value = True
+        tx.commit.assert_called_once()
+        tx.rollback.assert_not_called()  # a committed transaction is left alone
+
+    def test_merge_steps_report_counts(self):
+        from agentx_ai.kit.agent_memory.memory.entity_maintenance import EntityMaintenance
+        tx = MagicMock()
+        store = EntityMaintenance(tx)
+        tx.run.return_value.single.return_value = {"rewritten": 4, "collapsed_groups": 2, "n": 9}
+        self.assertEqual(store.rewrite_and_delete_duplicate("s", "d"), 4)
+        self.assertEqual(tx.run.call_args.kwargs, {"survivor_id": "s", "dup_id": "d"})
+        self.assertEqual(store.collapse_parallel_relationships("s"), 2)
+        self.assertEqual(store.count_unembedded(None), 9)
+        tx.run.return_value.single.return_value = None
+        self.assertEqual(store.rewrite_and_delete_duplicate("s", "d"), 0)
+        self.assertEqual(store.collapse_parallel_relationships("s"), 0)
+        self.assertEqual(store.count_unembedded("u"), 0)
+        store.apply_survivor_fields("s", ["alias"], "desc", 5)
+        self.assertEqual(
+            tx.run.call_args.kwargs,
+            {"survivor_id": "s", "merged_aliases": ["alias"], "merged_description": "desc",
+             "merged_access_count": 5},
+        )
+        tx.run.return_value.consume.assert_called()
+
+    def test_scans_pass_their_filters(self):
+        from agentx_ai.kit.agent_memory.memory.entity_maintenance import EntityMaintenance
+        tx = MagicMock()
+        tx.run.side_effect = lambda *a, **k: iter([])
+        store = EntityMaintenance(tx)
+        store.in_channel_groups(None, "proj")
+        self.assertEqual(tx.run.call_args.kwargs, {"user_id": None, "channel": "proj"})
+        store.cross_channel_groups("u1")
+        self.assertEqual(tx.run.call_args.kwargs, {"user_id": "u1"})
+        store.embedded_entities("u1", None)
+        self.assertEqual(tx.run.call_args.kwargs, {"user_id": "u1", "channel": None})
+        store.semantic_neighbors("e1", [0.1], 6)
+        self.assertEqual(tx.run.call_args.kwargs, {"k": 6, "embedding": [0.1], "id": "e1"})
+        for scan in ("in_channel_groups", "cross_channel_groups", "embedded_entities"):
+            with self.subTest(scan=scan):  # Agent entities are never merge candidates
+                tx.run.reset_mock()
+                getattr(store, scan)(*([None] * (1 if scan == "cross_channel_groups" else 2)))
+                self.assertIn("coalesce(e.type, '') <> 'Agent'", tx.run.call_args.args[0])
+
+    def test_backfill_names_the_agent_through_the_store(self):
+        import io
+        from types import SimpleNamespace
+        from django.core.management import call_command
+        from agentx_ai.kit.agent_memory.models import compute_claim_hash
+        cu = 'agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore'
+        candidates = [
+            {"id": "f1", "claim": "Agent forgets the user's name", "user_id": "u1"},
+            {"id": "f2", "claim": "Mobius already leads with the name", "user_id": "u1"},
+        ]
+        manager = MagicMock()
+        manager.list_profiles.return_value = [SimpleNamespace(agent_id="a1", name="Mobius")]
+        for flags, expect_write in ((("--apply",), True), ((), False)):
+            with self.subTest(flags=flags), \
+                 patch(f'{cu}.generic_agent_fact_candidates', return_value=candidates) as scan, \
+                 patch(f'{cu}.attribute_fact_to_agent') as attribute, \
+                 patch('agentx_ai.agent.profiles.get_profile_manager', return_value=manager), \
+                 patch('agentx_ai.kit.agent_memory.memory.interface.AgentMemory'):
+                call_command("backfill_agent_attribution", *flags, stdout=io.StringIO())
+                scan.assert_called_once_with("_self_a1")
+                if expect_write:
+                    renamed = "Mobius forgets the user's name"
+                    attribute.assert_called_once_with(
+                        "f1", renamed, compute_claim_hash(renamed), "agent:u1:a1")
+                else:
+                    attribute.assert_not_called()  # a dry run writes nothing

@@ -201,6 +201,18 @@ runs the suite against both backends.
         remain, in 7 modules (the management commands and `maintenance/entity_merge.py`, 1d).
         Same gap as part 1: no live test runs the sweep's queries; a store-level smoke on a
         throwaway stack passed (9 check groups, every moved query).
+  - [x] **1d, part 1 — entity maintenance** (2026-11-20): `dedupe_entities`, the shared
+        node merge (`maintenance/entity_merge.py`) and `backfill_agent_attribution` no longer
+        touch Neo4j. Dedupe and merge run in one transaction held by
+        `memory/entity_maintenance.py::EntityMaintenance`, which callers reach only through
+        `CrossUserStore().entity_maintenance()`: its scans span every user unless one is given,
+        and the cross-user store stays the one way into such work. Leaving that block without a
+        commit, an exception included, rolls back, which is what a dry run relies on. The merge
+        keeps its folding rules in `entity_merge.py` and calls the store for its three queries.
+        The backfill's channel scan and claim rewrite went to `CrossUserStore`. 11 queries moved
+        unchanged apart from whitespace; a throwaway-stack smoke passed (dry-run rollback,
+        in-channel, cross-channel and semantic merges, the backfill). 16 strings and 10 openings
+        remain, in 4 modules: the eval and debug harnesses and `bootstrap` (1d, part 2).
 - [ ] **Slice 2 — schema and RLS** (1–2 days). Alembic revisions for the tables, indexes and
       policies. Empty tables; nothing reads them yet.
 - [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`.
