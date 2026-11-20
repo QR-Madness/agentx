@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildOrgModel, chartNodeId, layoutKeyOf, layoutOrgChart, pruneLayoutPositions, CHART,
+  buildOrgModel, chartNodeId, layoutKeyOf, layoutOrgChart, pruneLayoutPositions, resolveChartEdge, CHART,
   type ChartNode,
 } from './orgChart';
 import type { AgentProfile, AlloyWorkflow, AlloyWorkflowMember } from './api/types';
@@ -323,3 +323,24 @@ describe('stored layout keys', () => {
   });
 });
 
+
+describe('resolveChartEdge', () => {
+  const model = buildOrgModel(profiles, workflows);
+  const layout = layoutOrgChart(model);
+  const byId = new Map(profiles.map((p) => [p.agentId, p]));
+
+  it('names both ends and the team of a directs line and a works line', () => {
+    const directs = layout.edges.find((e) => e.kind === 'directs' && e.target === chartNodeId.lead('t2', 'l2'))!;
+    expect(resolveChartEdge(layout, model, byId, directs.id)).toMatchObject({
+      kind: 'directs', from: { agentId: 'm' }, to: { agentId: 'l2' }, teamId: 't2', teamName: 'T2',
+    });
+    const works = layout.edges.find((e) => e.kind === 'works' && e.target === chartNodeId.member('t1', 'a2'))!;
+    expect(resolveChartEdge(layout, model, byId, works.id)).toMatchObject({
+      kind: 'works', from: { agentId: 'l1' }, to: { agentId: 'a2' }, teamId: 't1', teamName: 'T1',
+    });
+  });
+
+  it('returns null for an edge that is gone', () => {
+    expect(resolveChartEdge(layout, model, byId, 'no-such-edge')).toBeNull();
+  });
+});

@@ -189,7 +189,7 @@ directives.
 
 > Replaces `AlloyFactoryModal` outright — the "Factory Canvas — coming soon" banner finally pays
 > off, at org scope. Needs Slice 1 only. Split in two: **4a** (the surface, client-only, derived
-> layout) shipped `[v0.21.280]`; **4b** (stored layout, editing on the chart) is open.
+> layout) shipped `[v0.21.280]`; **4b** (stored layout, editing on the chart) shipped `[v0.21.283–286]`.
 
 > **Commonwealth-readiness (decided 2026-07-20):** this surface is the seed of the Pillar-8
 > **Commonwealth** view ([cognitive-os.md](cognitive-os.md) — the governed whole: orgs +
@@ -233,7 +233,7 @@ them), so a manager without the Manager role silently lacked its tool limits and
       (Slices 1–2 had no user docs), roadmap, phase-16 cross-link, Development-Notes surface map,
       INV-9 client mirrors.
 
-#### 4b — stored layout and editing on the chart (open)
+#### 4b — stored layout and editing on the chart `[v0.21.283–286]` ✅
 
 - [x] **Org layout store** `[v0.21.283]` — new `alloy/organization.py` (WorkflowManager-shaped load/save) owning
       `data/organization.yaml`: **layout only** (canvas node positions keyed `agent:{agent_id}` /
@@ -245,9 +245,10 @@ them), so a manager without the Manager role silently lacked its tool limits and
 - [x] **Profile quick-edit in the dock** `[v0.21.284]` — role, Specialty, delegability, without leaving for the
       full editor. Role and roster save at once, the specialty on Save; the role options are shared with
       the profile editor (`lib/orgRoles.ts`), and the server applies the manager tool template.
-- [ ] **Chart detail** — ✅ `[v0.21.285]` the member→lead escalation as an up-chevron on its edge
+- [x] **Chart detail** — `[v0.21.285]` the member→lead escalation as an up-chevron on its edge
       (a start marker at the lead, plus a legend line) and roster badges in the outline (never on an
-      ambassador); still open: a read-only edge inspector.
+      ambassador); and a read-only edge inspector `[v0.21.286]` (select a line: `resolveChartEdge` +
+      `EdgePanel` explain it, with links to both agents and the team).
 - [x] **Docs**: `OpenApi.yaml` + `endpoints.md` (new organization endpoint) `[v0.21.283]`.
 
 ### Slice 5 — Live org activity & thread grouping

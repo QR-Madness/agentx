@@ -473,3 +473,35 @@ export function layoutOrgChart(model: OrgModel): OrgChartLayout {
 
   return { nodes, edges, width, height: bottom };
 }
+
+// ─── Edges, explained ─────────────────────────────────────────────────────
+
+/** One line of the chart, resolved for the dock: who hands work to whom, on which team. */
+export interface ResolvedChartEdge {
+  kind: ChartEdge['kind'];
+  /** Who hands the work down: a manager (`directs`) or a lead (`works`). */
+  from: AgentProfile;
+  /** Who receives it: a lead (`directs`) or a member (`works`). */
+  to: AgentProfile;
+  teamId: string;
+  teamName: string;
+}
+
+/** Resolve a chart edge id to its two agents and team, or null once it is gone. */
+export function resolveChartEdge(
+  layout: OrgChartLayout,
+  model: OrgModel,
+  profilesByAgentId: Map<string, AgentProfile>,
+  edgeId: string,
+): ResolvedChartEdge | null {
+  const edge = layout.edges.find((e) => e.id === edgeId);
+  if (!edge) return null;
+  const nodes = new Map(layout.nodes.map((n) => [n.id, n]));
+  const source = nodes.get(edge.source);
+  const target = nodes.get(edge.target);
+  const from = source?.agentId ? profilesByAgentId.get(source.agentId) : undefined;
+  const to = target?.agentId ? profilesByAgentId.get(target.agentId) : undefined;
+  const team = model.teams.find((t) => t.id === (target?.teamId ?? source?.teamId));
+  if (!from || !to || !team) return null;
+  return { kind: edge.kind, from, to, teamId: team.id, teamName: team.name };
+}
