@@ -4,7 +4,7 @@
  * would rather scan a list. Rows select exactly what the canvas boxes select.
  */
 
-import { Crown, Network, Radio, UserRound, Users } from 'lucide-react';
+import { Crown, Network, Radio, Share2, UserRound, Users } from 'lucide-react';
 import type { AgentProfile } from '../../lib/api';
 import type { OrgModel, OrgTeam } from '../../lib/orgChart';
 import { AgentAvatar } from '../common/AgentAvatar';
@@ -47,6 +47,13 @@ export function OrgOutline({ model, selection, query, onSelectAgent, onSelectTea
         </span>
         <span className="org-outline-name">{profile.name}</span>
         {tier && <TierChip tier={tier} />}
+        {/* Ambassadors are never delegation targets, whatever their flag says. */}
+        {profile.availableForDelegation && profile.kind !== 'ambassador' && (
+          <span className="org-outline-roster" title="On the team roster: other agents can hand it subtasks">
+            <Share2 size={11} aria-hidden />
+            <span className="sr-only">, on the team roster</span>
+          </span>
+        )}
       </button>
     );
   };

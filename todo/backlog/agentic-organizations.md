@@ -245,8 +245,9 @@ them), so a manager without the Manager role silently lacked its tool limits and
 - [x] **Profile quick-edit in the dock** `[v0.21.284]` — role, Specialty, delegability, without leaving for the
       full editor. Role and roster save at once, the specialty on Save; the role options are shared with
       the profile editor (`lib/orgRoles.ts`), and the server applies the manager tool template.
-- [ ] **Chart detail** — the member→lead escalation as a dashed up-chevron on its edge, a read-only
-      edge inspector, delegable badges in the outline.
+- [ ] **Chart detail** — ✅ `[v0.21.285]` the member→lead escalation as an up-chevron on its edge
+      (a start marker at the lead, plus a legend line) and roster badges in the outline (never on an
+      ambassador); still open: a read-only edge inspector.
 - [x] **Docs**: `OpenApi.yaml` + `endpoints.md` (new organization endpoint) `[v0.21.283]`.
 
 ### Slice 5 — Live org activity & thread grouping
