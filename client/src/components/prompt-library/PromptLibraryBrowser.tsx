@@ -1,9 +1,10 @@
 /**
  * PromptLibraryBrowser — Browse, search, select, and edit prompt templates.
  *
- * Shared surface rendered by both PromptLibraryModal (in-chat / profile-editor
- * quick access, with insert/select actions) and the unified-settings
- * PromptTemplatesSection (pure management surface — no insert action).
+ * Shared surface rendered by both PromptLibraryModal (quick access from the
+ * profile editor and the System Prompt editor, with insert/select actions) and
+ * the unified-settings PromptTemplatesSection (pure management surface — no
+ * insert action).
  *
  * Two responsive layouts:
  *   wide (≥680px): persistent list on left, preview/edit on right

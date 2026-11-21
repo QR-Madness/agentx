@@ -484,10 +484,6 @@
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 .stream-spinner-text {
   font-size: 0.8125rem;
   color: var(--text-secondary);
@@ -1130,18 +1126,6 @@
 
   .input-stats {
     margin-top: 6px;
-  }
-}
-
-/* === Animations === */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
   }
 }
 

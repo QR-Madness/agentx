@@ -79,13 +79,14 @@ export default defineConfig({
     __IS_TAURI__: JSON.stringify(isTauriBuild),
   },
 
-  // Vitest — jsdom + Testing Library. CSS is skipped (css: false) so component
-  // CSS imports don't need processing in unit tests.
+  // Vitest — jsdom + Testing Library. Component CSS imports are skipped (they
+  // come back empty), except stylesheets imported as raw text (`?raw`), which
+  // src/styles/keyframes.test.ts reads. With `css: false` those were blanked too.
   test: {
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    css: false,
+    css: { include: [/\.css\?raw$/] },
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
   },
 

@@ -84,7 +84,7 @@
   border-radius: 8px;
   font-size: 13px;
   margin-top: 12px;
-  animation: slideIn 0.2s ease;
+  animation: memory-drop-in 0.2s ease;
 }
 
 .consolidate-message.success {
@@ -126,7 +126,7 @@
   font-size: 13px;
   background: var(--surface-raised, rgba(255, 255, 255, 0.04));
   border: 1px solid var(--border-line, rgba(255, 255, 255, 0.12));
-  animation: slideIn 0.2s ease;
+  animation: memory-drop-in 0.2s ease;
 }
 
 .import-confirm.destructive {
@@ -1125,7 +1125,9 @@
   border-color: var(--cosmic-violet);
 }
 
-@keyframes slideIn {
+/* Memory-panel entrance: a short drop from 4px above. Component-prefixed
+   because keyframe names are global (see src/styles/keyframes.test.ts). */
+@keyframes memory-drop-in {
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
@@ -2018,7 +2020,7 @@
   border-radius: 8px;
   font-size: 13px;
   text-align: center;
-  animation: fadeIn 0.2s ease;
+  animation: memory-drop-in 0.2s ease;
 }
 
 .save-message.success {
@@ -2031,17 +2033,6 @@
   background: var(--feedback-error-tint);
   border: 1px solid var(--feedback-error-border);
   color: var(--status-error);
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* Settings Actions */

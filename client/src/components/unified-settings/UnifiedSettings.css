@@ -1608,12 +1608,6 @@
   margin-top: var(--space-md);
 }
 
-.context-limits-form .form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .context-limits-form label {
   font-size: 12px;
   font-weight: 500;
@@ -1621,12 +1615,6 @@
 }
 
 .context-limits-form .ax-field {
-  font-variant-numeric: tabular-nums;
-}
-
-.context-limits-form .form-hint {
-  font-size: 11px;
-  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 

@@ -2,7 +2,8 @@
  * PromptTemplatesSection — the prompt template library as a settings section
  * (prompts nav group). Renders the shared PromptLibraryBrowser as a pure
  * management surface (browse/search/create/edit/delete/reset — no insert
- * action). The in-chat PromptLibraryModal stays for quick access.
+ * action). PromptLibraryModal remains the quick-access picker in the profile
+ * editor and the System Prompt editor.
  */
 
 import { Library } from 'lucide-react';

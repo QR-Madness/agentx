@@ -150,7 +150,7 @@
   border-radius: 20px;
   color: white;
   box-shadow: var(--glow-purple);
-  animation: glow-pulse 3s ease-in-out infinite;
+  animation: auth-glow-pulse 3s ease-in-out infinite;
 }
 
 .auth-title {
@@ -559,7 +559,7 @@
 }
 
 /* Animation */
-@keyframes glow-pulse {
+@keyframes auth-glow-pulse {
   0%, 100% {
     box-shadow: var(--glow-purple);
   }

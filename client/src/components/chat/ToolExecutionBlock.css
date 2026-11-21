@@ -113,7 +113,7 @@
 }
 
 /* Animations */
-.animate-pulse { animation: pulse 1.5s ease-in-out infinite; }
+.animate-pulse { animation: tool-pulse 1.5s ease-in-out infinite; }
 .animate-spin { animation: spin 1s linear infinite; }
 
 @keyframes spin {
@@ -121,7 +121,7 @@
   to { transform: rotate(360deg); }
 }
 
-@keyframes pulse {
+@keyframes tool-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
 }
