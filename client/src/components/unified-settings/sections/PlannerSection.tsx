@@ -16,7 +16,7 @@ import {
   NumberField,
   SaveStatusChip,
   SelectField,
-  SliderField,
+  TemperatureField,
   ToggleField,
 } from '../../settings/fields';
 import { sectionBinder, useSettingsManifest } from '../SettingsManifestContext';
@@ -132,8 +132,8 @@ export default function PlannerSection() {
             {...bind('max_subtasks')}
           />
 
-          <SliderField
-            label="Temperature"
+          <TemperatureField
+            model={settings.model}
             value={settings.temperature}
             min={0}
             max={1}

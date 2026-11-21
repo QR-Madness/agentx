@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { SliderField } from './SliderField';
+import { TemperatureField } from './TemperatureField';
 import { NumberField } from './NumberField';
 import { ToggleField } from './ToggleField';
 import { PromptField } from './PromptField';
@@ -14,6 +15,37 @@ describe('SliderField', () => {
     expect(screen.getByText('Temperature')).toBeInTheDocument();
     expect(screen.getByText('0.20')).toBeInTheDocument();
     expect(screen.getByRole('slider', { name: 'Temperature' })).toHaveAttribute('aria-valuenow', '0.2');
+  });
+
+  it('describes the focusable thumb with its hint', () => {
+    // The thumb carries role="slider"; a description left on the Radix Root is never announced.
+    render(<SliderField label="Weight" value={0.3} min={0} max={1} step={0.1} onChange={vi.fn()} hint="Share of the keyword score." />);
+    expect(screen.getByRole('slider', { name: 'Weight' })).toHaveAccessibleDescription('Share of the keyword score.');
+  });
+});
+
+describe('TemperatureField', () => {
+  const props = { value: 0.2, min: 0, max: 1, step: 0.05, onChange: vi.fn() };
+
+  it('notes a direct Anthropic model and describes the slider with hint and note', () => {
+    render(<TemperatureField model="anthropic:claude-3-5-haiku-latest" hint="Lower is steadier." {...props} />);
+    expect(screen.getByText(/No effect on Anthropic models/)).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Temperature' })).toHaveAccessibleDescription(
+      /^Lower is steadier\. No effect on Anthropic models/,
+    );
+  });
+
+  it.each([
+    ['an inherited model', ''],
+    ['the inherit sentinel', 'inherit'],
+    ['a role reference', 'role:fast_utility'],
+    ['Claude through OpenRouter', 'openrouter:anthropic/claude-3.5-haiku'],
+    ['Claude through Vercel', 'vercel:anthropic/claude-3.5-haiku'],
+    ['another provider', 'openai:gpt-4o-mini'],
+  ])('shows no note for %s', (_case, model) => {
+    render(<TemperatureField model={model} {...props} />);
+    expect(screen.queryByText(/No effect on/)).not.toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Temperature' })).not.toHaveAttribute('aria-describedby');
   });
 });
 

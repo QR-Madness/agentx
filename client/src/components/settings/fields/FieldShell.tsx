@@ -1,6 +1,6 @@
 /**
  * FieldShell — the frame every settings control shares: a label row, the
- * control, and a hint line.
+ * control, a hint line, and an optional note.
  *
  * It exists to fix two things at once.
  *
@@ -36,6 +36,12 @@ export interface FieldChromeProps {
 interface FieldShellProps extends FieldChromeProps {
   label: ReactNode;
   hint?: ReactNode;
+  /**
+   * A caveat under the hint that depends on another setting, such as a note
+   * that the selected model ignores this value. It is announced with the
+   * control through `aria-describedby`. Leave it unset when there is nothing to say.
+   */
+  note?: ReactNode;
   /** Receives the ids to attach to the control. */
   children: (ids: { id: string; describedBy?: string }) => ReactNode;
   /** Label text for the help popover heading + reset button announcement. */
@@ -53,6 +59,7 @@ interface FieldShellProps extends FieldChromeProps {
 export function FieldShell({
   label,
   hint,
+  note,
   binding,
   onReset,
   badge,
@@ -63,6 +70,8 @@ export function FieldShell({
 }: FieldShellProps) {
   const id = useId();
   const hintId = `${id}-hint`;
+  const noteId = `${id}-note`;
+  const describedBy = [hint ? hintId : '', note ? noteId : ''].filter(Boolean).join(' ') || undefined;
   const name = labelText ?? (typeof label === 'string' ? label : 'this setting');
   const modified = Boolean(binding?.isModified);
   // Anchor for search results and the Overview digest to land on. Only bound
@@ -103,12 +112,13 @@ export function FieldShell({
           </button>
         )}
       </div>
-      {children({ id, describedBy: hint ? hintId : undefined })}
+      {children({ id, describedBy })}
       {hint && (
         <span className="setting-hint" id={hintId}>
           {hint}
         </span>
       )}
+      {note && <div id={noteId}>{note}</div>}
     </div>
   );
 }

@@ -196,3 +196,31 @@ describe('RecallSettingsPanel', () => {
     }
   });
 });
+
+describe('RecallSettingsPanel — temperature notes', () => {
+  const NOTE = /No effect on Anthropic models/;
+
+  it('notes HyDE alone when only its model is a direct Anthropic model', async () => {
+    mockGetRecall.mockResolvedValue({
+      ...SHIPPED,
+      recall_hyde_model: 'anthropic:claude-3-5-haiku-latest',
+      recall_self_query_model: 'openrouter:anthropic/claude-3.5-haiku',
+    });
+    renderPanel();
+    const [hyde, selfQuery] = await screen.findAllByRole('slider', { name: 'Temperature' });
+    expect(hyde).toHaveAccessibleDescription(NOTE);
+    expect(selfQuery).not.toHaveAccessibleDescription(NOTE);
+  });
+
+  it('notes Self-Query alone when HyDE inherits its model', async () => {
+    mockGetRecall.mockResolvedValue({
+      ...SHIPPED,
+      recall_hyde_model: 'inherit',
+      recall_self_query_model: 'anthropic:claude-3-5-haiku-latest',
+    });
+    renderPanel();
+    const [hyde, selfQuery] = await screen.findAllByRole('slider', { name: 'Temperature' });
+    expect(hyde).not.toHaveAccessibleDescription(NOTE);
+    expect(selfQuery).toHaveAccessibleDescription(NOTE);
+  });
+});

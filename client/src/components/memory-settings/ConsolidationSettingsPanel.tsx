@@ -6,7 +6,14 @@ import { ModelPickerField } from '../common/ModelPickerField';
 import { useNotify } from '../../contexts/NotificationContext';
 import { Badge, Button, Checkbox, Label } from '../ui';
 import { useConfirm } from '../ui/ConfirmDialog';
-import { SettingsSection, SliderField, NumberField, ToggleField, SaveStatusChip } from '../settings/fields';
+import {
+  SettingsSection,
+  SliderField,
+  TemperatureField,
+  NumberField,
+  ToggleField,
+  SaveStatusChip,
+} from '../settings/fields';
 import { bindSetting, useSettingsManifest } from '../unified-settings/SettingsManifestContext';
 
 const pct = (v: number) => `${(v * 100).toFixed(0)}%`;
@@ -309,8 +316,8 @@ export function ConsolidationSettingsPanel({
             />
             <StageRoleChip members={roleMembers} member="extraction" />
           </div>
-          <SliderField
-            label="Temperature"
+          <TemperatureField
+            model={settings.extraction_model || ''}
             value={settings.extraction_temperature ?? 0.2}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('extraction_temperature', v)}
@@ -353,8 +360,8 @@ export function ConsolidationSettingsPanel({
             />
             <StageRoleChip members={roleMembers} member="relevance_filter" />
           </div>
-          <SliderField
-            label="Temperature"
+          <TemperatureField
+            model={settings.relevance_filter_model || ''}
             value={settings.relevance_filter_temperature ?? 0.1}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('relevance_filter_temperature', v)}
@@ -408,8 +415,8 @@ export function ConsolidationSettingsPanel({
             </Button>
             <StageRoleChip members={roleMembers} member="combined_extraction" />
           </div>
-          <SliderField
-            label="Temperature"
+          <TemperatureField
+            model={settings.combined_extraction_model || ''}
             value={settings.combined_extraction_temperature ?? 0.3}
             min={0} max={1} step={0.05}
             onChange={v => handleChange('combined_extraction_temperature', v)}
@@ -541,8 +548,8 @@ export function ConsolidationSettingsPanel({
                 />
                 <StageRoleChip members={roleMembers} member="contradiction" />
               </div>
-              <SliderField
-                label="Temperature"
+              <TemperatureField
+                model={settings.contradiction_model || ''}
                 value={settings.contradiction_temperature ?? 0.2}
                 min={0} max={1} step={0.05}
                 onChange={v => handleChange('contradiction_temperature', v)}
@@ -575,8 +582,8 @@ export function ConsolidationSettingsPanel({
                 />
                 <StageRoleChip members={roleMembers} member="correction" />
               </div>
-              <SliderField
-                label="Temperature"
+              <TemperatureField
+                model={settings.correction_model || ''}
                 value={settings.correction_temperature ?? 0.2}
                 min={0} max={1} step={0.05}
                 onChange={v => handleChange('correction_temperature', v)}
