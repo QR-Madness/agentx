@@ -44,9 +44,11 @@ The **Temperature** slider runs from **Focused** (deterministic, good for analys
 planning) to **Creative** (looser, good for brainstorming and drafting). `0.7` is a balanced
 default.
 
-The slider has no effect on models used through the **Anthropic** provider. Current Claude
-models accept only their default sampling and reject a temperature, so AgentX doesn't send
-one. Shape tone and focus with the system prompt or thinking pattern instead.
+The slider has no effect on models used through the **Anthropic** provider, and the editor
+notes this beneath it. Current Claude models accept only their default sampling and reject a
+temperature, so AgentX doesn't send one. The value is kept for any other provider, including
+Claude through OpenRouter or Vercel, which still receive it. Shape tone and focus with the
+system prompt or thinking pattern instead.
 
 ### Thinking pattern
 
