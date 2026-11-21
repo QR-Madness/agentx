@@ -71,13 +71,17 @@ class LMStudioProvider(ModelProvider):
     def _get_client(self) -> AsyncOpenAI:
         """Create a fresh async client for each request.
 
-        This ensures the httpx connection pool is created in the correct event loop,
+        This ensures the HTTP connection pool is created in the correct event loop,
         avoiding 'Connection error' issues when Django's async view runs in different loops.
         """
-        import httpx
-        # Use a custom transport with no HTTP/2 to avoid potential streaming issues
-        # and no keep-alive to ensure fresh connections
-        transport = httpx.AsyncHTTPTransport(
+        # openai >= 3 is built on httpx2, so the objects handed to the SDK must come
+        # from it (an old-httpx client raises TypeError at construction). The raw-SSE
+        # stream() path below talks to the server itself and stays on httpx.
+        import httpx2
+
+        # HTTP/1.1 only and no transport-level retries, for streaming compatibility;
+        # a fresh client per request already gives fresh connections.
+        transport = httpx2.AsyncHTTPTransport(
             retries=0,
             http2=False,  # Force HTTP/1.1 for better streaming compatibility
         )
@@ -86,7 +90,7 @@ class LMStudioProvider(ModelProvider):
             base_url=self.base_url,
             timeout=self._timeout,
             max_retries=0,
-            http_client=httpx.AsyncClient(transport=transport),
+            http_client=httpx2.AsyncClient(transport=transport),
         )
     
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:

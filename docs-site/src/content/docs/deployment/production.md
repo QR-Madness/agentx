@@ -77,6 +77,18 @@ need. See [Configuration](../getting-started/configuration.md) for the full list
     `DJANGO_SECRET_KEY` must be set, `DJANGO_DEBUG` must be `false`, and every database
     password must be changed from `changeme` before exposing the stack.
 
+### Outbound TLS behind a corporate proxy
+
+Calls made through the OpenAI SDK check TLS certificates against the **system trust
+store**; the image ships `ca-certificates`. That covers OpenAI, OpenRouter, Vercel, custom
+OpenAI-compatible endpoints, LM Studio and cloud embeddings. Other outbound calls, such as
+Anthropic and web search, use the certificate bundle packaged with Python.
+
+Behind a TLS-intercepting proxy, one setting covers both: `SSL_CERT_FILE` (a single PEM
+bundle) or `SSL_CERT_DIR` (a hashed certificate directory) in the cluster `.env`. Either
+one replaces the default roots, so include the public roots you still need alongside the
+proxy's CA.
+
 ## Bring-up sequence
 
 A private single-host instance (no public gateway):
