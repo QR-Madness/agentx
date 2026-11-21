@@ -23,7 +23,7 @@ import { useModal } from '../../contexts/ModalContext';
 import { useNotify } from '../../contexts/NotificationContext';
 import { api, type AgentProfile, type LayoutPositions } from '../../lib/api';
 import {
-  buildOrgModel, layoutOrgChart, pruneLayoutPositions, type OrgIssue,
+  buildOrgModel, layoutOrgChart, pruneLayoutPositions, resolveChartEdge, type OrgIssue,
 } from '../../lib/orgChart';
 import { orgPlacement } from '../../lib/orgPlacement';
 import { SURFACES } from '../../lib/surfaces';
@@ -32,6 +32,7 @@ import { useConfirm } from '../ui/ConfirmDialog';
 import { Input } from '../ui/Field';
 import { IconButton } from '../ui/IconButton';
 import { AgentPanel } from './AgentPanel';
+import { EdgePanel } from './EdgePanel';
 import { OrgCanvas } from './OrgCanvas';
 import { OrgOutline } from './OrgOutline';
 import { OrgOverview } from './OrgOverview';
@@ -206,6 +207,7 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
   );
   const selectAgent = useCallback((agentId: string) => void select({ kind: 'agent', agentId }), [select]);
   const selectTeam = useCallback((teamId: string) => void select({ kind: 'team', teamId }), [select]);
+  const selectEdge = useCallback((edgeId: string) => void select({ kind: 'edge', edgeId }), [select]);
   const clearSelection = useCallback(() => void select({ kind: 'none' }), [select]);
   const showOverview = useCallback(() => void select({ kind: 'overview' }), [select]);
   const newTeam = useCallback(
@@ -244,10 +246,15 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
     selection.kind === 'team' ? (workflows.find((w) => w.id === selection.teamId) ?? null) : null;
   const selectedProfile =
     selection.kind === 'agent' ? (profilesByAgentId.get(selection.agentId) ?? null) : null;
+  const selectedEdge =
+    selection.kind === 'edge'
+      ? resolveChartEdge(layout, model, profilesByAgentId, selection.edgeId)
+      : null;
   useEffect(() => {
     if (selection.kind === 'team' && !selectedTeam) setSelection({ kind: 'none' });
     if (selection.kind === 'agent' && !selectedProfile) setSelection({ kind: 'none' });
-  }, [selection.kind, selectedTeam, selectedProfile]);
+    if (selection.kind === 'edge' && !selectedEdge) setSelection({ kind: 'none' });
+  }, [selection.kind, selectedTeam, selectedProfile, selectedEdge]);
 
   const existingIds = useMemo(() => new Set(workflows.map((w) => w.id)), [workflows]);
 
@@ -360,6 +367,8 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
         onEditProfile={editProfile}
         onOpenDossier={openDossier}
       />
+    ) : selectedEdge ? (
+      <EdgePanel edge={selectedEdge} onOpenAgent={selectAgent} onOpenTeam={selectTeam} />
     ) : (
       <OrgOverview
         model={model}
@@ -468,6 +477,7 @@ export function OrgManager({ onClose, initialTeamId, initialAgentId }: OrgManage
               onSelectAgent={selectAgent}
               onSelectTeam={selectTeam}
               onClear={clearSelection}
+              onSelectEdge={selectEdge}
               positions={positions}
               onMoveNode={layoutReady ? moveNode : undefined}
               fitKey={fitKey}

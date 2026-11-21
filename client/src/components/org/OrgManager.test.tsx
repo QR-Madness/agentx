@@ -15,7 +15,10 @@ const state = vi.hoisted(() => ({
   deleteWorkflow: vi.fn(),
   getLayout: vi.fn(),
   putLayout: vi.fn(),
-  canvasProps: null as null | { onMoveNode?: (key: string, p: { x: number; y: number }) => void },
+  canvasProps: null as null | {
+    onMoveNode?: (key: string, p: { x: number; y: number }) => void;
+    onSelectEdge?: (edgeId: string) => void;
+  },
 }));
 
 // React Flow needs layout APIs jsdom lacks; the chart is covered by orgChart.test.ts.
@@ -53,6 +56,7 @@ vi.mock('../../contexts/NotificationContext', () => ({
 vi.mock('../ui/ConfirmDialog', () => ({ useConfirm: () => state.confirm }));
 
 import { OrgManager } from './OrgManager';
+import { buildOrgModel, layoutOrgChart } from '../../lib/orgChart';
 
 function agent(agentId: string, orgLevel: AgentProfile['orgLevel'] = 'agent'): AgentProfile {
   return { id: agentId, name: agentId.toUpperCase(), kind: 'agent', agentId, orgLevel } as AgentProfile;
@@ -206,5 +210,23 @@ describe('OrgManager', () => {
     expect(state.canvasProps?.onMoveNode).toBeUndefined();
     expect(screen.queryByRole('button', { name: 'Reset the chart layout' })).toBeNull();
     expect(state.notifyError).not.toHaveBeenCalled();
+  });
+  it('explains a line of the chart in the dock, with links to both agents', async () => {
+    render(<OrgManager onClose={vi.fn()} />);
+    await vi.waitFor(() => expect(state.canvasProps?.onSelectEdge).toBeTypeOf('function'));
+    const layout = layoutOrgChart(buildOrgModel(state.profiles, state.workflows));
+
+    const directs = layout.edges.find((e) => e.kind === 'directs')!;
+    act(() => state.canvasProps!.onSelectEdge!(directs.id));
+    expect(await screen.findByText('M directs L1')).toBeTruthy();
+    expect(screen.getByText(/Managers hand work only to the leads of their teams/)).toBeTruthy();
+
+    const works = layout.edges.find((e) => e.kind === 'works')!;
+    act(() => state.canvasProps!.onSelectEdge!(works.id));
+    expect(await screen.findByText('L1 works with A1')).toBeTruthy();
+    expect(screen.getByText(/A1 can escalate back to L1/)).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'A1' }));
+    expect(screen.queryByText('L1 works with A1')).toBeNull(); // the agent panel replaced it
   });
 });

@@ -97,7 +97,8 @@ Command palette (`⌘K`) → **Open Organization**, or **Manage Teams…** in th
   lead: its members can escalate back to it;
 - teams **without a manager**, then the **independent** agents that are on no team.
 
-Select a team to edit it in the side panel: name, lead, manager, members and their hints. The
+Select a line to see what it means: who directs whom or hands whom work, on which team, and who can
+escalate back, with links to both agents and the team. Select a team to edit it in the side panel: name, lead, manager, members and their hints. The
 member list shows where each candidate already sits, so putting an agent on a second team is a
 choice, not an accident. Select an agent to see its teams, who it reports to and who it directs,
 with a link to its profile, and to change the three things the organization reads from it in place:

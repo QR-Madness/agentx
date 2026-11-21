@@ -161,6 +161,8 @@ interface OrgCanvasProps {
   onSelectAgent: (agentId: string) => void;
   onSelectTeam: (teamId: string) => void;
   onClear: () => void;
+  /** A line was clicked: explain it in the dock (read-only). */
+  onSelectEdge?: (edgeId: string) => void;
   /** Stored positions of dragged boxes, by `layoutKeyOf` key. */
   positions: LayoutPositions;
   /** Called when a drag ends; without it nothing moves (no layout store to save to). */
@@ -178,7 +180,7 @@ function agentMatches(profile: AgentProfile, query: string): boolean {
 }
 
 function CanvasInner({
-  model, layout, profilesByAgentId, selection, query, box, onSelectAgent, onSelectTeam, onClear,
+  model, layout, profilesByAgentId, selection, query, box, onSelectAgent, onSelectTeam, onClear, onSelectEdge,
   positions, onMoveNode, fitKey,
 }: OrgCanvasProps & { box: string }) {
   const { fitView } = useReactFlow();
@@ -290,10 +292,12 @@ function CanvasInner({
   const edges = useMemo<BuiltInEdge[]>(() => {
     const selectedAgent = selection.kind === 'agent' ? selection.agentId : null;
     const agentOf = new Map(layout.nodes.map((n) => [n.id, n.agentId]));
+    const selectedEdge = selection.kind === 'edge' ? selection.edgeId : null;
     return layout.edges.map((e) => {
       const active =
-        selectedAgent !== null &&
-        (agentOf.get(e.source) === selectedAgent || agentOf.get(e.target) === selectedAgent);
+        e.id === selectedEdge ||
+        (selectedAgent !== null &&
+          (agentOf.get(e.source) === selectedAgent || agentOf.get(e.target) === selectedAgent));
       return {
         id: e.id,
         source: e.source,
@@ -385,6 +389,7 @@ function CanvasInner({
       edgesFocusable={false}
       elementsSelectable={false}
       onPaneClick={onClear}
+      onEdgeClick={onSelectEdge ? (_event, edge) => onSelectEdge(edge.id) : undefined}
       proOptions={{ hideAttribution: true }}
     >
       <Background gap={24} />
