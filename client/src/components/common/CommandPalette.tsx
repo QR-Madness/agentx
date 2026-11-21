@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Command } from 'cmdk';
+import { Command, defaultFilter } from 'cmdk';
 import { Search, Check, X } from 'lucide-react';
 import {
   useCommands,
@@ -67,12 +67,22 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
       // `searchOnly` commands (the per-section Settings family) appear once the
       // user is looking for something, so ~20 entries don't bury the handful
       // worth seeing when the palette first opens.
-      const visible = search.trim()
-        ? commands
-        : commands.filter(c => !c.searchOnly);
-      return GROUP_ORDER
+      const query = search.trim();
+      const visible = query ? commands : commands.filter(c => !c.searchOnly);
+      const grouped = GROUP_ORDER
         .map(g => [g, visible.filter(c => c.group === g)] as [CommandGroup, Cmd[]])
         .filter(([, items]) => items.length > 0);
+      if (!query) return grouped;
+      // While searching, the group holding the best match comes first. cmdk 1.1.1
+      // sorts items within a group but never reorders groups (its sort looks a
+      // group up by internal id while the DOM tags it with its heading), so rank
+      // them here with the same scoring it applies to items; ties keep GROUP_ORDER.
+      const best = (items: Cmd[]) =>
+        Math.max(0, ...items.map(c => defaultFilter(c.searchValue ?? c.id, query, [c.label, ...(c.keywords ?? [])])));
+      return grouped
+        .map((group, order) => ({ group, order, score: best(group[1]) }))
+        .sort((a, b) => b.score - a.score || a.order - b.order)
+        .map(({ group }) => group);
     },
     [commands, search],
   );
@@ -139,7 +149,7 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
                 {items.map(cmd => (
                   <Command.Item
                     key={cmd.id}
-                    value={cmd.id}
+                    value={cmd.searchValue ?? cmd.id}
                     keywords={[cmd.label, ...(cmd.keywords ?? [])]}
                     onSelect={() => run(cmd)}
                     className="cmdk-item"
