@@ -11,11 +11,14 @@ FROM python:3.14-slim
 
 WORKDIR /app
 
-# System dependencies. curl: healthcheck. bubblewrap: the bubblewrap shell sandbox
+# System dependencies. ca-certificates: the system trust store that httpx2 (under
+# openai >= 3) verifies TLS against on Linux instead of certifi — the slim base
+# ships it today; this keeps it explicit. curl: healthcheck. bubblewrap: the bubblewrap shell sandbox
 # (installs setuid so it jails without --privileged). docker.io: provides the `docker`
 # CLI so the container shell backend can drive the dind sidecar via DOCKER_HOST — the
 # bundled daemon is never started here (the API only ever acts as a Docker *client*).
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
     bubblewrap \
     docker.io \
