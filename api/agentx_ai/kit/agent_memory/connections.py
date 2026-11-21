@@ -210,7 +210,12 @@ class RedisConnection:
                         settings.redis_uri,
                         decode_responses=True,
                         socket_timeout=settings.connection_timeout,
-                        socket_connect_timeout=settings.connection_timeout
+                        socket_connect_timeout=settings.connection_timeout,
+                        # redis-py 8 speaks RESP3 but keeps the RESP2 reply shapes
+                        # unless told otherwise. The stream readers
+                        # (background/chat_jobs, streaming/chat_run) parse those
+                        # shapes, so pin them rather than inherit a default.
+                        legacy_responses=True,
                     )
         return cls._client  # type: ignore[return-value]
 

@@ -221,10 +221,10 @@ class MemoryRetriever:
                 return
 
             data = bundle.model_dump()
-            redis.setex(
+            redis.set(
                 cache_key,
-                settings.retrieval_cache_ttl_seconds,
-                json.dumps(data, default=str)
+                json.dumps(data, default=str),
+                ex=settings.retrieval_cache_ttl_seconds,
             )
         except Exception as e:
             logger.debug(f"Cache set failed: {e}")

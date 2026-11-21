@@ -66,7 +66,7 @@ def set_cached_recap(user_id: str, channel: str, summary: str) -> dict[str, Any]
         "updated_at": datetime.now(UTC).isoformat(),
     }
     try:
-        _redis().setex(_key(user_id, channel), RECAP_TTL_SECONDS, json.dumps(entry))
+        _redis().set(_key(user_id, channel), json.dumps(entry), ex=RECAP_TTL_SECONDS)
     except Exception as e:  # pragma: no cover — Redis offline
         logger.warning(f"Failed to cache user recap: {e}")
     return entry

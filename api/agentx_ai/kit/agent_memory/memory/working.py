@@ -97,7 +97,7 @@ class WorkingMemory:
             ttl_seconds: Time to live in seconds
         """
         full_key = f"{self.context_key}:{key}"
-        self.redis.setex(full_key, ttl_seconds, json.dumps(value))
+        self.redis.set(full_key, json.dumps(value), ex=ttl_seconds)
 
     def get(self, key: str) -> Any | None:
         """

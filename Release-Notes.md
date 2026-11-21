@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.287 -->
+<!-- release-version: 0.21.288 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -27,10 +27,10 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **The whole organization on one chart** — **Open Organization** charts managers, teams, independents; drag to arrange, edit teams and roles in place, see what won't work.
 - **Extract: move memory out, safely** — evict a channel to the server vault: export → verify → wipe → receipt; nothing deletes unless it verifies.
 - **Agents read the web far more cheaply** — `web_extract` returns only the passages that answer your query (3.8% of a real article); per-turn budgets cap spend in *calls and dollars*.
-- **The server image is CPU-only and ~85% smaller to pull**, minus unused faiss — GPU hosts use `latest-gpu` (`docker-compose.gpu.yml` selects it); `docker run --gpus` users must switch tags.
+- **The server image is CPU-only and ~85% smaller to pull** — GPU hosts use `latest-gpu` (`docker-compose.gpu.yml` selects it); `docker run --gpus` users must switch tags; external Redis needs 6+.
 
 ### Fixes
 
 - **Settings that claimed to save now do** — **"Enable audio input" and "Enable speech generation" never persisted**; Ambassador's voice pickers were dropped silently; editing one Web Search source-policy list wiped the others.
-- **Memory moves are complete** — exports carry distilled procedures, replace-mode import also resets the PostgreSQL mirror, and consolidation reports the relationships it drops.
+- **Memory moves are complete** — exports carry distilled procedures, replace-mode import also resets the PostgreSQL mirror, and consolidation reports relationships it drops.
 - **Security updates** — a critical DOMPurify bypass, Tauri's origin check on Windows, torch model loading, Django, PyJWT and more; the manager image is lockfile-pinned, CLI on PATH.

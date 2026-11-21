@@ -57,7 +57,7 @@ class RedisBlobStorage:
         try:
             logger.debug(f"Attempting to store {self.label}: {storage_key} ({size} chars)")
             client = self._client()
-            client.setex(self._redis_key(storage_key), ttl_seconds, json.dumps(data))
+            client.set(self._redis_key(storage_key), json.dumps(data), ex=ttl_seconds)
             logger.info(f"Stored {self.label}: {storage_key} ({size} chars, TTL={ttl_seconds}s)")
             return storage_key
         except Exception as e:

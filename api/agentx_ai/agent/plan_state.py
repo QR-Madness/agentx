@@ -11,6 +11,8 @@ from datetime import datetime, UTC
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
+    from redis.typing import EncodableT, FieldT
+
     from .planner import TaskPlan
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,7 @@ class PlanStateStore:
             key = self._key(plan_id)
             now = datetime.now(UTC).isoformat()
 
-            fields = {
+            fields: dict[FieldT, EncodableT] = {
                 "status": "active",
                 "task": plan.task[:500],
                 "complexity": plan.complexity.value,
@@ -93,7 +95,7 @@ class PlanStateStore:
             key = self._key(plan_id)
             now = datetime.now(UTC).isoformat()
 
-            fields = {
+            fields: dict[FieldT, EncodableT] = {
                 f"subtask:{subtask_id}:status": status,
                 "updated_at": now,
             }

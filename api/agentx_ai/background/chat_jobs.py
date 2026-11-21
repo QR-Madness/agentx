@@ -21,7 +21,10 @@ import threading
 import time
 import uuid
 from datetime import datetime, UTC
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from redis.typing import EncodableT, FieldT
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +64,7 @@ def enqueue_background_chat(
     now = datetime.now(UTC).isoformat()
     now_ms = int(time.time() * 1000)
 
-    payload = {
+    payload: dict[FieldT, EncodableT] = {
         "job_id": job_id,
         "user_id": user_id,
         "message": message,
@@ -132,7 +135,8 @@ def dismiss_background_chat(job_id: str, *, user_id: str) -> bool:
 
 def _update_job(job_id: str, **fields: str) -> None:
     redis = _redis()
-    redis.hset(_job_key(job_id), mapping=fields)
+    mapping: dict[FieldT, EncodableT] = {**fields}  # hset's mapping keys are FieldT (invariant)
+    redis.hset(_job_key(job_id), mapping=mapping)
     redis.expire(_job_key(job_id), JOB_TTL_SECONDS)
 
 
@@ -224,13 +228,15 @@ def _worker_loop(stop_event: threading.Event) -> None:
     degraded = False
     while not stop_event.is_set():
         try:
-            entries = redis.xreadgroup(
+            # The legacy reply shape the client pins (connections.py):
+            # [[stream, [(msg_id, fields), ...]], ...]
+            entries = cast(list, redis.xreadgroup(
                 CONSUMER_GROUP,
                 CONSUMER_NAME,
                 {STREAM_KEY: ">"},
                 count=1,
                 block=2000,
-            )
+            ))
         except Exception as exc:  # noqa: BLE001 — typically Redis being down
             if not degraded:
                 logger.warning(f"xreadgroup failed ({exc}); backing off until Redis is reachable")
@@ -249,7 +255,7 @@ def _worker_loop(stop_event: threading.Event) -> None:
         if not entries:
             continue
 
-        for _stream, msgs in entries:  # type: ignore[union-attr]
+        for _stream, msgs in entries:
             for msg_id, fields in msgs:
                 try:
                     raw = fields.get(b"data") or fields.get("data")

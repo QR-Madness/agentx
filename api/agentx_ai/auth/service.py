@@ -251,7 +251,7 @@ class AuthService:
             # Store session in Redis
             redis = self._get_redis()
             session_key = f"{self.SESSION_PREFIX}{token}"
-            redis.setex(session_key, self.session_ttl, json.dumps(session_data))
+            redis.set(session_key, json.dumps(session_data), ex=self.session_ttl)
 
             # Password verified above → safe to unlock the log-archive vault and
             # seal any days that rolled while we were locked.
@@ -310,7 +310,7 @@ class AuthService:
             if extend_ttl:
                 # Update last_active and extend TTL
                 session_data["last_active"] = datetime.now(UTC).isoformat()
-                redis.setex(session_key, self.session_ttl, json.dumps(session_data))
+                redis.set(session_key, json.dumps(session_data), ex=self.session_ttl)
 
             return session_data
 
