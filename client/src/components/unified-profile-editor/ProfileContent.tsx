@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import * as Tabs from '@radix-ui/react-tabs';
 import {
@@ -28,6 +28,8 @@ import { type AgentProfile, type ModelInfo, type ReasoningStrategy } from '../..
 import { agentAccent } from '../../lib/agentAccent';
 import { fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerField } from '../common/ModelPickerField';
+import { TemperatureIgnoredNote } from '../common/TemperatureIgnoredNote';
+import { temperatureIgnoredBy } from '../../lib/modelSampling';
 import { VoicePicker } from '../common/VoicePicker';
 import { AvatarPicker } from '../common/AvatarPicker';
 import { ControlCard } from '../common/ControlCard';
@@ -283,6 +285,11 @@ export function ProfileContent({
   const ctxLabel = selectedCtx
     ? (selectedCtx >= 1000 ? `${Math.round(selectedCtx / 1000)}k ctx` : `${selectedCtx} ctx`)
     : '';
+  // Some providers run on default sampling (the API sends them no temperature):
+  // the slider stays live but gets an inline note, wired up for screen readers.
+  const temperatureId = useId();
+  const temperatureNoteId = `${temperatureId}-note`;
+  const temperatureIgnored = temperatureIgnoredBy(defaultModel) !== null;
   // dir: 1 = library slides in from right, -1 = form slides back in from left
   const [panelDir, setPanelDir] = useState(1);
 
@@ -505,8 +512,9 @@ export function ProfileContent({
 
                   <ControlCard icon={<Sliders size={14} />} title="Generation" summary={`${temperature.toFixed(1)} · ${tempLabel(temperature)}`}>
                     <div className="profile-form-group">
-                      <label>Temperature: {temperature.toFixed(1)} · <span className="profile-temp-label">{tempLabel(temperature)}</span></label>
+                      <label htmlFor={temperatureId}>Temperature: {temperature.toFixed(1)} · <span className="profile-temp-label">{tempLabel(temperature)}</span></label>
                       <input
+                        id={temperatureId}
                         type="range"
                         min="0"
                         max="2"
@@ -514,11 +522,13 @@ export function ProfileContent({
                         value={temperature}
                         onChange={e => setTemperature(parseFloat(e.target.value))}
                         className="profile-slider profile-temp"
+                        aria-describedby={temperatureIgnored ? temperatureNoteId : undefined}
                       />
                       <div className="profile-slider-labels">
                         <span>Focused</span>
                         <span>Creative</span>
                       </div>
+                      <TemperatureIgnoredNote model={defaultModel} id={temperatureNoteId} />
                     </div>
 
                     <div className="profile-form-group">

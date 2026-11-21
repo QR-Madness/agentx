@@ -3,7 +3,7 @@
  * Enhanced with model selection, inline system prompt, and organized sections
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useId } from 'react';
 import {
   Brain,
   Zap,
@@ -22,6 +22,8 @@ import { AgentAvatar } from '../common/AgentAvatar';
 import { api, apiErrorMessage, type AgentProfile, type AgentProfileCreate, type ReasoningStrategy, type PromptTemplate } from '../../lib/api';
 import { PromptLibraryModal } from './PromptLibraryModal';
 import { ModelPickerField } from '../common/ModelPickerField';
+import { TemperatureIgnoredNote } from '../common/TemperatureIgnoredNote';
+import { temperatureIgnoredBy } from '../../lib/modelSampling';
 import './ProfileEditorModal.css';
 import { Button } from '../ui';
 import { useConfirm } from '../ui/ConfirmDialog';
@@ -79,6 +81,7 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
   const [description, setDescription] = useState('');
   const [defaultModel, setDefaultModel] = useState('');
   const [temperature, setTemperature] = useState(0.7);
+  const temperatureNoteId = useId();
   const [reasoningStrategy, setReasoningStrategy] = useState<ReasoningStrategy>('auto');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [enableMemory, setEnableMemory] = useState(true);
@@ -369,11 +372,13 @@ export function ProfileEditorModal({ onClose, editProfile: editProfileProp, prof
               value={temperature}
               onChange={(e) => setTemperature(parseFloat(e.target.value))}
               className="slider"
+              aria-describedby={temperatureIgnoredBy(defaultModel) ? temperatureNoteId : undefined}
             />
             <div className="slider-labels">
               <span>Focused</span>
               <span>Creative</span>
             </div>
+            <TemperatureIgnoredNote model={defaultModel} id={temperatureNoteId} />
           </div>
 
           <div className="form-group">
