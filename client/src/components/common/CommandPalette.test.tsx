@@ -73,6 +73,13 @@ describe('CommandPalette', () => {
     expect(screen.getByText('Disable delegation for this chat')).toBeInTheDocument();
   });
 
+  it('puts Open Organization first for "team", even with a chat open', () => {
+    // The chat's delegation toggle also has a "team" keyword, and its group comes first.
+    render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/type a command/i), { target: { value: 'team' } });
+    expect(screen.getAllByRole('option')[0]).toHaveTextContent('Open Organization');
+  });
+
   it('closes on Escape', () => {
     const onClose = vi.fn();
     render(<CommandPalette isOpen onClose={onClose} onNavigate={vi.fn()} />);

@@ -59,6 +59,14 @@ export interface Command {
    * would otherwise bury the handful of commands worth seeing on open.
    */
   searchOnly?: boolean;
+  /**
+   * What the palette's fuzzy search ranks as this command's own name (the cmdk item
+   * value; defaults to `id`). cmdk scores a match at the start of the value above a
+   * keyword match, so give it the everyday words a user types for the command when
+   * a keyword it shares with other commands would otherwise tie them (groups break
+   * ties in `GROUP_ORDER`). Must be unique across commands.
+   */
+  searchValue?: string;
 }
 
 interface UseCommandsArgs {
@@ -109,7 +117,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'open-logs', group: 'Workspace', label: 'Open Logs', icon: <ScrollText size={16} />, keywords: ['console', 'debug', 'server', 'trace'], run: open('logs') },
       { id: 'open-tool-outputs', group: 'Workspace', label: 'Open Tool Outputs', icon: <FileStack size={16} />, keywords: ['debug', 'stored', 'cache', 'outputs', 'tool', 'results'], run: open('toolOutputBrowser') },
       { id: 'open-workspaces', group: 'Workspace', label: 'Open Projects', icon: <FolderOpen size={16} />, keywords: ['workspaces', 'projects', 'files', 'documents', 'upload', 'rag', 'pdf', 'corpus', 'knowledge', 'instructions'], run: open('workspaces') },
-      { id: 'open-teams', group: 'Workspace', label: 'Open Organization', icon: <Network size={16} />, keywords: ['organization', 'org', 'org chart', 'agent teams', 'team', 'teams', 'manage', 'manager', 'lead', 'members', 'chain of command', 'delegation', 'a2a', 'a2a manager', 'alloy', 'workflow'], run: open('teams') },
+      { id: 'open-teams', group: 'Workspace', label: 'Open Organization', searchValue: 'teams organization', icon: <Network size={16} />, keywords: ['organization', 'org', 'org chart', 'agent teams', 'team', 'teams', 'manage', 'manager', 'lead', 'members', 'chain of command', 'delegation', 'a2a', 'a2a manager', 'alloy', 'workflow'], run: open('teams') },
       { id: 'open-roster', group: 'Workspace', label: 'Browse agent roster', icon: <Bot size={16} />, keywords: ['roster', 'agents', 'org', 'organization', 'chart', 'manager', 'lead', 'team', 'chain of command', 'dossier', 'who'], run: open('roster') },
       { id: 'open-profile', group: 'Workspace', label: 'Agent profiles', icon: <BrainCircuit size={16} />, keywords: ['profile', 'profiles', 'agent', 'agents', 'persona', 'model', 'temperature', 'prompt', 'edit'], run: open('profileEditor') },
       { id: 'focus', group: 'Workspace', label: focusMode ? 'Exit focus mode' : 'Enter focus mode', hint: 'Zen', icon: focusMode ? <EyeOff size={16} /> : <Eye size={16} />, keywords: ['zen', 'immersive', 'hide', 'chrome'], run: () => { toggleFocusMode(); onClose(); } },
