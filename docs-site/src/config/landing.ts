@@ -3,7 +3,7 @@
 // Ported from the design handoff (landing.jsx / common.jsx / system-map.jsx).
 
 /** Product version — keep in sync with ../../../versions.yaml (api.version). */
-export const version = '0.21.289';
+export const version = '0.21.290';
 
 export type Feature = {
   key: string;

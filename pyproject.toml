@@ -1,6 +1,6 @@
 [project]
 name = "agentx-source"
-version = "0.21.289"
+version = "0.21.290"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.14"
 dependencies = [
@@ -20,7 +20,7 @@ dependencies = [
     "mcp>=1.0.0",
     # Model Providers
     "openai>=3.57.0",  # lmstudio_provider passes an httpx2 client (2.x rejects it)
-    "anthropic>=0.20.0",
+    "anthropic>=2.12.0",  # API 2026-10-21; the provider sends no sampling params
     "httpx>=0.27.0",
     "httpx2>=2.16.2",  # SDK-bound HTTP objects (openai >= 3 is built on httpx2)
     # Token estimation — single source of truth for budgeting (Foundation #6).

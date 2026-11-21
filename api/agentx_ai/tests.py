@@ -19725,6 +19725,91 @@ class AnthropicSystemPromptJoinTest(TestCase):
         self.assertEqual(len(converted), 1)
 
 
+class AnthropicRequestShapeTest(TestCase):
+    """Requests reach the SDK as `**request_params`, a `dict[str, Any]` pyright can't
+    check, on a client the other tests mock. So an SDK signature change ships green:
+    anthropic 1.x+ dropped `temperature`, which would have failed every call. These
+    capture the kwargs and bind them to the installed SDK's real signatures."""
+
+    _TOOLS = [{"type": "function", "function": {
+        "name": "lookup", "description": "Look a term up.",
+        "parameters": {"type": "object", "properties": {"term": {"type": "string"}}},
+    }}]
+
+    def _provider(self):
+        from agentx_ai.providers.anthropic_provider import AnthropicProvider
+        from agentx_ai.providers.base import ProviderConfig
+        return AnthropicProvider(ProviderConfig(api_key="k"))
+
+    def _assert_fits(self, method_name, captured):
+        import inspect
+        from anthropic.resources.messages import AsyncMessages
+        # Current models reject sampling parameters with a 400; API 2026-10-21 does on all.
+        for param in ("temperature", "top_p", "top_k"):
+            self.assertNotIn(param, captured)
+        # TypeError here = the installed SDK no longer takes a key the provider sends.
+        inspect.signature(getattr(AsyncMessages, method_name)).bind(None, **captured)
+
+    def test_complete_request_fits_the_sdk(self):
+        from types import SimpleNamespace
+        provider = self._provider()
+        captured: dict = {}
+
+        async def create(**kw):
+            captured.update(kw)
+            return SimpleNamespace(
+                content=[], stop_reason="end_turn", model="claude", id="msg_1", type="message",
+                usage=SimpleNamespace(input_tokens=3, output_tokens=1),
+            )
+
+        provider._client = SimpleNamespace(messages=SimpleNamespace(create=create))
+        asyncio.run(provider.complete(
+            [Message(role=MessageRole.SYSTEM, content="Be brief."), Message(role=MessageRole.USER, content="hi")],
+            "claude", temperature=0.2, tools=self._TOOLS, tool_choice="auto", stop=["END"],
+        ))
+        self.assertEqual(captured["stop_sequences"], ["END"])
+        self.assertEqual(captured["tool_choice"], {"type": "auto"})
+        self._assert_fits("create", captured)
+
+    def test_stream_request_fits_the_sdk(self):
+        from types import SimpleNamespace
+        provider = self._provider()
+        captured: dict = {}
+        final = SimpleNamespace(content=[], stop_reason="end_turn",
+                                usage=SimpleNamespace(input_tokens=3, output_tokens=1))
+
+        class _Stream:
+            def __init__(self):
+                async def _texts():
+                    yield "ok"
+
+                self.text_stream = _texts()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get_final_message(self):
+                return final
+
+        def stream(**kw):
+            captured.update(kw)
+            return _Stream()
+
+        provider._client = SimpleNamespace(messages=SimpleNamespace(stream=stream))
+
+        async def run():
+            async for _ in provider.stream([Message(role=MessageRole.USER, content="hi")], "claude",
+                                           temperature=0.2, tools=self._TOOLS, stop=["END"]):
+                pass
+
+        asyncio.run(run())
+        self.assertEqual(captured["stop_sequences"], ["END"])
+        self._assert_fits("stream", captured)
+
+
 class WorkspaceWriteServiceTest(TestCase):
     """`create_text_document` / `update_text_document` — policy, collision/ETag
     conflicts, blob refcounting, no-op short-circuit (all mock-based)."""
