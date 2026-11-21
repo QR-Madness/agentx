@@ -33,6 +33,7 @@ import {
 import {
   SettingsSection,
   SliderField,
+  TemperatureField,
   NumberField,
   ToggleField,
   TextField,
@@ -226,8 +227,8 @@ export function RecallSettingsPanel() {
                 showDefault={false}
                 {...bind('recall_hyde_model')}
               />
-              <SliderField
-                label="Temperature"
+              <TemperatureField
+                model={val('recall_hyde_model', '')}
                 value={val('recall_hyde_temperature', 0.7)}
                 min={0} max={1} step={0.1} format={oneDp}
                 onChange={v => handleChange('recall_hyde_temperature', v)}
@@ -260,8 +261,8 @@ export function RecallSettingsPanel() {
                 showDefault={false}
                 {...bind('recall_self_query_model')}
               />
-              <SliderField
-                label="Temperature"
+              <TemperatureField
+                model={val('recall_self_query_model', '')}
                 value={val('recall_self_query_temperature', 0.2)}
                 min={0} max={1} step={0.05}
                 onChange={v => handleChange('recall_self_query_temperature', v)}

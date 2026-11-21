@@ -14,7 +14,7 @@ import { ModelPickerField } from '../../common/ModelPickerField';
 import {
   NumberField,
   SaveStatusChip,
-  SliderField,
+  TemperatureField,
   ToggleField,
 } from '../../settings/fields';
 import { sectionBinder, useSettingsManifest } from '../SettingsManifestContext';
@@ -45,7 +45,9 @@ export default function PromptsSection() {
       const p = (config.prompt_enhancement || {}) as Partial<PromptEnhanceSettings>;
       return {
         enabled: p.enabled ?? true,
-        model: p.model || 'anthropic:claude-3-5-haiku-latest',
+        // Empty follows the summarizer role, resolved server-side. A literal
+        // fallback here would show a model the server may not use.
+        model: p.model || '',
         temperature: p.temperature ?? 0.7,
         max_tokens: p.max_tokens ?? 1000,
       };
@@ -90,8 +92,8 @@ export default function PromptsSection() {
             {...bind('model')}
           />
 
-          <SliderField
-            label="Temperature"
+          <TemperatureField
+            model={settings.model}
             value={settings.temperature}
             min={0}
             max={1}

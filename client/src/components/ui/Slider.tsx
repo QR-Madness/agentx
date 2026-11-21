@@ -10,7 +10,13 @@ import { cn } from '../../lib/utils';
 export const Slider = React.forwardRef<
   React.ComponentRef<typeof SliderPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root>
->(({ className, 'aria-label': ariaLabel, 'aria-labelledby': ariaLabelledby, ...props }, ref) => (
+>(({
+  className,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledby,
+  'aria-describedby': ariaDescribedby,
+  ...props
+}, ref) => (
   <SliderPrimitive.Root
     ref={ref}
     className={cn(
@@ -23,10 +29,12 @@ export const Slider = React.forwardRef<
     <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-[var(--surface-overlay)]">
       <SliderPrimitive.Range className="absolute h-full bg-accent" />
     </SliderPrimitive.Track>
-    {/* The focusable thumb carries role="slider"; label it for a11y. */}
+    {/* The focusable thumb carries role="slider", so the label and the
+        description go on it; on the Root they would never be announced. */}
     <SliderPrimitive.Thumb
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledby}
+      aria-describedby={ariaDescribedby}
       className={cn(
         'block h-4 w-4 rounded-full border border-accent bg-white shadow-sm transition-colors',
         'outline-none focus-visible:ring-2 focus-visible:ring-accent',

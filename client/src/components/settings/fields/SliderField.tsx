@@ -21,10 +21,12 @@ interface SliderFieldProps extends FieldChromeProps {
   /** Format the readout (default: 2 decimals). */
   format?: (value: number) => string;
   hint?: ReactNode;
+  /** A caveat under the hint, announced with the slider (see FieldShell). */
+  note?: ReactNode;
 }
 
 export function SliderField({
-  label, value, min, max, step, onChange, format = v => v.toFixed(2), hint,
+  label, value, min, max, step, onChange, format = v => v.toFixed(2), hint, note,
   binding, onReset, badge,
 }: SliderFieldProps) {
   return (
@@ -32,6 +34,7 @@ export function SliderField({
       label={label}
       labelText={label}
       hint={hint}
+      note={note}
       binding={binding}
       onReset={onReset}
       badge={badge}

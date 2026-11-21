@@ -9,6 +9,7 @@ export { FieldShell } from './FieldShell';
 export type { FieldChromeProps } from './FieldShell';
 export { ToggleField } from './ToggleField';
 export { SliderField } from './SliderField';
+export { TemperatureField } from './TemperatureField';
 export { NumberField } from './NumberField';
 export { PromptField } from './PromptField';
 export { TextField } from './TextField';
