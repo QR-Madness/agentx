@@ -26,7 +26,6 @@ const MODAL_REGISTRY: Record<string, React.LazyExoticComponent<ComponentType<Mod
   tools: lazy(() => import('./stubs').then(m => ({ default: m.ToolsModalContent }))),
   translation: lazy(() => import('./stubs').then(m => ({ default: m.TranslationModalContent }))),
   unifiedProfileEditor: lazy(() => import('./stubs').then(m => ({ default: m.UnifiedProfileEditorModalContent }))),
-  promptLibrary: lazy(() => import('./PromptLibraryModal').then(m => ({ default: m.PromptLibraryModal }))),
   toolOutput: lazy(() => import('./stubs').then(m => ({ default: m.ToolOutputDrawer }))),
   orgManager: lazy(() => import('../org/OrgManager').then(m => ({ default: m.OrgManager as unknown as ComponentType<ModalComponentProps> }))),
   alloyRunTrace: lazy(() => import('../alloy/AlloyRunTraceModal').then(m => ({ default: m.AlloyRunTraceModal as ComponentType<ModalComponentProps> }))),
@@ -56,8 +55,6 @@ const SELF_CLOSING = new Set<string>([
   'alloyRunTrace',
   'workspaces',
   'agentRoster',
-  // NOTE: 'promptLibrary' intentionally omitted — its standalone modal has no
-  // header close button of its own, so it relies on the shell close button.
 ]);
 
 /**
