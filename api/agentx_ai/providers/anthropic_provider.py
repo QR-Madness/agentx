@@ -299,10 +299,13 @@ class AnthropicProvider(ModelProvider):
         """Generate a completion using Anthropic API."""
         system_prompt, converted_messages = self._convert_messages(messages)
 
+        # No sampling parameters: current Claude models reject `temperature` (a 400),
+        # API version 2026-10-21 rejects it on every model, and the SDK (>= 1.x) no
+        # longer accepts it. Claude samples with its defaults, so `temperature` stays
+        # in the signature for the provider interface and has no effect here.
         request_params: dict[str, Any] = {
             "model": model,
             "messages": converted_messages,
-            "temperature": temperature,
             "max_tokens": max_tokens or 4096,  # Anthropic requires max_tokens
         }
 
@@ -355,10 +358,9 @@ class AnthropicProvider(ModelProvider):
         """Stream a completion using Anthropic API."""
         system_prompt, converted_messages = self._convert_messages(messages)
 
-        request_params: dict[str, Any] = {
+        request_params: dict[str, Any] = {  # no sampling parameters, see complete()
             "model": model,
             "messages": converted_messages,
-            "temperature": temperature,
             "max_tokens": max_tokens or 4096,
         }
 
