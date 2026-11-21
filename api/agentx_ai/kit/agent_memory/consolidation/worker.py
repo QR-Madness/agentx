@@ -91,7 +91,7 @@ class ConsolidationWorker:
             "jobs_run": self.jobs_run_count,
             "status": "running"
         }
-        self.redis.setex(key, get_settings().worker_heartbeat_ttl, json.dumps(data))
+        self.redis.set(key, json.dumps(data), ex=get_settings().worker_heartbeat_ttl)
         self._last_heartbeat = datetime.now(UTC)
 
     def _clear_heartbeat(self):

@@ -3049,11 +3049,11 @@ class WorkingMemoryUnitTest(MockRedisTestBase):
 
         wm.set("test_key", {"value": 42}, ttl_seconds=300)
 
-        # Verify setex was called
-        self.mock_redis.setex.assert_called_once()
-        call_args = self.mock_redis.setex.call_args
+        # Verify set was called with the TTL as EX
+        self.mock_redis.set.assert_called_once()
+        call_args = self.mock_redis.set.call_args
         self.assertIn("test_key", call_args[0][0])
-        self.assertEqual(call_args[0][1], 300)
+        self.assertEqual(call_args.kwargs["ex"], 300)
 
     def test_get_returns_none_for_missing(self):
         """get() returns None for nonexistent key."""
@@ -7775,8 +7775,8 @@ class UserRecapTest(MockRedisTestBase):
         from agentx_ai.kit.agent_memory.recap import set_cached_recap, get_cached_recap
 
         set_cached_recap("u1", "_default", "Alice is a backend developer.")
-        # setex(key, ttl, value) — feed the stored payload back through get().
-        key, _ttl, value = self.mock_redis.setex.call_args[0]
+        # set(key, value, ex=ttl) — feed the stored payload back through get().
+        key, value = self.mock_redis.set.call_args[0]
         self.assertTrue(key.startswith("user_recap:"))
         self.mock_redis.get.return_value = value
 

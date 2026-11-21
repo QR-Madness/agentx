@@ -116,8 +116,8 @@ import redis
 
 r = redis.Redis(host='localhost', port=6379)
 
-# Cache translation
-r.setex('translate:en:fr:hello', 3600, 'bonjour')
+# Cache translation for an hour (SET … EX; redis-py 8 deprecates setex)
+r.set('translate:en:fr:hello', 'bonjour', ex=3600)
 
 # Retrieve cached value
 cached = r.get('translate:en:fr:hello')
@@ -296,16 +296,22 @@ conn = psycopg2.connect(
 redis://localhost:6379
 ```
 
-Python (redis-py):
+Python (redis-py 8), as the API's shared client builds it:
 ```python
 import redis
 
-r = redis.Redis(
-    host='localhost',
-    port=6379,
-    decode_responses=True
+r = redis.from_url(
+    'redis://localhost:6379',
+    decode_responses=True,
+    legacy_responses=True,
 )
 ```
+
+redis-py 8 speaks RESP3 on the wire, so the API needs **Redis 6.0 or newer**. The
+bundled stack ships Redis 7, so this only matters if `REDIS_URI` points at a Redis
+you run yourself. `legacy_responses=True` keeps the RESP2 reply shapes, which the
+stream readers (background chat jobs, detached-run tailing) parse. That is already
+the library default, but pinning it means a future default can't change them.
 
 ## Performance Considerations
 

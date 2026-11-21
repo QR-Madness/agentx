@@ -1,6 +1,6 @@
 [project]
 name = "agentx-source"
-version = "0.21.287"
+version = "0.21.288"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.14"
 dependencies = [
@@ -15,7 +15,7 @@ dependencies = [
     "neo4j>=6.0.3",
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",
-    "redis>=5.0.0",
+    "redis>=8.1.0",  # legacy_responses (connections.py) is 8.x-only
     # MCP Client
     "mcp>=1.0.0",
     # Model Providers
