@@ -22,9 +22,6 @@ import { ToolOutputsPanel } from '../toolkit/ToolOutputsPanel';
 import { WorkspacesPanel } from '../workspaces/WorkspacesPanel';
 import { Button } from '../ui';
 
-// Re-export ProfileEditorModal for the modal registry
-export { ProfileEditorModal } from './ProfileEditorModal';
-
 interface ModalContentProps {
   onClose: () => void;
 }
