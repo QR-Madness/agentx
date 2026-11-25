@@ -6,9 +6,9 @@ Set up your development environment for contributing to AgentX.
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| **Python** | 3.10+ | Backend runtime |
+| **Python** | 3.14+ | Backend runtime (matches `requires-python` in `pyproject.toml`; check there if this drifts) |
 | **uv** | latest | Python package manager ([install](https://docs.astral.sh/uv/getting-started/installation/)) |
-| **Node.js** | 18+ | Client tooling |
+| **Node.js** | 20.19+ or 22.12+ | Client tooling (Vite's minimum) |
 | **bun** | latest | Client package manager ([install](https://bun.sh/docs/installation)) |
 | **Docker** | 24+ | Database services (Neo4j, PostgreSQL, Redis) |
 | **Docker Compose** | v2+ | Multi-container orchestration |
@@ -156,8 +156,8 @@ A healthy response includes `"status": "healthy"` with database connection statu
 
 ## Common Issues
 
-**Docker containers won't start**
-Check if ports 5432, 6379, 7474, or 7687 are already in use. Stop conflicting services or adjust ports in `docker-compose.yml`.
+**Docker containers won't start, or a dev server can't bind its port**
+Check whether something else already holds one of the stack's ports: PostgreSQL 5432, Redis 6379, Neo4j 7474 and 7687, the API 12319, or the Vite dev server 1420 (HMR 1421). Stop the conflicting service, or adjust the ports in `docker-compose.yml`.
 
 **`task: command not found`**
 Install Task: `sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin`

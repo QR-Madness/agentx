@@ -73,6 +73,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.296** (pro
 | [research.md](todo/backlog/research.md) | Research Mode follow-ups (form intake, delegated deep-research, Brave backends, spend ceiling) |
 | [translation-web-search.md](todo/backlog/translation-web-search.md) | Translation backend · Web Search & Delegation |
 | [logging.md](todo/backlog/logging.md) | Logging & Observability Overhaul (`logging_kit`) |
+| [docs-site.md](todo/backlog/docs-site.md) | Docs site for newcomers — audit + slices (Get Started, concepts, first session, troubleshooting; service-facing pages wait on founder decisions) |
 
 ### Other
 

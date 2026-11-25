@@ -18,7 +18,7 @@ desktop client. Windows is a first-class target platform alongside Linux.
 |------|-------|
 | **Python 3.14+** | From [python.org](https://www.python.org/downloads/windows/) or `winget install Python.Python.3.14` (matches `requires-python` in `pyproject.toml` — check there if this drifts) |
 | **uv** | `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` |
-| **Node.js 18+** | From [nodejs.org](https://nodejs.org/) or `winget install OpenJS.NodeJS.LTS` |
+| **Node.js 20.19+ or 22.12+** | From [nodejs.org](https://nodejs.org/) or `winget install OpenJS.NodeJS.LTS` (Vite's minimum) |
 | **bun** | `powershell -c "irm bun.sh/install.ps1 | iex"` |
 | **Docker Desktop** | [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/) with the **WSL2 backend** enabled |
 | **Task** | `winget install Task.Task` (or `scoop install task`) |

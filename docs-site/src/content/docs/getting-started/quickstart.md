@@ -1,50 +1,85 @@
 # Quick Start
 
-AgentX is two pieces: a **server** you run (agents, memory, tools) and a
-**desktop client** you point at it. Getting up and running is three moves:
+AgentX runs as two parts: a **server** on a machine you control, which holds your agents, their
+memory and their tools, and a **client** you chat through, either the desktop app or the web
+client in a browser. This page gets both running and ends at your first conversation.
 
-1. **Run a server** — pick your path below.
-2. **Connect the client** — installer + your server's URL.
-3. **Go further** — expose it, tune it, or build on it.
+## Before you start
 
-## 1 · Run a server — pick your path
+- **A machine for the server, with [Docker](https://docs.docker.com/get-started/get-docker/).**
+  On Windows and macOS that means Docker Desktop; on Windows it runs through WSL 2.
+- **About 8 GB of free memory.** The stack reserves roughly 7 GB, most of it for the API; 16 GB
+  is comfortable. On Docker Desktop, make sure its VM is allowed that much.
+- **Disk space** for the container images, plus the ~2.3 GB embedding model that the first start
+  downloads.
+- **A model to talk to:** an API key from Anthropic, OpenAI, OpenRouter or the Vercel AI
+  Gateway, or a model you run yourself with [LM Studio](https://lmstudio.ai/). You add it in the
+  app once the server is up.
 
-| Path | Best for | Guide |
-|---|---|---|
-| **Self-host** — Docker image + web dashboard, nothing else on the host | Running AgentX to *use* it | **[Self-Hosting](../deployment/self-hosting.md)** |
-| **From source** — hot-reloading full stack (`task dev`) | Hacking on AgentX itself | **[Installation](installation.md)** |
-| **Local clusters** — several isolated prod-like instances, one dashboard | Power users & staging | **[Clusters & Gateway](../deployment/clusters.md)** |
+## 1 · Start the server
 
-The self-host path is three commands, and the bundled
-**[deployment manager](../deployment/manager.md)** takes it from there — watch the
-first boot progress live, stream logs, start/stop, and see resource usage from a
-dashboard instead of a terminal:
+Download **`agentx-deploy.tar.gz`** from the
+[latest release](https://github.com/QR-Madness/agentx/releases/latest), then:
 
 ```bash
 tar xzf agentx-deploy.tar.gz && cd agentx-deploy
-cp .env.example .env      # fill 3 values — the file tells you which
-docker compose up -d      # then open http://127.0.0.1:12320
+cp .env.example .env      # no edits needed: secrets are generated on the first start
+docker compose up -d      # starts the deployment dashboard
 ```
 
-## 2 · Connect the client
+On Windows, double-click **`start-manager.bat`** in the unpacked folder instead.
 
-Grab an installer from the
-**[latest release](https://github.com/QR-Madness/agentx/releases/latest)**
-(Windows / Linux), enter your server's URL on first run, and set the root password
-from the built-in setup screen. Done — you're chatting.
+Open the dashboard at **http://127.0.0.1:12320**, paste the access token from
+`./.manager-token`, and click **Start AgentX**. The first start takes a few minutes while the
+model downloads; the dashboard shows the progress and switches to **Running** when the server is
+ready. [Self-Hosting](../deployment/self-hosting.md) covers each step in more detail.
 
-## 3 · Go further
+## 2 · Connect a client
+
+**The desktop app** is the simplest choice when the server runs on the same machine. Download
+the installer for Windows or Linux from the
+[latest release](https://github.com/QR-Madness/agentx/releases/latest) and open it. It looks for
+a server at `http://localhost:12319`, so on the same machine there is nothing to enter; for a
+server elsewhere, enter its address. On the first run, the setup screen asks you to set the root
+password.
+
+**The web client** at [agx.thejpnet.net](https://agx.thejpnet.net) needs no install. Use it once
+your server has an HTTPS address, which [Going public](../deployment/self-hosting.md#going-public)
+sets up. Before you connect, allow the web client in your server's `.env`, or the browser blocks
+every request:
+
+```bash
+CORS_ALLOWED_ORIGINS=https://agx.thejpnet.net
+```
+
+Then apply it with **Up** in the dashboard; a restart doesn't re-read `.env`.
+
+## 3 · Your first conversation
+
+1. Open **Settings → Providers** and add your API key. Keys are stored on your server, never in
+   the client.
+2. Choose a model in the chat's model picker. To make it your default, set it in **Settings**.
+3. Start a chat with **AgentX**, the general assistant. Every install starts with three agents:
+   AgentX, **Researcher** and **Deluxe Image Creator**. [Agent Profiles](../features/agent-profiles.md)
+   shows how to change them or build your own.
+
+!!! tip "Running LM Studio on the same machine?"
+    The server runs inside Docker, where `localhost` means the container itself. In
+    **Settings → Providers**, set LM Studio's address to `http://host.docker.internal:1234/v1`.
+    On Linux, also let LM Studio serve on your local network, because the container reaches your
+    machine through Docker's network rather than its loopback address.
+
+## Go further
 
 | You want to… | Go to |
 |---|---|
-| Reach your server from the internet (token gateway + tunnel) | [Going public](../deployment/self-hosting.md#going-public) |
-| Understand logins, sessions, and the gateway token | [Authentication](../deployment/authentication.md) |
-| Tweak environment variables & config files | [Configuration](configuration.md) |
-| Drive everything from the ops dashboard / CLI | [Deployment Manager](../deployment/manager.md) |
+| Give an agent its own model, personality and tools | [Agent Profiles](../features/agent-profiles.md) |
+| Connect tools and services | [Connectors & Tools](../features/mcp.md) |
+| Let agents hand work to each other | [Agent Teams](../features/multi-agent.md) |
+| See what AgentX remembers, and why | [Memory](../features/memory.md) |
+| Reach your server from anywhere | [Going public](../deployment/self-hosting.md#going-public) |
+| Understand sign-in and the gateway token | [Authentication](../deployment/authentication.md) |
+| Change environment variables and config files | [Configuration](configuration.md) |
+| Run several instances | [Clusters & Gateway](../deployment/clusters.md) |
+| Build AgentX from source | [Development Setup](../development/setup.md) |
 | Script against the HTTP API | [API Endpoints](../api/endpoints.md) |
-| See how it all fits together | [Architecture Overview](../architecture/overview.md) |
-| Explore features (chat, memory, MCP tools, translation, prompts) | [Chat](../features/chat.md) · [Memory](../features/memory.md) · [MCP](../features/mcp.md) · [Translation](../features/translation.md) · [Prompts](../features/prompts.md) |
-
-!!! tip "Windows?"
-    Developing on Windows has a few platform notes — see
-    [Windows Setup](windows.md).

@@ -14,10 +14,11 @@ export type NavEntry = NavLink | NavGroup;
 export const nav: NavEntry[] = [
   { label: 'Home', slug: '' },
   {
+    // Newcomer order: the end-to-end path first. Building from source lives under
+    // Contribute; `getting-started/installation` stays as an out-of-nav router page
+    // so existing links still land somewhere useful.
     label: 'Get Started',
     items: [
-      { label: 'Installation', slug: 'getting-started/installation' },
-      { label: 'Windows Setup', slug: 'getting-started/windows' },
       { label: 'Quick Start', slug: 'getting-started/quickstart' },
       { label: 'Configuration', slug: 'getting-started/configuration' },
       { label: 'Settings Reference', slug: 'getting-started/settings-reference' },
@@ -83,7 +84,8 @@ export const nav: NavEntry[] = [
   {
     label: 'Contribute',
     items: [
-      { label: 'Setup', slug: 'development/setup' },
+      { label: 'Development Setup', slug: 'development/setup' },
+      { label: 'Windows (WSL2) Setup', slug: 'getting-started/windows' },
       { label: 'Task Commands', slug: 'development/tasks' },
       { label: 'GPU Acceleration', slug: 'development/gpu' },
       { label: 'Mobile (Android)', slug: 'development/mobile' },
