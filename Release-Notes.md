@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.295 -->
+<!-- release-version: 0.21.296 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -21,7 +21,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 ### Highlights
 
-- **Settings you can navigate, and that explain themselves** — search jumps to individual settings, the new **Overview** says what to set up first, and all 210 match the Settings Reference.
+- **Settings you can navigate and that explain themselves** — search jumps to individual settings, an **Overview** says what to set up first, and all 210 match the Settings Reference.
 - **Link your OpenRouter account in one click** — sign in once, no key pasting; the card shows balance and spend, and repairs models OpenRouter renamed.
 - **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint as `yourid:model`. A **supply line** shows where turns really go: provider, context, price, fallback.
 - **The whole organization on one chart** — **Open Organization** charts managers, teams, independents; drag to arrange, edit teams and roles in place, see what won't work.
@@ -34,4 +34,4 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Claude works again via the Anthropic provider** — AgentX no longer sends the temperature current models reject.
 - **Settings that claimed to save now do** — **"Enable audio input" and "Enable speech generation" never persisted**; Ambassador's voice pickers were dropped silently; editing one Web Search source-policy list wiped the others.
 - **Memory moves are complete** — exports carry distilled procedures, replace-mode import resets the PostgreSQL mirror, and consolidation reports relationships it drops.
-- **Security updates** — a critical DOMPurify bypass, Tauri's origin check on Windows, torch loading, Django, PyJWT and more; the manager image is lockfile-pinned, CLI on PATH.
+- **Security updates** — a critical DOMPurify bypass, Tauri's origin check and URL handling, torch loading, Django, PyJWT and more; the manager image is lockfile-pinned, CLI on PATH.
