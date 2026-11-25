@@ -59,86 +59,13 @@ review_by = 2027-01-31
 ecosystem = "npm"
 package = "katex"
 ids = ["GHSA-238p-pmpm-9mq7"]
-projects = ["client", "docs-site"]
+projects = ["client"]
 reason = """
 Low severity, and it needs an existing prototype-pollution bug in the page to
-exploit. The fix is katex 0.18.2, a breaking line for every range in use: the
-client's own ^0.17, and ^0.16 from rehype-katex, micromark-extension-math and
-mermaid. Bumping the client's direct range alone would leave the ^0.16 copies.
-"""
-review_by = 2027-01-31
-
-# --- Docs site ----------------------------------------------------------------
-# A static build (no adapter, no SSR, no on-demand image endpoint) of the repo's
-# own content. Every advisory below needs attacker-controlled input, and the only
-# inputs are the repo's files, so keep Vercel's fork protection on (fork-PR
-# previews wait for approval). The trigger to clear most of these is the Astro 7
-# migration, which brings sharp 0.35 and esbuild 0.28 with it.
-
-[[advisory]]
-ecosystem = "npm"
-package = "astro"
-ids = ["GHSA-26w7-cxv4-gfx2", "GHSA-376h-93r7-7g6f", "GHSA-4g3v-8h47-v7g6",
-       "GHSA-7pw4-f3q4-r2p2", "GHSA-98hj-9722-w3j8", "GHSA-f48w-9m4c-m7f5",
-       "GHSA-mh32-jxcr-mh9f", "GHSA-r3h5-4585-7x3w"]
-projects = ["docs-site"]
-reason = """
-Fixed only in astro 7.x (a major). The critical one is RCE in AVIF optimization,
-which needs an attacker-supplied image; the rest are XSS and an auth bypass in
-rendering or SSR paths, fed here only by trusted repo content. The two added
-2026-11-16: XSS through a dynamic tag name taken from request data (no
-component here computes a tag name, and a static build has no request data),
-and a file read through the @astrojs/node image endpoint (not installed; there
-is no adapter).
-"""
-review_by = 2027-01-31
-
-[[advisory]]
-ecosystem = "npm"
-package = "sharp"
-ids = ["GHSA-f88m-g3jw-g9cj", "GHSA-rgj7-g3m4-5g8c", "GHSA-wq5f-xc86-pv6w"]
-projects = ["docs-site"]
-reason = """
-libvips/libheif/librsvg bugs reached by decoding hostile images; the build only
-decodes the repo's own images. Fixed in sharp 0.35, outside astro 6's ^0.34
-range.
-"""
-review_by = 2027-01-31
-
-[[advisory]]
-ecosystem = "npm"
-package = "js-yaml"
-ids = ["GHSA-2883-xcg3-v3hh", "GHSA-52cp-r559-cp3m", "GHSA-5p4m-2wfm-xmqj"]
-projects = ["docs-site"]
-reason = """
-CPU exhaustion on hostile YAML. The vulnerable copy is pinned exactly (4.2.0) by
-@redocly/openapi-core under redoc; the API explorer page only ever parses the
-site's own /openapi.yaml (the repo's OpenApi.yaml). Clears with a redoc release
-that moves off the pin.
-"""
-review_by = 2027-01-31
-
-[[advisory]]
-ecosystem = "npm"
-package = "zod"
-ids = ["GHSA-mrhx-c7xc-m3w5"]
-projects = ["docs-site"]
-reason = """
-Memory exhaustion validating oversized input. The vulnerable copy is pinned
-exactly (4.1.11) by @vercel/cli-config (via @vercel/functions → @vercel/oidc),
-which validates the Vercel CLI's own config files in the home directory. The
-middleware imports only next/rewrite, so no request data reaches it.
-"""
-review_by = 2027-01-31
-
-[[advisory]]
-ecosystem = "npm"
-package = "esbuild"
-ids = ["GHSA-g7r4-m6w7-qqqr"]
-projects = ["docs-site"]
-reason = """
-Arbitrary file read through the esbuild dev server; production builds never
-start it. The fix (0.28.1) is outside astro 6's ^0.27 range.
+exploit. The fix is katex 0.18.2. The client's own katex (^0.19) has it; the
+vulnerable 0.16 copy comes from rehype-katex, micromark-extension-math and
+mermaid 11, which all require ^0.16. Mermaid 12 moves to katex 0.18; the other
+two need upstream releases.
 """
 review_by = 2027-01-31
 

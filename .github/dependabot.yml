@@ -117,6 +117,11 @@ updates:
         update-types: [minor, patch]
       major:
         update-types: [major]
+    ignore:
+      # The site's only TypeScript consumer is `astro check`, and @astrojs/check
+      # supports TypeScript 5 and 6 only. Lift this once it accepts 7.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: "/"

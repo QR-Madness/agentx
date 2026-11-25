@@ -3,6 +3,7 @@ import { copyFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
+import { unified } from '@astrojs/markdown-remark';
 import mermaid from 'astro-mermaid';
 import tailwindcss from '@tailwindcss/vite';
 import rehypeSlug from 'rehype-slug';
@@ -72,6 +73,11 @@ const mermaidThemeVariables = {
 export default defineConfig({
   site: 'https://agentx.thejpnet.net',
 
+  // Astro 7 strips whitespace by JSX rules by default, which can drop the space
+  // between two inline elements on separate lines. Keep the HTML-aware compression
+  // the site was designed and reviewed with.
+  compressHTML: true,
+
   // `astro-mermaid` must precede `mdx` so it intercepts ```mermaid fences
   // before they reach Shiki, then renders them client-side.
   integrations: [
@@ -79,8 +85,15 @@ export default defineConfig({
       theme: 'base',
       autoTheme: false,
       mermaidConfig: {
+        // Mermaid 12 lays diagrams out with ELK and paints them with the `neo` look
+        // by default. Keep the dagre layout and classic look these diagrams were
+        // drawn for; dagre also spares each page the ELK chunk (~1.4 MB).
+        layout: 'dagre',
+        look: 'classic',
         themeVariables: mermaidThemeVariables,
-        flowchart: { curve: 'basis' },
+        // Mermaid 12 wraps node labels at 120px (11 used 200px), which stacks
+        // these labels four to six lines deep.
+        flowchart: { curve: 'basis', wrappingWidth: 200 },
       },
     }),
     mdx(),
@@ -92,24 +105,29 @@ export default defineConfig({
   },
 
   markdown: {
-    // Order matters: rewrite links first, then transform admonitions.
-    remarkPlugins: [remarkRewriteMdLinks, remarkAdmonitions],
-    // Append an empty hover anchor to each heading. The `#` glyph is drawn
-    // presentationally via CSS (`a.anchor::after` in global.css) rather than as a
-    // real text node — otherwise it leaks into Astro's collected heading text and
-    // shows up appended to every right-rail TOC entry. IDs are added by rehype-slug
-    // (idempotent) before autolink runs.
-    rehypePlugins: [
-      rehypeSlug,
-      [
-        rehypeAutolinkHeadings,
-        {
-          behavior: 'append',
-          properties: { className: ['anchor'], ariaHidden: true, tabIndex: -1 },
-          content: [],
-        },
+    // Astro 7 renders Markdown with Sätteri by default. This site keeps the
+    // remark/rehype pipeline its plugins are written for; GFM and smartypants stay
+    // on (the package defaults), and smartypants still runs before our plugins.
+    processor: unified({
+      // Order matters: rewrite links first, then transform admonitions.
+      remarkPlugins: [remarkRewriteMdLinks, remarkAdmonitions],
+      // Append an empty hover anchor to each heading. The `#` glyph is drawn
+      // presentationally via CSS (`a.anchor::after` in global.css) rather than as a
+      // real text node — otherwise it leaks into Astro's collected heading text and
+      // shows up appended to every right-rail TOC entry. IDs are added by rehype-slug
+      // (idempotent) before autolink runs.
+      rehypePlugins: [
+        rehypeSlug,
+        [
+          rehypeAutolinkHeadings,
+          {
+            behavior: 'append',
+            properties: { className: ['anchor'], ariaHidden: true, tabIndex: -1 },
+            content: [],
+          },
+        ],
       ],
-    ],
+    }),
     shikiConfig: {
       theme: 'github-dark',
       wrap: true,
