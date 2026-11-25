@@ -107,21 +107,6 @@ review_by = 2027-01-31
 
 [[advisory]]
 ecosystem = "npm"
-package = "picomatch"
-ids = ["GHSA-fc5q-39xc-vjpf"]
-projects = ["docs-site"]
-reason = """
-ReDoS on glob patterns that repeat a single-branch extglob; no fixed release
-yet (4.0.7 and earlier are affected). The docs site runs picomatch only while
-building, through astro, vite and rollup, on patterns from the repo's own
-config. The deployed site is static and its routing middleware imports only
-@vercel/functions and the site's own negotiation helper, so no visitor input
-reaches a glob. Upgrade when a fix ships.
-"""
-review_by = 2027-01-31
-
-[[advisory]]
-ecosystem = "npm"
 package = "js-yaml"
 ids = ["GHSA-2883-xcg3-v3hh", "GHSA-52cp-r559-cp3m", "GHSA-5p4m-2wfm-xmqj"]
 projects = ["docs-site"]
