@@ -123,7 +123,11 @@
     overflow-y: auto;
     padding: 8px;
   }
-  .search-hint {
+
+  /* The hint and the result rows are created by the script below, so they never
+     carry this component's scoping attribute. Scope them through the static
+     results container with :global(), or none of these rules apply. */
+  .search-results :global(.search-hint) {
     margin: 0;
     padding: 16px;
     font-size: 13px;
@@ -131,31 +135,31 @@
     text-align: center;
   }
 
-  .search-result {
+  .search-results :global(.search-result) {
     display: block;
     padding: 10px 12px;
     border-radius: 8px;
     color: var(--color-text);
     text-decoration: none;
   }
-  .search-result:hover,
-  .search-result:focus-visible {
+  .search-results :global(.search-result:hover),
+  .search-results :global(.search-result:focus-visible) {
     background: color-mix(in oklab, var(--color-accent) 14%, transparent);
     outline: none;
   }
-  .search-result-title {
+  .search-results :global(.search-result-title) {
     font-family: var(--font-display);
     font-size: 14px;
     font-weight: 600;
     color: var(--color-text-strong);
   }
-  .search-result-excerpt {
+  .search-results :global(.search-result-excerpt) {
     margin-top: 2px;
     font-size: 12.5px;
     color: var(--color-text-muted);
     line-height: 1.5;
   }
-  .search-result-excerpt :global(mark) {
+  .search-results :global(.search-result-excerpt mark) {
     background: transparent;
     color: var(--color-accent-hover);
     font-weight: 600;
@@ -198,8 +202,12 @@
       return pagefind;
     }
 
+    // The hint can echo the query, so it is set as text, never as markup.
     function setHint(text: string) {
-      resultsEl!.innerHTML = `<p class="search-hint">${text}</p>`;
+      const hint = document.createElement('p');
+      hint.className = 'search-hint';
+      hint.textContent = text;
+      resultsEl!.replaceChildren(hint);
     }
 
     async function runSearch(query: string) {
@@ -219,14 +227,22 @@
         return;
       }
       const data = await Promise.all(search.results.slice(0, 8).map((r) => r.data()));
-      resultsEl!.innerHTML = data
-        .map(
-          (d) =>
-            `<a class="search-result" href="${d.url}">` +
-            `<div class="search-result-title">${d.meta?.title ?? d.url}</div>` +
-            `<div class="search-result-excerpt">${d.excerpt}</div></a>`
-        )
-        .join('');
+      const rows = data.map((d) => {
+        const row = document.createElement('a');
+        row.className = 'search-result';
+        row.href = d.url;
+        const title = document.createElement('div');
+        title.className = 'search-result-title';
+        title.textContent = d.meta?.title ?? d.url;
+        const excerpt = document.createElement('div');
+        excerpt.className = 'search-result-excerpt';
+        // Pagefind escapes the page text and wraps each match in <mark>, so the
+        // excerpt is the one piece kept as markup.
+        excerpt.innerHTML = d.excerpt;
+        row.append(title, excerpt);
+        return row;
+      });
+      resultsEl!.replaceChildren(...rows);
     }
 
     function openDialog() {
