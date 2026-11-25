@@ -24,6 +24,11 @@ the **design pass** — the structure exists; the visuals are deliberately minim
 - **Search is Pagefind** — indexed at build (`bun run build` runs `pagefind --site dist`); live under
   `preview`/prod, inert in `astro dev`.
 - After editing any remark/rehype plugin, **`rm -rf .astro dist` before rebuilding** (Astro caches parsed content).
+- **Markdown runs through remark/rehype on purpose.** Astro 7 defaults to its Sätteri processor, which
+  would skip our plugins; `markdown.processor: unified({...})` in `astro.config.mjs` keeps the pipeline.
+- **`astro dev` backgrounds itself when it detects an AI coding agent** (Astro 7). Stop it with
+  `astro dev stop`, or set `ASTRO_DEV_BACKGROUND=0` to keep it in the foreground.
+- **TypeScript stays on 6.x:** `@astrojs/check` (`bun run check`) supports TypeScript 5 and 6 only.
 
 ---
 
@@ -31,12 +36,13 @@ the **design pass** — the structure exists; the visuals are deliberately minim
 
 | Concern | Choice |
 |---|---|
-| Framework | **Astro 6** (static output) |
+| Framework | **Astro 7** (static output; `compressHTML: true` keeps Astro 6's HTML-aware whitespace handling) |
 | Styling | **Tailwind CSS v4** via `@tailwindcss/vite` (CSS-first `@theme`, no `tailwind.config.js`) |
 | Markdown | `.md` content collection; **MDX** integration available for future interactive pages |
 | Code highlighting | **Shiki** (`github-dark` theme), built into Astro |
 | Heading anchors | **rehype-slug** + **rehype-autolink-headings** (hover `#` on h2–h4) |
-| Diagrams | **astro-mermaid** (client-side, cosmic-dark `themeVariables` in `astro.config.mjs`) |
+| Diagrams | **astro-mermaid** with **mermaid 12** (client-side, cosmic-dark `themeVariables` in `astro.config.mjs`). Pinned to the `dagre` layout, the `classic` look and 200px label wrapping; mermaid 12's defaults (ELK, `neo`, 120px) would re-lay and restyle every diagram |
+| API explorer | **Redoc 3** standalone bundle (an ES module, so `<script type="module">`) on `/docs/api-explorer`. Options are kebab-case attributes; `disable-telemetry="true"` stops the usage data Redoc 3 sends by default |
 | Search | **Pagefind** (static index built into `dist/pagefind/`; ⌘K modal in `Search.astro`) |
 | Package manager | **bun** |
 | Deploy | **Vercel** (static), custom domain `agentx.thejpnet.net` |

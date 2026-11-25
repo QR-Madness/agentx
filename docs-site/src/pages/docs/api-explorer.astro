@@ -10,7 +10,10 @@ import { slugToHref } from '../../config/nav';
   backHref={slugToHref('api/endpoints')}
   backLabel="API Endpoints"
 >
-  {/* scrollYOffset keeps anchor targets clear of the sticky header above */}
-  <redoc spec-url="/openapi.yaml" options='{"scrollYOffset": 60}'></redoc>
-  <script is:inline src={bundleUrl}></script>
+  {/* Redoc 3 reads options as kebab-case attributes. scroll-y-offset keeps anchor
+      targets clear of the sticky header above; disable-telemetry turns off the
+      usage data Redoc 3 otherwise sends to Redocly (it accepts only "true"). */}
+  <redoc spec-url="/openapi.yaml" scroll-y-offset="60" disable-telemetry="true"></redoc>
+  {/* The Redoc 3 standalone bundle is an ES module. */}
+  <script is:inline type="module" src={bundleUrl}></script>
 </ExplorerLayout>
