@@ -35,20 +35,28 @@ Never describe a hosted backend before one exists.
   Self-Hosting.
 - **Search results were unstyled.** Their scoped CSS never reached rows created by script, and
   the hint put the raw query into `innerHTML`. Fixed in #149.
+- **Projects has no page in the nav.** `features/workspaces` covers it under the internal name
+  "Workspaces", and the Memory page links "Project" to the Chat page instead.
+- **Some feature pages lead with internals.** Agent Teams opens with phase history and API field
+  names (`workflow_id`, `available_for_delegation`, `delegate_to`); Reasoning names
+  `POST /api/agent/run` in its first section.
+- **Extract and Cores are missing from the user docs**, though the release notes headline Extract.
 - `docs-site/README.md` still calls the landing page a blank canvas.
 
 ### Slices
 
 - [x] **0 · Search dialog** — results and hint styled; the query is treated as text (#149).
-- [ ] **1 · Get Started, accurate and in newcomer order**
+- [x] **1 · Get Started, accurate and in newcomer order** (#151)
   - Quick Start leads the section and matches Self-Hosting (no `.env` edits).
   - It gains a prerequisites box and the web-client path (desktop app for a local server; the
     hosted web client once the server has an HTTPS address and allows the origin).
   - Installation becomes a short router page outside the nav, so existing links still land.
   - Development Setup becomes the one build-from-source page, with current prerequisites.
   - Windows Setup moves to Contribute.
-- [ ] **2 · Concepts page** — one plain-language paragraph per core term, plus where it lives
-      in the app. Linked from the docs home and from each feature page's first use of a term.
+- [x] **2 · Concepts page** — `getting-started/concepts`: a sentence or two per core term, each
+      linking to its page. In the nav after Quick Start, which points to it.
+- [ ] **2b · Projects page** — retitle the Workspaces page to the app's name, add it to Using
+      the Platform, and point Memory's "Project" link at it.
 - [ ] **3 · Docs home for newcomers** — a plain-language opener and a "choose your path" block
       (use it / run your own server / build on the API / contribute). The architecture diagram
       moves to Architecture → Overview.
@@ -58,6 +66,9 @@ Never describe a hosted backend before one exists.
 - [ ] **5 · Troubleshooting & FAQ** — client can't reach the server, sign-in and gateway token,
       model key errors, Docker Desktop file sharing, the first-boot download, where the logs
       are.
+- [ ] **5b · Feature pages lead with usage** — move internals (Agent Teams' history and API
+      fields, Reasoning's endpoint) to the architecture pages; link Concepts terms on first use;
+      document Extract on the Memory page.
 - [ ] **6 · Service-facing material (needs founder decisions)** — what a managed Agent Core
       offers (bring your own model key, request metering), a privacy and data statement, and
       the landing page's call to action. Blocked on the launch gates (repo move and licence,
