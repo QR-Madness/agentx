@@ -8,7 +8,7 @@ Set up your development environment for contributing to AgentX.
 |------|---------|---------|
 | **Python** | 3.14+ | Backend runtime (matches `requires-python` in `pyproject.toml`; check there if this drifts) |
 | **uv** | latest | Python package manager ([install](https://docs.astral.sh/uv/getting-started/installation/)) |
-| **Node.js** | 20.19+ or 22.12+ | Client tooling (Vite's minimum) |
+| **Node.js** | 24.15+ (or 22.23.4+) | Client and docs-site tooling (jsdom 31 and Astro 7 set the floor) |
 | **bun** | latest | Client package manager ([install](https://bun.sh/docs/installation)) |
 | **Docker** | 24+ | Database services (Neo4j, PostgreSQL, Redis) |
 | **Docker Compose** | v2+ | Multi-container orchestration |
