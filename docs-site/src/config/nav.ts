@@ -20,6 +20,7 @@ export const nav: NavEntry[] = [
     label: 'Get Started',
     items: [
       { label: 'Quick Start', slug: 'getting-started/quickstart' },
+      { label: 'Your First Session', slug: 'getting-started/first-session' },
       { label: 'Concepts', slug: 'getting-started/concepts' },
       { label: 'Troubleshooting', slug: 'getting-started/troubleshooting' },
       { label: 'Configuration', slug: 'getting-started/configuration' },

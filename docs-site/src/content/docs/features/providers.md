@@ -25,11 +25,14 @@ discovered live from each provider's API, so the picker reflects what you can ac
 
 ## Which model runs a turn
 
-The active model is resolved top-down: an **explicit choice for the turn** (the Relay's model
-picker or a per-request override) → the **agent profile's** default model → the **server default**.
-That server default is itself layered — the **`DEFAULT_MODEL`** environment variable, then your
-**global preference** in Settings, then a built-in local-model floor. What `models.yaml` does
-*not* do is pin the runtime default; it holds provider settings only.
+The active model is resolved top-down: an **explicit choice for the turn** (the model chip under
+the message box, or a per-request override) → the **agent profile's** default model → the
+**Global Default Model** (**Settings → Model Roles**) → a built-in LM Studio model. That last
+floor is why an install with only cloud providers needs a global default: without one, a
+conversation whose agent has no model of its own fails with "Provider 'lmstudio' not
+configured". The `DEFAULT_MODEL` environment variable applies only to `/api/agent/run` (and the
+model `/api/agent/status` reports), not to chat. What `models.yaml` does *not* do is pin the
+runtime default; it holds provider settings only.
 
 ## Model roles
 

@@ -8,8 +8,13 @@ Copy `.env.example` to `.env` in the project root. Variables are grouped by subs
 
 ### Default Model
 
+Chat doesn't read an environment variable for its default model. It uses the **Global Default
+Model** set in **Settings → Model Roles**; see
+[which model runs a turn](../features/providers.md#which-model-runs-a-turn). `DEFAULT_MODEL` sets
+the model for `/api/agent/run` only, in `provider:model` form:
+
 ```bash
-DEFAULT_MODEL=llama-3.2-1b-instruct   # Model used for agent chat/reasoning
+DEFAULT_MODEL=lmstudio:llama-3.2-1b-instruct   # /api/agent/run only; chat ignores it
 ```
 
 ### LM Studio (Local Models)

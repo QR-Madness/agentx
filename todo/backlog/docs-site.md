@@ -63,9 +63,15 @@ Never describe a hosted backend before one exists.
       Overview has a fuller one); the technology stack moved there; the stale status list went
       (the Roadmap holds the history). Also fixed: two links to a `main` branch that doesn't
       exist (the License link and one in Docker).
-- [ ] **4 · Your first session** — add a provider key, pick a model, chat, create a profile,
-      watch memory work. Written from a real walkthrough on a scratch instance, with
-      screenshots.
+- [x] **4 · Your first session** — `getting-started/first-session`, written from a real
+      walkthrough on a scratch instance (OpenRouter, $0.014 in model spend):
+  - Connect a provider, then set the Global Default Model.
+  - Chat, make an agent of your own, and watch memory recall and consolidation.
+  - Nine screenshots (WebP, 364 KB in total), captured at 2× from a headless Chromium driven
+    over CDP.
+  - The walkthrough corrected the default-model guidance: Quick Start pointed at "Settings";
+    Providers, Configuration and `.env.example` said `DEFAULT_MODEL` drives chat (it drives
+    only `/api/agent/run`); and `.env.example`'s bare model name would be rejected.
 - [x] **5 · Troubleshooting** — `getting-started/troubleshooting`: server setup, connecting a
       client (including web-client CORS and the gateway token), the root password reset, models
       (empty picker, LM Studio in Docker, Claude's temperature), and where the logs are. Also
@@ -93,3 +99,25 @@ Never describe a hosted backend before one exists.
   - Update the manager Share dialog's CORS check to match.
 - **Slice 4's walkthrough runs on OpenRouter** on a scratch instance, keeping model spend under
   $2.50.
+
+### Product issues the walkthrough found
+
+Each one is a code change, so it belongs outside the docs track:
+
+- **A fresh install with only a cloud provider fails its first default conversation.** Chat
+  resolves the conversation's model, then the profile's, then the Global Default Model, then
+  `lmstudio:llama3.2`. A newcomer who connects OpenRouter and starts chatting gets "Provider
+  'lmstudio' not configured". The docs now say to set the global default.
+  - Fix: a clear message pointing to Settings → Model Roles, or onboarding that sets the
+    default once a provider connects.
+- **The Memory panel doesn't reload after Consolidate finishes.** The Facts tab shows "No facts
+  found" until you press refresh, while the overview counts are already updated.
+- **The context meter reads "100% context" (in warning colour)** on a conversation using
+  "Default model". It seems not to know that model's context window.
+- **Two names for the default memory channel.** Profiles and the docs say `_global`, but turns
+  and facts are stored under `_default` (`agent/core.py`), which is what the Memory panel shows.
+- **The embeddings card on Model Providers says "Local · Locked"** even when cloud embeddings
+  are configured (its provider field then reads `openai`).
+- **The Settings Reference says `preferences.default_model` is "Set via
+  `/api/config/update`"**, but the registry places it on the Model Roles screen
+  (`ui_section="model-roles"`). The generated reference doesn't reflect the screen.

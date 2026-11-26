@@ -58,14 +58,19 @@ password can't be opened again; see
 
 ## Models
 
+**New conversations fail with "Provider 'lmstudio' not configured".**
+No global default model is set, so AgentX falls back to a model on LM Studio. Set one in
+**Settings → Model Roles → Global Default Model**, or give the agent a model of its own in its
+[profile](../features/agent-profiles.md). See [Your First Session](first-session.md#2--choose-your-default-model).
+
 **The model picker is empty.**
-Add a provider key in **Settings → Providers**. Models are discovered live from each provider,
-so the list fills in once a key works. See [Providers](../features/providers.md).
+Add a provider key in **Settings → Model Providers**. Models are discovered live from each
+provider, so the list fills in once a key works. See [Providers](../features/providers.md).
 
 **LM Studio on the same machine isn't found.**
 Inside the server's container, `localhost` is the container itself. In
-**Settings → Providers**, set LM Studio's address to `http://host.docker.internal:1234/v1`. On
-Linux, also let LM Studio serve on your local network.
+**Settings → Model Providers**, set LM Studio's address to `http://host.docker.internal:1234/v1`.
+On Linux, also let LM Studio serve on your local network.
 
 **The Temperature slider does nothing with a Claude model.**
 That's expected. Current Claude models accept only their default sampling and reject a
