@@ -177,6 +177,13 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
 
+      # vitest 5 and jsdom 31 need Node 22.22+ (or 24.15+); pin it instead of
+      # inheriting whatever the runner image ships.
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
       - name: Set up Task
         uses: arduino/setup-task@v3
         with:

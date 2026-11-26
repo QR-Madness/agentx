@@ -8,7 +8,7 @@ import { load } from "js-yaml";
 import { resolve } from "path";
 
 // Load version from versions.yaml (single source of truth)
-const versionsPath = resolve(__dirname, "../versions.yaml");
+const versionsPath = resolve(import.meta.dirname, "../versions.yaml");
 const versions = load(readFileSync(versionsPath, "utf8")) as {
   client: { version: string };
   api: { protocol_version: number };
