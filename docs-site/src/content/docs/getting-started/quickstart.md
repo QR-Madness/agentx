@@ -2,7 +2,8 @@
 
 AgentX runs as two parts: a **server** on a machine you control, which holds your agents, their
 memory and their tools, and a **client** you chat through, either the desktop app or the web
-client in a browser. This page gets both running and ends at your first conversation.
+client in a browser. This page gets both running and ends at your first conversation. If a term
+is new to you, [Concepts](concepts.md) explains it in a sentence or two.
 
 ## Before you start
 
