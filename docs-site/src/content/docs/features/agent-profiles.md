@@ -136,7 +136,7 @@ default from its profile.
     A profile's **kind** is normally `agent`. The other kind, **ambassador**, is a companion
     that briefs *you* about a conversation on the side (by text or voice) without ever posting
     into the transcript. It's edited here too, but its "system prompt" becomes *communication*
-    personas. See [Agent Teams → Ambassador](/docs/features/multi-agent#ambassador--the-parallel-relay).
+    personas. See [Agent Teams → Ambassador](/docs/features/multi-agent#the-ambassador).
 
 ## Day-to-day
 

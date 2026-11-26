@@ -70,18 +70,26 @@ Never describe a hosted backend before one exists.
       client (including web-client CORS and the gateway token), the root password reset, models
       (empty picker, LM Studio in Docker, Claude's temperature), and where the logs are. Also
       fixed: Authentication's opener said auth was off by default; it is on.
-- [ ] **5b · Feature pages lead with usage** — move internals (Agent Teams' history and API
-      fields, Reasoning's endpoint) to the architecture pages; link Concepts terms on first use;
-      document Extract on the Memory page.
-- [ ] **6 · Service-facing material (needs founder decisions)** — what a managed Agent Core
+- [ ] **5b · Feature pages lead with usage**
+  - [x] Thinking Patterns (#157): the user guide first, then a "For developers" section with
+        the offline kit, config keys and the drafting schema.
+  - [x] Agent Teams: a plain-language intro and Ambassador section. The history, API fields,
+        data model, runtime, streaming events, storage and status move to Architecture → Agent
+        Teams Internals.
+  - [ ] Document Extract on the Memory page.
+  - [ ] Link Concepts terms on their first use in each feature page.
+- [ ] **6 · Service-facing material (on hold, by the user's decision)** — what a managed Agent Core
       offers (bring your own model key, request metering), a privacy and data statement, and
       the landing page's call to action. Blocked on the launch gates (repo move and licence,
       phase 19 cloud operation) and on the pricing shape (ADR 007, unwritten).
 
-### Open questions
+### Decisions
 
-- **Should a fresh server allow the official web client by default?** The API's default CORS
-  list allows the desktop origins only, so the hosted web client at `agx.thejpnet.net` needs
-  `CORS_ALLOWED_ORIGINS` set before it can talk to a newly self-hosted server. Adding the
-  origin to the deploy bundle's defaults would remove that step. Credentialed CORS makes it a
-  security decision, not a docs one.
+- **The web client's origin is not a CORS default yet** (the user's decision, 2026-11-26). The
+  API's default CORS list allows the desktop origins only, so the hosted web client needs
+  `CORS_ALLOWED_ORIGINS` before it can talk to a newly self-hosted server, and the docs say so.
+  Once the web client moves to its proper JNT domain at launch, that domain becomes a default.
+  - Treat it like `_TAURI_ORIGINS` in `settings.py`, configurable with an opt-out.
+  - Update the manager Share dialog's CORS check to match.
+- **Slice 4's walkthrough runs on OpenRouter** on a scratch instance, keeping model spend under
+  $2.50.
