@@ -295,10 +295,11 @@ class ProviderRegistry:
     def _default_chat_model(self) -> str | None:
         """The global default chat model (floor when there's no active turn).
 
-        Reads either latent global-default key (`preferences.default_model` or
-        `models.defaults.chat`) — neither has a settings UI yet (Todo backlog), so
-        on live turns the real floor is the agent profile's model, threaded in as
-        `preferred_fallback`; this only matters for profile-less background work.
+        Reads the global default (`preferences.default_model`, set on Settings →
+        Model Roles as the Global Default Model) or the latent `models.defaults.chat`.
+        On live turns the agent profile's model is threaded in as
+        `preferred_fallback` ahead of it, so this matters for profile-less work and
+        for agents that pin no model.
         """
         cfg = self._config()
         val = cfg.get("preferences.default_model") or cfg.get("models.defaults.chat")

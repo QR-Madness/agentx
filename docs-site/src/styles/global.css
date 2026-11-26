@@ -555,6 +555,12 @@ a.ax-glass:hover,
   max-width: 100%;
   border-radius: var(--radius-card);
 }
+/* A screenshot on its own line gets a hairline frame, so dark app captures don't melt into
+   the dark page. Inline images (badges inside links) don't match. */
+.ax-prose p > img:only-child {
+  display: block;
+  border: 1px solid var(--color-border-2);
+}
 
 /* ── Blockquote ───────────────────────────────────────────────────────── */
 .ax-prose blockquote {

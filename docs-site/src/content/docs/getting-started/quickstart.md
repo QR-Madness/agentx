@@ -57,16 +57,22 @@ Then apply it with **Up** in the dashboard; a restart doesn't re-read `.env`.
 
 ## 3 · Your first conversation
 
-1. Open **Settings → Providers** and add your API key. Keys are stored on your server, never in
-   the client.
-2. Choose a model in the chat's model picker. To make it your default, set it in **Settings**.
+1. Open **Settings → Model Providers** and add your API key. Keys are stored on your server, never
+   in the client.
+2. Open **Settings → Model Roles** and set the **Global Default Model**. Every agent without a
+   model of its own uses it; without one, new conversations fall back to LM Studio and fail if
+   you haven't set it up. You can still pick another model for a single conversation from the
+   model chip under the message box.
 3. Start a chat with **AgentX**, the general assistant. Every install starts with three agents:
    AgentX, **Researcher** and **Deluxe Image Creator**. [Agent Profiles](../features/agent-profiles.md)
    shows how to change them or build your own.
 
+[Your First Session](first-session.md) walks through these steps with screenshots, then makes an
+agent of your own and shows memory at work.
+
 !!! tip "Running LM Studio on the same machine?"
     The server runs inside Docker, where `localhost` means the container itself. In
-    **Settings → Providers**, set LM Studio's address to `http://host.docker.internal:1234/v1`.
+    **Settings → Model Providers**, set LM Studio's address to `http://host.docker.internal:1234/v1`.
     On Linux, also let LM Studio serve on your local network, because the container reaches your
     machine through Docker's network rather than its loopback address.
 
