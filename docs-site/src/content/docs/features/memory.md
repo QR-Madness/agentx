@@ -35,7 +35,7 @@ Memory is organized into **channels** — scopes that group related memories so 
 and a personal thread don't bleed into each other:
 
 - **`_global`** — user-wide memory: your preferences, your style, durable facts about you.
-- **A project channel** — everything tied to one [Project](chat.md): its own facts, entities,
+- **A project channel** — everything tied to one [Project](workspaces.md): its own facts, entities,
   and history, kept together.
 
 Channels are **traceable scopes, not walls.** Every recall queries the active channel *and*
