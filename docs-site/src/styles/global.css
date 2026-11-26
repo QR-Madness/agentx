@@ -405,8 +405,10 @@ a.ax-glass:hover,
 }
 
 /* ── Body text ────────────────────────────────────────────────────────── */
+/* No margin here. Preflight already zeroes paragraph margins, and a `margin`
+   on this selector (0,1,1) outranks the flow spacing above (`.ax-prose > * + *`
+   and the heading rules, 0,1,0), which ran every paragraph into the next. */
 .ax-prose p {
-  margin: 0;
   color: var(--color-text);
 }
 .ax-prose .lede {
