@@ -67,7 +67,7 @@ The `stack` layout (vertical) is the only layout today.
 
 Multi-agent runs additionally emit `delegation_start`, `delegation_chunk`,
 `delegation_tool_call`, `delegation_tool_result`, and `delegation_complete` — see the
-[Multi-Agent guide](../features/multi-agent.md#execution--streaming).
+[Agent Teams Internals](../architecture/agent-teams.md#execution--streaming).
 
 !!! note "EventSource vs. fetch"
     The browser `EventSource` API only does `GET`, but this endpoint is `POST`. To read it in a

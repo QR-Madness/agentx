@@ -69,7 +69,7 @@ See [Agent Teams](../features/multi-agent.md).
 team. See [Organizations](../features/multi-agent.md#organizations).
 
 **Ambassador.** A companion that briefs you about a conversation on the side, by text or voice,
-without posting into it. See [Ambassador](../features/multi-agent.md#ambassador--the-parallel-relay).
+without posting into it. See [Ambassador](../features/multi-agent.md#the-ambassador).
 
 ## Tools and knowledge
 
