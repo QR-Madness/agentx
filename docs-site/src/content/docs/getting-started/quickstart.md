@@ -70,6 +70,8 @@ Then apply it with **Up** in the dashboard; a restart doesn't re-read `.env`.
     On Linux, also let LM Studio serve on your local network, because the container reaches your
     machine through Docker's network rather than its loopback address.
 
+Something not working? [Troubleshooting](troubleshooting.md) covers the usual fixes.
+
 ## Go further
 
 | You want to… | Go to |

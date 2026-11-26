@@ -55,8 +55,9 @@ Never describe a hosted backend before one exists.
   - Windows Setup moves to Contribute.
 - [x] **2 · Concepts page** — `getting-started/concepts`: a sentence or two per core term, each
       linking to its page. In the nav after Quick Start, which points to it.
-- [ ] **2b · Projects page** — retitle the Workspaces page to the app's name, add it to Using
-      the Platform, and point Memory's "Project" link at it.
+- [x] **2b · Projects page** (#155) — the Workspaces page retitled to the app's name and
+      rewritten usage-first from the client's labels; in Using the Platform; Memory's "Project"
+      link points at it.
 - [x] **3 · Docs home for newcomers** — a plain-language opener, a "Start here" table of
       paths, and a feature table in plain terms. The component diagram went (Architecture →
       Overview has a fuller one); the technology stack moved there; the stale status list went
@@ -65,9 +66,10 @@ Never describe a hosted backend before one exists.
 - [ ] **4 · Your first session** — add a provider key, pick a model, chat, create a profile,
       watch memory work. Written from a real walkthrough on a scratch instance, with
       screenshots.
-- [ ] **5 · Troubleshooting & FAQ** — client can't reach the server, sign-in and gateway token,
-      model key errors, Docker Desktop file sharing, the first-boot download, where the logs
-      are.
+- [x] **5 · Troubleshooting** — `getting-started/troubleshooting`: server setup, connecting a
+      client (including web-client CORS and the gateway token), the root password reset, models
+      (empty picker, LM Studio in Docker, Claude's temperature), and where the logs are. Also
+      fixed: Authentication's opener said auth was off by default; it is on.
 - [ ] **5b · Feature pages lead with usage** — move internals (Agent Teams' history and API
       fields, Reasoning's endpoint) to the architecture pages; link Concepts terms on first use;
       document Extract on the Memory page.
