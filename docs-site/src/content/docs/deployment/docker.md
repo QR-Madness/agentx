@@ -206,6 +206,6 @@ sudo chown -R $USER:$USER ./data
 
 ## See Also
 
-- [docker-compose.yml](https://github.com/QR-Madness/agentx/blob/main/docker-compose.yml)
+- [docker-compose.yml](https://github.com/QR-Madness/agentx/blob/master/docker-compose.yml)
 - [Database Migration Guide](migration.md)
 - [Memory Setup](../development/memory-setup.md)

@@ -57,9 +57,11 @@ Never describe a hosted backend before one exists.
       linking to its page. In the nav after Quick Start, which points to it.
 - [ ] **2b · Projects page** — retitle the Workspaces page to the app's name, add it to Using
       the Platform, and point Memory's "Project" link at it.
-- [ ] **3 · Docs home for newcomers** — a plain-language opener and a "choose your path" block
-      (use it / run your own server / build on the API / contribute). The architecture diagram
-      moves to Architecture → Overview.
+- [x] **3 · Docs home for newcomers** — a plain-language opener, a "Start here" table of
+      paths, and a feature table in plain terms. The component diagram went (Architecture →
+      Overview has a fuller one); the technology stack moved there; the stale status list went
+      (the Roadmap holds the history). Also fixed: two links to a `main` branch that doesn't
+      exist (the License link and one in Docker).
 - [ ] **4 · Your first session** — add a provider key, pick a model, chat, create a profile,
       watch memory work. Written from a real walkthrough on a scratch instance, with
       screenshots.
