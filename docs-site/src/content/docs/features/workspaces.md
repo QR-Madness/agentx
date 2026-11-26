@@ -1,70 +1,71 @@
-# Workspaces, Document RAG & Agent Shells
+# Projects
 
-**Workspaces** let you hand an agent *files* — not just its learned memory and the web. A
-workspace is a named, persistent container of documents with a searchable manifest; attach
-one to a conversation and the agent can search it, cite it, and (opt-in) run commands
-against it. (Shipped v0.21.103–112.)
+A **project** holds the files and standing instructions behind a piece of work. Put a
+conversation in a project and the agent knows what the project contains, follows its
+instructions, searches and cites its documents, and keeps what it learns in the project's own
+memory. (In the API and in configuration, projects are called *workspaces*.)
 
-Open it from the command palette → **"Open Workspaces"**.
+## Open the Projects hub
 
-## Document RAG
+Click **Projects** in the top bar, or open the command palette (`⌘K` / `Ctrl K`) and choose
+**Open Projects**. The hub lists your projects. Each one has:
 
-Upload PDFs, text, markdown, or code into a workspace (drag onto the drop-zone or click to
-browse). Each file is processed in the background:
+- a **name** and **description**, saying what the project is about;
+- **instructions**: standing guidance the agent follows in every conversation of the project,
+  such as tone, goals, constraints, or what the files are;
+- **files**: PDFs, text, Markdown or code you upload (click the upload area to browse), plus
+  notes written by you or your agents. Each file is indexed in the background and marked ready
+  once it can be searched;
+- **conversations**: the chats that belong to the project. Removing one from the project keeps
+  the conversation.
 
-```mermaid
-graph LR
-    U[Upload] --> P[Parse pdf/text/code]
-    P --> C[Chunk]
-    C --> E[Embed → pgvector]
-    C --> S[Auto tag + summary]
-    E --> R[(Workspace)]
-    S --> R
-```
+## Work inside a project
 
-A document moves `pending → ready` (or `failed`), with live status in the drawer. Storage is
-split three ways: file **bytes** in a content-addressed blob store (dedup by sha256),
-**manifest** rows in Postgres, **chunk vectors** in pgvector.
+- **Start a new conversation in a project:** in an empty conversation, choose a project under
+  **Start in a project**, below the welcome starters.
+- **Attach an existing conversation:** open the
+  [Relay](chat.md#the-relay--the-conversations-command-center), choose **Projects**, and pick one.
 
-**Attach a workspace to a conversation** (from the drawer) and the agent:
+A conversation stays in its project until you remove it. Inside a project, the agent:
 
-- knows it's **in a project** every turn — an always-on identity block (name, description,
-  document count) plus the **file manifest** (names + tags + summaries) — so it knows
-  *what corpus it has* before searching;
-- retrieves in two tiers — **`project_search`** (catalog: by filename/tag/summary; the legacy
-  `workspace_search` name still executes) to find the right *file*, then **`document_query`**
-  (semantic: pgvector) to find the right *passage*, and **`read_document`** for full text;
-- **writes durable documents** — **`create_document`** / **`update_document`** create and
-  revise markdown/text files that land in the project like any upload (indexed, searchable,
-  visible in the hub). Great for notes, plans, reports, and living "memory files" the agent
-  keeps current across conversations. On by default (`workspace_agent_write_tools` opts out);
-  agent-writable types are capped to md/markdown/txt;
-- **cites** the documents it used (they show in the conversation's Sources panel).
+- **knows the project on every turn:** its name, description and file list (names, tags and short
+  summaries), so it knows what it has before it searches;
+- **follows the project's instructions** on every turn;
+- **finds what it needs:** first the right file, then the right passage, and it can read a
+  document in full. In the transcript these steps appear as `project_search`, `document_query`
+  and `read_document`;
+- **writes documents into the project:** notes, plans, reports, or "memory files" it keeps
+  current across conversations (`create_document`, `update_document`). They're indexed like any
+  upload. This is on by default, and the `workspace_agent_write_tools` setting turns it off.
+  Agents write Markdown and plain text only;
+- **cites** the documents it used, in the conversation's **Sources** panel;
+- **remembers in the project's channel:** what it learns goes to the project's
+  [memory channel](memory.md#channels--projects), and recall still draws on your global memory.
 
-Per-file and per-workspace size quotas are enforced at upload and on agent writes.
+Per-file and per-project size limits apply to uploads and to agent writes.
 
 ## Agent Shells (opt-in)
 
-Turn on **"Allow shell"** for a workspace and agents attached to it get sandboxed shell
-tools — `run_command` plus `write_file` / `read_file` / `list_files` — operating on a working
-copy of the workspace's files. It's **off by default**: this is real command execution, so it's
-a deliberate opt-in, per workspace.
+Turn on **"Allow shell"** for a project and agents working in it get sandboxed shell tools —
+`run_command` plus `write_file` / `read_file` / `list_files` — operating on a working copy of
+the project's files. It's **off by default**: this is real command execution, so it's a
+deliberate opt-in, per project.
 
-Each workspace picks a **backend**:
+Each project picks a **backend**:
 
 | Backend | Isolation | Network | Installs | Needs |
 |---|---|---|---|---|
 | **Bubblewrap** (default) | filesystem jailed to the work dir, scrubbed env, non-root, time-limited | **off** | no | `bubblewrap` on the server |
-| **Container** | a persistent per-workspace Docker container, clean (no host secrets), on its own bridge | **on** | yes (`pip`/`apt`/`npm`) | `shell.docker.enabled` + a Docker daemon |
+| **Container** | a persistent per-project Docker container, clean (no host secrets), on its own bridge | **on** | yes (`pip`/`apt`/`npm`) | `shell.docker.enabled` + a Docker daemon |
 
 Both keep the agent away from your secrets and the host: Bubblewrap can't read `data/` or
 reach the network; the Container shares none of the host filesystem, so network + root *inside*
-it are safe — there's nothing to exfiltrate but the workspace's own files.
+it are safe — there's nothing to exfiltrate but the project's own files.
 
-**Container lifecycle** is visible and controllable in the drawer: live memory / CPU / install
+**Container lifecycle** is visible and controllable in the hub: live memory / CPU / install
 size, an idle-GC countdown, and **Start / Stop / Reset** (drop installs, keep files) / **Remove**.
 Installed packages persist across commands and conversations until you reset or delete the
-workspace.
+project.
 
 ### Deploying the container backend
 
@@ -81,6 +82,27 @@ docker compose -f docker-compose.yml -f docker-compose.shell.yml --profile produ
 The sidecar is per-stack, so enable it only on clusters that need install-capable shells —
 everywhere else the lightweight Bubblewrap backend stays free.
 
+## Under the hood
+
+Each uploaded file is processed in the background:
+
+```mermaid
+graph LR
+    U[Upload] --> P[Parse pdf/text/code]
+    P --> C[Chunk]
+    C --> E[Embed → pgvector]
+    C --> S[Auto tag + summary]
+    E --> R[(Project)]
+    S --> R
+```
+
+A document moves `pending → ready` (or `failed`), with live status in the hub. Storage is split
+three ways: file **bytes** in a content-addressed blob store (deduplicated by sha256),
+**manifest** rows in PostgreSQL, and **chunk vectors** in pgvector. Retrieval runs in two tiers:
+the catalog search finds the right file by name, tag and summary, then the semantic search finds
+the right passage. The legacy tool name `workspace_search` still works as an alias of
+`project_search`.
+
 ## Configuration
 
 - `shell.*` — sandbox limits shared by both backends: `timeout_seconds`, `max_output_chars`,
@@ -89,4 +111,5 @@ everywhere else the lightweight Bubblewrap backend stays free.
   of the API's own Python version),
   `memory`, `cpus`, `pids_limit`, `network`, `idle_ttl_days`.
 
-See the [API reference](/docs/api/endpoints#workspaces) for the workspace + shell-container endpoints.
+See the [API reference](/docs/api/endpoints#workspaces) for the project (workspace) and
+shell-container endpoints.

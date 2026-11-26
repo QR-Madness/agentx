@@ -38,6 +38,8 @@ export const nav: NavEntry[] = [
       { label: 'Providers', slug: 'features/providers', color: 'var(--c-providers)' },
       { label: 'Prompts', slug: 'features/prompts', color: 'var(--c-prompts)' },
       { label: 'Memory', slug: 'features/memory', color: 'var(--c-memory)' },
+      // The app calls them Projects; the slug keeps the internal name (workspaces).
+      { label: 'Projects', slug: 'features/workspaces', color: 'var(--c-memory)' },
       { label: 'Translation', slug: 'features/translation', color: 'var(--c-translation)' },
     ],
   },
