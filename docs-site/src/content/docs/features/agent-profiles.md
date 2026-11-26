@@ -66,7 +66,7 @@ This is the headline control — *how the agent reasons before it answers*:
 
 Set it per profile here, or override it for a single conversation in the
 [Relay](/docs/features/chat) <span class="ax-icon ax-icon--brain" aria-hidden="true"></span> — see
-[Reasoning](/docs/features/reasoning) for the full behavior.
+[Thinking Patterns](/docs/features/reasoning) for the full behavior.
 
 ### System prompt
 

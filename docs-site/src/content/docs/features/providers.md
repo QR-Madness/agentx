@@ -83,6 +83,6 @@ listing providers, models with capabilities, and health — is in the
 
 ## Related
 
-- [Reasoning](reasoning.md) — model roles power auto pattern-selection
+- [Thinking Patterns](reasoning.md) — model roles power auto pattern-selection
 - [Agent Profiles](agent-profiles.md) — set an agent's default model and temperature
 - [API Models: Provider](../api/models.md#provider-models) — Message, CompletionResult, ModelCapabilities
