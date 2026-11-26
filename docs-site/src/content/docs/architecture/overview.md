@@ -2,6 +2,21 @@
 
 AgentX is a two-tier system: a Django REST API backend and a Tauri desktop client. This document covers the backend architecture.
 
+## Technology Stack
+
+| Layer           | Technology               | Purpose                                   |
+| --------------- | ------------------------ | ----------------------------------------- |
+| **Frontend**    | Tauri v2 + React 19      | Desktop application shell                 |
+| **Build**       | Vite + TypeScript        | Fast development and bundling             |
+| **Backend**     | Django 5.2               | REST API framework                        |
+| **AI/ML**       | HuggingFace Transformers · sentence-transformers | Translation (NLLB-200) + local embeddings |
+| **Graph DB**    | Neo4j 5.15               | Entity relationships and knowledge graphs |
+| **Vector DB**   | PostgreSQL + pgvector    | Semantic search and episodic memory       |
+| **Cache**       | Redis 7                  | Working memory and session state          |
+| **Task Runner** | Task (Taskfile)          | Development automation                    |
+| **Python**      | uv                       | Fast dependency management                |
+| **Client**      | bun                      | Client package management                 |
+
 ## System Architecture
 
 ```mermaid
