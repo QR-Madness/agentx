@@ -51,4 +51,4 @@ stays fast — and you can pre-fetch them with `task models:download`. The progr
 ## Related
 
 - [Configuration](../getting-started/configuration.md) — model download and cache location
-- [Getting Started](../getting-started/installation.md) — first-run model setup
+- [Quick Start](../getting-started/quickstart.md) — set up a server to try it on
