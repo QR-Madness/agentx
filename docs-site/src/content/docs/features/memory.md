@@ -107,6 +107,23 @@ elsewhere — for backups, moving between instances, or hand-editing and pushing
 Use the drawer's Export / Import buttons, or the CLI (`task memory:export` / `task memory:import`
 — see [Task Commands](../development/tasks.md#export--import-memory)).
 
+### Extract: take a channel out of live memory
+
+**Extract** moves a whole channel out of live memory and keeps it on the server, without risking
+it. Pick the channel in the Memory panel's channel menu (Extract needs one specific channel), then
+choose **Extract**. AgentX first shows how much will move, counted by kind, and asks you to
+confirm. Then it:
+
+1. exports the channel to a file in the server's vault (`data/vault/`);
+2. reads that file back and checks it against what's in live memory;
+3. removes the channel from live memory only if the check passes, and writes a receipt beside the
+   file.
+
+If the check fails, nothing is deleted and the file is kept. While an extract runs, consolidation
+leaves that channel alone, so nothing new lands between the export and the removal. Vault files
+are never removed automatically, and each is an ordinary memory export, so importing it brings the
+channel back.
+
 ## Settings
 
 **Settings → Memory** governs the system without touching code:

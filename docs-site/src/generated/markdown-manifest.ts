@@ -33,7 +33,7 @@ export const MARKDOWN_TOKENS: Record<string, number> = {
   '/docs/features/agent-profiles.md': 1963,
   '/docs/features/chat.md': 1147,
   '/docs/features/mcp.md': 1266,
-  '/docs/features/memory.md': 1879,
+  '/docs/features/memory.md': 2107,
   '/docs/features/multi-agent.md': 2015,
   '/docs/features/prompts.md': 719,
   '/docs/features/providers.md': 1304,
