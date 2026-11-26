@@ -67,7 +67,7 @@ graph TD
 
 ## Speculative decoding
 
-[Drafting](../features/reasoning.md#advanced-multi-model-drafting) can pair two models on a
+[Drafting](../features/reasoning.md#multi-model-drafting) can pair two models on a
 single generation: a fast **draft** model proposes a batch of tokens, and a stronger
 **target** model verifies them — accepting or rejecting each batch against a threshold. It's
 off by default; the payoff is cheaper tokens whenever the draft and target agree.

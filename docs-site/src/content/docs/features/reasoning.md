@@ -1,98 +1,105 @@
-# Thinking Patterns & Reasoning
+# Thinking Patterns
 
-AgentX has two reasoning systems, and it's worth knowing which one you're using:
+A **thinking pattern** is how an agent works through a problem before it answers: thinking
+freely, reasoning step by step, starting from principles, or drafting an answer and then
+critiquing it. You can let AgentX choose one for each message, or pick one for an agent or a
+single conversation. Whichever pattern runs, you can watch the agent think in the chat's thinking
+bubble as it works.
 
-- **Thinking Patterns** — how agents reason **in chat**. A pattern is compiled into the
-  live streamed turn (directives, hidden pre-calls, multi-pass streams) so tools,
-  steering, and the thinking bubble all keep working. This is the system you interact
-  with every day.
-- **The offline reasoning kit** — the classic CoT / ToT / ReAct / Reflection strategy
-  classes behind `POST /api/agent/run` (blocking, non-streaming). Kept for programmatic
-  task execution.
-
-Models with **native reasoning** (they emit their own `<think>` deltas) stream that
-thinking live into the chat's thinking bubble regardless of pattern — patterns shape
-*how* that thinking happens, and give non-reasoning models a visible thinking process
-of their own.
+Models with built-in reasoning stream their own thinking into the bubble whatever the pattern. A
+pattern shapes how that thinking goes, and gives models without built-in reasoning a visible
+thinking process of their own.
 
 ## The patterns
 
-| Pattern | What it does | Extra LM calls |
-|---------|--------------|----------------|
-| **Auto** | Picks per message: instant keyword heuristics; an optional bounded LLM tiebreak when unsure. Never stacks a scaffold on a native reasoner. | 0 (rarely 1 tiny) |
-| **Native** | The model thinks freely — no scaffold, raised output floor so thinking can't starve the answer. | 0 |
-| **Step-by-step** (`cot`) | Explicit numbered reasoning steps inside the thinking block — gives non-reasoning models a verifiable chain. | 0 |
-| **Step-back** (`step_back`) | A hidden pre-call distills the governing principles first; the turn then applies them explicitly. | 1 small |
-| **Reflection** (`reflection`) | One completion structured as draft → self-critique → improved final answer (critique stays in thinking). | 0 |
-| **Deep reflection** (`deep_reflection`) | True multi-pass: the draft and critique stream **live into the thinking bubble**, then the improved final answer streams with tools. | 2 |
-| **Consensus** (`self_consistency`) | k independent samples (2–5, tool-less) surface as thinking; a judged final answer streams. Auto only picks it for short calculation/logic turns with no tools. | k (+judge rides the final turn) |
-
-Legacy values keep working with honest degradations in chat: **Tree-of-Thought** runs
-step-by-step (full ToT stays on `/agent/run`), and **ReAct** maps to native thinking
-with tool narration — chat's tool loop already *is* reason+act with real function
-calls. A one-line status tells you when a degradation applied.
+| Pattern | What it does | Extra model calls |
+|---------|--------------|-------------------|
+| **Auto** | Picks a pattern for each message, using quick rules and, when unsure, a short check with a small model. It never adds structure on top of a model that reasons natively. | 0 (rarely 1 small) |
+| **Native** | The model thinks freely, with no added structure. AgentX reserves room for the answer so the thinking can't crowd it out. | 0 |
+| **Step-by-step** | Numbered reasoning steps, so a model without built-in reasoning shows a chain you can check. | 0 |
+| **Step-back** | A hidden first call distills the governing principles; the answer then applies them explicitly. | 1 small |
+| **Reflection** | One answer written as a draft, a self-critique, then an improved final answer. The critique stays in the thinking. | 0 |
+| **Deep reflection** | Separate passes: the draft and the critique stream into the thinking bubble as you watch, then the improved answer streams, with tools available. | 2 |
+| **Consensus** | Several independent attempts (2–5, without tools) appear as thinking, then a judged final answer. Auto picks it only for short calculation or logic questions that need no tools. | One per attempt |
 
 ## Choosing a pattern
 
-Resolution per turn: **Thinking mode** (a per-conversation override in the [Relay](chat.md)) →
-**agent profile** (`reasoning_strategy`, the
-"Thinking pattern" control in the profile editor) → **global default**
-(`preferences.default_reasoning_strategy`) → **Auto**.
+AgentX uses the first of these that is set:
 
-The **Thinking mode** picker unifies the patterns with **Research Mode** as one choice —
-they're mutually exclusive by design (a research turn keeps its own rigorous prompt and
-never stacks a pattern), so picking Research in the same menu makes that rule visible
-instead of letting a chosen pattern silently no-op. Options the settings disable drop out
-of the menu. The turn's mode is reported on the done event (`thinking_pattern` +
-`research`), stamped on the persisted turn, and badged on the message. Multi-pass phases
-surface as live status lines ("Drafting…", "Critiquing the draft…", "Sampling 3
-independent solutions…").
+1. **This conversation:** the **Thinking mode** in the
+   [Relay](chat.md#the-relay--the-conversations-command-center).
+2. **This agent:** the **Thinking pattern** in its [profile](agent-profiles.md#thinking-pattern).
+3. **Auto**, unless your server sets a different default.
+
+The Thinking mode menu also offers **Research Mode**. A research turn follows its own rigorous
+approach and never combines with a pattern, so the two share one menu to make that clear. Options
+turned off in Settings drop out of the menu. Each message carries a badge showing the mode it ran
+with, and the multi-pass patterns show their progress as they go: "Drafting…", "Critiquing the
+draft…", "Sampling 3 independent solutions…".
+
+Two older pattern names still work, mapped to their nearest equivalent in chat:
+**Tree-of-Thought** runs as step-by-step, and **ReAct** runs as native thinking with the tools
+narrated (chat's tool loop already reasons and acts with real tools). A one-line status says when
+this happens.
 
 ## Settings → Intelligence → Thinking Patterns
 
-- **Patterns** — master kill-switch + per-pattern availability (both explicit selection
-  and Auto respect these).
-- **Auto selection** — the LLM tiebreak toggle, its model (empty = the Fast Utility
-  role), and the minimum message length below which it never fires.
-- **Pattern models & budgets** — step-back and consensus-sampling models (empty = the
-  conversation's own model), consensus `k`, and the thinking output floor
-  (`0` = automatic: floored whenever a pattern is active or the model reasons natively,
-  so thinking tokens can't starve the visible answer).
+- **Patterns:** turn patterns off altogether, or one at a time. Both your own choices and Auto
+  respect these.
+- **Auto selection:** turn the small-model check on or off, choose its model (left empty, it uses
+  the Fast Utility role), and set the shortest message it considers.
+- **Pattern models & budgets:** the models for step-back and consensus (left empty, they use the
+  conversation's own model), how many consensus attempts to make, and the floor on thinking
+  output. `0` sets the floor automatically whenever a pattern is active or the model reasons
+  natively, so thinking can't crowd out the visible answer.
 
-Config lives under `reasoning.*` (`/api/config/update`, allowlisted). The classifier is
-a Fast Utility role member; `step_back_model`/`sc_model` inherit the active turn model.
+## For developers
 
-## The offline kit (`/api/agent/run`)
+### Configuration and values
 
-`ReasoningOrchestrator` classifies the task (shared heuristics with chat Auto —
-`reasoning/selection.py`) and runs the full strategy classes: Chain-of-Thought
-(zero-shot/few-shot), Tree-of-Thought (BFS/DFS/beam over branching thoughts), ReAct
-(reason+act with registered tools), Reflection (iterative critique/revision cycles,
+Thinking-pattern settings live under `reasoning.*` and are writable through
+`/api/config/update` (allowlisted). The classifier is a member of the Fast Utility role, and
+`step_back_model` and `sc_model` inherit the turn's model when empty.
+
+In requests and profiles, patterns use these values: `auto`, `native`, `cot` (step-by-step),
+`step_back`, `reflection`, `deep_reflection` and `self_consistency` (consensus). An agent's
+pattern is its profile's `reasoning_strategy`. The server-wide default is
+`preferences.default_reasoning_strategy` (shipped as `auto`); no settings screen shows it, so set
+it through `/api/config/update` or `data/config.json`. Each turn reports its mode on the stream's
+`done` event (`thinking_pattern` and `research`) and on the stored turn.
+
+### The offline reasoning kit (`/api/agent/run`)
+
+Besides the chat patterns, AgentX keeps the classic strategy classes for blocking,
+non-streaming task execution. `ReasoningOrchestrator` classifies the task (with the same
+heuristics as chat's Auto, in `reasoning/selection.py`) and runs the full strategies:
+Chain-of-Thought (zero-shot/few-shot), Tree-of-Thought (BFS/DFS/beam over branching thoughts),
+ReAct (reason+act with registered tools), and Reflection (iterative critique/revision cycles,
 prompts in `system_prompts.yaml`). Strategy execution is wall-clock bounded
-(`OrchestratorConfig.timeout_seconds`), falls back to Chain-of-Thought on failure, and
-resolves models through the provider fallback chain like every other feature.
+(`OrchestratorConfig.timeout_seconds`), falls back to Chain-of-Thought on failure, and resolves
+models through the provider fallback chain like every other feature.
 
 ```
 POST /api/agent/run
 {"task": "…", "reasoning_strategy": "tot"}
 ```
 
-Chat-first pattern values (`native`, `step_back`, `deep_reflection`,
-`self_consistency`) alias to their nearest kit strategy on this endpoint.
+The chat-first values (`native`, `step_back`, `deep_reflection`, `self_consistency`) alias to
+their nearest kit strategy on this endpoint, and full Tree-of-Thought is available only here.
 
-## Advanced: multi-model drafting
+### Multi-model drafting
 
-Thinking patterns shape how *one* model reasons. **Drafting** goes wider — orchestrating
-**several models** on a single generation to trade speed, quality, and cost. It's an
-advanced, opt-in layer: **off by default** (`enable_drafting = false`), with strategies
+Thinking patterns shape how *one* model reasons. **Drafting** goes wider, orchestrating
+**several models** on a single generation to trade speed, quality and cost. It's an opt-in agent
+option, **off by default** (`enable_drafting = false` on the agent config), with strategies
 defined in `drafting/drafting_strategies.yaml` and picked per task type. Three families:
 
-### Speculative decoding
+#### Speculative decoding
 
-A fast **draft** model generates tokens that a stronger **target** model verifies,
-accepting or rejecting each batch — cheaper tokens whenever the two agree. See the
-[speculative-decoding flow](../architecture/system-design.md#speculative-decoding) on the
-System Design page.
+A fast **draft** model generates tokens that a stronger **target** model verifies, accepting or
+rejecting each batch, so tokens are cheaper whenever the two agree. See the
+[speculative-decoding flow](../architecture/system-design.md#speculative-decoding) on the System
+Design page.
 
 | Config | Description |
 |--------|-------------|
@@ -104,16 +111,16 @@ System Design page.
 
 Pre-configured: `fast_accurate`, `local_cloud`, `claude_fast`.
 
-### Pipeline
+#### Pipeline
 
-Multi-stage generation where each stage uses a different model, prompt, and temperature for
-a specific role — analyze, critique/review, refine, summarize. Pre-configured: `code_review`
+Multi-stage generation where each stage uses a different model, prompt and temperature for a
+specific role: analyze, critique/review, refine, summarize. Pre-configured: `code_review`
 (generate → review → refine), `writing_pipeline` (outline → draft → edit → polish),
 `analysis_pipeline` (decompose → research → synthesize).
 
-### Candidate generation
+#### Candidate generation
 
-Generate several candidates and pick the best with a scoring method — `majority_vote` (most
+Generate several candidates and pick the best with a scoring method: `majority_vote` (the most
 common answer wins), `verifier` (a separate model scores each), or `length_preference`.
 Pre-configured: `consensus` (multi-model vote), `best_of_n` (N candidates + verifier),
 `diverse_ensemble` (varied models), `self_consistency` (same model, multiple samples).
@@ -131,8 +138,7 @@ A run returns a **`DraftResult`**:
 | `estimated_cost` | float | Estimated USD cost |
 | `total_time_ms` | float | Elapsed time |
 
-Task types map to a default strategy via the `defaults` block — `general → fast_accurate`,
+Task types map to a default strategy via the `defaults` block: `general → fast_accurate`,
 `code → code_review`, `writing → writing_pipeline`, `analysis → analysis_pipeline`,
-`consensus → consensus`. Full config lives in
-`api/agentx_ai/drafting/drafting_strategies.yaml`; the result schema is in
-[API Models](../api/models.md).
+`consensus → consensus`. Full config lives in `api/agentx_ai/drafting/drafting_strategies.yaml`;
+the result schema is in [API Models](../api/models.md).

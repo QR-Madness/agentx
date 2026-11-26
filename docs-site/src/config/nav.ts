@@ -33,7 +33,7 @@ export const nav: NavEntry[] = [
     items: [
       { label: 'Chat', slug: 'features/chat', color: 'var(--c-agent)' },
       { label: 'Agent Profiles', slug: 'features/agent-profiles', color: 'var(--c-agent)' },
-      { label: 'Reasoning', slug: 'features/reasoning', color: 'var(--c-reasoning)' },
+      { label: 'Thinking Patterns', slug: 'features/reasoning', color: 'var(--c-reasoning)' },
       { label: 'Connectors & Tools (MCP)', slug: 'features/mcp', color: 'var(--c-mcp)' },
       { label: 'Agent Teams', slug: 'features/multi-agent', color: 'var(--c-agent)' },
       { label: 'Providers', slug: 'features/providers', color: 'var(--c-providers)' },
