@@ -82,8 +82,10 @@ Never describe a hosted backend before one exists.
   - [x] Agent Teams: a plain-language intro and Ambassador section. The history, API fields,
         data model, runtime, streaming events, storage and status move to Architecture → Agent
         Teams Internals.
-  - [ ] Document Extract on the Memory page.
-  - [ ] Link Concepts terms on their first use in each feature page.
+  - [x] Extract on the Memory page: the verify-before-wipe order, the vault, the consolidation
+        freeze, and importing a vault file to restore. Checked against ADR-14.
+  - [ ] (Low priority) Link Concepts terms on their first use in each feature page. Weigh
+        the gain against awkward edits across about ten pages.
 - [ ] **6 · Service-facing material (on hold, by the user's decision)** — what a managed Agent Core
       offers (bring your own model key, request metering), a privacy and data statement, and
       the landing page's call to action. Blocked on the launch gates (repo move and licence,
