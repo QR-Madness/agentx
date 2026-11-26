@@ -1,8 +1,10 @@
 # Authentication
 
-AgentX ships with optional, single-user authentication (Phase 17). It is **disabled by
-default** — a fresh install needs no login. Enable it when exposing a server beyond your local
-machine.
+AgentX has single-user authentication, and it is **on by default**: a fresh server asks you to
+set a root password on first run, and after that the API requires a signed-in session (apart
+from a few public endpoints, listed below). The
+development `.env.example` in the repo turns it off for local work; keep it on for any server
+that other people or other machines can reach.
 
 ## Model
 
