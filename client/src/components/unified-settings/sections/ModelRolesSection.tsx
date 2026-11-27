@@ -16,9 +16,25 @@ import { useApi } from '../../../lib/hooks';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { Badge, Button, SectionHeader } from '../../ui';
 import { ModelPickerField } from '../../common/ModelPickerField';
+import type { ModelPickerDefaultRow } from '../../common/ModelPickerModal';
 import { SettingsSection } from '../../settings/fields';
+import { useSettingEntry, useSettingsManifest } from '../SettingsManifestContext';
+import { DEFAULT_MODEL_KEY } from '../defaultModel';
 
 const ROLE_ORDER: ModelRoleName[] = ['fast_utility', 'deep_reasoning', 'summarizer'];
+
+/**
+ * What an empty Global Default Model means. Not "each agent uses its profile
+ * model": an agent whose profile names none has nothing to run on, short of the
+ * LM Studio floor. The picker's empty row would otherwise read "System default",
+ * offering a default that doesn't exist.
+ */
+const NO_DEFAULT_HINT =
+  "Agents without a model of their own can't start a conversation until you choose one, unless LM Studio is connected.";
+const NO_DEFAULT_ROW: ModelPickerDefaultRow = {
+  title: 'No global default',
+  subtitle: "Agents without a model of their own can't start a conversation unless LM Studio is connected",
+};
 
 // Consolidation-stage members that "Adopt roles" resets to inherit (mirrors the
 // server's _CONSOLIDATION_STAGE_MODEL_KEYS). Used to decide whether to offer the
@@ -73,7 +89,20 @@ export default function ModelRolesSection() {
   // agent profile doesn't pin its own model. Lives here (not Model Limits) so all
   // "which model for what" controls sit together.
   const [defaultModel, setDefaultModel] = useState<string>('');
+  // Until the read settles, '' means "not known yet", so the control doesn't
+  // claim "Not set" (and warn about it) to someone whose default is set.
+  const [defaultModelLoaded, setDefaultModelLoaded] = useState(false);
   const [savingDefaultModel, setSavingDefaultModel] = useState(false);
+  // Bound to the manifest for its `data-setting` anchor, which the Overview's
+  // setup step, the Model Providers nudge and settings search all land on, and
+  // for the authored help. Empty is passed as null because the shipped default
+  // is null, not ''. No reset: it would clear the default, the very state the
+  // nudges exist to fix; the picker's empty row still clears it on purpose.
+  const defaultModelBinding = useSettingEntry('config', DEFAULT_MODEL_KEY, defaultModel || null);
+  // The Overview's setup list reads this setting from the manifest, which is
+  // otherwise fetched once per Settings session, so a save refreshes it: the
+  // required step should tick when the model is chosen, not on the next visit.
+  const manifest = useSettingsManifest();
 
   useEffect(() => {
     let cancelled = false;
@@ -83,7 +112,9 @@ export default function ModelRolesSection() {
         const prefs = (config.preferences ?? {}) as { default_model?: string | null };
         if (!cancelled) setDefaultModel(prefs.default_model ?? '');
       } catch {
-        // Non-fatal: the picker just starts on "System default".
+        // Non-fatal: the picker just starts empty ("Not set").
+      } finally {
+        if (!cancelled) setDefaultModelLoaded(true);
       }
     })();
     return () => { cancelled = true; };
@@ -96,6 +127,7 @@ export default function ModelRolesSection() {
     try {
       await api.updateConfig({ preferences: { default_model: modelId } });
       notifySuccess(modelId ? 'Default model updated' : 'Default model cleared', 'Models');
+      void manifest?.refresh();
     } catch (error) {
       setDefaultModel(previous);  // revert on failure
       notifyError(error, 'Failed to update the default model');
@@ -148,16 +180,21 @@ export default function ModelRolesSection() {
         description="The model new agents and ad-hoc requests fall back to when a profile doesn't pin its own."
       >
         <ModelPickerField
+          label="Default model"
           value={defaultModel}
           onChange={model => void handleDefaultModelChange(model)}
           showDefault
-          placeholder="System default — each agent uses its profile model"
+          defaultRow={NO_DEFAULT_ROW}
+          placeholder={defaultModelLoaded ? 'Not set — choose a model' : 'Loading…'}
+          binding={defaultModelBinding}
           hint={
             savingDefaultModel
               ? 'Saving…'
               : defaultModel
                 ? 'Used when an agent profile has no model of its own.'
-                : 'No global default — each agent uses its profile model.'
+                : defaultModelLoaded
+                  ? NO_DEFAULT_HINT
+                  : undefined
           }
         />
       </SettingsSection>

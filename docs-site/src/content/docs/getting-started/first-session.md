@@ -24,9 +24,11 @@ if LM Studio runs on the same machine as the server, see [Troubleshooting](troub
 ## 2 · Choose your default model
 
 Next, tell AgentX which model to use when nothing else says otherwise. Open
-**Settings: Model Roles** and set the **Global Default Model**. Every agent without a model of its
-own uses it, so a fast, inexpensive model is a sensible start; you can give particular agents
-stronger models later.
+**Settings: Model Roles** and set the **Global Default Model**. Model Providers points you there
+too: once a provider is connected, it shows **Next, choose a Global Default Model**, and
+**Open Model Roles** takes you straight to the control. Every agent without a model of its own
+uses it, so a fast, inexpensive model is a sensible start; you can give particular agents stronger
+models later.
 
 ![Model Roles, with a global default model set](/images/first-session/global-default-model.webp)
 

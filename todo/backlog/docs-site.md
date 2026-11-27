@@ -113,11 +113,22 @@ Each one is a code change, so it belongs outside the docs track:
   - **Done (v0.21.297):** the turn stops with "No model chosen: set the Global Default Model in
     Settings → Model Roles, or pick a model for this conversation." (`NoModelChosenError`, raised
     by `Agent.resolve_model` only when nothing chose a model; never a silent cloud pick).
-  - **Open, proposed:** an onboarding nudge. Add a required "Choose a Global Default Model" step to
-    the Settings Overview setup list (`OverviewSection.tsx` `SETUP_STEPS`: today's `roles` step is
-    optional and tracks only the role keys), offer "Open Model Roles" when the first provider
-    connects while `preferences.default_model` is empty, and correct the Model Roles hint "No
-    global default — each agent uses its profile model", which is wrong for profiles that pin none.
+  - **Done (v0.21.299):** an onboarding nudge. The Settings Overview lists "Choose a Global Default
+    Model" as a required setup step. While any provider is connected and no default is set, Model
+    Providers shows "Next, choose a Global Default Model" with **Open Model Roles**, which lands on
+    the control. The Model Roles copy now says that agents without a model of their own can't start
+    a conversation until one is set, unless LM Studio is connected. Nothing picks a model for the
+    user. Landing on the control exposed a bug that kept every jump into *another* settings section
+    (Overview rows, search hits) from scrolling to and flashing its setting; fixed in the same PR.
+  - **Open, deferred:** an **Open Model Roles** action on the chat error itself. The SSE `error`
+    event carries only a message, so the client could tell `NoModelChosenError` apart only by
+    matching its text. Add a machine-readable `code` (e.g. `no_model_chosen`) to the event in
+    `views.py::agent_chat_stream` (additive, so `protocol_version` stays), document it in the
+    `Development-Notes.md` SSE reference, the docs-site API reference and `OpenApi.yaml`, and
+    attach the action to the error toast in `useChatStream.ts` (`notify` already takes an
+    `action`; the settings modal opens on a control through its `focusSetting` prop). Deferred
+    because a stream-contract change deserves its own PR, ideally with a small code vocabulary
+    rather than a one-off, and the settings nudge now reaches most users before the error does.
   - **Open, related:** background chat jobs (`background/chat_jobs.py`) and `/api/agent/chat` build
     the agent without the Global Default Model, so with LM Studio connected they run on LM Studio
     even when a global default is set.
@@ -126,7 +137,7 @@ Each one is a code change, so it belongs outside the docs track:
   along with Refresh and Import, which skipped Strategies, Procedures and the Explore graph.
 - **The context meter reads "100% context" (in warning colour)** on a conversation using
   "Default model". It seems not to know that model's context window.
-  - **Done (v0.21.299):** "Default model" was incidental; the Settings save before the turn was
+  - **Done (v0.21.300):** "Default model" was incidental; the Settings save before the turn was
     the cause. Every save reloads the provider registry, which drops the fetched model catalogs,
     and the next turn read its capabilities cold: OpenRouter's and the AI Gateway's 8192-token
     fallback stood in for a 1M window and sized the turn (output and tool-loop budgets) as well as

@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.299 -->
+<!-- release-version: 0.21.300 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -23,7 +23,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 
 - **Settings that explain themselves** — search jumps to any setting, an **Overview** says what to set up first, and all 210 match the Settings Reference.
 - **Link OpenRouter in one click** — sign in once, no key pasting; the card shows balance and spend and repairs renamed models.
-- **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint as `yourid:model`. A **supply line** shows where turns really go: provider, context, price, fallback.
+- **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint as `yourid:model`. A **supply line** shows where turns go: provider, context, price, fallback.
 - **The whole organization on one chart** — **Open Organization** charts managers, teams, independents; drag to arrange, edit teams and roles in place, see what won't work.
 - **Extract: move memory out, safely** — evict a channel to the server vault: export → verify → wipe → receipt; nothing is deleted unverified.
 - **Agents read the web far more cheaply** — `web_extract` returns only the passages your query needs; per-turn budgets cap *calls and dollars*.
@@ -32,7 +32,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 ### Fixes
 
 - **Claude works again via the Anthropic provider** — it no longer sends the temperature current models reject.
-- **With no model chosen, chat points to Settings → Model Roles**, not an LM Studio error.
+- **Settings asks for a default model once a provider connects**; without one, chat points to Model Roles.
 - **No false "100% context" after a settings change.**
 - **Settings that claimed to save now do** — audio input, speech generation, Ambassador's voice and Web Search source-policy lists (editing one wiped the rest).
 - **Memory moves are complete** — exports carry procedures, Replace import resets the PostgreSQL mirror; Consolidate reports dropped relationships and reloads the lists.

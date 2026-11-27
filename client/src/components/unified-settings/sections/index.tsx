@@ -86,7 +86,7 @@ export const SECTION_HIERARCHY: SectionHierarchy = {
         label: 'Model Roles',
         icon: <Boxes size={18} />,
         component: lazy(() => import('./ModelRolesSection')),
-        keywords: ['roles', 'fast utility', 'deep reasoning', 'summarizer', 'cluster', 'utility models', 'effective model']
+        keywords: ['roles', 'fast utility', 'deep reasoning', 'summarizer', 'cluster', 'utility models', 'effective model', 'default model', 'global default']
       },
       {
         id: 'search',

@@ -84,9 +84,26 @@ interface ModelPickerModalProps {
   onChange: (modelId: string) => void;
   /** Show "System default" row at the top */
   showDefault?: boolean;
+  /**
+   * Wording for that row. Picking it stores an empty value, which means
+   * something different per setting: "follow the global default" on a profile,
+   * but "no default at all" on the global default itself.
+   */
+  defaultRow?: ModelPickerDefaultRow;
   /** Restrict the list to models matching this capability (e.g. 'speech' for TTS). */
   requireCapability?: CapabilityKey;
 }
+
+/** Title and subtitle of the picker's empty-value row. */
+export interface ModelPickerDefaultRow {
+  title: string;
+  subtitle: string;
+}
+
+const SYSTEM_DEFAULT_ROW: ModelPickerDefaultRow = {
+  title: 'System default',
+  subtitle: "Use the system's default model",
+};
 
 function formatContext(n?: number | null): string {
   if (!n) return '';
@@ -137,7 +154,8 @@ function prepareModel(m: ModelInfo): PreparedModel {
 }
 
 export function ModelPickerModal({
-  isOpen, onClose, value, onChange, showDefault = true, requireCapability,
+  isOpen, onClose, value, onChange, showDefault = true, defaultRow = SYSTEM_DEFAULT_ROW,
+  requireCapability,
 }: ModelPickerModalProps) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -424,8 +442,8 @@ export function ModelPickerModal({
                           selected={pending === ''}
                           onSelect={selectRow}
                           onConfirm={confirmWith}
-                          title="System default"
-                          subtitle="Use the system's default model"
+                          title={defaultRow.title}
+                          subtitle={defaultRow.subtitle}
                         />
                       )}
                       {recentRows.length > 0 && (
