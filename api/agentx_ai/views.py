@@ -2386,13 +2386,15 @@ def get_agent():
     from .agent import Agent, AgentConfig
     from .config import get_config_manager
 
-    # Priority: DEFAULT_MODEL env > configured global default (Settings) > LM Studio
-    # (offline-first last resort). Previously this skipped the configured default, so
-    # the non-chat agent always ran on LM Studio regardless of the model chosen.
+    # Priority: DEFAULT_MODEL env > configured global default (Settings) > the floor
+    # (LM Studio, offline-first last resort). Previously this skipped the configured
+    # default, so the non-chat agent always ran on LM Studio regardless of the model
+    # chosen. Empty when neither is set: AgentConfig then applies the floor and marks
+    # it, so a task on an install without LM Studio fails with NoModelChosenError.
     default_model = (
         os.environ.get("DEFAULT_MODEL")
         or get_config_manager().get("preferences.default_model")
-        or "lmstudio:llama3.2"
+        or ""
     )
 
     agent = Agent(AgentConfig(
@@ -2406,7 +2408,7 @@ def get_agent():
             or "auto"
         ),
     ))
-    logger.info(f"Agent initialized with model: {default_model}")
+    logger.info(f"Agent initialized with model: {agent.config.default_model}")
     return agent
 
 
@@ -2685,12 +2687,15 @@ async def agent_chat_stream(request):
             "enable_memory": use_memory,
         }
 
-        # Model: request > profile > global default (settings) > agent dataclass default.
+        # Model: request > profile > global default (settings) > the floor.
         # The user's global default lives in `preferences.default_model` (set in
         # Settings). Without it here, a profile with no model set silently fell through
-        # to the AgentConfig dataclass default (`lmstudio:llama3.2`) — so every turn hit
-        # LM Studio regardless of the model chosen in settings. Empty strings coerce to
+        # to the floor (`agent.core.FLOOR_MODEL`, LM Studio) — so every turn hit LM
+        # Studio regardless of the model chosen in settings. Empty strings coerce to
         # None so a blank profile/request value can't outrank the configured default.
+        # Nothing resolved ⇒ AgentConfig sits on the floor and marks it, and
+        # `agent.resolve_model()` below turns an unrunnable floor into
+        # NoModelChosenError, whose message says where to choose a model.
         from .config import get_config_manager as _get_cfg
         resolved_model = resolve_with_priority(
             model or None,
@@ -2893,12 +2898,12 @@ async def agent_chat_stream(request):
         try:
             # Get provider and model — fall back when the configured provider is
             # unconfigured or cached-unhealthy so a single bad provider never
-            # hard-fails the turn (the agent model is the requested floor here, so
-            # the chain falls through to the global default). A substitution is
-            # surfaced as a status notice rather than swapping models silently.
-            provider, model_id, fallback_note = agent.registry.resolve_with_fallback(
-                agent.config.default_model
-            )
+            # hard-fails the turn (the agent model heads the chain, which falls
+            # through to the global default). A substitution is surfaced as a status
+            # notice rather than swapping models silently. When nothing chose a
+            # model and the floor can't run, this raises NoModelChosenError and the
+            # turn ends with its message as the `error` event.
+            provider, model_id, fallback_note = agent.resolve_model()
             if fallback_note:
                 emit_status("model_fallback", fallback_note)
 
@@ -4952,9 +4957,9 @@ async def agent_plan_resume(request, plan_id):
             )
 
             config_kwargs: dict = {"enable_memory": use_memory}
-            # request > profile > global default (settings) > agent dataclass default —
-            # see agent_chat_stream: without the settings default an unset profile falls
-            # to the LM Studio dataclass default.
+            # request > profile > global default (settings) > the floor — see
+            # agent_chat_stream: without the settings default an unset profile falls
+            # to the LM Studio floor (and resolve_model below to NoModelChosenError).
             from .config import get_config_manager as _get_cfg
             resolved_model = resolve_with_priority(
                 model or None,
@@ -4985,9 +4990,7 @@ async def agent_plan_resume(request, plan_id):
             if use_memory and agent.memory:
                 agent.memory.conversation_id = conv_id
 
-            provider, model_id, _ = agent.registry.resolve_with_fallback(
-                agent.config.default_model
-            )
+            provider, model_id, _ = agent.resolve_model()
             tools = agent._get_tools_for_provider()
             context = session.get_messages()  # inherited framing for synthesis
 

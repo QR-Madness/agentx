@@ -32,8 +32,8 @@ stronger models later.
 
 !!! warning "Don't skip this step"
     A fresh install has no global default, and its fallback is a model on LM Studio. If you only
-    connected a cloud provider, new conversations fail with "Provider 'lmstudio' not configured"
-    until you set one here.
+    connected a cloud provider, new conversations stop with "No model chosen" until you set one
+    here. AgentX won't pick a cloud model for you, since that would spend money you didn't approve.
 
 Choosing a model opens the **Choose model** dialog. Search by name, filter by what a model can do
 (tools, vision, image generation), and compare each model's context size and price per million

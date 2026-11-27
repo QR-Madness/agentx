@@ -61,6 +61,16 @@ class ModelNotFoundError(ProviderError, ValueError):
     http_status = 404
 
 
+class NoModelChosenError(ModelNotFoundError):
+    """Nothing chose a model, and the floor model can't run on this install.
+
+    Raised in place of the floor's provider error (see ``agent.core.FLOOR_MODEL``)
+    so the user reads where to choose a model rather than which provider is
+    missing for a model they never picked. A subclass, so every existing
+    ``except ModelNotFoundError`` / ``except ValueError`` still catches it.
+    """
+
+
 class ProviderUnavailableError(ProviderError):
     """The upstream provider API is unreachable or returned a transport error."""
 

@@ -58,10 +58,13 @@ password can't be opened again; see
 
 ## Models
 
-**New conversations fail with "Provider 'lmstudio' not configured".**
-No global default model is set, so AgentX falls back to a model on LM Studio. Set one in
-**Settings → Model Roles → Global Default Model**, or give the agent a model of its own in its
-[profile](../features/agent-profiles.md). See [Your First Session](first-session.md#2--choose-your-default-model).
+**New conversations stop with "No model chosen".**
+Nothing chose a model for the conversation: it has none of its own, its agent's profile pins none,
+and no global default is set. Set one in **Settings → Model Roles → Global Default Model**, or give
+the agent a model of its own in its [profile](../features/agent-profiles.md). If the message says
+"No model provider connected" instead, add a provider in **Settings → Model Providers** first. See
+[Your First Session](first-session.md#2--choose-your-default-model). Versions before 0.21.297
+reported this as "Provider 'lmstudio' not configured".
 
 **The model picker is empty.**
 Add a provider key in **Settings → Model Providers**. Models are discovered live from each

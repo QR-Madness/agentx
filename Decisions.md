@@ -218,8 +218,12 @@ so the swap is visible rather than silent. Strict-by-design exceptions (a generi
 *wrong*): speculative-decoding draft/target, ambassador TTS/STT, and explicit availability probes
 (`validate()`, cost estimation). Kill-switch: `models.fallback_enabled`. *(Supersedes the original
 "chat stays strict" decision — surfacing the swap resolved the "silent swap is worse" concern.)*
+**Boundary (v0.21.297):** the chain only ever reaches models someone chose. When nothing chose one and
+the LM Studio floor can't run, the turn stops with `NoModelChosenError` (where to choose) rather than
+picking whatever cloud provider is connected.
 **Why:** crashing a turn because one provider blipped is the worse failure; visibility (the notice)
-addresses the original objection. **Source:** Model Resolution (`Development-Notes.md`); ModelFallbackTest.
+addresses the original objection. An unchosen cloud model would spend the user's money without consent.
+**Source:** Model Resolution (`Development-Notes.md`); ModelFallbackTest; NoModelChosenTest.
 
 ### ADR-6 — `conversation_logs` is the transcript record; memory extraction is decoupled (direction)
 **Decision (target):** a turn's durable truth is its `conversation_logs` row; graph/vector/working-
