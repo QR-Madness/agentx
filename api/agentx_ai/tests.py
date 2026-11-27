@@ -21927,6 +21927,146 @@ class OpenRouterAliasResolutionTest(TestCase):
         self.assertEqual(candidate["context_window"], 1_000_000)
 
 
+class CatalogWarmBeforeBudgetTest(TestCase):
+    """A turn's context window must come from a warm catalog, not a provider fallback.
+
+    Every registry reload (each Settings save) builds providers with empty
+    catalogs, and the chat stream read capabilities before anything refilled
+    them. A 1M-token model then reported the 8192 fallback: the turn ran on
+    max_tokens 2048 with a 4k tool-loop ceiling, and the client's meter read
+    "100% context" after one short exchange (found in the 2026-11-26 docs
+    walkthrough on a "Default model" conversation; the model choice was
+    incidental, the Settings save before it was not).
+    """
+
+    MODEL = "google/gemini-3.1-flash-lite"
+    CATALOG = {
+        MODEL: {
+            "id": MODEL,
+            "context_length": 1_048_576,
+            "top_provider": {"max_completion_tokens": 65_536},
+            "supported_parameters": ["tools"],
+        },
+    }
+
+    def _cold_provider(self, fetch=None):
+        """A fresh OpenRouter provider, as a registry reload leaves it, whose catalog
+        fetch is local: it fills the cache, or runs ``fetch`` instead."""
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.openrouter_provider import OpenRouterProvider
+
+        provider = OpenRouterProvider(ProviderConfig(api_key="sk-or-test"))
+        calls = []
+
+        async def fake_fetch_if_stale():
+            calls.append(1)
+            if fetch is not None:
+                await fetch()
+                return
+            provider._model_cache = dict(self.CATALOG)
+
+        provider._fetch_models_if_stale = fake_fetch_if_stale
+        return provider, calls
+
+    def _budget(self, provider):
+        from agentx_ai import views
+
+        with patch("agentx_ai.config.get_context_limit_overrides", return_value={}):
+            return asyncio.run(views._resolve_model_budget(provider, self.MODEL))
+
+    def test_a_cold_catalog_reports_the_fallback_window(self):
+        """The trap itself: read cold, a 1M model is 8192."""
+        provider, _ = self._cold_provider()
+        self.assertEqual(provider.get_capabilities(self.MODEL).context_window, 8192)
+
+    def test_registry_reload_hands_out_a_cold_provider(self):
+        """Why the warm is needed: after a Settings save, the next turn starts cold."""
+        from agentx_ai.providers.registry import ProviderRegistry
+
+        cfg = _FakeConfigManager()
+        cfg.set("providers.openrouter.api_key", "sk-or-test")
+        registry = ProviderRegistry(config_manager=cfg)
+        warm = registry.get_provider("openrouter")
+        warm._model_cache = dict(self.CATALOG)
+        self.assertEqual(warm.get_capabilities(self.MODEL).context_window, 1_048_576)
+
+        registry.reload()
+
+        fresh = registry.get_provider("openrouter")
+        self.assertIsNot(fresh, warm)
+        self.assertEqual(fresh.get_capabilities(self.MODEL).context_window, 8192)
+
+    def test_the_turn_budget_warms_a_cold_catalog_before_reading_the_window(self):
+        provider, calls = self._cold_provider()
+        caps, window, _override, _max_output = self._budget(provider)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(window, 1_048_576)
+        self.assertEqual(caps.max_output_tokens, 65_536)
+
+    def test_a_warm_catalog_is_not_fetched_again(self):
+        provider, calls = self._cold_provider()
+        provider._model_cache = dict(self.CATALOG)
+        _caps, window, _override, _max_output = self._budget(provider)
+        self.assertEqual(calls, [])
+        self.assertEqual(window, 1_048_576)
+
+    def test_a_failing_catalog_keeps_the_defaults_and_never_raises(self):
+        async def down():
+            raise RuntimeError("catalog unreachable")
+
+        provider, calls = self._cold_provider(fetch=down)
+        _caps, window, _override, _max_output = self._budget(provider)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(window, 8192)
+
+    def test_a_hung_catalog_is_bounded_by_the_timeout(self):
+        import time
+
+        from agentx_ai.providers.capabilities import warm_catalog_for
+
+        async def hang():
+            await asyncio.sleep(10)
+
+        provider, _ = self._cold_provider(fetch=hang)
+        started = time.monotonic()
+        with patch("agentx_ai.providers.capabilities.CATALOG_WARM_TIMEOUT", 0.05):
+            known = asyncio.run(warm_catalog_for(provider, self.MODEL))
+        self.assertLess(time.monotonic() - started, 2.0)
+        self.assertIsNone(known)
+
+    def test_catalog_lists_answers_listed_unlisted_or_cant_tell(self):
+        from agentx_ai.providers.capabilities import catalog_lists
+
+        provider, _ = self._cold_provider()
+        self.assertIsNone(catalog_lists(provider, self.MODEL))  # empty catalog: can't tell
+        provider._model_cache = dict(self.CATALOG)
+        self.assertTrue(catalog_lists(provider, self.MODEL))
+        self.assertFalse(catalog_lists(provider, "acme/not-a-model"))
+
+    def test_the_non_streaming_chat_budget_warms_too(self):
+        """`Agent.chat` (`/api/agent/chat`) fits its context to the same window."""
+        from agentx_ai.agent.context import ContextManager
+        from agentx_ai.agent.core import Agent, AgentConfig
+
+        provider, calls = self._cold_provider()
+        registry = MagicMock()
+        registry.resolve_with_fallback.return_value = (provider, self.MODEL, None)
+        agent = Agent(AgentConfig(enable_memory=False, enable_tools=False), registry=registry)
+        seen = {}
+
+        def capture(*_args, **kwargs):
+            seen["window"] = kwargs["context_window"]
+            raise RuntimeError("stop after the budget; the completion isn't under test")
+
+        with patch("agentx_ai.config.get_context_limit_overrides", return_value={}), \
+             patch("agentx_ai.agent.conversation_history.hydrate_session_from_history", return_value=0), \
+             patch.object(ContextManager, "assemble_turn_context", side_effect=capture):
+            agent.chat("hello", session_id="conv-warm-budget")
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(seen.get("window"), 1_048_576)
+
+
 class OpenRouterAliasMigrationTest(TestCase):
     """Repairing *stored* ids — opt-in, and only to a verified target."""
 

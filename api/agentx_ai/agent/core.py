@@ -1052,7 +1052,18 @@ class Agent:
                 # compaction coverage (state digest / legacy summary) rides as a
                 # system block so aged-out turns stay represented.
                 from ..config import get_config_manager, get_context_limit_overrides
+                from ..providers.capabilities import CATALOG_WARM_TIMEOUT, warm_catalog_for
 
+                # Warm first, as the streaming path does: a registry reload leaves
+                # the catalog empty, and a cold read is the provider's fallback
+                # window (8192 for a 1M model), not the model's.
+                try:
+                    run_coro_sync(
+                        warm_catalog_for(provider, model_id),
+                        timeout=CATALOG_WARM_TIMEOUT + 5.0,
+                    )
+                except Exception as e:  # noqa: BLE001 — a cold catalog must never fail the chat
+                    logger.debug(f"[chat] catalog warm skipped: {e}")
                 caps = provider.get_capabilities(model_id)
                 overrides = get_context_limit_overrides(model_id, provider.name)
                 context_window = overrides.get("context_window") or caps.context_window

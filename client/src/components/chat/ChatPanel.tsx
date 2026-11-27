@@ -30,7 +30,7 @@ import {
   ImagePlus,
 } from 'lucide-react';
 import { api } from '../../lib/api';
-import { contextChipState } from '../../lib/contextChip';
+import { contextChipState, seedContextInfo, seedModelId } from '../../lib/contextChip';
 import {
   RESEARCH_MODE,
   THINKING_MODE_LABELS,
@@ -92,7 +92,7 @@ import { useChatStream } from './useChatStream';
 import { attachWorkspaceOnce, getMeta, patchMeta, useConversationMeta } from '../../lib/conversationMeta';
 import { WorkspaceBadge } from './WorkspaceBadge';
 import { WelcomeProjectRow } from './WelcomeProjectRow';
-import { fetchModelsOnce } from '../common/modelCatalog';
+import { fetchGlobalDefaultModel, fetchModelsOnce } from '../common/modelCatalog';
 import { ModelPickerModal } from '../common/ModelPickerModal';
 import './ChatPanel.css';
 
@@ -577,54 +577,33 @@ export function ChatPanel() {
   // `done` event; this effect covers the gaps — a fresh tab with no turns yet,
   // conversations saved before context tokens were persisted, and tabs
   // rehydrated from localStorage (the runtime contextInfo is stripped on save).
-  // Resolves the window like the server does — a Model Limits override WINS over
-  // the catalog (an :latest route reports no window at all; hiding the chip on a
-  // reopened chat hid exactly the "resuming this is expensive" signal). Then
-  // estimates `used` from recorded tokens/char count, or 0 when nothing has been
-  // sent yet. Never clobbers a live `done`-set value.
+  // The model is the latest turn's, else the composer's effective model, else
+  // the Global Default Model ("Default model" names none of its own). The window
+  // resolves like the server's — a Model Limits override WINS over the catalog
+  // (an :latest route reports no window at all; hiding the chip on a reopened
+  // chat hid exactly the "resuming this is expensive" signal) — and an unknown
+  // one seeds nothing. Never clobbers a live `done`-set value.
   useEffect(() => {
     if (!activeTab || activeTab.contextInfo) return;
     const msgs = activeTab.messages;
-
-    let modelId: string | undefined;
-    let usedTokens: number | undefined;
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      const m = msgs[i];
-      if (m.type !== 'assistant') continue;
-      modelId = m.model;
-      if (m.tokensInput !== undefined) {
-        usedTokens = m.tokensInput + (m.tokensOutput ?? 0);
-      }
-      if (modelId) break;
-    }
-    // Fresh conversation (or an assistant turn with no recorded model): fall
-    // back to the composer's effective model so the chip still appears.
-    if (!modelId) modelId = effectiveModel || undefined;
-    if (!modelId) return;
-
     const tabId = activeTab.id;
+    // Fetch the Global Default only when nothing closer names a model.
+    const named = seedModelId(msgs, effectiveModel);
+
     let cancelled = false;
     Promise.all([
       fetchModelsOnce(),
       api.getContextLimits().catch(() => null),
-    ]).then(([models, limits]) => {
+      named ? null : fetchGlobalDefaultModel(),
+    ]).then(([models, limits, globalDefault]) => {
       if (cancelled) return;
-      const info = models.find((mm) => mm.id === modelId);
-      const override = limits?.models?.[modelId as string]?.context_window;
-      const window = override || info?.context_window || info?.context_length;
-      if (!window) return;
-      const used =
-        usedTokens ??
-        (msgs.length
-          ? Math.ceil(
-              msgs.reduce(
-                (n, m) =>
-                  n + (m.type === 'user' || m.type === 'assistant' ? m.content.length : 0),
-                0,
-              ) / 4,
-            )
-          : 0);
-      setTabContextInfo(tabId, { window, used });
+      const info = seedContextInfo({
+        messages: msgs,
+        modelId: seedModelId(msgs, effectiveModel, globalDefault),
+        models,
+        limits,
+      });
+      if (info) setTabContextInfo(tabId, info);
     });
     return () => {
       cancelled = true;
