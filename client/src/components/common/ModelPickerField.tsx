@@ -20,7 +20,7 @@ import { useEffect, useState } from 'react';
 import { ChevronRight, Wrench, Eye, Image as ImageIcon } from 'lucide-react';
 import type { ModelInfo } from '../../lib/api';
 import { fetchModelsOnce } from './modelCatalog';
-import { ModelPickerModal } from './ModelPickerModal';
+import { ModelPickerModal, type ModelPickerDefaultRow } from './ModelPickerModal';
 import { FieldShell, type FieldChromeProps } from '../settings/fields/FieldShell';
 import './ModelPickerField.css';
 
@@ -41,6 +41,8 @@ interface ModelPickerFieldProps extends FieldChromeProps {
   onProviderChange?: (provider: string) => void;
   /** Show the "System default" row in the picker (default false for settings rows) */
   showDefault?: boolean;
+  /** Wording for that row, when "System default" would misdescribe an empty value. */
+  defaultRow?: ModelPickerDefaultRow;
   /** Optional label above the trigger */
   label?: string;
   /** Optional hint below the trigger */
@@ -56,6 +58,7 @@ export function ModelPickerField({
   onChange,
   onProviderChange,
   showDefault = false,
+  defaultRow,
   label,
   hint,
   requireCapability,
@@ -133,6 +136,7 @@ export function ModelPickerField({
       value={value}
       onChange={handleChange}
       showDefault={showDefault}
+      defaultRow={defaultRow}
       requireCapability={requireCapability}
     />
   );

@@ -13,7 +13,7 @@
  * out.
  */
 
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { findSectionById } from './sections';
@@ -32,6 +32,15 @@ interface SettingsContentProps {
   /** Setting to scroll to once this section has rendered (see SettingFocus). */
   focus?: SettingFocus;
 }
+
+/**
+ * Frames to keep looking for a deep-linked setting once its section has
+ * mounted, about two seconds at 60 fps. A section renders its controls only
+ * after its lazy chunk and its own settings fetch arrive: Web Search took about
+ * 480 ms after mounting on a local server, so the old budget of 12 frames
+ * (about 200 ms) gave up first.
+ */
+const FOCUS_RETRY_FRAMES = 120;
 
 function LoadingSpinner() {
   return (
@@ -65,11 +74,19 @@ export function SettingsContent({
   activeSection, onNavigate, onFocusSetting, focus,
 }: SettingsContentProps) {
   const section = useMemo(() => findSectionById(activeSection), [activeSection]);
-  const areaRef = useRef<HTMLDivElement>(null);
+  // The content area that is mounted *now*, held in state through a callback
+  // ref. A ref object went stale here: with AnimatePresence in "wait" mode, a
+  // section change first renders while the previous section's area is still
+  // exiting, so the effect searched the outgoing section and never found a
+  // setting that lives in another one. Every jump into a different section (an
+  // Overview row, a search hit, the Model Providers nudge) landed without its
+  // flash. The state changes when the incoming area mounts, which re-runs the
+  // effect against it.
+  const [area, setArea] = useState<HTMLDivElement | null>(null);
 
-  // Deliver a deep-linked focus once the section's lazy chunk has rendered.
-  // scrollToAnchor retries across a few frames, which covers the Suspense gap
-  // and the autosave hook's first load without needing to observe either.
+  // Deliver a deep-linked focus once the section has rendered the control.
+  // scrollToAnchor retries frame by frame, which covers the Suspense gap and
+  // the section's first settings fetch without needing to observe either.
   //
   // `focus.seq` is in the deps so re-selecting the same setting flashes again;
   // nothing clears the focus here, because a state change during delivery would
@@ -77,13 +94,13 @@ export function SettingsContent({
   const focusKey = focus?.key;
   const focusSeq = focus?.seq;
   useEffect(() => {
-    if (!focusKey) return;
+    if (!focusKey || !area) return;
     return scrollToAnchor('setting', focusKey, {
-      within: areaRef.current,
+      within: area,
       flashClass: 'setting-flash',
-      retries: 12,
+      retries: FOCUS_RETRY_FRAMES,
     });
-  }, [focusKey, focusSeq, activeSection]);
+  }, [focusKey, focusSeq, area]);
 
   if (!section) {
     return (
@@ -102,7 +119,7 @@ export function SettingsContent({
       <motion.div
         className="settings-content-area"
         key={activeSection}
-        ref={areaRef}
+        ref={setArea}
         variants={contentVariants}
         initial="initial"
         animate="animate"

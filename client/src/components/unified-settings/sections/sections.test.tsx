@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type React from 'react';
 
@@ -152,14 +152,33 @@ vi.mock('../../../lib/api', () => ({
     deleteCustomProvider: vi.fn().mockResolvedValue({
       status: 'deleted', id: 'groq', referencing_profiles: [],
     }),
+    // Only the ModelRolesSection anchor test mounts a manifest provider. One
+    // entry is enough for the Global Default Model control to bind.
+    getSettingsManifest: vi.fn().mockResolvedValue({
+      version: 3,
+      generated_at: '2026-11-27T00:00:00Z',
+      counts: { total: 1 },
+      sections: [],
+      entries: [{
+        key: 'preferences.default_model', store: 'config', type: 'str',
+        default: null, value: null, secret: false,
+        writable_via: '/api/config/update', ui_section: 'model-roles',
+        help: { summary: 'The model everything falls back to.' },
+      }],
+    }),
   },
   apiErrorMessage: (error: unknown) => String(error),
 }));
 
 // ModelsSection now embeds ModelPickerField, whose effect fetches the model
-// catalog — stub it so the section renders without hitting the network.
+// catalog — stub it so the section renders without hitting the network. The
+// recents helpers are for the picker dialog, which one Model Roles test opens.
 vi.mock('../../common/modelCatalog', () => ({
   fetchModelsOnce: vi.fn().mockResolvedValue([]),
+  invalidateModelCache: vi.fn(),
+  readRecentModels: () => [],
+  pushRecentModel: (recent: string[]) => recent,
+  writeRecentModel: vi.fn(),
 }));
 
 // ProvidersSection replaced window.confirm with the app dialog; stub the hook
@@ -174,6 +193,11 @@ import { OpenRouterAccount } from '../providers/OpenRouterAccount';
 import ModelsSection from './ModelsSection';
 import ModelRolesSection from './ModelRolesSection';
 import { SECTION_HIERARCHY, getAllSections, findSectionById } from './index';
+import { SettingsManifestProvider } from '../SettingsManifestContext';
+import { api } from '../../../lib/api';
+
+/** Typed handle on a mocked api method, for per-test overrides. */
+const mocked = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
 
 describe('ProvidersSection', () => {
   it('renders every catalog entry with its badge and a save action', async () => {
@@ -230,6 +254,81 @@ describe('ProvidersSection', () => {
   it('offers the custom-endpoint affordance', async () => {
     render(<ProvidersSection />);
     expect(await screen.findByText('Connect an endpoint')).toBeInTheDocument();
+  });
+});
+
+describe('ProvidersSection — Global Default Model nudge', () => {
+  // Connected but no default: an agent with no model of its own has nothing to
+  // run on (short of LM Studio), so its first conversation would stop with "No
+  // model chosen". The section points at the control that fixes it, and never
+  // picks a model on the user's behalf.
+  const NUDGE = 'Next, choose a Global Default Model';
+
+  /** A config read the test can await, so "no nudge" is asserted after it lands. */
+  function configRead(defaultModel: string) {
+    const read = Promise.resolve({ preferences: { default_model: defaultModel } });
+    mocked(api.getConfig).mockReturnValueOnce(read);
+    return read;
+  }
+
+  it('offers to open Model Roles once a provider is connected and no default is set', async () => {
+    mocked(api.updateConfig).mockClear();
+    mockUpdateModelRoles.mockClear();
+    const onFocusSetting = vi.fn();
+    render(<ProvidersSection onFocusSetting={onFocusSetting} />);
+
+    expect(await screen.findByText(NUDGE)).toBeInTheDocument();
+    expect(
+      screen.getByText(/can't start a conversation unless LM Studio is connected/)
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /open model roles/i }));
+    expect(onFocusSetting).toHaveBeenCalledWith('model-roles', 'config:preferences.default_model');
+    // It offers; it never chooses.
+    expect(api.updateConfig).not.toHaveBeenCalled();
+    expect(mockUpdateModelRoles).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet once a Global Default Model is set', async () => {
+    const read = configRead('openrouter:acme/model');
+    render(<ProvidersSection onFocusSetting={vi.fn()} />);
+    expect(await screen.findByText(/of 5 connected/)).toBeInTheDocument();
+    await act(async () => { await read; });
+    expect(screen.queryByText(NUDGE)).not.toBeInTheDocument();
+  });
+
+  it('stays quiet while nothing is connected', async () => {
+    const { providers } = await api.getProviderCatalog();
+    mocked(api.getProviderCatalog).mockResolvedValueOnce({
+      count: providers.length,
+      configured: 0,
+      providers: providers.map(entry => ({ ...entry, configured: false, key_fingerprint: null })),
+    });
+    const read = configRead('');
+    render(<ProvidersSection onFocusSetting={vi.fn()} />);
+    // Wait for the empty catalog to land: the tally reads 0 only once it has.
+    await waitFor(() =>
+      expect(screen.getByText(/of 5 connected/)).toHaveTextContent('0 of 5 connected')
+    );
+    await act(async () => { await read; });
+    expect(screen.queryByText(NUDGE)).not.toBeInTheDocument();
+  });
+
+  it("stays quiet when the default model can't be read", async () => {
+    const read = Promise.reject(new Error('offline'));
+    read.catch(() => {});
+    mocked(api.getConfig).mockReturnValueOnce(read);
+    render(<ProvidersSection onFocusSetting={vi.fn()} />);
+    expect(await screen.findByText(/of 5 connected/)).toBeInTheDocument();
+    await act(async () => { await read.catch(() => {}); });
+    // Unknown is not "unset": the nudge would be a guess.
+    expect(screen.queryByText(NUDGE)).not.toBeInTheDocument();
+  });
+
+  it('still explains itself where nothing can navigate', async () => {
+    render(<ProvidersSection />);
+    expect(await screen.findByText(NUDGE)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /open model roles/i })).not.toBeInTheDocument();
   });
 });
 
@@ -303,6 +402,105 @@ describe('ModelRolesSection', () => {
     expect(
       screen.getAllByText(/nemotron-3-ultra-550b-a55b/).length
     ).toBeGreaterThan(0);
+  });
+});
+
+describe('ModelRolesSection — Global Default Model', () => {
+  const NO_DEFAULT = /can't start a conversation until you choose one, unless LM Studio is connected/;
+
+  it('says what an empty default means for agents with no model of their own', async () => {
+    render(<ModelRolesSection />);
+    expect(await screen.findByText(NO_DEFAULT)).toBeInTheDocument();
+    expect(screen.getByText('Not set — choose a model')).toBeInTheDocument();
+    // The old copy claimed every agent had a profile model to fall back on.
+    expect(screen.queryByText(/each agent uses its profile model/)).not.toBeInTheDocument();
+  });
+
+  it('drops the warning once a default is set', async () => {
+    mocked(api.getConfig).mockResolvedValueOnce({
+      preferences: { default_model: 'openrouter:acme/model' },
+    });
+    render(<ModelRolesSection />);
+    expect(
+      await screen.findByText('Used when an agent profile has no model of its own.')
+    ).toBeInTheDocument();
+    // Not in the (empty) catalog, so the trigger falls back to the bare id.
+    expect(screen.getByText('acme/model')).toBeInTheDocument();
+    expect(screen.queryByText(NO_DEFAULT)).not.toBeInTheDocument();
+  });
+
+  it("doesn't claim \"Not set\" before the current value has been read", async () => {
+    let settle: (value: unknown) => void = () => {};
+    mocked(api.getConfig).mockReturnValueOnce(new Promise(resolve => { settle = resolve; }));
+    render(<ModelRolesSection />);
+    expect(screen.getByText('Loading…')).toBeInTheDocument();
+    expect(screen.queryByText(NO_DEFAULT)).not.toBeInTheDocument();
+    await act(async () => { settle({ preferences: { default_model: '' } }); });
+    expect(await screen.findByText(NO_DEFAULT)).toBeInTheDocument();
+  });
+
+  it('labels the picker’s empty row as no default, not a system default', async () => {
+    render(<ModelRolesSection />);
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Not set — choose a model/ })
+    );
+    expect(await screen.findByText('No global default')).toBeInTheDocument();
+    expect(screen.queryByText('System default')).not.toBeInTheDocument();
+  });
+
+  it('carries the anchor the Overview step and the Providers nudge land on', async () => {
+    const { container } = render(
+      <SettingsManifestProvider>
+        <ModelRolesSection />
+      </SettingsManifestProvider>
+    );
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-setting="config:preferences.default_model"]')
+      ).not.toBeNull()
+    );
+    // An unset default is the shipped default, so it isn't flagged as changed.
+    expect(
+      container.querySelector('[data-setting="config:preferences.default_model"] .setting-modified-dot')
+    ).toBeNull();
+  });
+
+  it('re-reads the settings manifest after a model is chosen, so the Overview step ticks', async () => {
+    // The Overview's setup list reads this setting from the manifest, fetched
+    // once per Settings session: without a re-read, the required step would stay
+    // unticked until Settings was reopened.
+    const { fetchModelsOnce } = await import('../../common/modelCatalog');
+    mocked(fetchModelsOnce).mockResolvedValue([
+      { id: 'openrouter:acme/model', name: 'Acme Model', provider: 'openrouter', context_length: 128_000 },
+    ]);
+    mocked(api.updateConfig).mockClear();
+    mocked(api.getSettingsManifest).mockClear();
+    try {
+      const { container } = render(
+        <SettingsManifestProvider>
+          <ModelRolesSection />
+        </SettingsManifestProvider>
+      );
+      const anchor = '[data-setting="config:preferences.default_model"]';
+      await waitFor(() => expect(container.querySelector(anchor)).not.toBeNull());
+      expect(api.getSettingsManifest).toHaveBeenCalledTimes(1);
+
+      await userEvent.click(container.querySelector<HTMLElement>(`${anchor} .mpf-trigger`)!);
+      await waitFor(() =>
+        expect(document.querySelector('[data-model-id="openrouter:acme/model"]')).not.toBeNull()
+      );
+      await userEvent.click(document.querySelector<HTMLElement>('[data-model-id="openrouter:acme/model"]')!);
+      await userEvent.click(screen.getByRole('button', { name: /use this model/i }));
+
+      await waitFor(() =>
+        expect(api.updateConfig).toHaveBeenCalledWith({
+          preferences: { default_model: 'openrouter:acme/model' },
+        })
+      );
+      await waitFor(() => expect(api.getSettingsManifest).toHaveBeenCalledTimes(2));
+    } finally {
+      mocked(fetchModelsOnce).mockResolvedValue([]);
+    }
   });
 });
 
