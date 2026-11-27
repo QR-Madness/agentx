@@ -7185,6 +7185,8 @@ class SseContractCorpusTest(TestCase):
         "plan_complete": {"plan_id", "subtask_count", "completed_count"},
         "plan_cancelled": {"plan_id"},
         "done": {"session_id", "model", "finish_reason", "tokens_input", "tokens_output"},
+        # Plus an optional `code` on the errors a client acts on (`no_model_chosen`,
+        # `no_provider_connected`): see utils.responses.stream_error_payload.
         "error": {"error"},
         "close": set(),
     }
@@ -7552,7 +7554,9 @@ class NoModelChosenTest(TestCase):
 
     def test_cloud_only_install_is_told_where_to_choose(self):
         """The walkthrough: OpenRouter connected, no model chosen anywhere."""
-        from agentx_ai.exceptions import ModelNotFoundError, NoModelChosenError
+        from agentx_ai.exceptions import (
+            ModelNotFoundError, NoModelChosenError, NoProviderConnectedError,
+        )
         agent = self._agent(configured=["openrouter"])
         with self.assertRaises(NoModelChosenError) as caught:
             agent.resolve_model()  # raising, not resolving: no silent cloud pick
@@ -7560,13 +7564,41 @@ class NoModelChosenTest(TestCase):
         self.assertNotIn("lmstudio", str(caught.exception).lower())
         # Still a ModelNotFoundError, so existing handlers keep catching it.
         self.assertIsInstance(caught.exception, ModelNotFoundError)
+        # The client opens Model Roles on this code; it is part of the contract.
+        self.assertNotIsInstance(caught.exception, NoProviderConnectedError)
+        self.assertEqual(caught.exception.code, "no_model_chosen")
 
     def test_install_with_no_provider_is_told_to_connect_one(self):
-        from agentx_ai.exceptions import NoModelChosenError
+        from agentx_ai.exceptions import NoModelChosenError, NoProviderConnectedError
         agent = self._agent(configured=[])
         with self.assertRaises(NoModelChosenError) as caught:
             agent.resolve_model()
         self.assertEqual(str(caught.exception), self.NO_PROVIDER)
+        # Its own type and code: the fix starts in Model Providers, not Model Roles.
+        self.assertIsInstance(caught.exception, NoProviderConnectedError)
+        self.assertEqual(caught.exception.code, "no_provider_connected")
+
+    def test_only_domain_errors_put_a_code_on_the_stream(self):
+        """The stream's `error` event is `{error}`, plus `code` for an error that has
+        one. Nothing else contributes a code, including third-party exceptions with
+        a `code` attribute of their own, which would leak provider vocabulary."""
+        from agentx_ai.exceptions import ModelNotFoundError, NoModelChosenError
+        from agentx_ai.utils.responses import stream_error_payload
+
+        self.assertEqual(
+            stream_error_payload(NoModelChosenError(self.NO_MODEL)),
+            {"error": self.NO_MODEL, "code": "no_model_chosen"},
+        )
+        # A domain error without a code keeps the message-only shape.
+        self.assertEqual(
+            stream_error_payload(ModelNotFoundError("Provider 'x' not configured")),
+            {"error": "Provider 'x' not configured"},
+        )
+
+        class SdkError(Exception):
+            code = "rate_limit_exceeded"
+
+        self.assertEqual(stream_error_payload(SdkError("slow down")), {"error": "slow down"})
 
     def test_disabled_fallback_still_says_where_to_choose(self):
         from agentx_ai.exceptions import NoModelChosenError
@@ -7652,6 +7684,8 @@ class NoModelChosenTest(TestCase):
         self.assertEqual(len(errors), 1, events)
         payload = json.loads(errors[0].split("data: ", 1)[1])
         self.assertEqual(payload["error"], self.NO_MODEL)
+        # The client offers "Open Model Roles" on this code rather than parsing text.
+        self.assertEqual(payload["code"], "no_model_chosen")
 
 
 class MemoryPoisoningTest(TestCase):

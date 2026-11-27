@@ -155,8 +155,26 @@ export interface StreamCallbacks {
    * the backend fell back to the personal Home store. The client durably attaches it.
    */
   onWorkspaceAttached?: (data: { workspace_id: string }) => void;
-  onError?: (error: string) => void;
+  /**
+   * The turn failed. `code` is the server's stable reason when it has one (see
+   * {@link StreamErrorCode}); it is absent for most errors, and a newer server
+   * may send one this client doesn't know, so treat it as optional data.
+   * Transport failures (HTTP status, network) arrive with the message only.
+   */
+  onError?: (error: string, code?: string) => void;
 }
+
+/**
+ * The `code`s the server puts on a stream `error` event (`AgentXError.code`),
+ * for the errors a client can act on. Additive and stable: a code never changes
+ * meaning once shipped.
+ *
+ *  - `no_model_chosen`: nothing chose a model for the turn; the fix is the
+ *    Global Default Model in Settings → Model Roles.
+ *  - `no_provider_connected`: no provider is connected to choose one from; the
+ *    fix starts in Settings → Model Providers.
+ */
+export type StreamErrorCode = 'no_model_chosen' | 'no_provider_connected';
 
 /** Dispatch one parsed SSE event to its callback. Returns true to stop the pump.
  * Exported for the golden-stream replay tests — this IS the client's SSE
@@ -248,7 +266,10 @@ export function dispatchSseEvent(
       controller.abort();
       return true;
     case 'error':
-      callbacks.onError?.(data.error as string);
+      callbacks.onError?.(
+        data.error as string,
+        typeof data.code === 'string' && data.code ? data.code : undefined,
+      );
       break;
   }
   return false;

@@ -33,6 +33,14 @@ class AgentXError(Exception):
     #: Default HTTP status used by the API boundary when this error escapes.
     http_status: int = 500
 
+    #: Stable, machine-readable reason for the few errors a client acts on. The
+    #: chat stream's ``error`` event carries it as ``code`` (see
+    #: ``utils.responses.stream_error_payload``), so the client can offer the
+    #: fix without parsing the message. ``None`` for everything else: a code is
+    #: added only when a client has something to do with it, and once shipped it
+    #: never changes meaning.
+    code: str | None = None
+
     def __init__(self, message: str = "", **details: Any) -> None:
         super().__init__(message)
         self.message = message
@@ -68,7 +76,22 @@ class NoModelChosenError(ModelNotFoundError):
     so the user reads where to choose a model rather than which provider is
     missing for a model they never picked. A subclass, so every existing
     ``except ModelNotFoundError`` / ``except ValueError`` still catches it.
+
+    The client offers to open Settings → Model Roles on the Global Default Model.
     """
+
+    code = "no_model_chosen"
+
+
+class NoProviderConnectedError(NoModelChosenError):
+    """Nothing chose a model, and no provider is connected to choose one from.
+
+    The fix starts in Settings → Model Providers rather than Model Roles, so it
+    carries its own code. A subclass of ``NoModelChosenError``: anything that
+    catches that still catches this.
+    """
+
+    code = "no_provider_connected"
 
 
 class ProviderUnavailableError(ProviderError):

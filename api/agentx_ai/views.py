@@ -38,6 +38,7 @@ from .utils.responses import (
     json_success,
     parse_json_body,
     require_methods,
+    stream_error_payload,
 )
 from datetime import UTC
 
@@ -3847,7 +3848,9 @@ async def agent_chat_stream(request):
 
         except Exception as e:
             logger.error(f"Streaming error: {e}")
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            # `code` rides along when the error has one (NoModelChosenError →
+            # "no_model_chosen"), so the client can offer the settings fix.
+            yield f"event: error\ndata: {json.dumps(stream_error_payload(e))}\n\n"
             return  # Ensure generator terminates after error
         finally:
             try:
@@ -5066,7 +5069,7 @@ async def agent_plan_resume(request, plan_id):
             return
         except Exception as e:
             logger.error(f"Plan resume error: {e}")
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            yield f"event: error\ndata: {json.dumps(stream_error_payload(e))}\n\n"
             return
 
     from .streaming.chat_run import start_chat_run, tail_chat_run

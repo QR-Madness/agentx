@@ -38,6 +38,7 @@ import {
 } from '../../lib/messages';
 import { exhibitFromWire } from '../../lib/exhibits';
 import type { PlanRecord } from '../../contexts/PlansContext';
+import { streamErrorFix } from './streamErrorFixes';
 
 /** Mutators from PlansContext, plumbed in so the global registry tracks plans. */
 interface PlansSink {
@@ -67,6 +68,12 @@ interface UseChatStreamOpts {
   onConversationStateSaved?: () => void;
   /** Stored media fell back to a workspace (Home) — the conversation can durably attach. */
   onWorkspaceAttached?: (workspaceId: string) => void;
+  /**
+   * Open Settings on a section, landing on one control when `setting` (its
+   * `store:key`) is given. Lets an error toast offer its fix (see
+   * `streamErrorFixes.ts`). Without it, the toast just describes the error.
+   */
+  onOpenSettings?: (section: string, setting?: string) => void;
 }
 
 interface UseChatStreamApi {
@@ -86,7 +93,10 @@ interface UseChatStreamApi {
 
 export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   const [state, dispatch] = useReducer(streamReducer, initialStreamState);
-  const { notify, notifyError } = useNotify();
+  const { notify, notifyError, dismiss } = useNotify();
+  // The settings-fix toast persists until acted on, so a repeated failure
+  // replaces it instead of stacking one per retry.
+  const fixToastRef = useRef<string | null>(null);
   const abortRef = useRef<{ abort: () => void } | null>(null);
 
   // Caller passes a fresh opts literal every render, so capture it in a ref
@@ -704,7 +714,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         }
       },
 
-      onError: (error) => {
+      onError: (error, code) => {
         liveContentRef.current = '';
         activeToolCallsRef.current = new Map();
         if (activePlanRef.current) {
@@ -726,10 +736,30 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         optsRef.current.appendMessage(msg);
 
         // Also raise a toast so the failure is visible even when the chat is
-        // scrolled away or the user has switched tabs.
-        notifyError(error);
+        // scrolled away or the user has switched tabs. When the server's `code`
+        // names a fix in Settings (no model chosen, no provider connected), the
+        // toast offers to open it there rather than only describing where it is.
+        const fix = streamErrorFix(code);
+        if (fix && optsRef.current.onOpenSettings) {
+          if (fixToastRef.current) dismiss(fixToastRef.current);
+          fixToastRef.current = notify({
+            kind: 'error',
+            title: fix.title,
+            message: error,
+            // Persist until acted on or dismissed, like the connector "Connect"
+            // nudge: every turn fails until this is fixed, and an 8-second
+            // toast is easily gone before the user reaches its button.
+            duration: 0,
+            action: {
+              label: fix.label,
+              onClick: () => optsRef.current.onOpenSettings?.(fix.section, fix.setting),
+            },
+          });
+        } else {
+          notifyError(error);
+        }
       },
-  }), [flushLiveContent, notify, notifyError, finalizeDanglingDelegations]);
+  }), [flushLiveContent, notify, notifyError, dismiss, finalizeDanglingDelegations]);
 
   const send = useCallback((req: ChatRequest) => {
     abortRef.current?.abort();

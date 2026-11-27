@@ -60,7 +60,8 @@ password can't be opened again; see
 
 **New conversations stop with "No model chosen".**
 Nothing chose a model for the conversation: it has none of its own, its agent's profile pins none,
-and no global default is set. Set one in **Settings → Model Roles → Global Default Model**, or give
+and no global default is set. Set one in **Settings → Model Roles → Global Default Model** (the
+error's notification has an **Open Model Roles** button that goes straight there), or give
 the agent a model of its own in its [profile](../features/agent-profiles.md). If the message says
 "No model provider connected" instead, add a provider in **Settings → Model Providers** first. See
 [Your First Session](first-session.md#2--choose-your-default-model). Versions before 0.21.297
