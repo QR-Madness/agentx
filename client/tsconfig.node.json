@@ -10,7 +10,10 @@
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    // vite.config.ts runs in Node. TypeScript 7 loads no @types package that is
+    // not listed, so without this Node's types would arrive only through vite's.
+    "types": ["node"]
   },
   "include": ["vite.config.ts"]
 }

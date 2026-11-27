@@ -857,11 +857,16 @@ tasks:
       - uv run python scripts/check_pyright_baseline.py
 
   check:types:client:
-    desc: "Type check TypeScript code"
+    desc: "Type check TypeScript code (src + vite.config.ts)"
     dir: client
     silent: true
     cmds:
+      # Two programs: the app (tsconfig.json) and the Node-side vite.config.ts
+      # (tsconfig.node.json). `tsc --noEmit` never follows project references, and
+      # `tsc -b` can't stand in: it refuses --noEmit for the composite project
+      # (TS6310) and, without it, writes build info beside tsconfig.json.
       - bun run tsc --noEmit
+      - bun run tsc --noEmit -p tsconfig.node.json
 
   check:fast:
     desc: "Fast pre-commit gate (~1-2s): doc/API drift + ruff + Release-Notes marker"
