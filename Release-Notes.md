@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.297 -->
+<!-- release-version: 0.21.298 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -22,7 +22,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 ### Highlights
 
 - **Settings that explain themselves** — search jumps to any setting, an **Overview** says what to set up first, and all 210 match the Settings Reference.
-- **Link your OpenRouter account in one click** — sign in once, no key pasting; the card shows balance and spend and repairs renamed models.
+- **Link OpenRouter in one click** — sign in once, no key pasting; the card shows balance and spend and repairs renamed models.
 - **Model Providers, rebuilt** — connect any OpenAI-compatible endpoint as `yourid:model`. A **supply line** shows where turns really go: provider, context, price, fallback.
 - **The whole organization on one chart** — **Open Organization** charts managers, teams, independents; drag to arrange, edit teams and roles in place, see what won't work.
 - **Extract: move memory out, safely** — evict a channel to the server vault: export → verify → wipe → receipt; nothing is deleted unverified.
@@ -32,7 +32,8 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 ### Fixes
 
 - **Claude works again via the Anthropic provider** — it no longer sends the temperature current models reject.
-- **No false "100% context" or undersized turn after a settings change.**
-- **Settings that claimed to save now do** — **"Enable audio input" and "Enable speech generation" never persisted**; Ambassador's voice pickers were dropped silently; editing one Web Search source-policy list wiped the others.
+- **With no model chosen, chat points to Settings → Model Roles**, not an LM Studio error.
+- **No false "100% context" after a settings change.**
+- **Settings that claimed to save now do** — audio input, speech generation, Ambassador's voice and Web Search source-policy lists (editing one wiped the rest).
 - **Memory moves are complete** — exports carry distilled procedures, replace-mode import resets the PostgreSQL mirror, and consolidation reports relationships it drops.
 - **Security updates** — a critical DOMPurify bypass, Tauri's origin check and URL handling, torch loading, Django, PyJWT and more; manager image lockfile-pinned, CLI on PATH.

@@ -12,13 +12,14 @@ import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel
 
-from ..providers.base import CompletionResult, Message, MessageRole, ToolCall
+from ..exceptions import ModelNotFoundError, NoModelChosenError
+from ..providers.base import CompletionResult, Message, MessageRole, ModelProvider, ToolCall
 from ..providers.registry import get_registry, ProviderRegistry
 from ..reasoning import ReasoningOrchestrator
 from ..reasoning.orchestrator import OrchestratorConfig
@@ -33,6 +34,26 @@ from .tool_output_compressor import get_compressor
 from .tool_output_storage import store_tool_output
 
 logger = logging.getLogger(__name__)
+
+
+#: The model an agent runs on when nothing chose one: no model for the turn, none
+#: on the agent profile, and no Global Default Model. Local LM Studio keeps an
+#: offline install working with no setup. An install without LM Studio has to
+#: choose a model, and ``Agent.resolve_model`` then says where to choose one.
+FLOOR_MODEL = "lmstudio:llama3.2"
+
+#: Why a turn on the floor can't run, when at least one provider is connected.
+#: The docs quote this text (getting-started troubleshooting and first session).
+NO_MODEL_CHOSEN_MESSAGE = (
+    "No model chosen: set the Global Default Model in Settings → Model Roles, "
+    "or pick a model for this conversation."
+)
+
+#: The same, when no provider is connected at all, so no model can be picked yet.
+NO_PROVIDER_CONNECTED_MESSAGE = (
+    "No model provider connected: add one in Settings → Model Providers, "
+    "then set the Global Default Model in Settings → Model Roles."
+)
 
 
 class AgentStatus(str, Enum):
@@ -77,10 +98,15 @@ class AgentConfig:
     name: str = "agentx"
     user_id: str | None = None
     
-    # Model settings - default to local LM Studio (use provider:model format)
-    default_model: str = "lmstudio:llama3.2"
+    # Model settings (provider:model format). Leave default_model empty when
+    # nothing chose a model: __post_init__ applies FLOOR_MODEL and sets
+    # model_is_floor, which is how the floor stays distinct from an explicit
+    # choice of the same model.
+    default_model: str = ""
     reasoning_model: str | None = None
     drafting_model: str | None = None
+    # Set by __post_init__, never passed: True when default_model is the floor.
+    model_is_floor: bool = field(default=False, init=False)
     
     # Behavior settings
     max_iterations: int = 20
@@ -132,6 +158,11 @@ class AgentConfig:
     memory_recall_turn_chars: int = 2000  # Per-turn char budget when formatting recall context
     memory_recall_max_turns: int = 10  # Max recalled turns surfaced in the prompt
 
+    def __post_init__(self) -> None:
+        if not self.default_model:
+            self.default_model = FLOOR_MODEL
+            self.model_is_floor = True
+
 
 class Agent:
     """
@@ -178,7 +209,27 @@ class Agent:
         if self._registry is None:
             self._registry = get_registry()
         return self._registry
-    
+
+    def resolve_model(self) -> tuple[ModelProvider, str, str | None]:
+        """Resolve this agent's own model to ``(provider, model_id, fallback_note)``.
+
+        Runs the registry's fallback chain. When nothing chose a model (the config
+        sits on ``FLOOR_MODEL``) and the chain has nothing to run, the provider
+        error becomes a ``NoModelChosenError`` that says where to choose one; it
+        never falls through to a model the user didn't choose. A model that *was*
+        chosen keeps its provider error, which names the provider to fix.
+        """
+        try:
+            return self.registry.resolve_with_fallback(self.config.default_model)
+        except ModelNotFoundError as e:
+            if not self.config.model_is_floor:
+                raise
+            message = (
+                NO_MODEL_CHOSEN_MESSAGE if self.registry.list_providers()
+                else NO_PROVIDER_CONNECTED_MESSAGE
+            )
+            raise NoModelChosenError(message, model=self.config.default_model) from e
+
     @property
     def reasoning(self) -> ReasoningOrchestrator:
         """Lazy-load the reasoning orchestrator."""
@@ -364,7 +415,7 @@ class Agent:
         gate is sync (bridged warm) and fails OPEN, the shared probe is async and
         fails closed — opposite polarity, opposite failure cost."""
         try:
-            provider, model_id, _ = self.registry.resolve_with_fallback(self.config.default_model)
+            provider, model_id, _ = self.resolve_model()
             caps = provider.get_capabilities(model_id)
             if caps.supports_tools:
                 return True
@@ -673,6 +724,12 @@ class Agent:
         # even if planning never ran.
         plan = None
         try:
+            # On the floor, check it can run before any step uses the model, so
+            # the task fails with NoModelChosenError rather than a provider error
+            # raised from inside planning or reasoning.
+            if self.config.model_is_floor:
+                self.resolve_model()
+
             self.status = AgentStatus.PLANNING
 
             # Step 1: Planning (if enabled)
@@ -790,9 +847,7 @@ class Agent:
                 ]
             else:
                 # Direct completion without reasoning
-                provider, model_id, _ = self.registry.resolve_with_fallback(
-                    self.config.default_model
-                )
+                provider, model_id, _ = self.resolve_model()
 
                 messages = [Message(role=MessageRole.USER, content=task)]
                 if context:
@@ -979,9 +1034,7 @@ class Agent:
         try:
             if simple_mode:
                 # Direct completion without planning/reasoning - best for chat
-                provider, model_id, _ = self.registry.resolve_with_fallback(
-                    self.config.default_model
-                )
+                provider, model_id, _ = self.resolve_model()
 
                 # Get system prompt from prompt manager
                 from ..prompts import get_prompt_manager

@@ -110,13 +110,22 @@ Each one is a code change, so it belongs outside the docs track:
   resolves the conversation's model, then the profile's, then the Global Default Model, then
   `lmstudio:llama3.2`. A newcomer who connects OpenRouter and starts chatting gets "Provider
   'lmstudio' not configured". The docs now say to set the global default.
-  - Fix: a clear message pointing to Settings → Model Roles, or onboarding that sets the
-    default once a provider connects.
+  - **Done (v0.21.297):** the turn stops with "No model chosen: set the Global Default Model in
+    Settings → Model Roles, or pick a model for this conversation." (`NoModelChosenError`, raised
+    by `Agent.resolve_model` only when nothing chose a model; never a silent cloud pick).
+  - **Open, proposed:** an onboarding nudge. Add a required "Choose a Global Default Model" step to
+    the Settings Overview setup list (`OverviewSection.tsx` `SETUP_STEPS`: today's `roles` step is
+    optional and tracks only the role keys), offer "Open Model Roles" when the first provider
+    connects while `preferences.default_model` is empty, and correct the Model Roles hint "No
+    global default — each agent uses its profile model", which is wrong for profiles that pin none.
+  - **Open, related:** background chat jobs (`background/chat_jobs.py`) and `/api/agent/chat` build
+    the agent without the Global Default Model, so with LM Studio connected they run on LM Studio
+    even when a global default is set.
 - **The Memory panel doesn't reload after Consolidate finishes.** The Facts tab shows "No facts
   found" until you press refresh, while the overview counts are already updated.
 - **The context meter reads "100% context" (in warning colour)** on a conversation using
   "Default model". It seems not to know that model's context window.
-  - **Done (v0.21.297):** "Default model" was incidental; the Settings save before the turn was
+  - **Done (v0.21.298):** "Default model" was incidental; the Settings save before the turn was
     the cause. Every save reloads the provider registry, which drops the fetched model catalogs,
     and the next turn read its capabilities cold: OpenRouter's and the AI Gateway's 8192-token
     fallback stood in for a 1M window and sized the turn (output and tool-loop budgets) as well as
