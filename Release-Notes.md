@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.300 -->
+<!-- release-version: 0.21.301 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -32,7 +32,7 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 ### Fixes
 
 - **Claude works again via the Anthropic provider** — it no longer sends the temperature current models reject.
-- **Settings asks for a default model once a provider connects**; without one, chat points to Model Roles.
+- **Settings asks for a default model once a provider connects**; without one, chat links to Model Roles.
 - **No false "100% context" after a settings change.**
 - **Settings that claimed to save now do** — audio input, speech generation, Ambassador's voice and Web Search source-policy lists (editing one wiped the rest).
 - **Memory moves are complete** — exports carry procedures, Replace import resets the PostgreSQL mirror; Consolidate reports dropped relationships and reloads the lists.

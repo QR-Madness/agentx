@@ -473,6 +473,11 @@ export function ChatPanel() {
     onCheckpointSaved: () => setCheckpointSignal(n => n + 1),
     onConversationStateSaved: () => setStateSignal(n => n + 1),
     onWorkspaceAttached: attachStoredMediaWorkspace,
+    // An error toast's fix ("Open Model Roles") opens Settings on the control.
+    onOpenSettings: (section, setting) => openModal({
+      ...SURFACES.settings,
+      props: setting ? { initialSection: section, focusSetting: setting } : { initialSection: section },
+    }),
   });
 
   const isTyping = stream.state.phase === 'streaming';

@@ -13,6 +13,8 @@ import logging
 
 from django.http import JsonResponse, HttpRequest
 
+from ..exceptions import AgentXError
+
 logger = logging.getLogger(__name__)
 
 
@@ -139,6 +141,26 @@ def error_response(exc: Exception) -> JsonResponse:
     status = getattr(exc, "http_status", 500)
     message = str(exc) or exc.__class__.__name__
     return json_error(message, status=status)
+
+
+def stream_error_payload(exc: BaseException) -> dict[str, str]:
+    """
+    Body of an SSE ``error`` event for ``exc``.
+
+    Always ``{"error": message}``. A domain error that carries a ``code`` (see
+    ``agentx_ai.exceptions.AgentXError.code``) adds ``"code"``, so the client can
+    act on it, such as opening the settings screen that fixes it, without
+    parsing the message. Additive: a client that reads only ``error`` is
+    unaffected, so ``protocol_version`` stays.
+
+    Only the domain hierarchy contributes a code. Third-party exceptions often
+    have a ``code`` attribute of their own (an SDK's error slug, an HTTP status),
+    and forwarding those would leak provider vocabulary into the contract.
+    """
+    payload = {"error": str(exc)}
+    if isinstance(exc, AgentXError) and exc.code:
+        payload["code"] = exc.code
+    return payload
 
 
 def json_success(

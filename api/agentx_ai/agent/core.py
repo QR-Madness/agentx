@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ..exceptions import ModelNotFoundError, NoModelChosenError
+from ..exceptions import ModelNotFoundError, NoModelChosenError, NoProviderConnectedError
 from ..providers.base import CompletionResult, Message, MessageRole, ModelProvider, ToolCall
 from ..providers.registry import get_registry, ProviderRegistry
 from ..reasoning import ReasoningOrchestrator
@@ -215,7 +215,8 @@ class Agent:
 
         Runs the registry's fallback chain. When nothing chose a model (the config
         sits on ``FLOOR_MODEL``) and the chain has nothing to run, the provider
-        error becomes a ``NoModelChosenError`` that says where to choose one; it
+        error becomes a ``NoModelChosenError`` that says where to choose one
+        (``NoProviderConnectedError`` when no provider is connected at all); it
         never falls through to a model the user didn't choose. A model that *was*
         chosen keeps its provider error, which names the provider to fix.
         """
@@ -224,11 +225,11 @@ class Agent:
         except ModelNotFoundError as e:
             if not self.config.model_is_floor:
                 raise
-            message = (
-                NO_MODEL_CHOSEN_MESSAGE if self.registry.list_providers()
-                else NO_PROVIDER_CONNECTED_MESSAGE
-            )
-            raise NoModelChosenError(message, model=self.config.default_model) from e
+            if not self.registry.list_providers():
+                raise NoProviderConnectedError(
+                    NO_PROVIDER_CONNECTED_MESSAGE, model=self.config.default_model
+                ) from e
+            raise NoModelChosenError(NO_MODEL_CHOSEN_MESSAGE, model=self.config.default_model) from e
 
     @property
     def reasoning(self) -> ReasoningOrchestrator:

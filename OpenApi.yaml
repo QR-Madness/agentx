@@ -1515,6 +1515,11 @@ paths:
         `context_window`/`context_used` (tokens), `context_summarized` (a rolling summary
         covers older turns) and `context_dropped_turns` (verbatim turns dropped by the
         ledger this turn; 0 when everything fit).
+        The `error` event is `{ error, code? }`. `code` is a stable, machine-readable
+        reason present only for errors a client can act on: `no_model_chosen` (nothing
+        chose a model; the fix is the Global Default Model in Settings → Model Roles) and
+        `no_provider_connected` (no provider to choose one from; the fix starts in
+        Settings → Model Providers). Plan resume streams carry it the same way.
         The `exhibit` event carries a declarative, agent-authored content tree
         (`{ schema_version, id, title?, layout, elements[] }`) emitted when the agent
         calls the internal `present_exhibit` tool. Element types: `mermaid` (a diagram),

@@ -120,15 +120,13 @@ Each one is a code change, so it belongs outside the docs track:
     a conversation until one is set, unless LM Studio is connected. Nothing picks a model for the
     user. Landing on the control exposed a bug that kept every jump into *another* settings section
     (Overview rows, search hits) from scrolling to and flashing its setting; fixed in the same PR.
-  - **Open, deferred:** an **Open Model Roles** action on the chat error itself. The SSE `error`
-    event carries only a message, so the client could tell `NoModelChosenError` apart only by
-    matching its text. Add a machine-readable `code` (e.g. `no_model_chosen`) to the event in
-    `views.py::agent_chat_stream` (additive, so `protocol_version` stays), document it in the
-    `Development-Notes.md` SSE reference, the docs-site API reference and `OpenApi.yaml`, and
-    attach the action to the error toast in `useChatStream.ts` (`notify` already takes an
-    `action`; the settings modal opens on a control through its `focusSetting` prop). Deferred
-    because a stream-contract change deserves its own PR, ideally with a small code vocabulary
-    rather than a one-off, and the settings nudge now reaches most users before the error does.
+  - **Done (v0.21.301):** an **Open Model Roles** action on the chat error itself. The SSE `error`
+    event now carries a machine-readable `code` from a small vocabulary on the exception
+    hierarchy (`AgentXError.code`, domain errors only): `no_model_chosen` and
+    `no_provider_connected` (`NoProviderConnectedError`, a subclass). It is additive, so
+    `protocol_version` stays. The chat's error toast offers **Open Model Roles** (landing on the
+    Global Default Model) or **Open Model Providers**. It persists until acted on or dismissed,
+    and a retry replaces it rather than stacking.
   - **Open, related:** background chat jobs (`background/chat_jobs.py`) and `/api/agent/chat` build
     the agent without the Global Default Model, so with LM Studio connected they run on LM Studio
     even when a global default is set.
