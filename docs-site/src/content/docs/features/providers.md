@@ -29,8 +29,10 @@ The active model is resolved top-down: an **explicit choice for the turn** (the 
 the message box, or a per-request override) → the **agent profile's** default model → the
 **Global Default Model** (**Settings → Model Roles**) → a built-in LM Studio model. That last
 floor is why an install with only cloud providers needs a global default: without one, a
-conversation whose agent has no model of its own fails with "Provider 'lmstudio' not
-configured". The `DEFAULT_MODEL` environment variable applies only to `/api/agent/run` (and the
+conversation whose agent has no model of its own stops with "No model chosen", which points to
+Model Roles. AgentX never substitutes a cloud model nobody chose. A model you *did* choose whose
+provider isn't connected keeps the provider error ("Provider '…' not configured"), which names
+what to connect. The `DEFAULT_MODEL` environment variable applies only to `/api/agent/run` (and the
 model `/api/agent/status` reports), not to chat. What `models.yaml` does *not* do is pin the
 runtime default; it holds provider settings only.
 

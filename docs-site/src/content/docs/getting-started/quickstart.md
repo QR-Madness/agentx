@@ -60,9 +60,9 @@ Then apply it with **Up** in the dashboard; a restart doesn't re-read `.env`.
 1. Open **Settings → Model Providers** and add your API key. Keys are stored on your server, never
    in the client.
 2. Open **Settings → Model Roles** and set the **Global Default Model**. Every agent without a
-   model of its own uses it; without one, new conversations fall back to LM Studio and fail if
-   you haven't set it up. You can still pick another model for a single conversation from the
-   model chip under the message box.
+   model of its own uses it; without one, new conversations fall back to LM Studio and stop with
+   "No model chosen" if you haven't set it up. You can still pick another model for a single
+   conversation from the model chip under the message box.
 3. Start a chat with **AgentX**, the general assistant. Every install starts with three agents:
    AgentX, **Researcher** and **Deluxe Image Creator**. [Agent Profiles](../features/agent-profiles.md)
    shows how to change them or build your own.

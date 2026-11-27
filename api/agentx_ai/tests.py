@@ -7467,6 +7467,7 @@ class ModelDefaultResolutionTest(TestCase):
                     agent = get_agent()
             self.assertEqual(agent.config.default_model, "openrouter:minimax/minimax-m3")
             self.assertNotIn("lmstudio", agent.config.default_model)
+            self.assertFalse(agent.config.model_is_floor)
         finally:
             get_agent.reset()
 
@@ -7484,8 +7485,173 @@ class ModelDefaultResolutionTest(TestCase):
                     gcm.return_value.get.return_value = ""  # nothing configured
                     agent = get_agent()
             self.assertEqual(agent.config.default_model, "lmstudio:llama3.2")
+            # Marked as the floor, so an install without LM Studio gets
+            # NoModelChosenError rather than a provider error.
+            self.assertTrue(agent.config.model_is_floor)
         finally:
             get_agent.reset()
+
+
+class NoModelChosenTest(TestCase):
+    """Nothing chose a model and the floor can't run: say where to choose one.
+
+    A fresh install that connected only OpenRouter and set no Global Default Model
+    failed every conversation whose agent pins no model with "Provider 'lmstudio'
+    not configured. Available providers: openrouter" (found in a walkthrough,
+    2026-11-26). The turn must name where to choose a model, and must never fall
+    through to a cloud model nobody chose, which would spend money without consent.
+
+    Every config here is a stub; live config.json must never decide an outcome.
+    """
+
+    # The docs quote these (getting-started troubleshooting + first session), so
+    # they are asserted verbatim: a wording change has to update the docs too.
+    NO_MODEL = (
+        "No model chosen: set the Global Default Model in Settings → Model Roles, "
+        "or pick a model for this conversation."
+    )
+    NO_PROVIDER = (
+        "No model provider connected: add one in Settings → Model Providers, "
+        "then set the Global Default Model in Settings → Model Roles."
+    )
+
+    def _cfg(self, **overrides):
+        from unittest.mock import MagicMock
+        vals = {
+            "models.fallback_enabled": True,
+            "preferences.default_model": "",
+            "memory.project_channels": False,
+        }
+        vals.update(overrides)
+        cfg = MagicMock()
+        cfg.get.side_effect = lambda k, d=None: vals.get(k, d)
+        cfg.get_provider_value.side_effect = lambda *a, **k: None
+        return cfg
+
+    def _registry(self, cfg, *, configured):
+        from agentx_ai.providers.base import ProviderConfig
+        from agentx_ai.providers.registry import ProviderRegistry
+        reg = ProviderRegistry(config_manager=cfg)
+        reg._provider_configs = {n: ProviderConfig(api_key="x") for n in configured}
+        reg.get_provider = lambda n: f"<provider:{n}>"  # type: ignore[assignment]
+        return reg
+
+    def _agent(self, *, configured, cfg=None, **config):
+        from agentx_ai.agent.core import Agent, AgentConfig
+        reg = self._registry(cfg or self._cfg(), configured=configured)
+        return Agent(AgentConfig(enable_memory=False, **config), registry=reg)
+
+    def test_config_without_a_model_sits_on_the_floor(self):
+        from agentx_ai.agent.core import FLOOR_MODEL, AgentConfig
+        for config in (AgentConfig(), AgentConfig(default_model="")):
+            self.assertEqual(config.default_model, FLOOR_MODEL)
+            self.assertTrue(config.model_is_floor)
+        # Choosing the floor's own model is still a choice, not the floor.
+        self.assertFalse(AgentConfig(default_model=FLOOR_MODEL).model_is_floor)
+        self.assertFalse(AgentConfig(default_model="openrouter:acme/model").model_is_floor)
+
+    def test_cloud_only_install_is_told_where_to_choose(self):
+        """The walkthrough: OpenRouter connected, no model chosen anywhere."""
+        from agentx_ai.exceptions import ModelNotFoundError, NoModelChosenError
+        agent = self._agent(configured=["openrouter"])
+        with self.assertRaises(NoModelChosenError) as caught:
+            agent.resolve_model()  # raising, not resolving: no silent cloud pick
+        self.assertEqual(str(caught.exception), self.NO_MODEL)
+        self.assertNotIn("lmstudio", str(caught.exception).lower())
+        # Still a ModelNotFoundError, so existing handlers keep catching it.
+        self.assertIsInstance(caught.exception, ModelNotFoundError)
+
+    def test_install_with_no_provider_is_told_to_connect_one(self):
+        from agentx_ai.exceptions import NoModelChosenError
+        agent = self._agent(configured=[])
+        with self.assertRaises(NoModelChosenError) as caught:
+            agent.resolve_model()
+        self.assertEqual(str(caught.exception), self.NO_PROVIDER)
+
+    def test_disabled_fallback_still_says_where_to_choose(self):
+        from agentx_ai.exceptions import NoModelChosenError
+        cfg = self._cfg(**{"models.fallback_enabled": False})
+        agent = self._agent(configured=["openrouter"], cfg=cfg)
+        with self.assertRaises(NoModelChosenError) as caught:
+            agent.resolve_model()
+        self.assertEqual(str(caught.exception), self.NO_MODEL)
+
+    def test_a_chosen_model_keeps_its_provider_error(self):
+        """Someone who picked lmstudio:llama3.2 needs to hear LM Studio is missing."""
+        from agentx_ai.exceptions import ModelNotFoundError, NoModelChosenError
+        agent = self._agent(configured=["openrouter"], default_model="lmstudio:llama3.2")
+        with self.assertRaises(ModelNotFoundError) as caught:
+            agent.resolve_model()
+        self.assertNotIsInstance(caught.exception, NoModelChosenError)
+        self.assertIn("Provider 'lmstudio' not configured", str(caught.exception))
+
+    def test_floor_still_runs_on_lm_studio_when_connected(self):
+        """Offline-first is unchanged: with LM Studio connected, the floor works."""
+        agent = self._agent(configured=["lmstudio", "openrouter"])
+        provider, model_id, note = agent.resolve_model()
+        self.assertEqual((provider, model_id, note), ("<provider:lmstudio>", "llama3.2", None))
+
+    def test_floor_reaches_a_global_default_through_the_chain(self):
+        """Paths that build the agent without reading the global default (background
+        jobs, /agent/chat) still land on it: the user chose that model."""
+        cfg = self._cfg(**{"preferences.default_model": "openrouter:acme/model"})
+        agent = self._agent(configured=["openrouter"], cfg=cfg)
+        provider, model_id, note = agent.resolve_model()
+        self.assertEqual((provider, model_id), ("<provider:openrouter>", "acme/model"))
+        self.assertIsNotNone(note)
+
+    def test_task_on_an_unrunnable_floor_fails_before_planning(self):
+        """/agent/run checks the floor first: the planner and reasoning would
+        otherwise each raise their own provider error from deep inside a step."""
+        from unittest.mock import patch
+        from agentx_ai.agent.core import AgentStatus
+        agent = self._agent(configured=["openrouter"])
+        with patch("agentx_ai.agent.planner.TaskPlanner") as planner:
+            result = agent.run("Weigh two readings of the same evidence.")
+        planner.assert_not_called()
+        self.assertEqual(result.status, AgentStatus.FAILED)
+        self.assertIn(self.NO_MODEL, result.answer)
+
+    def test_chat_stream_error_event_says_where_to_choose(self):
+        """The walkthrough turn end to end: no model on the request, no agent
+        profile, no global default, OpenRouter connected. The stream's `error`
+        event must carry the actionable message, not the provider error."""
+        import asyncio
+        from unittest.mock import MagicMock, patch
+        from django.test import RequestFactory
+        from agentx_ai import views
+        from agentx_ai.agent.session import SessionManager
+
+        cfg = self._cfg()
+        reg = self._registry(cfg, configured=["openrouter"])
+        captured = {}
+
+        def _capture(factory, **_kwargs):
+            captured["factory"] = factory
+            return "run-test"
+
+        async def _drain():
+            return [chunk async for chunk in captured["factory"]()]
+
+        request = RequestFactory().post(
+            "/api/agent/chat/stream",
+            data=json.dumps({"message": "hello", "use_memory": False}),
+            content_type="application/json",
+        )
+        with patch("agentx_ai.streaming.chat_run.start_chat_run", side_effect=_capture), \
+                patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+                patch("agentx_ai.agent.profiles.get_profile_manager", return_value=MagicMock()), \
+                patch("agentx_ai.agent.core.get_registry", return_value=reg), \
+                patch("agentx_ai.agent.session.get_session_manager", return_value=SessionManager()), \
+                patch("agentx_ai.agent.conversation_history.hydrate_session_from_history"), \
+                patch("agentx_ai.views._resolve_turn_workspace", return_value=(None, False)):
+            asyncio.run(views.agent_chat_stream(request))
+            events = asyncio.run(_drain())
+
+        errors = [e for e in events if e.startswith("event: error")]
+        self.assertEqual(len(errors), 1, events)
+        payload = json.loads(errors[0].split("data: ", 1)[1])
+        self.assertEqual(payload["error"], self.NO_MODEL)
 
 
 class MemoryPoisoningTest(TestCase):
