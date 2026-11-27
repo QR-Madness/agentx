@@ -428,6 +428,9 @@ OpenAI-compatible endpoint. Four properties hold:
    an optimistic guess, and `describe_route` returns `known: false` with **null** capabilities for a
    model the provider's catalog doesn't list. Publishing a provider default as if it were the
    model's fact is precisely how a silently-demoted turn looks healthy while memory degrades.
+   The same holds at turn time: capabilities that size a chat turn are read only after
+   `capabilities.warm_catalog_for`, because every registry reload (each Settings save) leaves the
+   catalogs empty and a cold read *is* the provider default (v0.21.300).
 **Egress:** `/providers/test` and `/providers/custom` fetch a caller-supplied URL, so they run
 behind `providers/egress.py`. The discriminator is **cluster exposure** (`AGENTX_PUBLIC_HOST` /
 `AGENTX_GATEWAY_TOKEN`), *not* `AGENTX_AUTH_ENABLED` — that defaults to true on a plain local
@@ -437,7 +440,8 @@ install, so keying off it would block the LAN LM Studio setup the local case exi
 **Why:** OpenRouter-first is a product position, not a reason to be a closed platform; and the
 capability-honesty rules are what stop the catalog from making the failure it exists to expose
 harder to see. **Source:** Providers overhaul Slice 1; `ProviderCatalogTest`,
-`ProviderCatalogRegistryTest`, `ProviderEgressGuardTest`, `ConfigRedactionTest`.
+`ProviderCatalogRegistryTest`, `ProviderEgressGuardTest`, `ConfigRedactionTest`; the turn-time warm:
+`CatalogWarmBeforeBudgetTest`.
 
 ### ADR-16 — OpenRouter linking: nonce-in-path, server-side exchange, local-only unlink
 **Decision:** Account linking runs OAuth PKCE **server-side**
