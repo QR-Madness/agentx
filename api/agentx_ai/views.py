@@ -2383,22 +2383,16 @@ async def openrouter_model_endpoints(request, author: str, slug: str):
 def get_agent():
     """Get or create Agent instance lazily."""
     import os
-    from .agent import Agent, AgentConfig
+    from .agent import Agent, AgentConfig, resolve_agent_model
     from .config import get_config_manager
 
-    # Priority: DEFAULT_MODEL env > configured global default (Settings) > the floor
-    # (LM Studio, offline-first last resort). Previously this skipped the configured
-    # default, so the non-chat agent always ran on LM Studio regardless of the model
-    # chosen. Empty when neither is set: AgentConfig then applies the floor and marks
-    # it, so a task on an install without LM Studio fails with NoModelChosenError.
-    default_model = (
-        os.environ.get("DEFAULT_MODEL")
-        or get_config_manager().get("preferences.default_model")
-        or ""
-    )
-
+    # Model: the shared agent chain, with the DEFAULT_MODEL env var in the request
+    # slot (this singleton serves no request model or agent profile): DEFAULT_MODEL
+    # env > configured global default (Settings) > the floor (LM Studio, offline-first
+    # last resort). Empty when neither is set: AgentConfig then applies the floor and
+    # marks it, so a task on an install without LM Studio fails with NoModelChosenError.
     agent = Agent(AgentConfig(
-        default_model=default_model,
+        default_model=resolve_agent_model(os.environ.get("DEFAULT_MODEL")) or "",
         enable_planning=True,
         enable_reasoning=True,
         # The global default strategy (Settings) was previously dead config —
@@ -2472,11 +2466,17 @@ def agent_chat(request):
         return JsonResponse({'error': f'Invalid JSON: {str(e)}'}, status=400)
 
     # Get agent, optionally with custom model and settings
-    from .agent import Agent, AgentConfig
+    from .agent import Agent, AgentConfig, resolve_agent_model
     config_kwargs = {"enable_memory": use_memory}
     if model:
-        config_kwargs["default_model"] = model
         logger.info(f"Using custom model for chat: {model}")
+    # Model: request > global default (Settings) > the floor, the chain every agent
+    # builder shares (this endpoint takes no agent profile; profile_id is a prompt
+    # profile). It used to read only the request model, so with LM Studio connected
+    # a chat sent without one ran on the floor even when a global default was set.
+    resolved_model = resolve_agent_model(model)
+    if resolved_model:
+        config_kwargs["default_model"] = resolved_model
     # Note: temperature (_temperature) is reserved for future implementation
     agent = Agent(AgentConfig(**config_kwargs))
 
@@ -2687,21 +2687,18 @@ async def agent_chat_stream(request):
             "enable_memory": use_memory,
         }
 
-        # Model: request > profile > global default (settings) > the floor.
-        # The user's global default lives in `preferences.default_model` (set in
-        # Settings). Without it here, a profile with no model set silently fell through
-        # to the floor (`agent.core.FLOOR_MODEL`, LM Studio) — so every turn hit LM
-        # Studio regardless of the model chosen in settings. Empty strings coerce to
-        # None so a blank profile/request value can't outrank the configured default.
+        # Model: request > profile > global default (settings) > the floor, the chain
+        # every agent builder shares (`agent.core.resolve_agent_model`). The user's
+        # global default lives in `preferences.default_model` (set in Settings).
+        # Without it here, a profile with no model set silently fell through to the
+        # floor (`agent.core.FLOOR_MODEL`, LM Studio) — so every turn hit LM Studio
+        # regardless of the model chosen in settings. Blank request/profile values
+        # count as unset, so they can't outrank the configured default.
         # Nothing resolved ⇒ AgentConfig sits on the floor and marks it, and
         # `agent.resolve_model()` below turns an unrunnable floor into
         # NoModelChosenError, whose message says where to choose a model.
-        from .config import get_config_manager as _get_cfg
-        resolved_model = resolve_with_priority(
-            model or None,
-            (agent_profile.default_model or None) if agent_profile else None,
-            _get_cfg().get("preferences.default_model") or None,
-        )
+        from .agent import resolve_agent_model
+        resolved_model = resolve_agent_model(model, agent_profile)
         if resolved_model:
             config_kwargs["default_model"] = resolved_model
 
@@ -4957,15 +4954,12 @@ async def agent_plan_resume(request, plan_id):
             )
 
             config_kwargs: dict = {"enable_memory": use_memory}
-            # request > profile > global default (settings) > the floor — see
-            # agent_chat_stream: without the settings default an unset profile falls
-            # to the LM Studio floor (and resolve_model below to NoModelChosenError).
-            from .config import get_config_manager as _get_cfg
-            resolved_model = resolve_with_priority(
-                model or None,
-                (agent_profile.default_model or None) if agent_profile else None,
-                _get_cfg().get("preferences.default_model") or None,
-            )
+            # request > profile > global default (settings) > the floor, the shared
+            # agent chain — see agent_chat_stream: without the settings default an
+            # unset profile falls to the LM Studio floor (and resolve_model below to
+            # NoModelChosenError).
+            from .agent import resolve_agent_model
+            resolved_model = resolve_agent_model(model, agent_profile)
             if resolved_model:
                 config_kwargs["default_model"] = resolved_model
             if agent_profile is not None:

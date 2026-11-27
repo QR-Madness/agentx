@@ -150,26 +150,25 @@ def _run_job(job: dict[str, Any]) -> None:
     )
 
     try:
-        from ..agent import Agent, AgentConfig
+        from ..agent import Agent, AgentConfig, resolve_agent_model
         from ..agent.profiles import get_profile_manager
-        from ..streaming.helpers import resolve_with_priority
 
         config_kwargs: dict[str, Any] = {
             "enable_memory": job.get("use_memory") != "0",
         }
 
         # Resolve the agent profile so the job runs on the same model/prompt
-        # profile as a foreground send would — otherwise it falls back to the
-        # global default model (e.g. LM Studio), which is rarely intended.
+        # profile as a foreground send would.
         agent_profile = None
         agent_profile_id = job.get("agent_profile_id") or None
         if agent_profile_id:
             agent_profile = get_profile_manager().get_profile(agent_profile_id)
 
-        resolved_model = resolve_with_priority(
-            job.get("model") or None,
-            agent_profile.default_model if agent_profile else None,
-        )
+        # Model: job > profile > global default (Settings) > the floor, the chain
+        # every agent builder shares. It used to stop at the profile, so with LM
+        # Studio connected a job with no model ran on the floor even when a global
+        # default was set.
+        resolved_model = resolve_agent_model(job.get("model"), agent_profile)
         if resolved_model:
             config_kwargs["default_model"] = resolved_model
         if agent_profile and agent_profile.prompt_profile_id:

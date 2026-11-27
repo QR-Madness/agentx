@@ -6775,6 +6775,11 @@ components:
           type: string
         model:
           type: string
+          description: >-
+            Model for this turn (`provider:model`). Unset or blank: the agent
+            profile's model (stream only), then the Global Default Model
+            (`preferences.default_model`), then the LM Studio floor, which stops
+            with "No model chosen" when LM Studio isn't connected.
         profile_id:
           type: string
         agent_profile_id:

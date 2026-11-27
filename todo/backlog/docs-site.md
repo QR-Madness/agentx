@@ -118,9 +118,11 @@ Each one is a code change, so it belongs outside the docs track:
     optional and tracks only the role keys), offer "Open Model Roles" when the first provider
     connects while `preferences.default_model` is empty, and correct the Model Roles hint "No
     global default — each agent uses its profile model", which is wrong for profiles that pin none.
-  - **Open, related:** background chat jobs (`background/chat_jobs.py`) and `/api/agent/chat` build
-    the agent without the Global Default Model, so with LM Studio connected they run on LM Studio
-    even when a global default is set.
+  - **Done (v0.21.298), related:** background chat jobs (`background/chat_jobs.py`) and
+    `/api/agent/chat` built the agent without the Global Default Model, so with LM Studio connected
+    they ran on LM Studio even when a global default was set. Every agent builder now takes its
+    model from `agent.core.resolve_agent_model` (request → agent profile → Global Default Model →
+    floor), the same chain as streaming chat.
 - **The Memory panel doesn't reload after Consolidate finishes.** The Facts tab shows "No facts
   found" until you press refresh, while the overview counts are already updated.
 - **The context meter reads "100% context" (in warning colour)** on a conversation using
