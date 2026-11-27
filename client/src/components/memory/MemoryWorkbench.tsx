@@ -101,12 +101,12 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
 
   const {
     strategies, total: strategiesTotal, hasNext: strategiesHasNext,
-    loading: strategiesLoading, error: strategiesError,
+    loading: strategiesLoading, error: strategiesError, refresh: refreshStrategies,
   } = useMemoryStrategies(channel, currentPage);
 
   const {
     procedures, total: proceduresTotal, hasNext: proceduresHasNext,
-    loading: proceduresLoading, error: proceduresError,
+    loading: proceduresLoading, error: proceduresError, refresh: refreshProcedures,
   } = useMemoryProcedures(channel, currentPage);
 
   // ESC to close + body scroll lock (bare full-screen surface owns these).
@@ -158,13 +158,20 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
       const f = result.results?.consolidate?.facts ?? 0;
       const r = result.results?.consolidate?.relationships ?? 0;
       setConsolidateMessage({ type: 'success', text: `Extracted ${e} entities, ${f} facts, ${r} relationships` });
-      refreshStats();
-      refreshChannels();
       setTimeout(() => setConsolidateMessage(null), 5000);
     } catch (err) {
       setConsolidateMessage({ type: 'error', text: `Consolidation failed: ${(err as Error).message}` });
       setTimeout(() => setConsolidateMessage(null), 5000);
     }
+    // Refetch everything, even after a failure: the pipeline runs every job and
+    // fails the run if any one fails, so the other jobs may still have written.
+    // The channel is unchanged, so the page, filters and selection stay as they are.
+    refreshStats();
+    refreshChannels();
+    refreshEntities();
+    refreshFacts();
+    refreshStrategies();
+    refreshProcedures();
   };
 
   const handleExport = async () => {
