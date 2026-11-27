@@ -75,6 +75,8 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
   const [selectedProcedure, setSelectedProcedure] = useState<MemoryProcedure | null>(null);
 
   const [consolidateMessage, setConsolidateMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // Bumped by reloadAll: the Explore graph runs its own queries and refetches when this changes.
+  const [graphRefreshToken, setGraphRefreshToken] = useState(0);
 
   const { stats, loading: statsLoading, refresh: refreshStats } = useMemoryStats();
   const { channels, refresh: refreshChannels } = useMemoryChannels();
@@ -151,6 +153,19 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
     setActiveArea('entities');
   };
 
+  // Refetch everything the workbench shows, the Explore graph included, keeping
+  // the page, filters and selection. Extract resets the channel instead, so its
+  // hooks refetch through their inputs.
+  const reloadAll = () => {
+    refreshStats();
+    refreshChannels();
+    refreshEntities();
+    refreshFacts();
+    refreshStrategies();
+    refreshProcedures();
+    setGraphRefreshToken(token => token + 1);
+  };
+
   const handleConsolidate = async () => {
     try {
       const result = await consolidate();
@@ -163,15 +178,9 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
       setConsolidateMessage({ type: 'error', text: `Consolidation failed: ${(err as Error).message}` });
       setTimeout(() => setConsolidateMessage(null), 5000);
     }
-    // Refetch everything, even after a failure: the pipeline runs every job and
-    // fails the run if any one fails, so the other jobs may still have written.
-    // The channel is unchanged, so the page, filters and selection stay as they are.
-    refreshStats();
-    refreshChannels();
-    refreshEntities();
-    refreshFacts();
-    refreshStrategies();
-    refreshProcedures();
+    // Reload even after a failure: the pipeline runs every job and fails the
+    // run if any one fails, so the other jobs may still have written.
+    reloadAll();
   };
 
   const handleExport = async () => {
@@ -247,10 +256,7 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
       'Import complete',
     );
     setPendingImport(null);
-    refreshStats();
-    refreshChannels();
-    refreshEntities();
-    refreshFacts();
+    reloadAll();
   };
 
   // ── Master-detail (desktop: side-by-side; mobile: one pane at a time) ──
@@ -293,7 +299,7 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
         return <OverviewPanel stats={stats} loading={statsLoading} onOpenChannel={openChannelEntities} />;
 
       case 'explore':
-        return <div className="mem-fill"><MemoryGraphView channel={channel} /></div>;
+        return <div className="mem-fill"><MemoryGraphView channel={channel} refreshToken={graphRefreshToken} /></div>;
 
       case 'user-history':
         return <div className="mem-fill"><UserHistoryTab /></div>;
@@ -450,7 +456,7 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
               {extracting ? <RefreshCw size={16} className="spin" /> : <PackageOpen size={16} />}
               <span className="mem-action-label"> Extract</span>
             </Button>
-            <Button variant="ghost" onClick={() => { refreshStats(); refreshChannels(); refreshEntities(); refreshFacts(); }}
+            <Button variant="ghost" onClick={reloadAll}
               disabled={statsLoading} title="Refresh">
               <RefreshCw size={18} className={statsLoading ? 'spin' : ''} />
             </Button>

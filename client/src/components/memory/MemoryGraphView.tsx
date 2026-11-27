@@ -4,7 +4,7 @@
 // conversations). As the flat list sections are retired, this becomes the
 // single explorer surface.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { RefreshCw, GitBranch, Search } from 'lucide-react';
 import {
   ReactFlow, Background, Controls, Handle, Position,
@@ -69,15 +69,30 @@ function radialLayout(
   return { nodes, edges };
 }
 
-export function MemoryGraphView({ channel = '_all' }: { channel?: string }) {
+export function MemoryGraphView({ channel = '_all', refreshToken = 0 }: {
+  channel?: string;
+  /** Change it to refetch in place (the workbench bumps it after Consolidate, Import and Refresh). */
+  refreshToken?: number;
+}) {
   // Selection is mutually exclusive: an entity OR a procedure is centered.
   const [graphEntityId, setGraphEntityId] = useState<string | null>(null);
   const [graphProcedureId, setGraphProcedureId] = useState<string | null>(null);
   const [entitySearch, setEntitySearch] = useState('');
 
-  const { entities, loading: entitiesLoading } = useMemoryEntities(channel, 1, entitySearch);
-  const { procedures, loading: proceduresLoading } = useMemoryProcedures(channel, 1);
-  const { graph, loading: graphLoading } = useEntityGraph(graphEntityId);
+  const { entities, loading: entitiesLoading, refresh: refreshEntities } = useMemoryEntities(channel, 1, entitySearch);
+  const { procedures, loading: proceduresLoading, refresh: refreshProcedures } = useMemoryProcedures(channel, 1);
+  const { graph, loading: graphLoading, refresh: refreshGraph } = useEntityGraph(graphEntityId);
+
+  // Refetch when the token changes, keeping the selection and search. The
+  // token seen at mount is skipped: the hooks fetch on their own then.
+  const seenRefreshToken = useRef(refreshToken);
+  useEffect(() => {
+    if (seenRefreshToken.current === refreshToken) return;
+    seenRefreshToken.current = refreshToken;
+    refreshEntities();
+    refreshProcedures();
+    refreshGraph();
+  }, [refreshToken, refreshEntities, refreshProcedures, refreshGraph]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
