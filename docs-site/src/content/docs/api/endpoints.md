@@ -714,7 +714,7 @@ SSE events in order:
 | `tool_result` | `{"tool": "name", "content": "..."}` | Tool result (truncated to 500 chars) |
 | `workspace_attached` | `{"workspace_id": "..."}` | A generated image landed in a workspace; emitted after the `image` exhibit so a conversation with no workspace can durably attach the personal Home store client-side |
 | `done` | `{"task_id": "...", "thinking": "...", "has_thinking": bool, "total_time_ms": float, "session_id": "...", "context_window": int, "context_used": int, "context_summarized": bool, "context_dropped_turns": int, "thinking_pattern": "cot"|null, ...}` | Generation complete. `thinking_pattern` = the Thinking Pattern that shaped this turn (null = plain). `context_summarized` = a rolling summary covers older turns; `context_dropped_turns` = verbatim turns the ledger dropped this turn (0 when everything fit) — both feed the client's context chip |
-| `error` | `{"error": "message"}` | On failure |
+| `error` | `{"error": "message", "code"?: "..."}` | On failure. `code` is a stable reason, present only for errors a client can act on: `no_model_chosen` (set the Global Default Model in Settings → Model Roles) and `no_provider_connected` (connect a provider in Settings → Model Providers first) |
 | `close` | `{}` | Run settled; tail ends |
 
 The streaming endpoint supports the same tool-use loop as the non-streaming endpoint (up to 10 rounds). Memory storage happens after the stream completes.

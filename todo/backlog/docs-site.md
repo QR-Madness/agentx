@@ -113,20 +113,46 @@ Each one is a code change, so it belongs outside the docs track:
   - **Done (v0.21.297):** the turn stops with "No model chosen: set the Global Default Model in
     Settings → Model Roles, or pick a model for this conversation." (`NoModelChosenError`, raised
     by `Agent.resolve_model` only when nothing chose a model; never a silent cloud pick).
-  - **Open, proposed:** an onboarding nudge. Add a required "Choose a Global Default Model" step to
-    the Settings Overview setup list (`OverviewSection.tsx` `SETUP_STEPS`: today's `roles` step is
-    optional and tracks only the role keys), offer "Open Model Roles" when the first provider
-    connects while `preferences.default_model` is empty, and correct the Model Roles hint "No
-    global default — each agent uses its profile model", which is wrong for profiles that pin none.
-  - **Done (v0.21.298), related:** background chat jobs (`background/chat_jobs.py`) and
+  - **Done (v0.21.299):** an onboarding nudge. The Settings Overview lists "Choose a Global Default
+    Model" as a required setup step. While any provider is connected and no default is set, Model
+    Providers shows "Next, choose a Global Default Model" with **Open Model Roles**, which lands on
+    the control. The Model Roles copy now says that agents without a model of their own can't start
+    a conversation until one is set, unless LM Studio is connected. Nothing picks a model for the
+    user. Landing on the control exposed a bug that kept every jump into *another* settings section
+    (Overview rows, search hits) from scrolling to and flashing its setting; fixed in the same PR.
+  - **Done (v0.21.301):** an **Open Model Roles** action on the chat error itself. The SSE `error`
+    event now carries a machine-readable `code` from a small vocabulary on the exception
+    hierarchy (`AgentXError.code`, domain errors only): `no_model_chosen` and
+    `no_provider_connected` (`NoProviderConnectedError`, a subclass). It is additive, so
+    `protocol_version` stays. The chat's error toast offers **Open Model Roles** (landing on the
+    Global Default Model) or **Open Model Providers**. It persists until acted on or dismissed,
+    and a retry replaces it rather than stacking.
+  - **Done (v0.21.302), related:** background chat jobs (`background/chat_jobs.py`) and
     `/api/agent/chat` built the agent without the Global Default Model, so with LM Studio connected
     they ran on LM Studio even when a global default was set. Every agent builder now takes its
     model from `agent.core.resolve_agent_model` (request → agent profile → Global Default Model →
     floor), the same chain as streaming chat.
 - **The Memory panel doesn't reload after Consolidate finishes.** The Facts tab shows "No facts
-  found" until you press refresh, while the overview counts are already updated.
+  found" until you press refresh, while the overview counts are already updated. Fixed in #162,
+  along with Refresh and Import, which skipped Strategies, Procedures and the Explore graph.
 - **The context meter reads "100% context" (in warning colour)** on a conversation using
   "Default model". It seems not to know that model's context window.
+  - **Done (v0.21.300):** "Default model" was incidental; the Settings save before the turn was
+    the cause. Every save reloads the provider registry, which drops the fetched model catalogs,
+    and the next turn read its capabilities cold: OpenRouter's and the AI Gateway's 8192-token
+    fallback stood in for a 1M window and sized the turn (output and tool-loop budgets) as well as
+    the meter. Turns now warm the catalog first (`providers/capabilities.warm_catalog_for`, in the
+    stream and in `Agent.chat`), and a fresh "Default model" conversation seeds its chip from the
+    Global Default Model. Conversations that hit the bug keep their stored 8192 reading until their
+    next turn.
+  - **Open, proposed:** send `context_window: null` in `start`/`done` when the provider's catalog
+    doesn't list the model, so the meter hides rather than showing a percentage of a fallback. It
+    changes the SSE contract (`int` to nullable), and filtered or static catalogs need care: OpenAI
+    lists only `gpt-`/`o1-`/`o3-` ids and Anthropic falls back to a built-in list, so an unlisted id
+    can still be a real model.
+  - **Open, related:** assistant turns record the bare model id (`done.model`), while the model
+    catalog's ids are `provider:model`. The chip's backfill for older conversations and
+    `MetadataBar`'s cost backfill therefore never match the catalog.
 - **Two names for the default memory channel.** Profiles and the docs say `_global`, but turns
   and facts are stored under `_default` (`agent/core.py`), which is what the Memory panel shows.
 - **The embeddings card on Model Providers says "Local · Locked"** even when cloud embeddings

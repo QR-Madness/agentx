@@ -38,6 +38,7 @@ from .utils.responses import (
     json_success,
     parse_json_body,
     require_methods,
+    stream_error_payload,
 )
 from datetime import UTC
 
@@ -2498,14 +2499,23 @@ def agent_chat(request):
     })
 
 
-def _resolve_model_budget(provider, model_id: str):
+async def _resolve_model_budget(provider, model_id: str):
     """Resolve a model's capabilities + output-budget inputs for a chat turn.
 
     Returns ``(caps, context_window, max_output_override, max_output_tokens)``.
     Reasoning models get a larger default budget: thinking tokens count against
     max_tokens, so the bare-4096 fallback starves the visible answer.
+
+    The provider catalog is warmed first. A Settings save reloads the registry,
+    which drops every fetched catalog, and nothing else refills it before this
+    point of the turn. Read cold, a 1M-token model reported its provider's 8192
+    fallback window, which then sized the turn's output and tool-loop budgets
+    and reached the client's meter as "100% context".
     """
     from .config import get_context_limit_overrides
+    from .providers.capabilities import warm_catalog_for
+
+    await warm_catalog_for(provider, model_id)
     caps = provider.get_capabilities(model_id)
     overrides = get_context_limit_overrides(model_id, provider.name)
     context_window = overrides.get("context_window") or caps.context_window
@@ -2908,7 +2918,7 @@ async def agent_chat_stream(request):
             # drive both the token-budget assembly and the direct-mode decision below.
             from .config import get_config_manager
             caps, context_window, max_output_override, max_output_tokens = (
-                _resolve_model_budget(provider, model_id)
+                await _resolve_model_budget(provider, model_id)
             )
 
             # Vision gating: only feed attached images to a model that can see them.
@@ -3844,7 +3854,9 @@ async def agent_chat_stream(request):
 
         except Exception as e:
             logger.error(f"Streaming error: {e}")
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            # `code` rides along when the error has one (NoModelChosenError →
+            # "no_model_chosen"), so the client can offer the settings fix.
+            yield f"event: error\ndata: {json.dumps(stream_error_payload(e))}\n\n"
             return  # Ensure generator terminates after error
         finally:
             try:
@@ -5060,7 +5072,7 @@ async def agent_plan_resume(request, plan_id):
             return
         except Exception as e:
             logger.error(f"Plan resume error: {e}")
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+            yield f"event: error\ndata: {json.dumps(stream_error_payload(e))}\n\n"
             return
 
     from .streaming.chat_run import start_chat_run, tail_chat_run

@@ -31,6 +31,7 @@ import { SECTION_HIERARCHY, getAllSections } from './index';
 import { useSettingsManifest } from '../SettingsManifestContext';
 import { useSharedSettingsSearch } from '../SettingsSearchContext';
 import { humanizeSettingKey } from '../settingLabel';
+import { DEFAULT_MODEL_SECTION, DEFAULT_MODEL_SETTING, DEFAULT_MODEL_WHY } from '../defaultModel';
 import type { SettingsManifestEntry } from '../../../lib/api';
 
 interface OverviewSectionProps {
@@ -78,6 +79,8 @@ const SETUP_STEPS: {
   why: string;
   section: string;
   optional?: boolean;
+  /** `store:key` of the one control this step is about, to land on it. */
+  focus?: string;
   /** Any one of these being configured completes the step. */
   keys: string[];
 }[] = [
@@ -94,6 +97,18 @@ const SETUP_STEPS: {
       'config:providers.lmstudio.base_url',
       'config:providers.custom',
     ],
+  },
+  {
+    // Required, unlike the roles below it: an agent whose profile names no
+    // model runs on this, and with no LM Studio to fall back to, its first
+    // conversation stops with "No model chosen". The roles step can't stand in
+    // for it, because the roles drive background work, not conversation.
+    id: 'default-model',
+    label: 'Choose a Global Default Model',
+    why: DEFAULT_MODEL_WHY,
+    section: DEFAULT_MODEL_SECTION,
+    focus: DEFAULT_MODEL_SETTING,
+    keys: [DEFAULT_MODEL_SETTING],
   },
   {
     id: 'roles',
@@ -257,7 +272,7 @@ export default function OverviewSection({ onNavigate, onFocusSetting }: Overview
                     <button
                       type="button"
                       className="settings-overview-row-btn settings-overview-step"
-                      onClick={() => goTo(step.section)}
+                      onClick={() => goTo(step.section, step.focus)}
                     >
                       <span
                         className={`settings-overview-step-mark${step.done ? ' is-done' : ''}`}
