@@ -116,6 +116,22 @@ Each one is a code change, so it belongs outside the docs track:
   found" until you press refresh, while the overview counts are already updated.
 - **The context meter reads "100% context" (in warning colour)** on a conversation using
   "Default model". It seems not to know that model's context window.
+  - **Done (v0.21.297):** "Default model" was incidental; the Settings save before the turn was
+    the cause. Every save reloads the provider registry, which drops the fetched model catalogs,
+    and the next turn read its capabilities cold: OpenRouter's and the AI Gateway's 8192-token
+    fallback stood in for a 1M window and sized the turn (output and tool-loop budgets) as well as
+    the meter. Turns now warm the catalog first (`providers/capabilities.warm_catalog_for`, in the
+    stream and in `Agent.chat`), and a fresh "Default model" conversation seeds its chip from the
+    Global Default Model. Conversations that hit the bug keep their stored 8192 reading until their
+    next turn.
+  - **Open, proposed:** send `context_window: null` in `start`/`done` when the provider's catalog
+    doesn't list the model, so the meter hides rather than showing a percentage of a fallback. It
+    changes the SSE contract (`int` to nullable), and filtered or static catalogs need care: OpenAI
+    lists only `gpt-`/`o1-`/`o3-` ids and Anthropic falls back to a built-in list, so an unlisted id
+    can still be a real model.
+  - **Open, related:** assistant turns record the bare model id (`done.model`), while the model
+    catalog's ids are `provider:model`. The chip's backfill for older conversations and
+    `MetadataBar`'s cost backfill therefore never match the catalog.
 - **Two names for the default memory channel.** Profiles and the docs say `_global`, but turns
   and facts are stored under `_default` (`agent/core.py`), which is what the Memory panel shows.
 - **The embeddings card on Model Providers says "Local · Locked"** even when cloud embeddings

@@ -4,7 +4,8 @@
  * A single in-memory cache so the many model pickers across the app
  * (ModelPickerModal, ModelPickerField, chat metadata) don't each fire a
  * `/api/providers/models` request. Lives apart from any component so it can be
- * imported without pulling in React UI.
+ * imported without pulling in React UI. Also home to `fetchGlobalDefaultModel`,
+ * the model an unpinned conversation ("Default model") runs on.
  */
 
 import { api, type ModelInfo } from '../../lib/api';
@@ -34,6 +35,22 @@ export function fetchModelsOnce(): Promise<ModelInfo[]> {
 export function invalidateModelCache() {
   modelCache = null;
   modelCachePromise = null;
+}
+
+/**
+ * The Global Default Model (`preferences.default_model`): what a conversation
+ * on "Default model" runs on when its agent pins no model. Null when unset or
+ * unreadable. Deliberately uncached, so a change on Settings → Model Roles
+ * applies to the next conversation without an invalidation hook.
+ */
+export async function fetchGlobalDefaultModel(): Promise<string | null> {
+  try {
+    const config = await api.getConfig();
+    const prefs = (config.preferences ?? {}) as { default_model?: string | null };
+    return prefs.default_model || null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
