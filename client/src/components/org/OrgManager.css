@@ -86,17 +86,7 @@
   min-width: 0;
   position: relative;
   background: var(--surface-sunken);
-  /* React Flow reads these, so the chart follows the active theme. */
-  --xy-background-color: transparent;
-  --xy-background-pattern-color: var(--border-subtle);
-  --xy-edge-stroke: var(--border-emphasis);
-  --xy-edge-stroke-width: 1.5;
-  --xy-controls-button-background-color: var(--surface-raised);
-  --xy-controls-button-background-color-hover: var(--surface-hover);
-  --xy-controls-button-color: var(--text-secondary);
-  --xy-controls-button-color-hover: var(--text-primary);
-  --xy-controls-button-border-color: var(--border-default);
-  --xy-controls-box-shadow: var(--shadow-md);
+  /* The chart's own colours come from `.ax-flow` (styles/flow.css). */
 }
 
 .org-dock {
