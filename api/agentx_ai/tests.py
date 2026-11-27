@@ -423,6 +423,51 @@ class MCPOAuthTest(TestCase):
                 assert pub_info is not None
                 self.assertEqual(pub_info.token_endpoint_auth_method, "none")
 
+    def test_callback_handler_returns_the_sdk_result_with_issuer(self) -> None:
+        # mcp 2's OAuthClientProvider takes an AuthorizationCodeResult (code,
+        # state and the RFC 9207 issuer), not the v1 (code, state) tuple.
+        import asyncio
+        import tempfile
+        import threading
+        import time
+        from unittest.mock import patch as _patch
+        from pathlib import Path
+        from mcp.client.auth import AuthorizationCodeResult
+        from agentx_ai.mcp import oauth_flow, oauth_storage
+        from agentx_ai.mcp.client import MCPClientManager
+        from agentx_ai.mcp.server_registry import ServerConfig, TransportType
+
+        loop = asyncio.new_event_loop()
+        t = threading.Thread(target=loop.run_forever, daemon=True)
+        t.start()
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                with _patch.object(oauth_storage, "oauth_data_dir", return_value=Path(tmp)):
+                    flow = oauth_flow.begin_flow("cbr", loop)
+                    config = ServerConfig(
+                        name="cbr", transport=TransportType.STREAMABLE_HTTP,
+                        url="https://x/mcp", auth={"type": "oauth"},
+                    )
+                    provider = MCPClientManager()._build_oauth_provider(config, interactive_flow=flow)
+                    assert provider is not None
+                    callback = provider.context.callback_handler
+                    assert callback is not None
+                    pending = asyncio.run_coroutine_threadsafe(callback(), loop)
+                    # Let the handler reach its await first: it refuses a flow that
+                    # had already finished before it was asked (the reauth guard).
+                    time.sleep(0.1)
+                    oauth_flow.publish_authorization_url(flow, "https://a/authorize?state=cbr-state")
+                    oauth_flow.resolve_callback("cbr-state", "code-9", "https://as.example")
+                    result = pending.result(timeout=5)
+                    self.assertIsInstance(result, AuthorizationCodeResult)
+                    self.assertEqual(
+                        (result.code, result.state, result.iss),
+                        ("code-9", "cbr-state", "https://as.example"),
+                    )
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            t.join(timeout=5)
+
     def test_mid_call_reauth_fails_fast_and_clears_tokens(self) -> None:
         # A provider demanding FRESH consent after the sign-in finished
         # (revoked grant / changed scopes) must not hang the tool call or
@@ -500,10 +545,12 @@ class MCPOAuthTest(TestCase):
 
             resolved = oauth_flow.resolve_callback("st123", "authcode")
             self.assertIs(resolved, flow)
-            code, state = asyncio.run_coroutine_threadsafe(
+            code, state, iss = asyncio.run_coroutine_threadsafe(
                 self._await_future(flow.future), loop
             ).result(timeout=5)
-            self.assertEqual((code, state), ("authcode", "st123"))
+            # No issuer on the redirect: None, which the SDK accepts unless the
+            # server advertises RFC 9207 issuer identification.
+            self.assertEqual((code, state, iss), ("authcode", "st123", None))
 
             # Unknown state resolves nothing.
             self.assertIsNone(oauth_flow.resolve_callback("nope", "c"))
@@ -592,10 +639,36 @@ class MCPOAuthTest(TestCase):
             )
             self.assertEqual(resp.status_code, 200)
             self.assertIn(b"authorized", resp.content)
-            code, _ = asyncio.run_coroutine_threadsafe(
+            code, _state, iss = asyncio.run_coroutine_threadsafe(
                 self._await_future(flow.future), loop
             ).result(timeout=5)
             self.assertEqual(code, "the-code")
+            self.assertIsNone(iss)
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+
+    def test_callback_forwards_the_issuer(self) -> None:
+        """RFC 9207: the redirect's `iss` reaches the SDK. mcp 2 checks it, and a
+        server that advertises issuer identification fails the flow without it."""
+        import asyncio
+        import threading
+        from agentx_ai.mcp import oauth_flow
+
+        loop = asyncio.new_event_loop()
+        t = threading.Thread(target=loop.run_forever, daemon=True)
+        t.start()
+        try:
+            flow = oauth_flow.begin_flow("isssrv", loop)
+            oauth_flow.publish_authorization_url(flow, "https://a/authorize?state=iss-state")
+            resp = self._client().get(
+                "/api/mcp/oauth/callback",
+                {"code": "c-1", "state": "iss-state", "iss": "https://as.example"},
+            )
+            self.assertEqual(resp.status_code, 200)
+            result = asyncio.run_coroutine_threadsafe(
+                self._await_future(flow.future), loop
+            ).result(timeout=5)
+            self.assertEqual(result, ("c-1", "iss-state", "https://as.example"))
         finally:
             loop.call_soon_threadsafe(loop.stop)
             t.join(timeout=5)
@@ -1063,7 +1136,7 @@ class MCPCapabilityAwareDiscoveryTest(TestCase):
         session = MagicMock()
         caps = MagicMock()
         caps.resources = resources_cap
-        session.get_server_capabilities.return_value = caps
+        session.initialize_result.capabilities = caps  # mcp 2: no get_server_capabilities()
         session.list_resources = AsyncMock(side_effect=AssertionError("must not be called"))
         config = ServerConfig(name="gd", transport=TransportType.STREAMABLE_HTTP, url="https://x/mcp")
         conn = asyncio.run(manager._setup_connection(session, config))
@@ -1085,7 +1158,7 @@ class MCPCapabilityAwareDiscoveryTest(TestCase):
         session = MagicMock()
         caps = MagicMock()
         caps.resources = MagicMock()  # capability advertised
-        session.get_server_capabilities.return_value = caps
+        session.initialize_result.capabilities = caps
         result = MagicMock()
         result.resources = []
         session.list_resources = AsyncMock(return_value=result)
@@ -11771,6 +11844,29 @@ class MultiModalContentTest(TestCase):
         wire = link.to_wire()
         self.assertEqual(wire["type"], "resource_link")
         self.assertEqual(wire["name"], "spec")
+
+    def test_mcp_2_snake_case_fields_survive_the_conversion(self):
+        """mcp 2 renamed the Python attributes (`mime_type`, `input_schema`) while
+        the wire keeps camelCase. Lookups by the old names didn't fail: they fell
+        back to None and {} silently, so these pin the values through."""
+        from mcp.types import EmbeddedResource, ResourceLink, TextResourceContents, Tool
+        from agentx_ai.content_blocks import block_from_mcp
+        from agentx_ai.mcp.tool_executor import ToolInfo
+
+        res = block_from_mcp(EmbeddedResource(
+            type="resource",
+            resource=TextResourceContents(uri="file:///notes.md", text="# Notes", mimeType="text/markdown"),
+        ))
+        self.assertEqual(res.to_wire()["resource"]["mimeType"], "text/markdown")
+
+        link = block_from_mcp(ResourceLink(
+            type="resource_link", name="spec", uri="file:///x", mimeType="application/pdf",
+        ))
+        self.assertEqual(link.to_wire()["mimeType"], "application/pdf")
+
+        schema = {"type": "object", "properties": {"claim": {"type": "string"}}, "required": ["claim"]}
+        info = ToolInfo.from_mcp_tool(Tool(name="weigh", description="Weigh a claim", inputSchema=schema), "srv")
+        self.assertEqual(info.input_schema, schema)
 
     def test_block_from_wire_parses_and_tolerates_unknown(self):
         from agentx_ai.content_blocks import AudioBlock, block_from_wire

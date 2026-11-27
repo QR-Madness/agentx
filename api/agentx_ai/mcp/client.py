@@ -20,7 +20,6 @@ from collections.abc import AsyncGenerator
 
 from anyio import BrokenResourceError, ClosedResourceError
 from mcp import ClientSession
-from pydantic import AnyUrl
 
 from ..exceptions import MCPServerNotFoundError, MCPTransportError
 from .server_registry import ServerConfig, ServerRegistry, TransportType
@@ -302,7 +301,7 @@ class MCPClientManager:
         if not auth_cfg or auth_cfg.get("type") != "oauth":
             return None
 
-        from mcp.client.auth import OAuthClientProvider
+        from mcp.client.auth import AuthorizationCodeResult, OAuthClientProvider
         from mcp.shared.auth import OAuthClientMetadata
 
         from .oauth_flow import publish_authorization_url
@@ -375,10 +374,13 @@ class MCPClientManager:
                 publish_authorization_url(interactive_flow, _augment_authorization_url(url))
                 logger.info(f"OAuth authorization required for '{config.name}' — awaiting user consent")
 
-            async def callback_handler() -> tuple[str, str | None]:
+            async def callback_handler() -> AuthorizationCodeResult:
                 if interactive_flow.future.done():
                     raise _reauth_demanded()
-                return await interactive_flow.future
+                # `iss` is the redirect's RFC 9207 issuer. mcp 2 checks it, and a
+                # server that advertises it fails the flow when it is missing.
+                code, state, iss = await interactive_flow.future
+                return AuthorizationCodeResult(code=code, state=state, iss=iss)
         else:
             async def redirect_handler(url: str) -> None:
                 raise MCPTransportError(
@@ -386,7 +388,7 @@ class MCPClientManager:
                     "connect it from the Connectors & Tools page to sign in."
                 )
 
-            async def callback_handler() -> tuple[str, str | None]:
+            async def callback_handler() -> AuthorizationCodeResult:
                 raise MCPTransportError(
                     f"Server '{config.name}' requires OAuth authorization — "
                     "connect it from the Connectors & Tools page to sign in."
@@ -708,7 +710,8 @@ class MCPClientManager:
         # task group, and the await here dies as a bare CancelledError that
         # `except Exception` can't catch (the whole connect fails with an
         # empty message).
-        caps = session.get_server_capabilities()
+        init = session.initialize_result  # mcp 2: replaces get_server_capabilities()
+        caps = init.capabilities if init is not None else None
         if caps is not None and caps.resources is None:
             self._resource_discovery_errors.pop(config.name, None)
             resources: list[ResourceInfo] = []
@@ -897,7 +900,7 @@ class MCPClientManager:
             return {"error": f"Server '{server_name}' is not connected"}
         
         try:
-            result = await connection.session.read_resource(AnyUrl(uri))
+            result = await connection.session.read_resource(uri)  # mcp 2 takes a str
             return {
                 "uri": uri,
                 "contents": [

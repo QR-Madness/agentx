@@ -37,7 +37,9 @@ class ToolInfo:
         return cls(
             name=tool.name,
             description=tool.description or "",
-            input_schema=tool.inputSchema if hasattr(tool, 'inputSchema') else {},
+            # mcp 2 renamed the attribute (the wire keeps `inputSchema`). The old
+            # hasattr guard would have silently sent every tool with no schema.
+            input_schema=tool.input_schema or {},
             server_name=server_name,
         )
     

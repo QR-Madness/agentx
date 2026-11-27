@@ -1,6 +1,6 @@
 [project]
 name = "agentx-source"
-version = "0.21.303"
+version = "0.21.304"
 description = "AI Agent Platform with MCP Client, Drafting Models & Reasoning Framework"
 requires-python = ">=3.14"
 dependencies = [
@@ -17,7 +17,7 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "redis>=8.1.0",  # legacy_responses (connections.py) is 8.x-only
     # MCP Client
-    "mcp>=1.0.0",
+    "mcp>=2.3.0",  # transports take httpx2 clients; OAuth callbacks return AuthorizationCodeResult (RFC 9207 iss)
     # Model Providers
     "openai>=3.57.0",  # lmstudio_provider passes an httpx2 client (2.x rejects it)
     "anthropic>=2.12.0",  # API 2026-10-21; the provider sends no sampling params
