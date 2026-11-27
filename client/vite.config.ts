@@ -14,7 +14,6 @@ const versions = load(readFileSync(versionsPath, "utf8")) as {
   api: { protocol_version: number };
 };
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // True when Tauri drives the renderer build/dev (it sets these when invoking the
@@ -22,7 +21,6 @@ const host = process.env.TAURI_DEV_HOST;
 // them → `false`. This one literal is the lever: it gates the `src/platform/`
 // import resolvers (so Tauri code is tree-shaken out of the web bundle) and
 // disables the PWA service worker in the desktop shell.
-// @ts-expect-error process is a nodejs global
 const isTauriBuild = process.env.TAURI_ENV_PLATFORM != null || process.env.TAURI_PLATFORM != null;
 
 // https://vite.dev/config/

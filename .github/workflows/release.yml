@@ -88,7 +88,10 @@ jobs:
 
       - name: TypeScript check
         working-directory: client
-        run: bun run tsc --noEmit
+        # The app and vite.config.ts, the same two programs as `task check:types:client`.
+        run: |
+          bun run tsc --noEmit
+          bun run tsc --noEmit -p tsconfig.node.json
 
       - name: Frontend tests
         working-directory: client
