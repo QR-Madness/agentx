@@ -237,3 +237,32 @@
       `AlloyRunTraceModal` + `WorkOrderCard` vs the shared `lib/format.ts` (unify on lib/format);
       the second SSE endpoint's own `close` (views.py ~4400) is driver-deduped like the chat one
       but the pattern deserves one shared terminator.
+
+### Overlay layering — follow-ups from the palette fix (2026-11-27, PR #174)
+
+> Found while making the command palette the top app layer `[v0.21.305]`. The ladder and the
+> Escape rule are in Development-Notes → Client Surface Map → Layering. Each item is a small,
+> standalone client PR.
+
+- [ ] **Escape in the model picker also closes the surface beneath it.** Open the profile editor,
+      click its model field, and press Escape: both the picker and the editor close (confirmed in
+      the browser, and on master too). `ModelPickerModal` is not a modal-stack entry. It handles
+      its keys on a `window` bubble-phase listener, registered after the surface's
+      `useEscapeToClose`, so the surface's listener runs first. Fix: take Escape in the capture
+      phase and `stopPropagation()`, skipping `isFromCommandPalette` events, as `ImageLightbox`
+      does. Leave ↑↓ and Enter in the bubble phase; in capture they would beat the palette's keys.
+      Done when a vitest holds it and the Layering note's "known gap" sentence is gone.
+- [ ] **"Settings: <section>" from the palette while Settings is open — reproduce first.** The
+      commands reopen the same `unified-settings` entry with a new `initialSection`, but
+      `useSettingsNavigation` reads it only in its `useState` initializers. Only `initialFocus` is
+      tracked, with a `seq` counter. Found in the code and not yet reproduced. If confirmed, make a
+      deep link that arrives after mount navigate, including the same section twice in a row (a
+      nonce or `seq` like `focus.seq`). Keep `ChatPanel`'s `onOpenSettings(section, setting)`
+      working.
+- [ ] **Navigating from a modal surface leaves it open.** The palette's "Go to …" commands and ⌘T
+      dismiss only the tab-surfaces (Deck, Memory, Projects). Over Settings, Connectors & Tools,
+      Organization, the Roster or the profile editor, the page changes underneath and stays
+      hidden until the surface closes. This is deliberate for now: those surfaces can hold unsaved
+      work, and Organization guards it ("Discard unsaved changes?") in its own close path.
+      Closing them on navigation first needs a close *request* on the modal stack, which each
+      surface can confirm or veto.
