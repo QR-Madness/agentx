@@ -244,6 +244,10 @@ export function MemoryGraphView({ channel = '_all', refreshToken = 0 }: {
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
             fitView
+            // React Flow's default palette, as before v13 (which follows the OS
+            // unless told otherwise). Theming this view through `--xy-*` tokens,
+            // as the org chart does, is the follow-up that lets it drop this.
+            forceColorMode="light"
             onlyRenderVisibleElements
             minZoom={0.3}
             maxZoom={1.6}

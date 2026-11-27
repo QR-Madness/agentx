@@ -11,7 +11,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Background, Controls, Handle, MarkerType, Position, ReactFlow, ReactFlowProvider, useReactFlow,
-  type BuiltInEdge, type Node, type NodeChange, type NodeProps, type XYPosition,
+  type BuiltInEdge, type Node, type NodeChangeset, type NodeProps, type XYPosition,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { AlertTriangle, UserRound, Users } from 'lucide-react';
@@ -53,6 +53,11 @@ type BandNodeData = { label: string };
 // below, it runs straight down and turns right into each member.
 const SPINE_X = 11;
 const SPINE_OFFSET = CHART.memberIndent - SPINE_X;
+
+// Room around the chart when it is fitted to the view, on each side. React Flow 13
+// reads a bare number as pixels; this is its own default since then, and what the
+// fractional `0.1` gave before (about 4.5% a side).
+const FIT_PADDING = '5%';
 
 const CHIP: Partial<Record<AgentKind, ChipTier>> = {
   ambassador: 'ambassador',
@@ -329,7 +334,7 @@ function CanvasInner({
   // does (the window, or the outline beside it).
   // ...and when the stored layout loads or resets (`fitKey`), but never after a drag.
   useEffect(() => {
-    void fitView({ padding: 0.1, duration: 180 });
+    void fitView({ padding: FIT_PADDING, duration: 180 });
   }, [fitView, box, layout.width, layout.height, fitKey]);
 
   const keyByNodeId = useMemo(() => {
@@ -341,7 +346,7 @@ function CanvasInner({
     return map;
   }, [layout.nodes]);
 
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
+  const onNodesChange = useCallback((changes: NodeChangeset) => {
     setDragging((prev) => {
       let next = prev;
       for (const change of changes) {
@@ -378,7 +383,11 @@ function CanvasInner({
       edges={edges}
       nodeTypes={nodeTypes}
       fitView
-      fitViewOptions={{ padding: 0.1 }}
+      fitViewOptions={{ padding: FIT_PADDING }}
+      // The chart's colours come from our theme tokens (`.org-canvas` in
+      // OrgManager.css). Pinned to light, React Flow's own defaults stay the
+      // ones every theme was designed against; left alone, v13 follows the OS.
+      forceColorMode="light"
       minZoom={0.3}
       maxZoom={1.6}
       nodesDraggable={Boolean(onMoveNode)}

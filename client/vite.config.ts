@@ -62,6 +62,11 @@ export default defineConfig({
       workbox: {
         // Precache the shell only; heavy on-demand assets load from network.
         globPatterns: ["**/*.{js,css,html,woff,woff2}"],
+        // Mermaid 12 ships the ELK layout engine (~1.4 MiB) as an on-demand chunk.
+        // Diagrams render with dagre (MermaidElement pins it), so ELK stays out of
+        // the offline cache; a diagram that asks for ELK still loads it online.
+        // The first entry is Workbox's own default, which setting this replaces.
+        globIgnores: ["**/node_modules/**/*", "**/elk-*.js"],
         cleanupOutdatedCaches: true,
         navigateFallback: "index.html",
         // Let API / well-known routes 404 honestly instead of returning the SPA.
