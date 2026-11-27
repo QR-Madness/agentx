@@ -9,7 +9,7 @@ This module provides the main Agent class that unifies:
 - Memory system for persistent knowledge
 """
 
-from .core import Agent, AgentConfig
+from .core import Agent, AgentConfig, resolve_agent_model
 from .session import Session, SessionManager
 from .context import ContextManager
 from .planner import TaskPlanner, TaskPlan
@@ -17,6 +17,7 @@ from .planner import TaskPlanner, TaskPlan
 __all__ = [
     "Agent",
     "AgentConfig",
+    "resolve_agent_model",
     "Session",
     "SessionManager",
     "ContextManager",
