@@ -85,7 +85,7 @@ mentioned in an earlier one:
 The **Memory** and **User history recall** lines show the agent looking back before it answers.
 In the background, AgentX also turns conversations into lasting **facts**. Open **Memory** in the
 top bar to see them. Consolidation runs every 15 minutes, or you can choose **Consolidate** to run
-it now; if the list hasn't updated afterwards, use the refresh button beside **Extract**.
+it now.
 
 ![What AgentX learned, in the Memory panel](/images/first-session/memory-facts.webp)
 

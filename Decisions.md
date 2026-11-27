@@ -430,7 +430,7 @@ OpenAI-compatible endpoint. Four properties hold:
    model's fact is precisely how a silently-demoted turn looks healthy while memory degrades.
    The same holds at turn time: capabilities that size a chat turn are read only after
    `capabilities.warm_catalog_for`, because every registry reload (each Settings save) leaves the
-   catalogs empty and a cold read *is* the provider default (v0.21.298).
+   catalogs empty and a cold read *is* the provider default (v0.21.299).
 **Egress:** `/providers/test` and `/providers/custom` fetch a caller-supplied URL, so they run
 behind `providers/egress.py`. The discriminator is **cluster exposure** (`AGENTX_PUBLIC_HOST` /
 `AGENTX_GATEWAY_TOKEN`), *not* `AGENTX_AUTH_ENABLED` — that defaults to true on a plain local
