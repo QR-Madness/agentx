@@ -7494,28 +7494,10 @@ class ModelDefaultResolutionTest(TestCase):
             get_agent.reset()
 
 
-class NoModelChosenTest(TestCase):
-    """Nothing chose a model and the floor can't run: say where to choose one.
-
-    A fresh install that connected only OpenRouter and set no Global Default Model
-    failed every conversation whose agent pins no model with "Provider 'lmstudio'
-    not configured. Available providers: openrouter" (found in a walkthrough,
-    2026-11-26). The turn must name where to choose a model, and must never fall
-    through to a cloud model nobody chose, which would spend money without consent.
-
-    Every config here is a stub; live config.json must never decide an outcome.
-    """
-
-    # The docs quote these (getting-started troubleshooting + first session), so
-    # they are asserted verbatim: a wording change has to update the docs too.
-    NO_MODEL = (
-        "No model chosen: set the Global Default Model in Settings → Model Roles, "
-        "or pick a model for this conversation."
-    )
-    NO_PROVIDER = (
-        "No model provider connected: add one in Settings → Model Providers, "
-        "then set the Global Default Model in Settings → Model Roles."
-    )
+class StubModelConfigMixin:
+    """A stub config and provider registry for model-resolution tests, so live
+    config.json never decides an outcome. Configured providers resolve to the
+    string ``<provider:name>``."""
 
     def _cfg(self, **overrides):
         from unittest.mock import MagicMock
@@ -7537,6 +7519,30 @@ class NoModelChosenTest(TestCase):
         reg._provider_configs = {n: ProviderConfig(api_key="x") for n in configured}
         reg.get_provider = lambda n: f"<provider:{n}>"  # type: ignore[assignment]
         return reg
+
+
+class NoModelChosenTest(StubModelConfigMixin, TestCase):
+    """Nothing chose a model and the floor can't run: say where to choose one.
+
+    A fresh install that connected only OpenRouter and set no Global Default Model
+    failed every conversation whose agent pins no model with "Provider 'lmstudio'
+    not configured. Available providers: openrouter" (found in a walkthrough,
+    2026-11-26). The turn must name where to choose a model, and must never fall
+    through to a cloud model nobody chose, which would spend money without consent.
+
+    Every config here is a stub; live config.json must never decide an outcome.
+    """
+
+    # The docs quote these (getting-started troubleshooting + first session), so
+    # they are asserted verbatim: a wording change has to update the docs too.
+    NO_MODEL = (
+        "No model chosen: set the Global Default Model in Settings → Model Roles, "
+        "or pick a model for this conversation."
+    )
+    NO_PROVIDER = (
+        "No model provider connected: add one in Settings → Model Providers, "
+        "then set the Global Default Model in Settings → Model Roles."
+    )
 
     def _agent(self, *, configured, cfg=None, **config):
         from agentx_ai.agent.core import Agent, AgentConfig
@@ -7624,8 +7630,10 @@ class NoModelChosenTest(TestCase):
         self.assertEqual((provider, model_id, note), ("<provider:lmstudio>", "llama3.2", None))
 
     def test_floor_reaches_a_global_default_through_the_chain(self):
-        """Paths that build the agent without reading the global default (background
-        jobs, /agent/chat) still land on it: the user chose that model."""
+        """An agent built with no model, on an install without LM Studio, still lands
+        on a set global default through the registry chain: the user chose that model.
+        Every builder in the app passes the global default itself (see
+        AgentModelChainTest); this covers an agent built directly."""
         cfg = self._cfg(**{"preferences.default_model": "openrouter:acme/model"})
         agent = self._agent(configured=["openrouter"], cfg=cfg)
         provider, model_id, note = agent.resolve_model()
@@ -7686,6 +7694,154 @@ class NoModelChosenTest(TestCase):
         self.assertEqual(payload["error"], self.NO_MODEL)
         # The client offers "Open Model Roles" on this code rather than parsing text.
         self.assertEqual(payload["code"], "no_model_chosen")
+
+
+class AgentModelChainTest(StubModelConfigMixin, TestCase):
+    """Every agent builder resolves its model the same way: request → agent profile
+    → Global Default Model → the floor (``agent.core.resolve_agent_model``).
+
+    Background chat jobs and POST /api/agent/chat used to leave out the global
+    default. With LM Studio connected they ran on the floor (``FLOOR_MODEL``) even
+    when a Global Default Model was set; without LM Studio the registry chain
+    reached the default only by substitution, logging that the floor was
+    unavailable. Every config here is a stub; live config.json must never decide
+    an outcome.
+    """
+
+    DEFAULT = "openrouter:acme/model"
+    MESSAGE = "Weigh two readings of the same evidence."
+
+    def _profile(self, model):
+        from agentx_ai.agent.models import AgentProfile
+        return AgentProfile(id="profile-1", name="Analyst", default_model=model)
+
+    def _capture_chat(self):
+        """Patch ``Agent.chat`` to record each agent it runs on: (agents, patcher)."""
+        from unittest.mock import patch
+        from agentx_ai.agent.core import Agent, AgentResult, AgentStatus
+
+        agents: list[Agent] = []
+
+        def _chat(agent, *_args, **_kwargs):
+            agents.append(agent)
+            return AgentResult(task_id="task-1", status=AgentStatus.COMPLETE, answer="ok")
+
+        return agents, patch.object(Agent, "chat", autospec=True, side_effect=_chat)
+
+    def _run_background_job(self, cfg, profile=None, **job):
+        """Run one background chat job with LM Studio and OpenRouter connected.
+        Returns the agent it ran on and that agent's resolved model."""
+        from unittest.mock import MagicMock, patch
+        from agentx_ai.background import chat_jobs
+
+        reg = self._registry(cfg, configured=["lmstudio", "openrouter"])
+        profiles = MagicMock()
+        profiles.get_profile.return_value = profile
+        agents, chat = self._capture_chat()
+        record = {
+            "job_id": "job-1", "message": self.MESSAGE, "model": "", "profile_id": "",
+            "agent_profile_id": profile.id if profile else "", "session_id": "",
+            "use_memory": "0", **job,
+        }
+        with chat, patch.object(chat_jobs, "_update_job") as update, \
+                patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+                patch("agentx_ai.agent.profiles.get_profile_manager", return_value=profiles), \
+                patch("agentx_ai.agent.core.get_registry", return_value=reg):
+            chat_jobs._run_job(record)
+            # _run_job records a failure rather than raising, so check it finished.
+            self.assertEqual(update.call_args_list[-1].kwargs["status"], "done",
+                             update.call_args_list)
+            [agent] = agents
+            return agent, agent.resolve_model()
+
+    def _post_agent_chat(self, cfg, **body):
+        """POST /api/agent/chat with LM Studio and OpenRouter connected. Returns the
+        response, the agent it ran on and that agent's resolved model."""
+        from unittest.mock import patch
+        from django.test import RequestFactory
+        from agentx_ai import views
+
+        reg = self._registry(cfg, configured=["lmstudio", "openrouter"])
+        agents, chat = self._capture_chat()
+        request = RequestFactory().post(
+            "/api/agent/chat",
+            data=json.dumps({"message": self.MESSAGE, "use_memory": False, **body}),
+            content_type="application/json",
+        )
+        with chat, patch("agentx_ai.config.get_config_manager", return_value=cfg), \
+                patch("agentx_ai.agent.core.get_registry", return_value=reg):
+            response = views.agent_chat(request)
+            [agent] = agents
+            return response, agent, agent.resolve_model()
+
+    def test_chain_order(self):
+        """Request → profile → global default. Blank values count as unset, and
+        nothing chosen returns None so AgentConfig applies the floor."""
+        from unittest.mock import patch
+        from agentx_ai.agent.core import resolve_agent_model
+
+        profile = self._profile("anthropic:profile-model")
+        cases = [
+            # (request model, agent profile, global default) → resolved
+            ("openai:request-model", profile, self.DEFAULT, "openai:request-model"),
+            (None, profile, self.DEFAULT, "anthropic:profile-model"),
+            ("", self._profile(""), self.DEFAULT, self.DEFAULT),
+            (None, self._profile(None), self.DEFAULT, self.DEFAULT),
+            (None, None, self.DEFAULT, self.DEFAULT),
+            (None, None, "", None),
+        ]
+        for request, agent_profile, default, expected in cases:
+            profile_model = agent_profile.default_model if agent_profile else "<no profile>"
+            with self.subTest(request=request, profile=profile_model, default=default):
+                cfg = self._cfg(**{"preferences.default_model": default})
+                with patch("agentx_ai.config.get_config_manager", return_value=cfg):
+                    self.assertEqual(resolve_agent_model(request, agent_profile), expected)
+
+    def test_background_job_runs_on_the_global_default_with_lm_studio_connected(self):
+        """The reported bug: a job with no model and no agent profile ran on the floor."""
+        cfg = self._cfg(**{"preferences.default_model": self.DEFAULT})
+        agent, resolved = self._run_background_job(cfg)
+        self.assertEqual(agent.config.default_model, self.DEFAULT)
+        self.assertFalse(agent.config.model_is_floor)
+        # Straight to the chosen model: no substitution, so no fallback note.
+        self.assertEqual(resolved, ("<provider:openrouter>", "acme/model", None))
+
+    def test_background_job_puts_job_and_profile_models_ahead_of_the_default(self):
+        cfg = self._cfg(**{"preferences.default_model": self.DEFAULT})
+        cases = [
+            # (job model, agent profile's model) → the model the job runs on
+            ("openrouter:job/model", "openrouter:profile/model", "openrouter:job/model"),
+            ("", "openrouter:profile/model", "openrouter:profile/model"),
+            # A blank profile model counts as unset, so it can't outrank the default.
+            ("", "", self.DEFAULT),
+        ]
+        for model, profile_model, expected in cases:
+            with self.subTest(model=model, profile=profile_model):
+                agent, _ = self._run_background_job(
+                    cfg, profile=self._profile(profile_model), model=model,
+                )
+                self.assertEqual(agent.config.default_model, expected)
+
+    def test_agent_chat_runs_on_the_global_default_with_lm_studio_connected(self):
+        """The reported bug: /api/agent/chat with no model ran on the floor."""
+        cfg = self._cfg(**{"preferences.default_model": self.DEFAULT})
+        response, agent, resolved = self._post_agent_chat(cfg)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content)["answer"], "ok")
+        self.assertEqual(agent.config.default_model, self.DEFAULT)
+        self.assertFalse(agent.config.model_is_floor)
+        self.assertEqual(resolved, ("<provider:openrouter>", "acme/model", None))
+
+    def test_agent_chat_keeps_the_request_model_first_and_the_floor_last(self):
+        with self.subTest("a request model outranks the global default"):
+            cfg = self._cfg(**{"preferences.default_model": self.DEFAULT})
+            _, agent, resolved = self._post_agent_chat(cfg, model="openrouter:request/model")
+            self.assertEqual(agent.config.default_model, "openrouter:request/model")
+            self.assertEqual(resolved, ("<provider:openrouter>", "request/model", None))
+        with self.subTest("nothing chosen still runs on the floor"):
+            _, agent, resolved = self._post_agent_chat(self._cfg())
+            self.assertTrue(agent.config.model_is_floor)
+            self.assertEqual(resolved, ("<provider:lmstudio>", "llama3.2", None))
 
 
 class MemoryPoisoningTest(TestCase):

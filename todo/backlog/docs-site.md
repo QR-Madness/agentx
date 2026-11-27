@@ -127,9 +127,11 @@ Each one is a code change, so it belongs outside the docs track:
     `protocol_version` stays. The chat's error toast offers **Open Model Roles** (landing on the
     Global Default Model) or **Open Model Providers**. It persists until acted on or dismissed,
     and a retry replaces it rather than stacking.
-  - **Open, related:** background chat jobs (`background/chat_jobs.py`) and `/api/agent/chat` build
-    the agent without the Global Default Model, so with LM Studio connected they run on LM Studio
-    even when a global default is set.
+  - **Done (v0.21.302), related:** background chat jobs (`background/chat_jobs.py`) and
+    `/api/agent/chat` built the agent without the Global Default Model, so with LM Studio connected
+    they ran on LM Studio even when a global default was set. Every agent builder now takes its
+    model from `agent.core.resolve_agent_model` (request → agent profile → Global Default Model →
+    floor), the same chain as streaming chat.
 - **The Memory panel doesn't reload after Consolidate finishes.** The Facts tab shows "No facts
   found" until you press refresh, while the overview counts are already updated. Fixed in #162,
   along with Refresh and Import, which skipped Strategies, Procedures and the Explore graph.

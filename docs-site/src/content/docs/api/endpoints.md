@@ -668,7 +668,7 @@ Conversational interaction with session management.
 |-------|------|----------|---------|-------------|
 | `message` | string | yes | — | User message |
 | `session_id` | string | no | auto-generated | Session ID for continuity |
-| `model` | string | no | from config | Model to use |
+| `model` | string | no | Global Default Model | Model to use (`provider:model`). Unset: the Global Default Model, else the LM Studio floor; endpoints that take `agent_profile_id` try that profile's model first |
 | `profile_id` | string | no | `"default"` | Prompt profile ID |
 | `temperature` | float | no | `0.7` | Sampling temperature |
 | `use_memory` | bool | no | `true` | Enable memory recall/storage. `false` makes the conversation **ephemeral** — turns aren't persisted to the durable transcript at all (no reload survival, no extraction) |
@@ -862,7 +862,8 @@ GET  /api/chat/background/{job_id}     # fetch one job
 DELETE /api/chat/background/{job_id}   # dismiss from the inbox
 ```
 
-**Request (POST):** `message` is required; the rest mirror `/agent/chat`.
+**Request (POST):** `message` is required; the rest mirror `/agent/chat`. With no `model`, the job
+runs on the agent profile's model, then the Global Default Model, then the LM Studio floor.
 ```json
 {
   "message": "Summarize today's research notes",

@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
@@ -32,6 +32,9 @@ from .hooks import AgentHooks, MemoryRecorder, TaskOutcome
 from ..utils.async_bridge import run_coro_sync
 from .tool_output_compressor import get_compressor
 from .tool_output_storage import store_tool_output
+
+if TYPE_CHECKING:
+    from .models import AgentProfile
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +57,36 @@ NO_PROVIDER_CONNECTED_MESSAGE = (
     "No model provider connected: add one in Settings → Model Providers, "
     "then set the Global Default Model in Settings → Model Roles."
 )
+
+
+def resolve_agent_model(
+    request_model: str | None = None,
+    agent_profile: AgentProfile | None = None,
+) -> str | None:
+    """The model a new agent is built with: the one chain every builder shares.
+
+    Priority: the model chosen for this request → the agent profile's model →
+    the Global Default Model (``preferences.default_model``, set in Settings →
+    Model Roles). An empty value counts as unset, so a blank request or profile
+    model can't outrank the global default. Returns None when nothing chose a
+    model: leave ``AgentConfig.default_model`` unset and it applies
+    ``FLOOR_MODEL`` and marks it, so ``Agent.resolve_model`` can say where to
+    choose one.
+
+    Streaming chat, plan resume, ``/api/agent/chat``, background chat jobs and
+    the ``get_agent`` singleton all build their agent's model here. Each used to
+    keep its own copy of the chain, and two of them left out the global default,
+    so they ran on the floor even when the user had chosen a model.
+    """
+    from ..config import get_config_manager
+
+    profile_model = agent_profile.default_model if agent_profile is not None else None
+    return (
+        request_model
+        or profile_model
+        or get_config_manager().get("preferences.default_model")
+        or None
+    )
 
 
 class AgentStatus(str, Enum):
