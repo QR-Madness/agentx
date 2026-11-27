@@ -308,8 +308,8 @@ export function MemoryGraphView({ channel = '_all', refreshToken = 0 }: {
             fitView
             onlyRenderVisibleElements
             // fitView stops at minZoom. The ring grows past ten neighbours, and
-            // at the 50 the graph endpoint returns, a desktop canvas needs about
-            // 0.23 to show all of it (0.3 left the rim off-screen).
+            // at the 50 the graph endpoint returns, a desktop canvas needs 0.23
+            // to 0.25, by window size, to show all of it (0.3 cut off the rim).
             minZoom={0.2}
             maxZoom={1.6}
             proOptions={{ hideAttribution: true }}
