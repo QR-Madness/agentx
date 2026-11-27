@@ -62,10 +62,9 @@ ids = ["GHSA-238p-pmpm-9mq7"]
 projects = ["client"]
 reason = """
 Low severity, and it needs an existing prototype-pollution bug in the page to
-exploit. The fix is katex 0.18.2. The client's own katex (^0.19) has it; the
-vulnerable 0.16 copy comes from rehype-katex, micromark-extension-math and
-mermaid 11, which all require ^0.16. Mermaid 12 moves to katex 0.18; the other
-two need upstream releases.
+exploit. The fix is katex 0.18.2. The client's own katex (^0.19) and mermaid
+12's (^0.18) have it; the vulnerable 0.16 copy comes from rehype-katex and
+micromark-extension-math, which require ^0.16 and need upstream releases.
 """
 review_by = 2027-01-31
 

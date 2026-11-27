@@ -27,6 +27,12 @@ async function getMermaid(): Promise<MermaidApi> {
       securityLevel: 'strict',
       theme: 'dark',
       fontFamily: 'inherit',
+      // Mermaid 12 changed its defaults to the ELK layout, the `neo` look and
+      // 120px label wrapping. Pinned to the previous ones so diagrams render as
+      // they did (the docs site pins the same three).
+      layout: 'dagre',
+      look: 'classic',
+      flowchart: { wrappingWidth: 200 },
     });
     initialized = true;
   }
