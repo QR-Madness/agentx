@@ -1,4 +1,4 @@
-<!-- release-version: 0.21.297 -->
+<!-- release-version: 0.21.298 -->
 <!--
   Human-written body for the NEXT release. The release action injects everything
   below the markers verbatim into the GitHub Release notes, between the title and
@@ -34,5 +34,5 @@ AgentX is a self-hostable AI agent platform — Django API + Tauri client.
 - **Claude works again via the Anthropic provider** — AgentX no longer sends the temperature current models reject.
 - **With no model chosen, chat points to Settings → Model Roles**, not an LM Studio error.
 - **Settings that claimed to save now do** — audio input, speech generation, Ambassador's voice and Web Search source-policy lists (editing one wiped the rest).
-- **Memory moves are complete** — exports carry distilled procedures, replace-mode import resets the PostgreSQL mirror, and consolidation reports relationships it drops.
+- **Memory moves are complete** — exports carry procedures, Replace import resets the PostgreSQL mirror; Consolidate reports dropped relationships and reloads the lists.
 - **Security updates** — a critical DOMPurify bypass, Tauri's origin check and URL handling, torch loading, Django, PyJWT and more; the manager image is lockfile-pinned, CLI on PATH.

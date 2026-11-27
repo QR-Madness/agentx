@@ -122,7 +122,8 @@ Each one is a code change, so it belongs outside the docs track:
     the agent without the Global Default Model, so with LM Studio connected they run on LM Studio
     even when a global default is set.
 - **The Memory panel doesn't reload after Consolidate finishes.** The Facts tab shows "No facts
-  found" until you press refresh, while the overview counts are already updated.
+  found" until you press refresh, while the overview counts are already updated. Fixed in #162,
+  along with Refresh and Import, which skipped Strategies, Procedures and the Explore graph.
 - **The context meter reads "100% context" (in warning colour)** on a conversation using
   "Default model". It seems not to know that model's context window.
 - **Two names for the default memory channel.** Profiles and the docs say `_global`, but turns
