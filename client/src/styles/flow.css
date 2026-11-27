@@ -1,0 +1,45 @@
+/**
+ * React Flow canvases drawn with the design tokens: the org chart and
+ * Memory → Explore. Put `className="ax-flow"` on <ReactFlow> (flow.test.ts
+ * enforces it).
+ *
+ * React Flow reads each `--xy-*` variable below ahead of its own default. Its
+ * root also declares `color-scheme: light dark`, so a default not mapped here
+ * (a light-dark() pair) would follow the OS, and its `[data-theme='light'|'dark']`
+ * rules match only our `light` theme id. Inheriting the scheme that applyTheme
+ * sets on <html> keeps those defaults in step with the theme too, so no canvas
+ * needs `forceColorMode`. This file is unlayered, so it outranks `@layer xyflow`.
+ */
+.ax-flow {
+  color-scheme: inherit;
+
+  /* Pane: the container's own surface shows through. */
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: var(--border-subtle);
+
+  /* Edges. A label cuts its line out against the base surface, as React Flow's
+     default does against its own pane. */
+  --xy-edge-stroke: var(--border-emphasis);
+  --xy-edge-stroke-width: 1.5;
+  --xy-edge-stroke-selected: var(--accent-primary);
+  --xy-edge-label-color: var(--text-secondary);
+  --xy-edge-label-background-color: var(--surface-base);
+  --xy-connectionline-stroke: var(--accent-primary);
+  --xy-connectionline-stroke-width: 1.5;
+
+  /* Handles: a quiet dot ringed in the node surface. */
+  --xy-handle-background-color: var(--text-muted);
+  --xy-handle-border-color: var(--surface-overlay);
+
+  /* Drag-selection box. */
+  --xy-selection-background-color: var(--accent-tint-faint);
+  --xy-selection-border: 1px dotted var(--accent-primary);
+
+  /* Zoom controls. */
+  --xy-controls-button-background-color: var(--surface-raised);
+  --xy-controls-button-background-color-hover: var(--surface-hover);
+  --xy-controls-button-color: var(--text-secondary);
+  --xy-controls-button-color-hover: var(--text-primary);
+  --xy-controls-button-border-color: var(--border-default);
+  --xy-controls-box-shadow: var(--shadow-md);
+}

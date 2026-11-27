@@ -14,6 +14,7 @@ import {
   type BuiltInEdge, type Node, type NodeChangeset, type NodeProps, type XYPosition,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import '../../styles/flow.css';
 import { AlertTriangle, UserRound, Users } from 'lucide-react';
 import type { AgentProfile, LayoutPositions } from '../../lib/api';
 import { modelShortLabel } from '../../lib/modelLabel';
@@ -379,15 +380,15 @@ function CanvasInner({
 
   return (
     <ReactFlow
+      // Colours come from the theme tokens (`.ax-flow` in styles/flow.css),
+      // which also hold the chart to the app's colour scheme rather than the
+      // OS's, so it needs no `forceColorMode`.
+      className="ax-flow"
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
       fitView
       fitViewOptions={{ padding: FIT_PADDING }}
-      // The chart's colours come from our theme tokens (`.org-canvas` in
-      // OrgManager.css). Pinned to light, React Flow's own defaults stay the
-      // ones every theme was designed against; left alone, v13 follows the OS.
-      forceColorMode="light"
       minZoom={0.3}
       maxZoom={1.6}
       nodesDraggable={Boolean(onMoveNode)}
