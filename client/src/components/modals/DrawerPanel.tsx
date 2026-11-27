@@ -2,9 +2,9 @@
  * DrawerPanel — Slide-out panel from left or right edge
  */
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
-import type { ModalSize } from '../../contexts/ModalContext';
+import { useEscapeToClose, type ModalSize } from '../../contexts/ModalContext';
 import './DrawerPanel.css';
 
 interface DrawerPanelProps {
@@ -20,13 +20,7 @@ interface DrawerPanelProps {
 export function DrawerPanel({ position = 'right', size = 'md', showClose = true, onClose, children }: DrawerPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  useEscapeToClose(onClose);
 
   const isLeft = position === 'left';
 

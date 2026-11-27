@@ -12,6 +12,7 @@ import { AmbassadorPanel } from '../ambassador/AmbassadorPanel';
 import { deckThreadId } from '../../lib/ambassadorDeck';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAmbassador } from '../../contexts/AmbassadorContext';
+import { useEscapeToClose } from '../../contexts/ModalContext';
 import { LogsPanel } from '../logs/LogsPanel';
 import { TranslationPanel } from '../panels/TranslationPanel';
 import { UnifiedSettings } from '../unified-settings/UnifiedSettings';
@@ -70,17 +71,11 @@ export function AmbassadorDeckContent({ onClose }: ModalContentProps) {
   useEffect(() => { void listInquiries(); }, [listInquiries]);
 
   // ESC to close + body scroll lock (bare full-screen surface owns these).
+  useEscapeToClose(onClose);
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
-    };
-    window.addEventListener('keydown', handler);
     document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', handler);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
+    return () => { document.body.style.overflow = ''; };
+  }, []);
 
   const onNewInquiry = async () => {
     const id = await createInquiry();

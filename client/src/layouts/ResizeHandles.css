@@ -2,7 +2,8 @@
 .resize-handles {
   position: fixed;
   inset: 0;
-  z-index: 10000; /* above the strip + drag region, below modals' backdrops */
+  z-index: 10000; /* top of the ladder, palette and toasts included: the window's edges
+                     stay resizable over every layer; only the edge grips take the pointer */
   pointer-events: none;
 }
 

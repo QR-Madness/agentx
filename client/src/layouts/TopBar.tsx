@@ -25,7 +25,7 @@ import { MemoryIcon } from '../components/common/MemoryIcon';
 import { useModal } from '../contexts/ModalContext';
 import { usePlans } from '../contexts/PlansContext';
 import { useUIChrome } from '../contexts/UIChromeContext';
-import { SURFACES } from '../lib/surfaces';
+import { SURFACES, dismissTabSurfaces } from '../lib/surfaces';
 import { useIsMobile } from '../lib/hooks';
 import { useConsolidation } from '../contexts/ConsolidationContext';
 import { WindowControls } from './WindowControls';
@@ -125,10 +125,9 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
             className={`nav-pill ${activePage === item.id && !deckOpen && !memoryOpen && !projectsOpen ? 'active' : ''}`}
             onClick={() => {
               onPageChange(item.id);
-              // Tab behavior: navigating to a page dismisses an open tab-surface.
-              if (deckOpen) closeModal(deckId);
-              if (memoryOpen) closeModal(memoryId);
-              if (projectsOpen) closeModal(projectsId);
+              // Tab behavior: navigating to a page dismisses an open tab-surface
+              // (shared with the palette and ⌘T through lib/surfaces).
+              dismissTabSurfaces({ isOpen, closeModal });
             }}
           >
             {item.icon}

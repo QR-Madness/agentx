@@ -31,7 +31,7 @@ import { useUIChrome } from '../contexts/UIChromeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useOpenAmbassador } from './useOpenAmbassador';
-import { SURFACES, type SurfaceKey } from '../lib/surfaces';
+import { SURFACES, dismissTabSurfaces, type SurfaceKey } from '../lib/surfaces';
 import { RESEARCH_MODE, thinkingModeOf, thinkingModeTabPatch } from '../lib/thinkingModes';
 import { THEMES, type ThemePreference } from '../lib/theme';
 import { THEME_ICONS } from '../components/common/themeIcons';
@@ -75,7 +75,7 @@ interface UseCommandsArgs {
 }
 
 export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[] {
-  const { openModal } = useModal();
+  const { openModal, isOpen, closeModal } = useModal();
   const { addTab, closeTab, activeTabId, activeTab, updateTab } = useConversation();
   const { focusMode, toggleFocusMode } = useUIChrome();
   const { authRequired, isAuthenticated, logout } = useAuth();
@@ -83,7 +83,11 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
   const openAmbassador = useOpenAmbassador();
 
   return useMemo<Command[]>(() => {
-    const go = (page: PageId) => () => { onNavigate(page); onClose(); };
+    // Every command that changes the page leaves the tab-surfaces (Deck, Memory,
+    // Projects), exactly as the TopBar's page pills do. The palette opens over
+    // them, and left open they would cover the page it just switched to.
+    const navigate = (page: PageId) => { dismissTabSurfaces({ isOpen, closeModal }); onNavigate(page); };
+    const go = (page: PageId) => () => { navigate(page); onClose(); };
     // `props` rides through ModalContext → ModalPortal's spread, so a command
     // can open a surface *at* something (Settings at a section, say) rather
     // than only opening it.
@@ -101,7 +105,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'nav-dashboard', group: 'Navigation', label: 'Go to Dashboard', icon: <LayoutDashboard size={16} />, keywords: ['metrics', 'status'], run: go('dashboard') },
 
       // Conversation
-      { id: 'conv-new', group: 'Conversation', label: 'New conversation', hint: '⌘T', icon: <Plus size={16} />, keywords: ['tab', 'create', 'chat'], run: () => { addTab(); onNavigate('agentx'); onClose(); } },
+      { id: 'conv-new', group: 'Conversation', label: 'New conversation', hint: '⌘T', icon: <Plus size={16} />, keywords: ['tab', 'create', 'chat'], run: () => { addTab(); navigate('agentx'); onClose(); } },
       { id: 'open-conversations', group: 'Conversation', label: 'Open conversations', icon: <MessagesSquare size={16} />, keywords: ['tabs', 'switch', 'list', 'sessions', 'sidebar'], run: open('conversations') },
 
       // Workspace
@@ -110,7 +114,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'open-memory', group: 'Workspace', label: 'Open Memory', icon: <MemoryIcon size={16} />, keywords: ['facts', 'entities', 'recall', 'memories'], run: open('memory') },
       { id: 'open-sources', group: 'Workspace', label: 'Open Sources', icon: <BookMarked size={16} />, keywords: ['citations', 'bibliography', 'references', 'links'], run: open('sources') },
       { id: 'open-consolidation', group: 'Workspace', label: 'Memory Consolidation', icon: <Zap size={16} />, keywords: ['consolidate', 'memory', 'extract', 'facts', 'entities', 'lightning'], run: open('consolidation') },
-      { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel', 'ambassadors'], run: () => { onNavigate('agentx'); openAmbassador(); onClose(); } },
+      { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel', 'ambassadors'], run: () => { navigate('agentx'); openAmbassador(); onClose(); } },
       { id: 'open-ambassador-deck', group: 'Workspace', label: 'Open Command Deck', icon: <LayoutDashboard size={16} />, keywords: ['ambassador', 'deck', 'agents', 'overview', 'survey', 'roster', 'discovered'], run: open('ambassadorDeck') },
       { id: 'open-plans', group: 'Workspace', label: 'Open Plans', icon: <ListChecks size={16} />, keywords: ['tasks', 'subtasks', 'progress'], run: open('plans') },
       { id: 'open-translation', group: 'Workspace', label: 'Open Translation', icon: <Languages size={16} />, keywords: ['translate', 'language', 'nllb', 'translations'], run: open('translation') },
@@ -175,7 +179,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       // registry can't hold refs into the composer). Navigate to the chat
       // page first so the panel is mounted to hear the event.
       const fire = (evt: string) => () => {
-        onNavigate('agentx');
+        navigate('agentx');
         onClose();
         setTimeout(() => window.dispatchEvent(new Event(evt)), 80);
       };
@@ -206,5 +210,5 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
     }
 
     return cmds;
-  }, [openModal, openAmbassador, onNavigate, onClose, addTab, closeTab, activeTabId, activeTab, updateTab, focusMode, toggleFocusMode, preference, setTheme, authRequired, isAuthenticated, logout]);
+  }, [openModal, isOpen, closeModal, openAmbassador, onNavigate, onClose, addTab, closeTab, activeTabId, activeTab, updateTab, focusMode, toggleFocusMode, preference, setTheme, authRequired, isAuthenticated, logout]);
 }

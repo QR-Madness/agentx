@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
+import { useEscapeToClose } from '../../contexts/ModalContext';
 import { useIsMobile } from '../../lib/hooks';
 import { ParallaxBackground } from '../unified-settings/animations/ParallaxBackground';
 import {
@@ -48,18 +49,8 @@ export function UnifiedProfileEditor({
     }
   }, [profiles, selectedProfileId, isCreatingNew, isMobile]);
 
-  // ESC key
-  useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
+  // ESC closes the editor while it is the top of the modal stack.
+  useEscapeToClose(onClose, isOpen);
 
   // Body scroll lock
   useEffect(() => {

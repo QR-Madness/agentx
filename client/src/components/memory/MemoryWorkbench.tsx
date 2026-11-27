@@ -26,6 +26,7 @@ import { useConfirm } from '../ui/ConfirmDialog';
 import { useIsMobile } from '../../lib/hooks';
 import type { MemoryExport, MemoryFact, MemoryStrategy, MemoryProcedure } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
+import { useEscapeToClose } from '../../contexts/ModalContext';
 import { downloadJson, readJsonFile, fileTimestamp } from '../../lib/fileTransfer';
 import { JobsPanel } from '../JobsPanel';
 import { EntityListView } from './EntityListView';
@@ -112,17 +113,11 @@ export function MemoryWorkbench({ onClose }: { onClose: () => void }) {
   } = useMemoryProcedures(channel, currentPage);
 
   // ESC to close + body scroll lock (bare full-screen surface owns these).
+  useEscapeToClose(onClose);
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); onClose(); }
-    };
-    window.addEventListener('keydown', handler);
     document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', handler);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
+    return () => { document.body.style.overflow = ''; };
+  }, []);
 
   const clearSelection = () => {
     setSelectedEntityId(null);

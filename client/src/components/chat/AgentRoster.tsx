@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
 import { useAlloyWorkflow } from '../../contexts/AlloyWorkflowContext';
-import { useModal } from '../../contexts/ModalContext';
+import { useModal, useEscapeToClose } from '../../contexts/ModalContext';
 import { useIsMobile } from '../../lib/hooks';
 import { groupRoster, orgPlacement, type RosterGroup } from '../../lib/orgPlacement';
 import { modelShortLabel } from '../../lib/modelLabel';
@@ -77,12 +77,11 @@ export function AgentRoster({
   );
 
   // Escape + body scroll lock (this surface renders bare, so it owns both).
+  useEscapeToClose(onClose);
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } };
-    window.addEventListener('keydown', handler);
     document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', handler); document.body.style.overflow = ''; };
-  }, [onClose]);
+    return () => { document.body.style.overflow = ''; };
+  }, []);
 
   const tierByAgentId = useMemo(() => {
     const m = new Map<string, Tier>();

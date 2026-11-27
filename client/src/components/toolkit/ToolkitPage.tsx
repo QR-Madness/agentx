@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useMCPServers, useMCPTools, useSkills, type McpServersState, type SkillsState } from '../../lib/hooks';
 import { useAgentProfile } from '../../contexts/AgentProfileContext';
+import { useEscapeToClose } from '../../contexts/ModalContext';
 import { needsAuth, sessionExpired } from '../../lib/connectors';
 import { ParallaxBackground } from '../unified-settings/animations/ParallaxBackground';
 import { backdropVariants, containerVariants } from '../unified-settings/animations/transitions';
@@ -67,12 +68,8 @@ function ToolkitSection({
 }
 
 export function ToolkitPage({ isOpen, onClose }: ToolkitPageProps) {
-  useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
+  // ESC closes Connectors & Tools while it is the top of the modal stack.
+  useEscapeToClose(onClose, isOpen);
 
   useEffect(() => {
     if (isOpen) document.body.style.overflow = 'hidden';

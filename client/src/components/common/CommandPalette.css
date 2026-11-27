@@ -2,7 +2,10 @@
 .cmdk-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  /* The top app layer: above the modal stack (2000), the Radix popovers (2400)
+     and the pickers (3000); only toasts and the gates sit higher. The ladder is
+     in Development-Notes → Layering, and styles/zLayers.test.ts holds it. */
+  z-index: 4000;
   display: flex;
   align-items: flex-start;
   justify-content: center;
