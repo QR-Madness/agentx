@@ -1,6 +1,7 @@
 /**
  * A failed turn whose stream `error` carries a `code` the client knows offers
- * its fix in Settings from the error toast. Driven through the production
+ * its fix in Settings from the error toast, which clears once a later turn gets
+ * going (its model resolved, however the fix was made). Driven through the production
  * wiring, as the golden-stream suite is: `useChatStream.attach()` → the real
  * `dispatchSseEvent` → `onError` → the real NotificationProvider.
  */
@@ -57,14 +58,25 @@ function failTurn(
 
   const toasts = hook.result.current.notifications.toasts;
   expect(toasts).toHaveLength(1);
-  /** Fail the next attached run the same way, as a retry would. */
-  const failAgain = (next: Record<string, unknown>) => {
-    act(() => { hook.result.current.stream.attach('run-retry'); });
-    act(() => { dispatchSseEvent('error', next, callbacks!, new AbortController()); });
+  /** Attach the next run, as a later send would. */
+  const attachNext = (runId = 'run-next') => {
+    act(() => { hook.result.current.stream.attach(runId); });
+  };
+  /** Deliver one event to the attached run; returns the toasts after it. */
+  const emit = (type: string, eventData: Record<string, unknown>) => {
+    act(() => { dispatchSseEvent(type, eventData, callbacks!, new AbortController()); });
     return hook.result.current.notifications.toasts;
   };
-  return { toast: toasts[0], messages, failAgain };
+  /** Fail the next attached run the same way, as a retry would. */
+  const failAgain = (next: Record<string, unknown>) => {
+    attachNext('run-retry');
+    return emit('error', next);
+  };
+  return { toast: toasts[0], messages, attachNext, emit, failAgain };
 }
+
+/** Toast ids, for asserting which toasts are on screen. */
+const ids = (toasts: Array<{ id: string }>) => toasts.map((t) => t.id);
 
 describe('chat error → settings fix', () => {
   it('offers Open Model Roles, landing on the Global Default Model, when no model is chosen', () => {
@@ -121,6 +133,45 @@ describe('chat error → settings fix', () => {
     expect(after).toHaveLength(1);
     expect(after[0].id).not.toBe(toast.id);
     expect(after[0].action?.label).toBe('Open Model Roles');
+  });
+
+  it('clears its toast once a later turn gets going, however the fix was made', () => {
+    const { toast, messages, attachNext, emit } = failTurn(
+      { error: NO_MODEL, code: 'no_model_chosen' },
+      vi.fn(),
+    );
+    // The user set a model some other way (Settings directly, or the Model
+    // Providers nudge) and sends again. Until the turn's model resolves it can
+    // still fail the same way, so the toast survives the run's first event...
+    attachNext();
+    expect(ids(emit('run_started', { run_id: 'run-next' }))).toEqual([toast.id]);
+    // ...and goes with `start`, which the server sends only once it has.
+    expect(emit('start', { task_id: 'task-next', session_id: 'conv-1', model: 'chosen-model' }))
+      .toEqual([]);
+    // The turn then finishes as usual and raises nothing new.
+    emit('chunk', { content: 'Both readings hold.' });
+    expect(emit('done', { task_id: 'task-next', session_id: 'conv-1', total_time_ms: 40 }))
+      .toEqual([]);
+    expect(messages.at(-1)).toMatchObject({ type: 'assistant', content: 'Both readings hold.' });
+  });
+
+  it('clears its toast when a resumed plan gets going', () => {
+    const { attachNext, emit } = failTurn({ error: NO_MODEL, code: 'no_model_chosen' }, vi.fn());
+    attachNext('run-resume');
+    // A resumed run opens with plan_resumed rather than start, also sent once
+    // its model resolved.
+    expect(emit('plan_resumed', {
+      plan_id: 'plan-1',
+      task: 'Weigh two readings of the same passage',
+      subtask_count: 2,
+      complexity: 'moderate',
+      completed_count: 1,
+      progress: 0.5,
+      subtasks: [
+        { subtask_id: 0, description: 'State each reading', type: 'analysis', status: 'complete', result_preview: '' },
+        { subtask_id: 1, description: 'Compare their support', type: 'analysis', status: 'pending', result_preview: '' },
+      ],
+    })).toEqual([]);
   });
 
   it('offers no button where Settings cannot be opened', () => {
