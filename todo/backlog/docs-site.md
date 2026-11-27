@@ -126,7 +126,9 @@ Each one is a code change, so it belongs outside the docs track:
     `no_provider_connected` (`NoProviderConnectedError`, a subclass). It is additive, so
     `protocol_version` stays. The chat's error toast offers **Open Model Roles** (landing on the
     Global Default Model) or **Open Model Providers**. It persists until acted on or dismissed,
-    and a retry replaces it rather than stacking.
+    and a retry replaces it rather than stacking. Since v0.21.303 it also clears once a later turn
+    starts, so a setting fixed another way (Settings directly, or the Model Providers nudge) leaves
+    no stale toast.
   - **Done (v0.21.302), related:** background chat jobs (`background/chat_jobs.py`) and
     `/api/agent/chat` built the agent without the Global Default Model, so with LM Studio connected
     they ran on LM Studio even when a global default was set. Every agent builder now takes its

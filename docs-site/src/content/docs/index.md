@@ -5,7 +5,7 @@ hand work to each other. You run the server yourself, bring your own model (a pr
 model on your own machine), and chat through the desktop app or a browser. Every step an agent
 takes is visible as it happens: what it recalled, which tools it used and how it reasoned.
 
-> **Current release:** v0.21.302 (the v0.20 milestone — "Mobile-Ready Alpha").
+> **Current release:** v0.21.303 (the v0.20 milestone — "Mobile-Ready Alpha").
 
 ## Start here
 

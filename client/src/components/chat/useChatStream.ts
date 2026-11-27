@@ -95,7 +95,8 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
   const [state, dispatch] = useReducer(streamReducer, initialStreamState);
   const { notify, notifyError, dismiss } = useNotify();
   // The settings-fix toast persists until acted on, so a repeated failure
-  // replaces it instead of stacking one per retry.
+  // replaces it instead of stacking one per retry, and the next turn that gets
+  // going clears it (see clearFixToast).
   const fixToastRef = useRef<string | null>(null);
   const abortRef = useRef<{ abort: () => void } | null>(null);
 
@@ -183,6 +184,18 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
     dispatch({ type: 'send_started' });
   }, []);
 
+  // Clear the settings-fix toast. A turn that reaches `start` (or
+  // `plan_resumed`) has resolved its model, so the fix the toast offered has
+  // been made, whether through its button, Settings directly, or the Model
+  // Providers nudge. Panel-wide, like the toast itself: a turn in any tab
+  // clears it, and a conversation still without a model raises it again on its
+  // next send.
+  const clearFixToast = useCallback(() => {
+    if (!fixToastRef.current) return;
+    dismiss(fixToastRef.current);
+    fixToastRef.current = null;
+  }, [dismiss]);
+
   // Built once and shared by send() and attach() — a re-attach replays the
   // same event set, so the callback wiring is identical.
   const buildCallbacks = useCallback((): StreamCallbacks => ({
@@ -192,6 +205,9 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
       },
 
       onStart: (data) => {
+        // The server sends `start` only after the turn's model resolved, so a
+        // "No model chosen" toast from an earlier turn no longer applies.
+        clearFixToast();
         // Persist the session id on the tab at turn *start* (not just on done),
         // so a plan cancelled/interrupted mid-run still has a session to target
         // cancel/resume against — critical on a brand-new conversation's first turn.
@@ -361,6 +377,8 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
       },
 
       onPlanResumed: (data) => {
+        // A resumed run's first event, sent once its model resolved: as onStart.
+        clearFixToast();
         // A resumed run never emitted plan_start; paint the card pre-filled
         // with the snapshot of already-done subtasks, then the normal
         // subtask_start/complete events drive the remaining ones.
@@ -741,7 +759,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
         // toast offers to open it there rather than only describing where it is.
         const fix = streamErrorFix(code);
         if (fix && optsRef.current.onOpenSettings) {
-          if (fixToastRef.current) dismiss(fixToastRef.current);
+          clearFixToast();
           fixToastRef.current = notify({
             kind: 'error',
             title: fix.title,
@@ -759,7 +777,7 @@ export function useChatStream(opts: UseChatStreamOpts): UseChatStreamApi {
           notifyError(error);
         }
       },
-  }), [flushLiveContent, notify, notifyError, dismiss, finalizeDanglingDelegations]);
+  }), [flushLiveContent, notify, notifyError, clearFixToast, finalizeDanglingDelegations]);
 
   const send = useCallback((req: ChatRequest) => {
     abortRef.current?.abort();
