@@ -7,15 +7,16 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { RefreshCw, GitBranch, Search } from 'lucide-react';
 import {
-  ReactFlow, Background, Controls, Handle, Position,
-  useNodesState, useEdgesState,
-  type NodeProps, type Node, type Edge
+  ReactFlow, Background, Controls, Handle, Position, BaseEdge,
+  getStraightPath, useInternalNode, useNodesState, useEdgesState,
+  type NodeProps, type EdgeProps, type InternalNode, type NodeOrigin, type Node, type Edge
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '../../styles/flow.css';
 import { useMemoryEntities, useEntityGraph, useMemoryProcedures } from '../../lib/hooks';
 import type { MemoryProcedure } from '../../lib/api';
 import { procedureHeadline } from './procedureLabel';
+import { edgeEnds, ringPositions, type Box } from './graphGeometry';
 import { Input } from '../ui';
 
 // Custom node (module-level to avoid re-creation on each render). `variant`
@@ -29,40 +30,94 @@ type GraphNodeData = {
 
 function GraphNodeComponent({ data }: NodeProps) {
   const d = data as GraphNodeData;
+  // React Flow draws an edge only between handles, so each node keeps a pair.
+  // SpokeEdge ignores where they sit, and they are hidden (`.graph-handle`)
+  // and cannot start a connection.
   return (
     <div className={`graph-node ${d.variant}${d.isCenter ? ' center' : ''}`}>
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} className="graph-handle" isConnectable={false} />
       <span className="graph-node-name">{d.label}</span>
       <span className="graph-node-type">{d.typeLabel}</span>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} className="graph-handle" isConnectable={false} />
     </div>
   );
 }
 
 const nodeTypes = { graphNode: GraphNodeComponent };
 
+/** A node's box in flow coordinates, once React Flow has measured it. */
+function measuredBox(node: InternalNode | undefined): Box | null {
+  const width = node?.measured.width;
+  const height = node?.measured.height;
+  if (!node || !width || !height) return null;
+  return { ...node.internals.positionAbsolute, width, height };
+}
+
+// A straight edge between the borders its two nodes turn to each other, at any
+// angle (graphGeometry.edgeEnds), with the label halfway along. It reads the
+// live node boxes, so it still takes the short way after a node is dragged.
+function SpokeEdge({
+  id, source, target, style, interactionWidth, markerStart, markerEnd,
+  label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius,
+}: EdgeProps) {
+  const sourceNode = useInternalNode(source);
+  const targetNode = useInternalNode(target);
+  const sourceBox = measuredBox(sourceNode);
+  const targetBox = measuredBox(targetNode);
+  if (!sourceBox || !targetBox) return null;
+  const ends = edgeEnds(sourceBox, targetBox);
+  const [path, labelX, labelY] = getStraightPath({
+    sourceX: ends.source.x,
+    sourceY: ends.source.y,
+    targetX: ends.target.x,
+    targetY: ends.target.y,
+  });
+  return (
+    <BaseEdge
+      id={id}
+      path={path}
+      style={style}
+      interactionWidth={interactionWidth}
+      markerStart={markerStart}
+      markerEnd={markerEnd}
+      label={label}
+      labelX={labelX}
+      labelY={labelY}
+      labelStyle={labelStyle}
+      labelShowBg={labelShowBg}
+      labelBgStyle={labelBgStyle}
+      labelBgPadding={labelBgPadding}
+      labelBgBorderRadius={labelBgBorderRadius}
+    />
+  );
+}
+
+const edgeTypes = { spoke: SpokeEdge };
+
+// Node positions are centres, so the ring sits around the middle of the centre
+// node whatever the nodes' widths.
+const NODE_ORIGIN: NodeOrigin = [0.5, 0.5];
+
 // Max evidence-conversation nodes to render around a procedure (keep it legible).
 const MAX_EVIDENCE_NODES = 6;
 
-// Build a radial layout of neighbor nodes + edges around a center node.
+// Lay the neighbours out on a ring around the centre node, one spoke edge each.
 function radialLayout(
   centerId: string,
   neighbors: Array<{ id: string; data: GraphNodeData; edgeLabel: string }>,
 ): { nodes: Node[]; edges: Edge[] } {
-  const n = Math.max(neighbors.length, 1);
+  const positions = ringPositions(neighbors.length);
   const nodes: Node[] = neighbors.map((nb, i) => ({
     id: nb.id,
     type: 'graphNode',
     data: nb.data,
-    position: {
-      x: Math.cos((i * 2 * Math.PI) / n) * 260,
-      y: Math.sin((i * 2 * Math.PI) / n) * 260,
-    },
+    position: positions[i],
   }));
   // No `animated` edges: the constant SVG dash repaint is the usual ReactFlow
   // jank source. Static edges keep panning smooth even on low-end webviews.
   const edges: Edge[] = neighbors.map((nb, i) => ({
     id: `e-${i}`,
+    type: 'spoke',
     source: centerId,
     target: nb.id,
     label: nb.edgeLabel,
@@ -248,9 +303,14 @@ export function MemoryGraphView({ channel = '_all', refreshToken = 0 }: {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            nodeOrigin={NODE_ORIGIN}
             fitView
             onlyRenderVisibleElements
-            minZoom={0.3}
+            // fitView stops at minZoom. The ring grows past ten neighbours, and
+            // at the 50 the graph endpoint returns, a desktop canvas needs about
+            // 0.23 to show all of it (0.3 left the rim off-screen).
+            minZoom={0.2}
             maxZoom={1.6}
             proOptions={{ hideAttribution: true }}
           >
