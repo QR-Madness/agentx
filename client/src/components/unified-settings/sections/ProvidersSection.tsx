@@ -18,10 +18,21 @@
  * mean anything written server-side (a cluster `.env`, another client) left the
  * field looking empty. Typing into a key field is an explicit replacement, and
  * secrets still save on an explicit press — never autosave.
+ *
+ * **Next step after the first connection.** A connected provider isn't enough
+ * to chat: an agent whose profile names no model runs on the Global Default
+ * Model, and without one (or LM Studio) its first conversation stops with "No
+ * model chosen". So while anything is connected and no default is set, a
+ * callout offers to open Model Roles on that control. It is derived from state
+ * rather than raised on save, so it also appears for a provider connected by
+ * OAuth, by a custom endpoint, or server-side in `.env`, and it can't be missed
+ * the way a timed toast can. It never picks a model itself.
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AlertTriangle, Boxes, Cpu, Key, Languages, Plus, Server, Upload } from 'lucide-react';
+import {
+  AlertTriangle, ArrowRight, Boxes, Cpu, Key, Languages, Plus, Server, Upload,
+} from 'lucide-react';
 import { useServer } from '../../../contexts/ServerContext';
 import { useNotify } from '../../../contexts/NotificationContext';
 import { useAgentProfile } from '../../../contexts/AgentProfileContext';
@@ -39,6 +50,7 @@ import { ProviderConnectionCard, type ProviderPresentation } from '../providers/
 import { EndpointSheet } from '../providers/EndpointSheet';
 import { OpenRouterLink } from '../providers/OpenRouterLink';
 import { SupplyLine } from '../providers/SupplyLine';
+import { DEFAULT_MODEL_SECTION, DEFAULT_MODEL_SETTING, DEFAULT_MODEL_WHY } from '../defaultModel';
 import anthropicIcon from '../../../assets/providers/anthropic-dark.svg';
 import openaiIcon from '../../../assets/providers/openai-light.svg';
 import openrouterIcon from '../../../assets/providers/open-router-dark.svg';
@@ -124,7 +136,12 @@ function deviceLabel(device?: string): string {
   return device;
 }
 
-export default function ProvidersSection() {
+interface ProvidersSectionProps {
+  /** Hand-off to a control in another section; Settings passes it to every section. */
+  onFocusSetting?: (sectionId: string, settingId: string) => void;
+}
+
+export default function ProvidersSection({ onFocusSetting }: ProvidersSectionProps) {
   const { activeServer } = useServer();
   const { activeProfile } = useAgentProfile();
   const { notifyError, notifySuccess } = useNotify();
@@ -140,6 +157,9 @@ export default function ProvidersSection() {
   // The global default model. A profile that pins no model of its own runs on
   // this — the resolution the Supply Line exists to make visible.
   const [defaultModel, setDefaultModel] = useState<string | null>(null);
+  // Whether `defaultModel` came from the server. Null alone can't say "no
+  // default": it is also the value before the read lands, or after it fails.
+  const [defaultModelKnown, setDefaultModelKnown] = useState(false);
   // Credential edits in flight, keyed by provider id. Empty string = untouched;
   // secrets never autosave, so this stays local until an explicit save.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -172,14 +192,22 @@ export default function ProvidersSection() {
         // `/api/config` is an untyped bag; read the one key we need defensively.
         const preferences = (config as { preferences?: { default_model?: string } }).preferences;
         setDefaultModel(preferences?.default_model || null);
+        setDefaultModelKnown(true);
       })
-      // Advisory only — without it the rail just falls back to the profile model.
-      .catch(() => setDefaultModel(null));
+      // Advisory only — without it the rail just falls back to the profile model,
+      // and the Global Default Model nudge stays hidden rather than guessing.
+      .catch(() => {
+        setDefaultModel(null);
+        setDefaultModelKnown(false);
+      });
   }, [activeServer, loadCatalog]);
 
   const entries = useMemo(() => orderEntries(catalog), [catalog]);
   const dirty = Object.values(drafts).some((value) => value.trim().length > 0);
   const connectedCount = entries.filter((entry) => entry.configured).length;
+  // Something can run, but nothing says what an agent with no model of its own
+  // should run on. Counts saved connections only, never an unsaved draft.
+  const needsDefaultModel = defaultModelKnown && !defaultModel && connectedCount > 0;
   const modelCount = Object.values(providersHealth ?? {}).reduce(
     (total, entry) => total + (entry.models_available ?? 0),
     0
@@ -382,6 +410,30 @@ export default function ProvidersSection() {
             agentName={activeProfile?.name ?? 'Your agent'}
             refreshToken={routeToken}
           />
+
+          {needsDefaultModel && (
+            <div
+              role="status"
+              className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-accent/40 bg-accent/10 p-3"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-fg">
+                  Next, choose a Global Default Model
+                </p>
+                <p className="text-sm text-fg-secondary">{DEFAULT_MODEL_WHY}</p>
+              </div>
+              {onFocusSetting && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => onFocusSetting(DEFAULT_MODEL_SECTION, DEFAULT_MODEL_SETTING)}
+                >
+                  Open Model Roles
+                  <ArrowRight size={14} aria-hidden />
+                </Button>
+              )}
+            </div>
+          )}
 
           <div className="connection-tally">
             <span>

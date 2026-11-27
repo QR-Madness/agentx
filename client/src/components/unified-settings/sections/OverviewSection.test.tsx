@@ -70,8 +70,32 @@ function manifest(over: { entries?: ReturnType<typeof entry>[] } = {}) {
       }),
       entry('models.roles.summarizer', { ui_section: 'model-roles' }),
       entry('search.tavily_api_key', { secret: true, value: '', ui_section: 'search' }),
+      // Ships as null, not '': an unset default must not read as "changed".
+      entry('preferences.default_model', { default: null, value: null, ui_section: 'model-roles' }),
     ],
   };
+}
+
+/** Every step configured; the default model is passed in so a test can unset it. */
+function allConfigured(defaultModel: string | null) {
+  return manifest({
+    entries: [
+      entry('providers.anthropic.api_key', { secret: true, value: '***', ui_section: 'providers' }),
+      entry('models.roles.summarizer', { value: 'anthropic:opus', ui_section: 'model-roles' }),
+      entry('search.tavily_api_key', { secret: true, value: '***', ui_section: 'search' }),
+      entry('preferences.default_model', {
+        default: null, value: defaultModel, ui_section: 'model-roles',
+      }),
+    ],
+  });
+}
+
+/** The setup list's step labels, in the order they render. */
+async function setupStepLabels(): Promise<string[]> {
+  const heading = await screen.findByText('Getting set up');
+  return within(heading.parentElement!)
+    .getAllByRole('button')
+    .map(button => button.querySelector('.settings-overview-key')?.firstChild?.textContent ?? '');
 }
 
 function renderOverview(props: Parameters<typeof OverviewSection>[0] = {}) {
@@ -124,13 +148,7 @@ describe('OverviewSection — getting set up', () => {
   });
 
   it('disappears once every step is done', async () => {
-    mockManifest.mockResolvedValue(manifest({
-      entries: [
-        entry('providers.anthropic.api_key', { secret: true, value: '***', ui_section: 'providers' }),
-        entry('models.roles.summarizer', { value: 'anthropic:opus', ui_section: 'model-roles' }),
-        entry('search.tavily_api_key', { secret: true, value: '***', ui_section: 'search' }),
-      ],
-    }));
+    mockManifest.mockResolvedValue(allConfigured('openrouter:acme/model'));
     renderOverview();
     await screen.findByText('Changed from defaults');
     expect(screen.queryByText('Getting set up')).not.toBeInTheDocument();
@@ -143,6 +161,64 @@ describe('OverviewSection — getting set up', () => {
       await screen.findByRole('button', { name: /Pick a model for each role/ })
     );
     expect(onNavigate).toHaveBeenCalledWith('model-roles');
+  });
+});
+
+describe('OverviewSection — the Global Default Model step', () => {
+  // A provider alone can't run a conversation for an agent with no model of its
+  // own: without a global default (or LM Studio) it stops with "No model chosen".
+  // The optional roles step tracks only the role keys, so before this step the
+  // list could read as done while chat could not run.
+
+  it('is required, and says what goes wrong without it', async () => {
+    renderOverview();
+    const step = await screen.findByRole('button', { name: /Choose a Global Default Model/ });
+    expect(step).not.toHaveTextContent('Configured');
+    expect(step).not.toHaveTextContent('optional');
+    expect(step).toHaveTextContent(/can't start a conversation unless LM Studio is connected/);
+  });
+
+  it('comes right after connecting a provider', async () => {
+    renderOverview();
+    expect(await setupStepLabels()).toEqual([
+      'Connect a model provider',
+      'Choose a Global Default Model',
+      'Pick a model for each role',
+      'Add a web-search key',
+    ]);
+  });
+
+  it('keeps the list up while it is the only step left', async () => {
+    mockManifest.mockResolvedValue(allConfigured(null));
+    renderOverview();
+    const step = await screen.findByRole('button', { name: /Choose a Global Default Model/ });
+    expect(step).not.toHaveTextContent('Configured');
+    expect(screen.getByRole('button', { name: /Connect a model provider/ }))
+      .toHaveTextContent('Configured');
+  });
+
+  it('ticks once a model is chosen', async () => {
+    mockManifest.mockResolvedValue(manifest({
+      entries: [
+        entry('preferences.default_model', {
+          default: null, value: 'openrouter:acme/model', ui_section: 'model-roles',
+        }),
+      ],
+    }));
+    renderOverview();
+    expect(await screen.findByRole('button', { name: /Choose a Global Default Model/ }))
+      .toHaveTextContent('Configured');
+  });
+
+  it('lands on the control itself, not just its section', async () => {
+    const onFocusSetting = vi.fn();
+    const onNavigate = vi.fn();
+    renderOverview({ onFocusSetting, onNavigate });
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Choose a Global Default Model/ })
+    );
+    expect(onFocusSetting).toHaveBeenCalledWith('model-roles', 'config:preferences.default_model');
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 });
 
