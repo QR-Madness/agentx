@@ -11,7 +11,7 @@
 editing it; it stops, and puts `uv.lock` back, if your uv is older than the one that wrote the lock,
 since an older uv rewrites it in an older format). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.307** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.308** (protocol 1).
 
 > For completed phases and project history, see [roadmap.md](docs-site/src/content/docs/roadmap.md)
 
@@ -56,7 +56,7 @@ bump `protocol_version` only on breaking API changes. Current: **0.21.307** (pro
 | [cognitive-os.md](todo/backlog/cognitive-os.md) | Cognitive OS — the north-star map (abstractive; pillars cross-reference the concrete tracks) |
 | [workspaces.md](todo/backlog/workspaces.md) | ⭐ File Workspaces & Document RAG |
 | [memory-recall.md](todo/backlog/memory-recall.md) | ⭐ Active Memory Recall (3 tiers) · pairs with `Memory-Roadmap.md` |
-| [memory-store-consolidation.md](todo/backlog/memory-store-consolidation.md) | ⭐ Memory store consolidation — Neo4j → PostgreSQL (**ratified 2026-11-12**, ADR-21; Slice 0 shipped, Slice 1 next) |
+| [memory-store-consolidation.md](todo/backlog/memory-store-consolidation.md) | ⭐ Memory store consolidation — Neo4j → PostgreSQL (**ratified 2026-11-12**, ADR-21; a hard cut since 2026-11-28, ADR-22; Slices 0–2 shipped, the PostgreSQL twins next) |
 | [procedural.md](todo/backlog/procedural.md) | ⭐ Procedural Memory (encode → replay → activate) · pairs with `Memory-Roadmap.md` |
 | [agentic-organizations.md](todo/backlog/agentic-organizations.md) | ⭐ Agentic Organizations — org manager canvas, chain of command, durable delegation threads |
 | [retrieval-extraction.md](todo/backlog/retrieval-extraction.md) | Retrieval Quality · MCP Tools · Extraction Improvements · pairs with `Memory-Roadmap.md` |

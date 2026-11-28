@@ -290,6 +290,22 @@ conn = psycopg2.connect(
 )
 ```
 
+The API needs **PostgreSQL 15 or newer with pgvector 0.5 or newer**. The bundled image is
+PostgreSQL 16 with pgvector 0.8.
+
+The schema migrations create two roles that cannot log in, `agentx_memory` and
+`agentx_memory_system`. The API switches to one of them inside a transaction so that row-level
+security applies to the memory tables: a query sees one user's memory, and nothing if it named
+no user. The bundled stack needs nothing from you. If you point the API at your own PostgreSQL
+and its login role is not a superuser, give that role `CREATEROLE`, or create the two roles and
+grant them to it before the first start:
+
+```sql
+CREATE ROLE agentx_memory NOLOGIN;
+CREATE ROLE agentx_memory_system NOLOGIN;
+GRANT agentx_memory, agentx_memory_system TO your_login_role;
+```
+
 ### Redis
 
 ```

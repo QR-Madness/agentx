@@ -156,9 +156,15 @@ Settings Manifest / multi-user waves so the audit surface is one module.
 with a tighter line than the one above: the memory classes, not the whole kit, because the
 consolidation jobs and the portability code have to run on either store. No module outside them
 holds Cypher or opens a Neo4j session (`tests_memory.MemoryStoreBoundaryTest`, empty baseline).
+**Schema delivered** (2026-11-28) as Slice 2: ten `memory_*` tables whose rows cannot exist
+without a `user_id`, with forced row-level security entered only through `memory/scope.py`
+(`tests_memory.MemoryScopeBoundaryTest`, `MemoryStoreSchemaLiveTest`). Nothing reads them until
+the twins land. The conversion is a hard cut (ADR-22), so 1.1's log-first write path and 1.3's
+embedder provenance are built into the twins rather than retrofitted onto the graph.
 **Still open:** raw SQL outside the kit (the eval harnesses' PostgreSQL cleanup, parts of
 `views.py`), and methods that cannot exist without `(user_id, ChannelRef)`; the channel and
-conversation endpoints still span users (tenancy findings in the plan), due with RLS.
+conversation endpoints still span users (tenancy findings in the plan), due when their
+handlers move onto a user scope.
 
 ### 1.6 Redis durability tiers `[REFINES: Todo "Redis/Postgres-backed live session store" + "Rolling summary as a first-class conversations column"]`
 
