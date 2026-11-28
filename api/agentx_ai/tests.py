@@ -14413,16 +14413,23 @@ class ConversationContextTest(TestCase):
     def test_chat_rehydrates_cold_session(self):
         """Foundation #4b — agent.chat() hydrates from durable history before the
         turn, so the queued/background-chat path resumes warm (not just the
-        interactive stream). Hydration runs early, so it's captured even when the
-        downstream completion can't resolve a provider in the test env."""
+        interactive stream). Hydration runs early, before a model is resolved.
+
+        The model resolution is stubbed to fail the way a fresh checkout's does.
+        Left alone it reads the live config and, where that names a model, goes
+        on to call its provider: 140 s of a 160 s suite on a development machine."""
         from unittest.mock import patch
         from agentx_ai.agent.core import Agent, AgentConfig
+        from agentx_ai.exceptions import NoProviderConnectedError
         agent = Agent(AgentConfig(enable_memory=False, enable_tools=False))
         with patch(
             "agentx_ai.agent.conversation_history.hydrate_session_from_history",
             return_value=0,
-        ) as hyd:
+        ) as hyd, patch.object(
+            Agent, "resolve_model", side_effect=NoProviderConnectedError("no provider in the test environment"),
+        ) as resolve:
             agent.chat("hello", session_id="conv-xyz")
+        resolve.assert_called_once()  # the turn went on to the model and stopped there
         hyd.assert_called_once()
         # Hydrated against the conversation the turn belongs to.
         self.assertEqual(hyd.call_args.args[1], "conv-xyz")
@@ -22605,3 +22612,251 @@ class OrganizationLayoutTest(TestCase):
             self.assertIn("agent:{id}", res.json()["error"])
             self.assertEqual(self.client.post("/api/alloy/organization").status_code, 405)
             self.assertEqual(store.layout()["positions"], {"team:wf_1": {"x": 5.0, "y": 6.0}})
+
+
+class VersionToolingTest(TestCase):
+    """scripts/resolve_version_conflicts.py and scripts/check_pr_version.py: the
+    rules that keep every notable change on a version number of its own."""
+
+    @staticmethod
+    def _script(name: str):
+        import importlib.util
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[2] / "scripts" / f"{name}.py"
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    # -- the rule -----------------------------------------------------------------
+
+    def test_a_branch_ends_one_above_the_mainline_unless_it_is_already_ahead(self):
+        resolved = self._script("resolve_version_conflicts").resolved_version
+        # Behind: taking the mainline's number would put two changes on one version.
+        self.assertEqual(resolved(mainline=(0, 21, 306), branch=(0, 21, 305)), (0, 21, 307))
+        # Both claimed the same number.
+        self.assertEqual(resolved(mainline=(0, 21, 305), branch=(0, 21, 305)), (0, 21, 306))
+        # Already ahead: nothing to do.
+        self.assertEqual(resolved(mainline=(0, 21, 306), branch=(0, 21, 308)), (0, 21, 308))
+        # A minor bump on either side.
+        self.assertEqual(resolved(mainline=(0, 22, 0), branch=(0, 21, 309)), (0, 22, 1))
+        self.assertEqual(resolved(mainline=(0, 21, 309), branch=(0, 22, 0)), (0, 22, 0))
+
+    def test_a_pull_request_that_claims_a_version_must_be_ahead_of_its_base(self):
+        verdict = self._script("check_pr_version").verdict
+        ahead, base = (0, 21, 305), (0, 21, 304)
+        self.assertIsNone(verdict(ahead, base, "fix(ui): route the edges the short way (v0.21.305)"))
+        # The base moved to the claimed number: every other check stays green.
+        refusal = verdict(base, base, "chore(deps): move the API to the MCP SDK 2 (v0.21.304)")
+        self.assertIn("another change took that number", refusal)
+        self.assertIn("0.21.305", refusal)
+        # No version claimed: a change need not be notable.
+        self.assertIsNone(verdict(base, base, "chore(client): type-check vite.config.ts in CI"))
+        self.assertIsNone(verdict(base, base, "chore(deps): Bump mcp from 1.30.0 to 2.3.0"))
+        # A merge never goes back a version, whatever the title says.
+        self.assertIn("behind", verdict((0, 21, 303), base))
+
+    def test_the_version_check_reads_this_repositorys_versions_file(self):
+        from pathlib import Path
+
+        check = self._script("check_pr_version")
+        text = (Path(__file__).resolve().parents[2] / "versions.yaml").read_text(encoding="utf-8")
+        version = check.api_version(text)
+        self.assertIsNotNone(version)
+        self.assertIn(f'version: "{check.fmt(version)}"', text)
+
+    # -- conflict hunks, in both of git's styles -------------------------------------
+
+    def test_release_note_hunks_keep_both_sides_in_either_conflict_style(self):
+        resolve = self._script("resolve_version_conflicts").resolve_hunks
+        two_sided = (
+            "<<<<<<< HEAD\n<!-- release-version: 0.21.305 -->\n=======\n"
+            "<!-- release-version: 0.21.306 -->\n>>>>>>> origin/master\n"
+            "### Fixes\n"
+            "<<<<<<< HEAD\n- **Branch change.**\n=======\n- **Mainline change.**\n>>>>>>> origin/master\n"
+        )
+        with_base = (
+            "<<<<<<< HEAD\n<!-- release-version: 0.21.305 -->\n||||||| f91ceaf2\n"
+            "<!-- release-version: 0.21.304 -->\n=======\n"
+            "<!-- release-version: 0.21.306 -->\n>>>>>>> origin/master\n"
+            "### Fixes\n"
+            "<<<<<<< HEAD\n- **Branch change.**\n||||||| f91ceaf2\n=======\n"
+            "- **Mainline change.**\n>>>>>>> origin/master\n"
+        )
+        expected = (
+            "<!-- release-version: 0.21.307 -->\n### Fixes\n- **Mainline change.**\n- **Branch change.**\n"
+        )
+        for text in (two_sided, with_base):
+            self.assertEqual(
+                resolve(text, keep="both", marker_line="<!-- release-version: 0.21.307 -->\n"), expected,
+            )
+
+    def test_only_the_current_version_line_of_the_todo_file_is_resolved(self):
+        resolve = self._script("resolve_version_conflicts").resolve_hunks
+        content = "<<<<<<< HEAD\n- [ ] the branch's item\n=======\n- [ ] the mainline's item\n>>>>>>> origin/master\n"
+        text = (
+            "<<<<<<< HEAD\nCurrent: **0.21.305** (protocol 1).\n=======\n"
+            "Current: **0.21.306** (protocol 1).\n>>>>>>> origin/master\n" + content
+        )
+        # The version line settles (versions:sync rewrites it); the items are a
+        # person's to merge and stay conflicted.
+        self.assertEqual(resolve(text, keep="todo"), "Current: **0.21.306** (protocol 1).\n" + content)
+
+    # -- end to end, in a scratch repository -----------------------------------------
+
+    def _scratch_repo(self):
+        """A repository where `pr` and `master` both moved on from 0.21.304: master
+        by two merged changes (to .306), the branch by one (to .305)."""
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        # Nothing from the developer's own git configuration (conflict style,
+        # signing, hooks) may reach the scratch repository.
+        env = {
+            **os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+        }
+        environ = patch.dict(os.environ, env)
+        environ.start()
+        self.addCleanup(environ.stop)
+
+        def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+            # Fixed arguments, in a scratch directory: nothing here is input.
+            return subprocess.run(  # noqa: S603
+                ["git", *args], cwd=root, capture_output=True, text=True, check=check,  # noqa: S607
+            )
+
+        def write(version: str, bullets: list[str]) -> None:
+            (root / "versions.yaml").write_text(
+                f'api:\n  version: "{version}"\n  protocol_version: 1\n  min_client_version: "0.20.0"\n'
+                f'client:\n  version: "{version}"\n'
+            )
+            (root / "Release-Notes.md").write_text(
+                f"<!-- release-version: {version} -->\n\n### Fixes\n\n" + "".join(f"- **{b}**\n" for b in bullets)
+            )
+            (root / "Todo.md").write_text(f"# Todo\n\nCurrent: **{version}** (protocol 1).\n\n- [ ] an item\n")
+            (root / "pyproject.toml").write_text(f'[project]\nversion = "{version}"\n')
+
+        def commit(message: str) -> None:
+            git("add", "-A")
+            git("commit", "-q", "-m", message)
+
+        git("init", "-q", "-b", "master")
+        write("0.21.304", ["Base fix."])
+        commit("base")
+        git("switch", "-q", "-c", "pr")
+        write("0.21.305", ["Base fix.", "Branch change."])
+        commit("the branch's change")
+        git("switch", "-q", "master")
+        write("0.21.305", ["Base fix.", "Mainline one."])
+        commit("a merged change")
+        write("0.21.306", ["Base fix.", "Mainline one.", "Mainline two."])
+        commit("another merged change")
+        git("switch", "-q", "pr")
+        return root, git
+
+    def _resolve_in(self, root, *args: str) -> str:
+        import contextlib
+        import io
+
+        resolver = self._script("resolve_version_conflicts")
+        here = os.getcwd()
+        os.chdir(root)
+        self.addCleanup(os.chdir, here)
+        said = io.StringIO()
+        with contextlib.redirect_stdout(said):
+            self.assertEqual(resolver.main(["--no-sync", *args]), 0)
+        os.chdir(here)
+        return said.getvalue()
+
+    def _assert_resolved(self, root, git) -> None:
+        self.assertEqual(git("diff", "--name-only", "--diff-filter=U").stdout, "")
+        versions = (root / "versions.yaml").read_text()
+        self.assertEqual(versions.count('version: "0.21.307"'), 2)
+        self.assertIn('min_client_version: "0.20.0"', versions)
+        notes = (root / "Release-Notes.md").read_text()
+        self.assertTrue(notes.startswith("<!-- release-version: 0.21.307 -->\n"))
+        for bullet in ("Base fix.", "Mainline one.", "Mainline two.", "Branch change."):
+            self.assertEqual(notes.count(f"- **{bullet}**"), 1, bullet)
+        # Set by the resolver itself: a branch older than versions:sync's Todo.md
+        # step would otherwise keep the other side's number.
+        self.assertIn("Current: **0.21.307** (protocol 1).", (root / "Todo.md").read_text())
+        for name in ("Release-Notes.md", "Todo.md", "versions.yaml", "pyproject.toml"):
+            text = (root / name).read_text()
+            for marker in ("<<<<<<<", "|||||||", ">>>>>>>"):
+                self.assertNotIn(marker, text, name)
+
+    def test_merging_the_mainline_in_puts_the_branch_one_above_it(self):
+        for style in ("merge", "diff3"):
+            with self.subTest(conflict_style=style):
+                root, git = self._scratch_repo()
+                merged = git("-c", f"merge.conflictStyle={style}", "merge", "master", check=False)
+                self.assertNotEqual(merged.returncode, 0, "the scenario should conflict")
+                said = self._resolve_in(root)
+                # Before: "higher version wins" left the branch on the mainline's
+                # 0.21.306, the number another change already had.
+                self.assertIn("Resolved version: 0.21.307", said)
+                self.assertIn("mainline 0.21.306 is theirs", said)
+                self._assert_resolved(root, git)
+
+    def test_rebasing_onto_the_mainline_reaches_the_same_version(self):
+        root, git = self._scratch_repo()
+        rebased = git("rebase", "master", check=False)
+        self.assertNotEqual(rebased.returncode, 0, "the scenario should conflict")
+        said = self._resolve_in(root)
+        # A rebase swaps the sides: the mainline is what git calls ours.
+        self.assertIn("Resolved version: 0.21.307", said)
+        self.assertIn("mainline 0.21.306 is ours", said)
+        self._assert_resolved(root, git)
+
+
+class WorkflowHygieneTest(TestCase):
+    """.github/workflows: two rules a review can miss and a release would pay for.
+    The release workflow holds the Docker Hub token and a write token, and it runs
+    only when a release is cut, so nothing else exercises it."""
+
+    @staticmethod
+    def _workflows():
+        from pathlib import Path
+
+        found = sorted((Path(__file__).resolve().parents[2] / ".github" / "workflows").glob("*.yml"))
+        assert found, "no workflows found"
+        return found
+
+    def test_every_action_is_pinned_to_a_commit(self):
+        # A tag or branch can be moved to different code after review; a commit
+        # cannot. The comment carries the version, which Dependabot keeps in step.
+        pinned = re.compile(r"uses:\s*[\w.-]+/[\w./-]+@[0-9a-f]{40}\s+#\s*\S+")
+        loose = [
+            f"{path.name}:{number}: {line.strip()}"
+            for path in self._workflows()
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+            if re.search(r"^\s*(-\s*)?uses:", line) and not pinned.search(line)
+        ]
+        self.assertEqual(
+            loose, [],
+            "Pin the action to a full commit SHA with its version in a trailing comment, "
+            "e.g. `uses: actions/checkout@<40 hex>  # v7.0.1`.",
+        )
+
+    def test_no_script_is_built_from_an_input_or_an_event_field(self):
+        # `${{ inputs.x }}` inside `run:` is pasted into the script before the shell
+        # parses it, so its text can run as code. Pass it through `env:` instead.
+        import yaml
+
+        risky = re.compile(r"\$\{\{\s*(inputs\.|github\.event\.|github\.head_ref)")
+        offenders = []
+        for path in self._workflows():
+            jobs = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("jobs", {})
+            for job_name, job in jobs.items():
+                for step in job.get("steps", []):
+                    if risky.search(str(step.get("run", ""))):
+                        offenders.append(f"{path.name}: {job_name}: {step.get('name', '(unnamed step)')}")
+        self.assertEqual(offenders, [], "Move the value into the step's or the job's `env:` and read it as a variable.")

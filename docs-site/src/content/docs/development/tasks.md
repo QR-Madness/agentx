@@ -394,7 +394,7 @@ Run `task --list-all` for the full set (120+ tasks). Other groups worth knowing:
 | `check:*` | `check:static`, `check:types`, `check:build` | Static analysis (lint + types + build) |
 | `lint:*` / `format:*` | `lint:python`, `lint:client`, `format:python`, `format:client` | Lint and format |
 | `logs:*` / `debug:*` | `logs:api`, `logs:docker`, `logs:keys:status`, `logs:seal`, `logs:rotate-keys`, `logs:rotate-keys:deep`, `debug:env`, `debug:ports` | Logging, diagnostics, and encrypted-archive key management |
-| `release:*` | `release:build`, `release:check`, `versions:sync` | Build and release |
+| `release:*` | `release:build`, `release:check`, `versions:sync`, `versions:resolve` | Build and release, and the version files |
 
 ## Next Steps
 

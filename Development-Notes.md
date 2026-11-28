@@ -646,6 +646,16 @@ reaches uvicorn in seconds. `agentx migrate` (in-image ops CLI) calls the same `
 
 ---
 
+### CI workflows & version tooling (`.github/workflows/`, `scripts/`)
+
+Rules the workflows keep, each with the test that holds it (`tests.WorkflowHygieneTest`, `tests.VersionToolingTest`):
+
+- **Every action is pinned to a commit**, with its version in a trailing comment (`uses: actions/checkout@<sha>  # v7.0.1`). A tag can be moved to other code after review; a commit cannot, and `release.yml` hands actions the Docker Hub token and a write token. Dependabot's monthly `github-actions` group moves the SHA and the comment together. `dtolnay/rust-toolchain` is pinned on its `stable` branch, whose default toolchain is stable.
+- **No script is built from an input or an event field.** `${{ inputs.x }}` or a PR title inside `run:` is pasted into the script before the shell parses it. They go through `env:` (`RELEASE_VERSION`, `PR`, `PR_TITLE`).
+- **A newer push cancels the older run of the same pull request only.** On master every merge keeps its verdict (`cancel-in-progress: ${{ github.event_name == 'pull_request' }}`); two merges a minute apart used to cancel one.
+- **A version belongs to one change.** `task versions:sync` writes it everywhere it is stamped, `Todo.md`'s "Current" line included. When two PRs claim the same number: `task versions:resolve` (`scripts/resolve_version_conflicts.py`) puts the branch one above the mainline unless it is already ahead, in a merge or a rebase and in either conflict style; the `Resolve version conflicts` workflow does the same from the Actions tab. When both PRs changed the number identically git merges them without a conflict, so the `gates` job runs `scripts/check_pr_version.py`: a PR whose title claims a version `(vX.Y.Z)` must end ahead of its base branch.
+- **Not enforced here:** `master` has no branch protection, so nothing stops a merge on a stale green run. The version check only bites when CI runs after the base moved; requiring branches to be up to date before merging is a repository setting.
+
 ## Client Surface Map (`client/src/`)
 
 > Moved from `CLAUDE.md` (which keeps only the drift-proof rules). Read the relevant bullet
