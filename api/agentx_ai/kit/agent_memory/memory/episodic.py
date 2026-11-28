@@ -163,8 +163,13 @@ class EpisodicMemory:
             """), {"conv_id": conversation_id})
             return [row[0] for row in result if row[0]]
 
-    def get_conversation_roster(self, conversation_id: str) -> list[dict[str, str]]:
+    def get_conversation_roster(
+        self, conversation_id: str, user_id: str | None = None,
+    ) -> list[dict[str, str]]:
         """Return the agents that produced turns in a conversation as a roster.
+
+        ``user_id`` is the conversation's owner. The graph finds the roster by
+        conversation id alone and ignores it; the PostgreSQL twin needs it.
 
         Each entry is ``{"agent_id": ..., "name": ...}``. The ``name`` is the
         display name stamped onto :class:`AgentParticipant` at write-time (the
@@ -268,18 +273,23 @@ class EpisodicMemory:
 
             return [Turn(**dict(record["t"])) for record in result]
 
-    def delete_conversation(self, conversation_id: str) -> dict[str, int]:
+    def delete_conversation(self, conversation_id: str, user_id: str | None = None) -> dict[str, int]:
         """Delete a conversation node and its turns, by id. Returns the counts
         (``turns``, ``conversation``). The PostgreSQL log, Redis and sidecars are the
-        caller's to clear."""
+        caller's to clear.
+
+        ``user_id`` is the conversation's owner. The graph deletes by id alone and
+        ignores it; the PostgreSQL twin deletes only that user's conversation."""
         deleted = {"turns": 0, "conversation": 0}
         with Neo4jConnection.session() as session:
-            # Delete turns linked to this conversation
+            # Delete turns linked to this conversation. Collected first, so the
+            # count is of all of them: grouped by turn it was 1 per row, and a
+            # conversation of any length reported one turn deleted.
             result = session.run("""
                 MATCH (c:Conversation {id: $conv_id})-[:HAS_TURN]->(t:Turn)
-                WITH t, count(t) AS cnt
-                DETACH DELETE t
-                RETURN cnt
+                WITH collect(t) AS turns
+                FOREACH (t IN turns | DETACH DELETE t)
+                RETURN size(turns) AS cnt
             """, conv_id=conversation_id)
             record = result.single()
             if record:

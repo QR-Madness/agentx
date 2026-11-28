@@ -2,7 +2,7 @@
  * Memory's entity and fact editors — an edit in progress is not closed away
  * without asking.
  *
- * Before v0.21.309 an open edit form in EntityDetail or FactDetail was dropped
+ * Before v0.21.311 an open edit form in EntityDetail or FactDetail was dropped
  * by anything that dismissed Memory: its close button, Escape, ⌘T, the palette's
  * navigation, the TopBar's page pills. The detail pane's own close dropped it
  * too. Both editors now register `useDismissGuard` on the Memory entry.

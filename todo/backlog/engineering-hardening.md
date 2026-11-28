@@ -265,7 +265,7 @@
       hidden until the surface closes. This is deliberate for now: those surfaces can hold unsaved
       work, and Organization guards it ("Discard unsaved changes?") in its own close path.
       Closing them on navigation first needs a close *request* on the modal stack, which each
-      surface can confirm or veto. **That request exists since v0.21.309** (`closeModal` runs the
+      surface can confirm or veto. **That request exists since v0.21.311** (`closeModal` runs the
       entry's dismissal guards; `hooks/useDismissGuard.ts`). What is left: move Organization's
       own guard onto `useDismissGuard`, give Settings' secret fields and the profile editor a guard
       where they hold unsaved input, then widen `dismissTabSurfaces` (or a sibling) to them.
@@ -274,7 +274,7 @@
 
 > From the independent review recorded on PR #174. Its first finding (navigation silently
 > discarding an edit) and the preview's Escape closing the whole Projects drawer were fixed in
-> v0.21.309 (dismissal guards; innermost `useEscapeToClose` wins). These stand.
+> v0.21.311 (dismissal guards; innermost `useEscapeToClose` wins). These stand.
 
 - [ ] **A command run over an above-stack overlay lands beneath it.** The image lightbox (3000),
       the model picker (2999/3000) and the Connectors & Tools form overlay (2200) are body

@@ -1,7 +1,7 @@
 /**
  * Dismissal guards — an unsaved edit survives every way of dismissing its surface.
  *
- * Before v0.21.309 the Projects drawer and Memory closed on ⌘T, the palette's
+ * Before v0.21.311 the Projects drawer and Memory closed on ⌘T, the palette's
  * navigation and the TopBar's page pills (`dismissTabSurfaces`), as well as on
  * their own close button, Escape and backdrop, and an edit in progress inside
  * them was dropped without a word. An editor now registers `useDismissGuard` on

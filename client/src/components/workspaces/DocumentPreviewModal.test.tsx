@@ -2,7 +2,7 @@
  * DocumentPreviewModal — an edit in progress is not closed away without asking.
  *
  * The preview is a ModalDialog rendered inside the Projects drawer's stack entry.
- * Before v0.21.309 its markdown editor had no dirty check: its own close, Escape,
+ * Before v0.21.311 its markdown editor had no dirty check: its own close, Escape,
  * and anything that dismissed the drawer (⌘T, the palette's navigation, the
  * TopBar's page pills) dropped the draft. And Escape in the preview closed the
  * whole drawer, because the drawer's Escape listener ran first.

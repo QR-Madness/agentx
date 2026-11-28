@@ -18,7 +18,7 @@ constraints = [{ name = "torch", specifier = "==2.11.0" }]
 
 [[package]]
 name = "agentx-source"
-version = "0.21.309"
+version = "0.21.311"
 source = { virtual = "." }
 default-groups = ["cpu"]
 dependencies = [

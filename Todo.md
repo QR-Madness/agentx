@@ -11,7 +11,7 @@
 editing it; it stops, and puts `uv.lock` back, if your uv is older than the one that wrote the lock,
 since an older uv rewrites it in an older format). Completed work is tagged inline with the version it shipped in, e.g. `[v0.20.1]`.
 Bump the version when a unit of work completes — patch for additive/back-compat features, and
-bump `protocol_version` only on breaking API changes. Current: **0.21.309** (protocol 1).
+bump `protocol_version` only on breaking API changes. Current: **0.21.311** (protocol 1).
 Two pull requests written in parallel claim the same number, and the later one takes the next:
 `task versions:resolve` settles it when the merge conflicts, and CI's version check
 (`scripts/check_pr_version.py`) catches it when git merges the two silently.
