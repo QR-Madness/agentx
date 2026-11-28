@@ -9,6 +9,10 @@
  *
  * Opened/closed by RootLayout (which owns page-navigation state + the global key
  * listener); the strip's search pill dispatches `agentx:toggle-command-palette`.
+ *
+ * It is the top app layer (`lib/paletteLayer.ts`): visible and usable over every
+ * drawer, dialog and full-screen surface, owning the keys typed in it, so Escape
+ * closes the palette and leaves the surface beneath open.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -22,6 +26,7 @@ import {
   type CommandGroup,
 } from '../../hooks/useCommands';
 import { getRecentCommandIds, pushRecentCommand } from '../../lib/recentCommands';
+import { COMMAND_PALETTE_OVERLAY_CLASS } from '../../lib/paletteLayer';
 import { isMac } from '../../lib/platform';
 import type { PageId } from '../../layouts/TopBar';
 import './CommandPalette.css';
@@ -95,11 +100,18 @@ export function CommandPalette({ isOpen, onClose, onNavigate }: CommandPalettePr
   };
 
   return createPortal(
-    <div className="cmdk-overlay" onClick={onClose} role="presentation">
+    <div className={COMMAND_PALETTE_OVERLAY_CLASS} onClick={onClose} role="presentation">
       <div
         className="cmdk-panel"
         onClick={e => e.stopPropagation()}
         onKeyDown={e => {
+          // The palette is the top layer, so the keys typed in it are its own. The
+          // layers beneath listen on window/document: every full-screen surface and
+          // drawer closes on Escape, and the model picker reads ↑↓ and Enter. Stop
+          // plain keys here (cmdk has already handled them). ⌘/Ctrl chords still
+          // propagate, because RootLayout's ⌘K toggle and the app shortcuts live
+          // on document.
+          if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
           if (e.key === 'Escape') {
             e.preventDefault();
             onClose();

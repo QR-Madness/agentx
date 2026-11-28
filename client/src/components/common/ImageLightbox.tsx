@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Minus, Plus, RotateCcw, X } from 'lucide-react';
+import { isFromCommandPalette } from '../../lib/paletteLayer';
 
 interface ImageLightboxProps {
   src: string;
@@ -33,10 +34,13 @@ export function ImageLightbox({ src, alt, downloadName, onClose }: ImageLightbox
     setOffset({ x: 0, y: 0 });
   }, []);
 
-  // Escape to close (own handler — this is a bare portal, not a dialog shell).
+  // Escape to close (own handler — this is a bare portal, not a dialog shell). It
+  // listens in the capture phase to beat the surface beneath, so it would also see
+  // an Escape typed in the command palette, which sits above it; that one is the
+  // palette's to handle.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+      if (e.key === 'Escape' && !isFromCommandPalette(e)) { e.stopPropagation(); onClose(); }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);

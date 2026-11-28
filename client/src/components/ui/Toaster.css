@@ -4,7 +4,10 @@
   position: fixed;
   bottom: var(--space-xl, 24px);
   right: var(--space-xl, 24px);
-  z-index: 1000;
+  /* Above every app layer, the command palette (4000) included, so a toast
+     raised from inside a full-screen surface or a picker is never hidden; only
+     the gates sit higher (Development-Notes → Layering). */
+  z-index: 4100;
   display: flex;
   flex-direction: column;
   gap: var(--space-md, 12px);

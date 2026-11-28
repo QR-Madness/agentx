@@ -2,9 +2,9 @@
  * ModalDialog — Centered overlay modal
  */
 
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { X } from 'lucide-react';
-import type { ModalSize } from '../../contexts/ModalContext';
+import { useEscapeToClose, type ModalSize } from '../../contexts/ModalContext';
 
 interface ModalDialogProps {
   size?: ModalSize;
@@ -25,13 +25,7 @@ const SIZE_MAX_WIDTHS: Record<ModalSize, string> = {
 };
 
 export function ModalDialog({ size = 'md', showClose = true, onClose, children }: ModalDialogProps) {
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  useEscapeToClose(onClose);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

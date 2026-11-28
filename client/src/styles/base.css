@@ -488,6 +488,20 @@ select {
 }
 
 /* === Modal & Drawer System === */
+
+/* ModalPortal wraps every stack entry (drawer, dialog or full-screen surface) in
+   one of these. Each is a stacking context at the same z-index, so the stack's
+   order decides what paints on top: a drawer opened over Memory covers it. A
+   shell's own z-index values (1000/1001 here, 1999/2000 for the full-screen
+   surfaces) only order its backdrop against its panel inside its layer.
+   Never add transform, filter, backdrop-filter, contain or will-change here:
+   any of them would make the layer the containing block of the shells'
+   position:fixed boxes (see FULLSCREEN_SURFACES in ModalPortal.tsx). */
+.modal-layer {
+  position: relative;
+  z-index: 2000;
+}
+
 .modal-backdrop,
 .drawer-backdrop {
   position: fixed;

@@ -4,7 +4,7 @@
 
 import { lazy, Suspense, useEffect, type ComponentType } from 'react';
 import { createPortal } from 'react-dom';
-import { useModal, type ModalInstance } from '../../contexts/ModalContext';
+import { useModal, ModalEntryContext, type ModalInstance } from '../../contexts/ModalContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { DrawerPanel } from './DrawerPanel';
 import { ModalDialog } from './ModalDialog';
@@ -145,10 +145,20 @@ export function ModalPortal() {
   if (!portalRoot || modals.length === 0) return null;
   if (authRequired && !isAuthenticated) return null;
 
+  // One `.modal-layer` per entry (base.css): every layer shares one z-index, so the
+  // stack order decides what paints on top. A drawer or dialog opened over a
+  // full-screen surface covers it even though its shell's own z-index (1000) is
+  // lower than the surface's (2000). The wrapper is a plain positioned box, never
+  // a containing block for the shells' fixed boxes. The entry context lets
+  // `useEscapeToClose` close only the top entry.
   return createPortal(
     <>
       {modals.map(modal => (
-        <ModalRenderer key={modal.id} modal={modal} />
+        <div key={modal.id} className="modal-layer" data-modal={modal.component}>
+          <ModalEntryContext.Provider value={modal.id}>
+            <ModalRenderer modal={modal} />
+          </ModalEntryContext.Provider>
+        </div>
       ))}
     </>,
     portalRoot

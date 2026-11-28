@@ -1,11 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { CommandPalette } from './CommandPalette';
 
 const setTheme = vi.fn();
+const modal = vi.hoisted(() => ({
+  openModal: vi.fn(),
+  closeModal: vi.fn(),
+  openIds: new Set<string>(),
+}));
 
 vi.mock('../../contexts/ModalContext', () => ({
-  useModal: () => ({ openModal: vi.fn() }),
+  useModal: () => ({
+    openModal: modal.openModal,
+    closeModal: modal.closeModal,
+    isOpen: (id: string) => modal.openIds.has(id),
+  }),
 }));
 vi.mock('../../contexts/ConversationContext', () => ({
   useConversation: () => ({
@@ -32,6 +41,9 @@ vi.mock('../../contexts/AmbassadorDockContext', () => ({
 describe('CommandPalette', () => {
   beforeEach(() => {
     setTheme.mockClear();
+    modal.openModal.mockClear();
+    modal.closeModal.mockClear();
+    modal.openIds.clear();
     localStorage.clear();
   });
 
@@ -85,6 +97,79 @@ describe('CommandPalette', () => {
     render(<CommandPalette isOpen onClose={onClose} onNavigate={vi.fn()} />);
     fireEvent.keyDown(screen.getByPlaceholderText(/type a command/i), { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  // The palette is the top layer (lib/paletteLayer.ts). The surfaces, drawers and
+  // the model picker beneath it listen for keys on window and document.
+  describe('as the top layer', () => {
+    const onWindow = vi.fn();
+    const onDocument = vi.fn();
+    beforeEach(() => {
+      onWindow.mockClear();
+      onDocument.mockClear();
+      window.addEventListener('keydown', onWindow);
+      document.addEventListener('keydown', onDocument);
+    });
+    afterEach(() => {
+      window.removeEventListener('keydown', onWindow);
+      document.removeEventListener('keydown', onDocument);
+    });
+
+    it('closes on Escape without the layers beneath hearing it', () => {
+      const onClose = vi.fn();
+      render(<CommandPalette isOpen onClose={onClose} onNavigate={vi.fn()} />);
+      fireEvent.keyDown(screen.getByPlaceholderText(/type a command/i), { key: 'Escape' });
+      expect(onClose).toHaveBeenCalled();
+      expect(onDocument).not.toHaveBeenCalled();
+      expect(onWindow).not.toHaveBeenCalled();
+    });
+
+    it('keeps typing and list navigation to itself', () => {
+      render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
+      const input = screen.getByPlaceholderText(/type a command/i);
+      for (const key of ['a', ' ', 'ArrowDown', 'ArrowUp', 'Tab']) fireEvent.keyDown(input, { key });
+      expect(onDocument).not.toHaveBeenCalled();
+      expect(onWindow).not.toHaveBeenCalled();
+    });
+
+    it('lets ⌘/Ctrl chords through to the app shortcuts on document', () => {
+      render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
+      const input = screen.getByPlaceholderText(/type a command/i);
+      fireEvent.keyDown(input, { key: 'k', ctrlKey: true });
+      fireEvent.keyDown(input, { key: 'k', metaKey: true });
+      expect(onDocument).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('navigation', () => {
+    // Deck, Memory and Projects are tab-surfaces: the palette opens over them, and
+    // the TopBar's page pills already dismiss them on navigation.
+    it('dismisses the open tab-surfaces, as the TopBar does', () => {
+      modal.openIds = new Set(['memory', 'ambassador-deck', 'workspaces-drawer']);
+      const onNavigate = vi.fn();
+      render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={onNavigate} />);
+      fireEvent.click(screen.getByText('Go to Dashboard'));
+      expect(onNavigate).toHaveBeenCalledWith('dashboard');
+      expect(modal.closeModal.mock.calls.map(([id]) => id).sort()).toEqual(
+        ['ambassador-deck', 'memory', 'workspaces-drawer'],
+      );
+    });
+
+    it('dismisses them for "New conversation" too, which lands on the chat page', () => {
+      modal.openIds = new Set(['memory']);
+      const onNavigate = vi.fn();
+      render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={onNavigate} />);
+      fireEvent.click(screen.getByText('New conversation'));
+      expect(onNavigate).toHaveBeenCalledWith('agentx');
+      expect(modal.closeModal).toHaveBeenCalledWith('memory');
+    });
+
+    it('leaves the modal surfaces open: they may hold unsaved work', () => {
+      modal.openIds = new Set(['unified-settings', 'org-manager']);
+      render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={vi.fn()} />);
+      fireEvent.click(screen.getByText('Go to Dashboard'));
+      expect(modal.closeModal).not.toHaveBeenCalled();
+    });
   });
 
   describe('settings section commands', () => {

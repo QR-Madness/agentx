@@ -57,3 +57,28 @@ export const SURFACES: Record<SurfaceKey, ModalConfig> = {
   roster: { id: 'agent-roster', type: 'modal', component: 'agentRoster', size: 'full' },
   changePassword: { id: 'change-password', type: 'modal', component: 'changePassword', size: 'sm' },
 };
+
+/**
+ * Tab-surfaces: the TopBar's desktop surface pills (Deck, Memory, Projects). They
+ * behave like tabs over the page, so navigating to a page dismisses them; left
+ * open, they would cover the page it just switched to. Every navigation path
+ * goes through `dismissTabSurfaces`: the TopBar's page pills, the palette's
+ * navigation commands and ⌘T.
+ *
+ * The other surfaces stay open on navigation. They are modal (Settings,
+ * Connectors & Tools, Organization, the Roster, the profile editor, the
+ * drawers) and can hold unsaved work behind their own close path, such as
+ * Organization's "Discard unsaved changes?".
+ */
+export const TAB_SURFACES: readonly SurfaceKey[] = ['ambassadorDeck', 'memory', 'workspaces'];
+
+/** Close every open tab-surface. Takes `useModal()`'s `isOpen` and `closeModal`. */
+export function dismissTabSurfaces(modals: {
+  isOpen: (id: string) => boolean;
+  closeModal: (id: string) => void;
+}): void {
+  for (const key of TAB_SURFACES) {
+    const id = SURFACES[key].id;
+    if (id && modals.isOpen(id)) modals.closeModal(id);
+  }
+}

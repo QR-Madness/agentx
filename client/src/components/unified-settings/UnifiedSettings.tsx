@@ -22,6 +22,7 @@ import { SettingsManifestProvider } from './SettingsManifestContext';
 import { SettingsSearchProvider } from './SettingsSearchContext';
 import { ParallaxBackground } from './animations/ParallaxBackground';
 import { backdropVariants, containerVariants } from './animations/transitions';
+import { useEscapeToClose } from '../../contexts/ModalContext';
 import './UnifiedSettings.css';
 
 interface UnifiedSettingsProps {
@@ -40,20 +41,8 @@ export function UnifiedSettings({
     useSettingsNavigation(initialSection, focusSetting);
   const [isNavOpen, setIsNavOpen] = useState(false);
 
-  // ESC key handler
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
+  // ESC closes Settings while it is the top of the modal stack.
+  useEscapeToClose(onClose, isOpen);
 
   // Prevent body scroll when open
   useEffect(() => {

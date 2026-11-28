@@ -2,7 +2,7 @@
  * Modal Context — Stack-based modal/drawer management with portal rendering
  */
 
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 
 export type ModalType = 'modal' | 'drawer';
 export type ModalPosition = 'left' | 'right' | 'center';
@@ -83,4 +83,39 @@ export function useModal() {
     throw new Error('useModal must be used within a ModalProvider');
   }
   return context;
+}
+
+/** The id of the stack entry a component renders inside. ModalPortal sets it; null elsewhere. */
+export const ModalEntryContext = createContext<string | null>(null);
+
+/**
+ * Escape closes the stack entry this component renders in, but only while that
+ * entry is the top of the stack and nothing above it has already taken the key.
+ * The modal stack paints in the order it opened (`.modal-layer`), so the entry
+ * on top is the one the user sees.
+ *
+ * - Only the top entry listens at all, so stacked entries never close together:
+ *   a drawer over Memory, the profile editor over the Roster.
+ * - `defaultPrevented` covers the layers above the stack: a Radix Select or
+ *   confirm dismisses itself on Escape and prevents the default. The command
+ *   palette also stops the event, so it never arrives here.
+ * - Outside ModalPortal (no entry), or without a ModalProvider, it always applies.
+ *
+ * `enabled` gates it for surfaces that stay mounted while closed (`isOpen` props).
+ */
+export function useEscapeToClose(onClose: () => void, enabled = true): void {
+  const entryId = useContext(ModalEntryContext);
+  const stack = useContext(ModalContext)?.modals;
+  const isTop = entryId === null || !stack || stack[stack.length - 1]?.id === entryId;
+
+  useEffect(() => {
+    if (!enabled || !isTop) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [enabled, isTop, onClose]);
 }

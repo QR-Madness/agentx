@@ -13,10 +13,20 @@ import { VersionMismatchPage } from '../pages/VersionMismatchPage';
 import { useConversation } from '../contexts/ConversationContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useModal } from '../contexts/ModalContext';
-import { SURFACES } from '../lib/surfaces';
+import { SURFACES, dismissTabSurfaces } from '../lib/surfaces';
+import { canOpenCommandPalette } from '../lib/paletteLayer';
 import { useUIChrome } from '../contexts/UIChromeContext';
 import { CommandPalette } from '../components/common/CommandPalette';
 import './RootLayout.css';
+
+/**
+ * Toggle for ⌘K and the TopBar's search button. Closing always works; opening
+ * waits while a modal Radix layer (a confirm dialog, an open menu) holds the
+ * focus the palette would need (`lib/paletteLayer.ts`).
+ */
+function togglePalette(open: boolean, canOpen: boolean): boolean {
+  return open ? false : canOpen;
+}
 
 export function RootLayout() {
   const {
@@ -32,7 +42,7 @@ export function RootLayout() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const rafRef = useRef<number | null>(null);
   const { addTab, closeTab, activeTabId } = useConversation();
-  const { openModal } = useModal();
+  const { openModal, isOpen, closeModal } = useModal();
   const { focusMode } = useUIChrome();
 
   // Global keyboard shortcuts
@@ -48,6 +58,8 @@ export function RootLayout() {
       if (e.key === 't') {
         e.preventDefault();
         addTab();
+        // Same as the palette's "New conversation": leave the tab-surfaces.
+        dismissTabSurfaces({ isOpen, closeModal });
         setActivePage('agentx');
       } else if (e.key === 'w') {
         e.preventDefault();
@@ -59,17 +71,21 @@ export function RootLayout() {
         openModal(SURFACES.settings);
       } else if (e.key === 'k') {
         e.preventDefault();
-        setPaletteOpen(prev => !prev);
+        const canOpen = canOpenCommandPalette();
+        setPaletteOpen(open => togglePalette(open, canOpen));
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [addTab, closeTab, activeTabId, openModal, connectionState, authRequired, isAuthenticated]);
+  }, [addTab, closeTab, activeTabId, openModal, isOpen, closeModal, connectionState, authRequired, isAuthenticated]);
 
   // Let the titlebar strip's ⌘K button open the palette without prop-drilling.
   useEffect(() => {
-    const onToggle = () => setPaletteOpen(prev => !prev);
+    const onToggle = () => {
+      const canOpen = canOpenCommandPalette();
+      setPaletteOpen(open => togglePalette(open, canOpen));
+    };
     const onNavigate = (e: Event) => {
       const page = (e as CustomEvent<PageId>).detail;
       if (page) setActivePage(page);
