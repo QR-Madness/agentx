@@ -1,11 +1,12 @@
 # Click-to-fix for version-bump merge conflicts on a PR.
 #
-# Two parallel PRs always collide on versions.yaml + the Release-Notes marker
-# (version-travels-with-the-work). Dispatch this with the PR number and it
-# merges the default branch into the PR branch, resolves the version files via
-# scripts/resolve_version_conflicts.py (higher version wins, both sides' note
-# bullets kept, manifests re-synced), and pushes the merge commit back.
-# Non-version conflicts fail the run and are left for a human.
+# Two parallel PRs always collide on versions.yaml, the Release-Notes marker and
+# Todo.md's version line (version-travels-with-the-work). Dispatch this with the
+# PR number and it merges the default branch into the PR branch, resolves the
+# version files via scripts/resolve_version_conflicts.py (the branch ends one
+# above the default branch, both sides' note bullets kept, manifests re-synced),
+# and pushes the merge commit back. Non-version conflicts fail the run and are
+# left for a human.
 #
 # The resolver script is taken from the DEFAULT branch (copied before the PR
 # checkout), so it works on PR branches that predate the script.
@@ -23,16 +24,26 @@ permissions:
   contents: write
   pull-requests: read
 
+# One run per pull request at a time: two would race to push the same branch.
+concurrency:
+  group: resolve-version-conflicts-${{ inputs.pr }}
+  cancel-in-progress: false
+
 jobs:
   resolve:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Inputs reach the scripts through the environment, never as script text.
+    env:
+      PR: ${{ inputs.pr }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: astral-sh/setup-uv@v7
-      - uses: arduino/setup-task@v3
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7.6.0
+      - uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52  # v3.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -43,19 +54,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr checkout "${{ inputs.pr }}"
+          case "$PR" in
+            ''|*[!0-9]*) echo "::error::The pull request number must be digits; got '$PR'."; exit 1 ;;
+          esac
+          gh pr checkout "$PR"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Merge the default branch and resolve
         run: |
-          DEFAULT="${{ github.event.repository.default_branch }}"
-          git fetch origin "$DEFAULT"
-          if git merge --no-edit "origin/$DEFAULT"; then
+          git fetch origin "$DEFAULT_BRANCH"
+          if git merge --no-edit "origin/$DEFAULT_BRANCH"; then
             echo "Merge is clean — this PR has no conflicts. Nothing pushed."
             exit 0
           fi
-          python3 "$RUNNER_TEMP/resolve_version_conflicts.py"
+          # The default branch is the side being merged in: "theirs".
+          python3 "$RUNNER_TEMP/resolve_version_conflicts.py" --mainline theirs
           REMAINING=$(git diff --name-only --diff-filter=U)
           if [ -n "$REMAINING" ]; then
             echo "::error::Non-version conflicts remain — resolve locally:"

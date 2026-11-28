@@ -1103,12 +1103,15 @@ tasks:
 # ============================================================================
 
   versions:resolve:
-    desc: "Resolve version-bump merge conflicts: higher version wins (equal sides bump +1), both sides' release-note bullets are kept, manifests re-synced"
+    desc: "Resolve version-bump merge conflicts: the branch ends one above the mainline unless it is already ahead, both sides' release-note bullets are kept, manifests re-synced"
+    summary: |
+      Run it with a merge or rebase stopped on version conflicts. Pass flags after `--`,
+      e.g. `task versions:resolve -- --mainline ours`.
     cmds:
-      - python3 scripts/resolve_version_conflicts.py
+      - python3 scripts/resolve_version_conflicts.py {{.CLI_ARGS}}
 
   versions:sync:
-    desc: "Sync version from versions.yaml to all manifests (package.json, Cargo.toml, tauri.conf.json, pyproject.toml)"
+    desc: "Sync version from versions.yaml to all manifests (package.json, Cargo.toml, tauri.conf.json, pyproject.toml), the docs-site stamps and Todo.md"
     silent: true
     platforms: [linux]
     cmds:
@@ -1140,6 +1143,10 @@ tasks:
         # docs-site "Current release:" prose mentions
         sed -i "s/\(Current release:\*\* v\)[0-9.]*/\1$API_VERSION/" docs-site/src/content/docs/index.md docs-site/src/content/docs/roadmap.md
         echo "  ✓ docs-site docs prose"
+
+        # Todo.md's header states the current version (`task docs:check` compares it)
+        sed -i "s/\(Current: \*\*\)[0-9][0-9.]*\(\*\*\)/\1$API_VERSION\2/" Todo.md
+        echo "  ✓ Todo.md"
 
         # Lockfiles record the project version — refresh them HERE so they ride
         # the same commit as the manifests (otherwise they drift until the next
