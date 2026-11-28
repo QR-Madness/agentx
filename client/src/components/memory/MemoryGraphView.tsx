@@ -9,7 +9,8 @@ import { RefreshCw, GitBranch, Search } from 'lucide-react';
 import {
   ReactFlow, Background, Controls, Handle, Position, BaseEdge,
   getStraightPath, useInternalNode, useNodesState, useEdgesState,
-  type NodeProps, type EdgeProps, type InternalNode, type NodeOrigin, type Node, type Edge
+  useNodesInitialized, useNodesStore, useReactFlow,
+  type NodeProps, type EdgeProps, type InternalNode, type NodeOrigin, type NodesStore, type Node, type Edge
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '../../styles/flow.css';
@@ -97,6 +98,33 @@ const edgeTypes = { spoke: SpokeEdge };
 // Node positions are centres, so the ring sits around the middle of the centre
 // node whatever the nodes' widths.
 const NODE_ORIGIN: NodeOrigin = [0.5, 0.5];
+
+/** The graph's subject: the id of the node it is centred on (an entity or a procedure). */
+const selectSubject = (state: NodesStore): string | null =>
+  state.nodes.find(node => node.data.isCenter === true)?.id ?? null;
+
+// Fits the view to each new subject once React Flow has measured its nodes.
+// The `fitView` prop fits only the graph the canvas mounts with, and choosing
+// a procedure keeps the canvas mounted (only an entity's fetch shows the
+// spinner), so the next graph opened at the last one's zoom. Since the ring
+// grows with the neighbour count (v0.21.306), a procedure chosen after a
+// 50-neighbour entity was drawn at about 0.25. The subject and the measured
+// flag come from React Flow's node store, which `setNodes` updates together,
+// so the fit waits for the new nodes whatever order the effects run in. It
+// also fits the first subject again, which the `fitView` prop has already
+// fitted before the first paint; the repeat lands on the same viewport.
+function FitViewOnSubjectChange() {
+  const subject = useNodesStore(selectSubject);
+  const nodesInitialized = useNodesInitialized();
+  const { fitView } = useReactFlow();
+  const fittedSubject = useRef<string | null>(null);
+  useEffect(() => {
+    if (!nodesInitialized || subject === null || subject === fittedSubject.current) return;
+    fittedSubject.current = subject;
+    void fitView();
+  }, [nodesInitialized, subject, fitView]);
+  return null;
+}
 
 // Max evidence-conversation nodes to render around a procedure (keep it legible).
 const MAX_EVIDENCE_NODES = 6;
@@ -316,6 +344,7 @@ export function MemoryGraphView({ channel = '_all', refreshToken = 0 }: {
           >
             <Background />
             <Controls />
+            <FitViewOnSubjectChange />
           </ReactFlow>
         )}
       </div>
