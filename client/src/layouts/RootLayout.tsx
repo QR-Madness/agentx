@@ -57,10 +57,13 @@ export function RootLayout() {
 
       if (e.key === 't') {
         e.preventDefault();
-        addTab();
-        // Same as the palette's "New conversation": leave the tab-surfaces.
-        dismissTabSurfaces({ isOpen, closeModal });
-        setActivePage('agentx');
+        // Same as the palette's "New conversation": leave the tab-surfaces first.
+        // A surface holding unsaved work may stay open; then nothing else happens.
+        void dismissTabSurfaces({ isOpen, closeModal }).then(left => {
+          if (!left) return;
+          addTab();
+          setActivePage('agentx');
+        });
       } else if (e.key === 'w') {
         e.preventDefault();
         if (activeTabId) closeTab(activeTabId);

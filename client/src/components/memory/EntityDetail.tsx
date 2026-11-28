@@ -1,8 +1,13 @@
 // ─── Entity detail panel ───────────────────────────────────────────────────
+//
+// An edit in progress is guarded (`useDismissGuard`): the panel's own close and
+// anything that dismisses Memory (its close, Escape, ⌘T, page navigation) ask
+// before discarding it.
 
 import { useState, useCallback, useEffect } from 'react';
 import { RefreshCw, X, Edit2, Trash2, Check, AlertTriangle } from 'lucide-react';
 import { useEntityGraph, useUpdateMemoryEntity, useDeleteMemoryEntity } from '../../lib/hooks';
+import { useDismissGuard } from '../../hooks/useDismissGuard';
 import { Button, Input, Textarea } from '../ui';
 
 export function EntityDetail({
@@ -34,6 +39,18 @@ export function EntityDetail({
       setDeleteConfirm(false);
     }
   }, [graph?.entity?.id]);
+
+  const original = graph?.entity;
+  const dirty = editMode && !!original && (
+    editName !== original.name
+    || editType !== original.type
+    || editDescription !== (original.description || '')
+    || editAliases !== (original.aliases || []).join(', ')
+  );
+  const mayDiscard = useDismissGuard(dirty, `Your edits to ${original?.name ?? 'this entity'} have not been saved.`);
+  const close = useCallback(async () => {
+    if (await mayDiscard()) onClose();
+  }, [mayDiscard, onClose]);
 
   const handleSave = useCallback(async () => {
     if (!graph?.entity) return;
@@ -80,7 +97,7 @@ export function EntityDetail({
     <div className="split-detail-inner">
       <div className="detail-header">
         <h3>{editMode ? 'Edit Entity' : entity.name}</h3>
-        <Button variant="ghost" onClick={onClose}><X size={18} /></Button>
+        <Button variant="ghost" onClick={() => void close()} aria-label="Close entity"><X size={18} /></Button>
       </div>
 
       {editMode ? (

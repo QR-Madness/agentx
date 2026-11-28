@@ -65,6 +65,12 @@ export const SURFACES: Record<SurfaceKey, ModalConfig> = {
  * goes through `dismissTabSurfaces`: the TopBar's page pills, the palette's
  * navigation commands and ⌘T.
  *
+ * Dismissal is a request, not a teardown. An editor holding unsaved work inside a
+ * tab-surface (the Projects drawer's document editor, Memory's entity and fact
+ * editors) registers a dismissal guard (`hooks/useDismissGuard`), and the
+ * surface stays open if the user keeps editing. The navigation then does not
+ * happen either: the caller navigates only when this resolves `true`.
+ *
  * The other surfaces stay open on navigation. They are modal (Settings,
  * Connectors & Tools, Organization, the Roster, the profile editor, the
  * drawers) and can hold unsaved work behind their own close path, such as
@@ -72,13 +78,18 @@ export const SURFACES: Record<SurfaceKey, ModalConfig> = {
  */
 export const TAB_SURFACES: readonly SurfaceKey[] = ['ambassadorDeck', 'memory', 'workspaces'];
 
-/** Close every open tab-surface. Takes `useModal()`'s `isOpen` and `closeModal`. */
-export function dismissTabSurfaces(modals: {
+/**
+ * Ask every open tab-surface to close. Takes `useModal()`'s `isOpen` and
+ * `closeModal`. Resolves `true` when none is left open, `false` when a surface
+ * kept itself open (unsaved work the user chose to keep); stops at that one.
+ */
+export async function dismissTabSurfaces(modals: {
   isOpen: (id: string) => boolean;
-  closeModal: (id: string) => void;
-}): void {
+  closeModal: (id: string) => Promise<boolean> | void;
+}): Promise<boolean> {
   for (const key of TAB_SURFACES) {
     const id = SURFACES[key].id;
-    if (id && modals.isOpen(id)) modals.closeModal(id);
+    if (id && modals.isOpen(id) && (await modals.closeModal(id)) === false) return false;
   }
+  return true;
 }

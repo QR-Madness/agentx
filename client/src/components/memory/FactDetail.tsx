@@ -1,4 +1,8 @@
 // ─── Fact detail panel ─────────────────────────────────────────────────────
+//
+// An edit in progress is guarded (`useDismissGuard`): the panel's own close and
+// anything that dismisses Memory (its close, Escape, ⌘T, page navigation) ask
+// before discarding it.
 
 import { useState, useCallback, useEffect } from 'react';
 import { RefreshCw, X, ArrowUpRight, Edit2, Trash2, Check, AlertTriangle, Star, Archive, History, Link2, Plus, Search } from 'lucide-react';
@@ -14,6 +18,7 @@ import {
 } from '../../lib/hooks';
 import type { MemoryFact, MemoryFactEntity, FactProvenance } from '../../lib/api';
 import { formatTimestamp } from './formatTimestamp';
+import { useDismissGuard } from '../../hooks/useDismissGuard';
 import {
   Button, Input, Textarea, Slider,
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -111,6 +116,18 @@ export function FactDetail({
     setPicking(false);
   }, [fact.id]);
 
+  // The editor starts from the fact (the temporal context always starts empty).
+  const dirty = editMode && (
+    editClaim !== fact.claim
+    || editConfidence !== Math.round((fact.confidence || 0) * 100)
+    || editSource !== fact.source
+    || editTemporal !== ''
+  );
+  const mayDiscard = useDismissGuard(dirty, 'Your edits to this fact have not been saved.');
+  const close = useCallback(async () => {
+    if (await mayDiscard()) onClose();
+  }, [mayDiscard, onClose]);
+
   // Link/unlink update the fact's entity list; the endpoint returns the fresh
   // list, so we optimistically push it back up via onUpdated (no single-fact GET).
   const applyEntities = useCallback((next: MemoryFactEntity[]) => {
@@ -172,7 +189,7 @@ export function FactDetail({
     <div className="split-detail-inner">
       <div className="detail-header">
         <h3>{editMode ? 'Edit Fact' : 'Fact Detail'}</h3>
-        <Button variant="ghost" onClick={onClose}><X size={18} /></Button>
+        <Button variant="ghost" onClick={() => void close()} aria-label="Close fact"><X size={18} /></Button>
       </div>
 
       {editMode ? (

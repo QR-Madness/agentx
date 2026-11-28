@@ -8,12 +8,15 @@
  * setting — no autosave) using the `expected_sha256` ETag: a 409 means the
  * document changed elsewhere (e.g. the agent updated it mid-edit).
  * "Export as PDF" prints the rendered document (print stylesheet hides the app).
+ * An edit in progress is guarded (`useDismissGuard`): closing the preview, or
+ * anything that dismisses the Projects drawer around it, asks before discarding.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, Loader2, Pencil, Printer } from 'lucide-react';
 import { api, apiErrorMessage, toApiError, type WorkspaceDocument } from '../../lib/api';
 import { useNotify } from '../../contexts/NotificationContext';
+import { useDismissGuard } from '../../hooks/useDismissGuard';
 import { useIsMobile } from '../../lib/hooks';
 import { Badge, Button, Input, Textarea } from '../ui';
 import { ModalDialog } from '../modals/ModalDialog';
@@ -78,6 +81,13 @@ export function DocumentPreviewModal({
   const [nameDraft, setNameDraft] = useState('');
   const [zoomed, setZoomed] = useState(false);
   const leaf = doc.filename.slice(doc.filename.lastIndexOf('/') + 1);
+
+  // Unsaved: the editor is open and the draft differs from the loaded text.
+  const dirty = editing && text !== null && draft !== text;
+  const mayDiscard = useDismissGuard(dirty, `Your edits to ${leaf} have not been saved.`);
+  const close = useCallback(async () => {
+    if (await mayDiscard()) onClose();
+  }, [mayDiscard, onClose]);
 
   const rename = useCallback(async () => {
     const next = nameDraft.trim();
@@ -160,7 +170,7 @@ export function DocumentPreviewModal({
   }, [workspaceId, doc, notify]);
 
   return (
-    <ModalDialog size="xl" onClose={onClose}>
+    <ModalDialog size="xl" onClose={() => void close()}>
       <div className={`flex min-h-0 flex-col ${isMobile ? 'h-full flex-1' : 'h-[80vh]'}`}>
         <header className={`flex items-center gap-2 border-b border-line py-3 pr-12 ${isMobile ? 'flex-wrap px-3' : 'px-4'}`}>
           {renaming ? (
@@ -171,7 +181,8 @@ export function DocumentPreviewModal({
               onBlur={() => void rename()}
               onKeyDown={e => {
                 if (e.key === 'Enter') { e.preventDefault(); void rename(); }
-                if (e.key === 'Escape') setRenaming(false);
+                // Escape cancels the rename only; the preview stays open.
+                if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); }
               }}
               className="ax-field--sm min-w-0 flex-1"
               aria-label="File name"
