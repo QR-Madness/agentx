@@ -49,7 +49,7 @@ class SSETransport:
             name: Unique name for this connection
             url: SSE endpoint URL
             headers: HTTP headers to include in requests
-            auth: Optional httpx.Auth (e.g. the SDK's OAuthClientProvider)
+            auth: Optional httpx2.Auth (e.g. the SDK's OAuthClientProvider)
 
         Yields:
             ClientSession: The connected MCP client session

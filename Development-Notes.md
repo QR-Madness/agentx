@@ -491,7 +491,9 @@ A dedicated agent running *parallel* to a conversation that briefs the user on a
 Remote MCP servers (`sse`/`streamable_http`) can require **OAuth 2.1**. We wire the python-sdk's
 built-in machinery (`mcp.client.auth.OAuthClientProvider` — RFC 9728 protected-resource-metadata
 discovery, RFC 7591 dynamic client registration, PKCE, token refresh) into both transports
-(`sse_client(..., auth=)` / `streamablehttp_client(..., auth=)`); the provider is built in
+(`sse_client(..., auth=)`; `streamable_http_client(url, http_client=...)`, whose client
+`mcp.shared._httpx_utils.create_mcp_http_client(headers=, auth=)` builds, since mcp 2 moved headers and auth
+onto the httpx2 client); the provider is built in
 `MCPClientManager._build_oauth_provider` when the server config carries
 `auth: {"type": "oauth", "scope"?, "client_id"?, "client_secret"?}` (`ServerConfig.auth`;
 `${VAR}` values env-expand via `resolve_auth`). **Storage**: `FileTokenStorage` implements the
@@ -502,7 +504,15 @@ in the config seed `get_client_info` for providers without DCR (Google). **Inter
 loop; a per-server `PendingFlow` (single-flight, TTL 600s) holds an `asyncio.Future` — the redirect
 handler parses the OAuth `state` from the authorization URL and indexes the flow by it; the Django
 view `GET /api/mcp/oauth/callback` (PUBLIC — exempted in `AgentXAuthMiddleware.PUBLIC_ROUTES`, the
-browser carries no token; strict state validation instead) resolves the future thread-safely.
+browser carries no token; strict state validation instead) resolves the future thread-safely with
+`(code, state, iss)`. The callback handler returns the SDK's `AuthorizationCodeResult`, so the
+redirect's RFC 9207 `iss` reaches the SDK's issuer check: since mcp 2, a server that advertises
+issuer identification fails the flow without it. **mcp 2 (v0.21.305)** also made the SDK's models
+snake_case attributes over camelCase wire aliases (`mime_type`, `input_schema`, `is_error`). A
+`getattr`/`hasattr` by the old name falls back silently (a failed tool call read as a success), so
+SDK models are read as typed attributes, which pyright checks, and `tests.MCPSdkModelReadTest`
+pins the reads on real models, since a mock answers any name; and
+`session.initialize_result.capabilities` replaces `get_server_capabilities()`.
 **Connect state machine**: `manager.connect_interactive(name)` — stored-tokens-still-good connects
 synchronously; consent-needed returns `{"status": "auth_required", "authorization_url"}` (endpoint
 → HTTP 202) while the connect task keeps running; on eventual success it persists `auto_connect`.
