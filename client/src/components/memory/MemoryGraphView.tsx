@@ -12,6 +12,7 @@ import {
   type NodeProps, type Node, type Edge
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import '../../styles/flow.css';
 import { useMemoryEntities, useEntityGraph, useMemoryProcedures } from '../../lib/hooks';
 import type { MemoryProcedure } from '../../lib/api';
 import { procedureHeadline } from './procedureLabel';
@@ -238,16 +239,16 @@ export function MemoryGraphView({ channel = '_all', refreshToken = 0 }: {
           <div className="graph-empty"><RefreshCw size={24} className="spin" /></div>
         ) : (
           <ReactFlow
+            // Colours come from the theme tokens (`.ax-flow` in styles/flow.css),
+            // which also hold the canvas to the app's colour scheme rather than
+            // the OS's, so it needs no `forceColorMode`.
+            className="ax-flow"
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             nodeTypes={nodeTypes}
             fitView
-            // React Flow's default palette, as before v13 (which follows the OS
-            // unless told otherwise). Theming this view through `--xy-*` tokens,
-            // as the org chart does, is the follow-up that lets it drop this.
-            forceColorMode="light"
             onlyRenderVisibleElements
             minZoom={0.3}
             maxZoom={1.6}
