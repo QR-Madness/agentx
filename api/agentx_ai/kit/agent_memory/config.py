@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     # Redis
     redis_uri: str = "redis://localhost:6379"
 
+    # Which store the memory classes run on: "neo4j" or "postgres" (MEMORY_STORE).
+    # A development seam while the PostgreSQL twins are built (Decisions.md ADR-21,
+    # ADR-22), not a supported choice: "postgres" refuses to start until every
+    # twin exists, and the setting goes when Neo4j does. Read once per process
+    # (memory/backend.py).
+    memory_store: str = "neo4j"
+
     # Connection timeouts (seconds)
     connection_timeout: int = 5
 

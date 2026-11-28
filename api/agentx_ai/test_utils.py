@@ -45,14 +45,23 @@ def docker_services_running() -> bool:
     return True
 
 
-def postgres_running() -> bool:
-    """Check if PostgreSQL is reachable, for tests that touch no other store."""
+def _reachable(port: int) -> bool:
     try:
-        with socket.create_connection(("localhost", 5432), timeout=1):
+        with socket.create_connection(("localhost", port), timeout=1):
             pass
     except (TimeoutError, OSError):
-        return _unavailable("localhost:5432 is not reachable — run `task db:up`")
+        return _unavailable(f"localhost:{port} is not reachable — run `task db:up`")
     return True
+
+
+def postgres_running() -> bool:
+    """Check if PostgreSQL is reachable, for tests that touch no other store."""
+    return _reachable(5432)
+
+
+def neo4j_running() -> bool:
+    """Check if Neo4j is reachable, for tests that touch no other store."""
+    return _reachable(7687)
 
 
 def has_configured_provider() -> bool:

@@ -6444,7 +6444,7 @@ def memory_conversation_delete(request, conversation_id):
     DELETE: Remove the conversation's turns from Neo4j, PostgreSQL, and Redis.
     """
     from .kit.agent_memory.connections import PostgresConnection, RedisConnection
-    from .kit.agent_memory.memory.episodic import EpisodicMemory
+    from .kit.agent_memory.memory.backend import episodic_memory
 
     if request.method == 'OPTIONS':
         return JsonResponse({}, status=200)
@@ -6460,11 +6460,13 @@ def memory_conversation_delete(request, conversation_id):
             "redis_keys": 0,
         }
 
-        # Delete from Neo4j: conversation node and its turns
+        # Delete from the memory store: the conversation and its turns
         try:
-            deleted_counts.update(EpisodicMemory().delete_conversation(conversation_id))
+            deleted_counts.update(
+                episodic_memory().delete_conversation(conversation_id, user_id=DEFAULT_USER_ID)
+            )
         except Exception as e:
-            logger.warning(f"Error deleting conversation from Neo4j: {e}")
+            logger.warning(f"Error deleting conversation from the memory store: {e}")
 
         # Delete from PostgreSQL
         try:

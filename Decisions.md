@@ -715,7 +715,9 @@ already are one.
 revisions; the Neo4j runner lives until the cut).
 **Status:** in progress. Slices 0 (live-database tests in CI), 1 (one door: every Cypher query
 behind the memory classes) and 2 (the schema: ten tables with forced row-level security, Alembic
-`0009` and `0010`, read by nothing yet) have shipped. The cut happens only after the recall-parity
+`0009` and `0010`) have shipped, and Slice 3 has begun: `memory/backend.py` picks the store once
+per process from `MEMORY_STORE` and refuses `postgres` until every class has a twin
+(`TWINS_MISSING`); the episodic twin is the first. The cut happens only after the recall-parity
 gate (`eval_recall` on both backends); if parity cannot be reached, the work stops before it with
 Neo4j in place and nothing lost.
 **Row-level security, as built (Slice 2):** memory queries run as one of two roles that cannot log
@@ -732,7 +734,10 @@ migration commands exempt). Cross-user work enters only through `CrossUserStore`
 switch spelled out outside `scope.py`, and on the system scope named outside the cross-user store.
 `tests_memory.MemoryStoreSchemaLiveTest` (CI's live job) checks the policies against a real
 database: every memory table forced, a transaction confined to the user it named, nothing for one
-that named nobody. Planned: from Slice 3, CI's `backend-live` job runs the suite on both backends.
+that named nobody. `tests_memory.MemoryTwinBoundaryTest` keeps the twins off the graph and makes
+each override every method that ran on it; the contract tests (`EpisodicContract`) run one set of
+assertions against both stores. Planned: once the last twin lands, CI's `backend-live` job runs
+the whole suite on both backends.
 
 ### ADR-22 — The memory store conversion is a hard cut: memory resets, nothing is copied
 **Decision (ruled 2026-11-28; amends ADR-21):** the release that makes PostgreSQL the memory store
