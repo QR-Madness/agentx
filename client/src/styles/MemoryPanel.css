@@ -1029,14 +1029,30 @@
   font-size: 13px;
 }
 
-/* React Flow custom node */
+/* React Flow custom node. Long names wrap instead of widening the node, because
+   the ring in components/memory/graphGeometry.ts is sized against this width
+   cap (NODE_MAX_WIDTH there; its test keeps the two in step). */
 .graph-node {
   padding: 10px 16px;
   border-radius: 10px;
   background: var(--bg-elevated);
   border: 2px solid var(--border-color);
   min-width: 120px;
+  max-width: 200px;
   text-align: center;
+}
+
+/* Edges run straight between node borders (SpokeEdge in MemoryGraphView), so
+   the handles are only the anchors React Flow needs before it draws an edge.
+   Keep them out of sight and out of the pointer's way, as the org chart does. */
+.graph-canvas .graph-handle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  background: transparent;
+  pointer-events: none;
 }
 
 .graph-node.center {
@@ -1049,6 +1065,7 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
 .graph-node-type {
