@@ -124,10 +124,12 @@ export function TopBar({ activePage, onPageChange }: TopBarProps) {
             // selection — the underlying page pill goes quiet until it closes.
             className={`nav-pill ${activePage === item.id && !deckOpen && !memoryOpen && !projectsOpen ? 'active' : ''}`}
             onClick={() => {
-              onPageChange(item.id);
               // Tab behavior: navigating to a page dismisses an open tab-surface
-              // (shared with the palette and ⌘T through lib/surfaces).
-              dismissTabSurfaces({ isOpen, closeModal });
+              // (shared with the palette and ⌘T through lib/surfaces). One that
+              // holds unsaved work may stay open, and then the page stays too.
+              void dismissTabSurfaces({ isOpen, closeModal }).then(left => {
+                if (left) onPageChange(item.id);
+              });
             }}
           >
             {item.icon}

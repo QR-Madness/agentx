@@ -85,9 +85,14 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
   return useMemo<Command[]>(() => {
     // Every command that changes the page leaves the tab-surfaces (Deck, Memory,
     // Projects), exactly as the TopBar's page pills do. The palette opens over
-    // them, and left open they would cover the page it just switched to.
-    const navigate = (page: PageId) => { dismissTabSurfaces({ isOpen, closeModal }); onNavigate(page); };
-    const go = (page: PageId) => () => { navigate(page); onClose(); };
+    // them, and left open they would cover the page it just switched to. A
+    // surface holding unsaved work may stay open; then the page does not change.
+    const navigate = (page: PageId) =>
+      dismissTabSurfaces({ isOpen, closeModal }).then(left => {
+        if (left) onNavigate(page);
+        return left;
+      });
+    const go = (page: PageId) => () => { void navigate(page); onClose(); };
     // `props` rides through ModalContext → ModalPortal's spread, so a command
     // can open a surface *at* something (Settings at a section, say) rather
     // than only opening it.
@@ -105,7 +110,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'nav-dashboard', group: 'Navigation', label: 'Go to Dashboard', icon: <LayoutDashboard size={16} />, keywords: ['metrics', 'status'], run: go('dashboard') },
 
       // Conversation
-      { id: 'conv-new', group: 'Conversation', label: 'New conversation', hint: '⌘T', icon: <Plus size={16} />, keywords: ['tab', 'create', 'chat'], run: () => { addTab(); navigate('agentx'); onClose(); } },
+      { id: 'conv-new', group: 'Conversation', label: 'New conversation', hint: '⌘T', icon: <Plus size={16} />, keywords: ['tab', 'create', 'chat'], run: () => { void navigate('agentx').then(left => { if (left) addTab(); }); onClose(); } },
       { id: 'open-conversations', group: 'Conversation', label: 'Open conversations', icon: <MessagesSquare size={16} />, keywords: ['tabs', 'switch', 'list', 'sessions', 'sidebar'], run: open('conversations') },
 
       // Workspace
@@ -114,7 +119,7 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       { id: 'open-memory', group: 'Workspace', label: 'Open Memory', icon: <MemoryIcon size={16} />, keywords: ['facts', 'entities', 'recall', 'memories'], run: open('memory') },
       { id: 'open-sources', group: 'Workspace', label: 'Open Sources', icon: <BookMarked size={16} />, keywords: ['citations', 'bibliography', 'references', 'links'], run: open('sources') },
       { id: 'open-consolidation', group: 'Workspace', label: 'Memory Consolidation', icon: <Zap size={16} />, keywords: ['consolidate', 'memory', 'extract', 'facts', 'entities', 'lightning'], run: open('consolidation') },
-      { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel', 'ambassadors'], run: () => { navigate('agentx'); openAmbassador(); onClose(); } },
+      { id: 'open-ambassador', group: 'Workspace', label: 'Open Ambassador', icon: <Radio size={16} />, keywords: ['briefing', 'summarize', 'interpret', 'turn', 'parallel', 'ambassadors'], run: () => { void navigate('agentx').then(left => { if (left) openAmbassador(); }); onClose(); } },
       { id: 'open-ambassador-deck', group: 'Workspace', label: 'Open Command Deck', icon: <LayoutDashboard size={16} />, keywords: ['ambassador', 'deck', 'agents', 'overview', 'survey', 'roster', 'discovered'], run: open('ambassadorDeck') },
       { id: 'open-plans', group: 'Workspace', label: 'Open Plans', icon: <ListChecks size={16} />, keywords: ['tasks', 'subtasks', 'progress'], run: open('plans') },
       { id: 'open-translation', group: 'Workspace', label: 'Open Translation', icon: <Languages size={16} />, keywords: ['translate', 'language', 'nllb', 'translations'], run: open('translation') },
@@ -179,9 +184,10 @@ export function useCommands({ onNavigate, onClose }: UseCommandsArgs): Command[]
       // registry can't hold refs into the composer). Navigate to the chat
       // page first so the panel is mounted to hear the event.
       const fire = (evt: string) => () => {
-        navigate('agentx');
+        void navigate('agentx').then(left => {
+          if (left) setTimeout(() => window.dispatchEvent(new Event(evt)), 80);
+        });
         onClose();
-        setTimeout(() => window.dispatchEvent(new Event(evt)), 80);
       };
       cmds.push({
         id: 'open-relay', group: 'Conversation',

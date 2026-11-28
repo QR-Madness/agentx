@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { CommandPalette } from './CommandPalette';
 
 const setTheme = vi.fn();
 const modal = vi.hoisted(() => ({
   openModal: vi.fn(),
-  closeModal: vi.fn(),
+  // Resolves whether the entry closed; a dismissal guard can keep it open.
+  closeModal: vi.fn(async (_id: string) => true),
   openIds: new Set<string>(),
 }));
+const addTab = vi.hoisted(() => vi.fn());
 
 vi.mock('../../contexts/ModalContext', () => ({
   useModal: () => ({
@@ -18,7 +20,7 @@ vi.mock('../../contexts/ModalContext', () => ({
 }));
 vi.mock('../../contexts/ConversationContext', () => ({
   useConversation: () => ({
-    addTab: vi.fn(),
+    addTab,
     closeTab: vi.fn(),
     activeTabId: 't1',
     activeTab: { sessionId: null, messages: [], noMemorization: false },
@@ -42,8 +44,10 @@ describe('CommandPalette', () => {
   beforeEach(() => {
     setTheme.mockClear();
     modal.openModal.mockClear();
-    modal.closeModal.mockClear();
+    modal.closeModal.mockReset();
+    modal.closeModal.mockResolvedValue(true);
     modal.openIds.clear();
+    addTab.mockClear();
     localStorage.clear();
   });
 
@@ -62,13 +66,13 @@ describe('CommandPalette', () => {
     expect(screen.getByText('Theme: Light')).toBeInTheDocument();
   });
 
-  it('runs a navigation action and closes on click', () => {
+  it('runs a navigation action and closes on click', async () => {
     const onNavigate = vi.fn();
     const onClose = vi.fn();
     render(<CommandPalette isOpen onClose={onClose} onNavigate={onNavigate} />);
     fireEvent.click(screen.getByText('Go to Dashboard'));
-    expect(onNavigate).toHaveBeenCalledWith('dashboard');
     expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('dashboard'));
   });
 
   it('switches theme from the Theme group', () => {
@@ -144,24 +148,41 @@ describe('CommandPalette', () => {
   describe('navigation', () => {
     // Deck, Memory and Projects are tab-surfaces: the palette opens over them, and
     // the TopBar's page pills already dismiss them on navigation.
-    it('dismisses the open tab-surfaces, as the TopBar does', () => {
+    it('dismisses the open tab-surfaces, as the TopBar does', async () => {
       modal.openIds = new Set(['memory', 'ambassador-deck', 'workspaces-drawer']);
       const onNavigate = vi.fn();
       render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={onNavigate} />);
       fireEvent.click(screen.getByText('Go to Dashboard'));
-      expect(onNavigate).toHaveBeenCalledWith('dashboard');
+      await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('dashboard'));
       expect(modal.closeModal.mock.calls.map(([id]) => id).sort()).toEqual(
         ['ambassador-deck', 'memory', 'workspaces-drawer'],
       );
     });
 
-    it('dismisses them for "New conversation" too, which lands on the chat page', () => {
+    it('dismisses them for "New conversation" too, which lands on the chat page', async () => {
       modal.openIds = new Set(['memory']);
       const onNavigate = vi.fn();
       render(<CommandPalette isOpen onClose={vi.fn()} onNavigate={onNavigate} />);
       fireEvent.click(screen.getByText('New conversation'));
-      expect(onNavigate).toHaveBeenCalledWith('agentx');
+      await waitFor(() => expect(onNavigate).toHaveBeenCalledWith('agentx'));
       expect(modal.closeModal).toHaveBeenCalledWith('memory');
+      expect(addTab).toHaveBeenCalledTimes(1);
+    });
+
+    // A tab-surface holding unsaved work can keep itself open (useDismissGuard).
+    // Then the command does nothing else: no new tab, no page change beneath it.
+    it('stays put when a tab-surface keeps itself open', async () => {
+      modal.openIds = new Set(['workspaces-drawer']);
+      modal.closeModal.mockResolvedValue(false);
+      const onNavigate = vi.fn();
+      const onClose = vi.fn();
+      render(<CommandPalette isOpen onClose={onClose} onNavigate={onNavigate} />);
+      fireEvent.click(screen.getByText('New conversation'));
+      await waitFor(() => expect(modal.closeModal).toHaveBeenCalledWith('workspaces-drawer'));
+      await Promise.resolve();
+      expect(onClose).toHaveBeenCalled();
+      expect(onNavigate).not.toHaveBeenCalled();
+      expect(addTab).not.toHaveBeenCalled();
     });
 
     it('leaves the modal surfaces open: they may hold unsaved work', () => {

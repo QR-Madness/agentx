@@ -265,4 +265,36 @@
       hidden until the surface closes. This is deliberate for now: those surfaces can hold unsaved
       work, and Organization guards it ("Discard unsaved changes?") in its own close path.
       Closing them on navigation first needs a close *request* on the modal stack, which each
-      surface can confirm or veto.
+      surface can confirm or veto. **That request exists since v0.21.311** (`closeModal` runs the
+      entry's dismissal guards; `hooks/useDismissGuard.ts`). What is left: move Organization's
+      own guard onto `useDismissGuard`, give Settings' secret fields and the profile editor a guard
+      where they hold unsaved input, then widen `dismissTabSurfaces` (or a sibling) to them.
+
+### Overlay layering — follow-ups from the unsaved-edit guard (2026-11-28, review of PR #174)
+
+> From the independent review recorded on PR #174. Its first finding (navigation silently
+> discarding an edit) and the preview's Escape closing the whole Projects drawer were fixed in
+> v0.21.311 (dismissal guards; innermost `useEscapeToClose` wins). These stand.
+
+- [ ] **A command run over an above-stack overlay lands beneath it.** The image lightbox (3000),
+      the model picker (2999/3000) and the Connectors & Tools form overlay (2200) are body
+      portals above `.modal-layer` (2000). With a chat image open, ⌘K → "Open Settings" closes the
+      palette and nothing visible changes until the lightbox is dismissed. Either close those
+      overlays when the palette runs a command, or refuse to open the palette over them, as
+      `canOpenCommandPalette` does for Radix modal layers. Done when a vitest holds it.
+- [ ] **The Connectors & Tools form overlays have no Escape handling.** Same family as the model
+      picker item above; fix them together if the capture-phase approach is taken.
+- [ ] **RootLayout's wiring is untested.** Removing `canOpenCommandPalette()`, the ⌘T dismissal or
+      the TopBar pills' dismissal fails no test (the palette's commands are covered in
+      `CommandPalette.test.tsx`; the guard itself in `components/modals/dismissGuard.test.tsx`).
+      Extract the shortcut handler or render RootLayout with mocked contexts, and hold: ⌘K
+      refused over a Radix modal; ⌘T dismisses the tab-surfaces and adds a tab only when they
+      left; a page pill navigates only when they left.
+- [ ] **Test-harness gaps from the same review.** `ModalPortal.test.tsx` uses stand-in surfaces
+      only, and `styles/zLayers.test.ts` misses a `z-index` inside a TSX `<style>` string and a
+      `zIndex={n}` prop. Widen the scanner; add one real surface to the stack test.
+- [ ] **Changing the selection in Memory still drops an open entity or fact edit.** Picking
+      another row, another area tab or "view entity" from a fact resets the editor (its
+      `useEffect` on the id) without asking. The detail pane's own X and every dismissal of
+      Memory now ask. Fix: let the workbench ask its entry's guards before it changes the
+      selection (a `mayLeave()` over the entry's registered guards, beside `closeModal`).
