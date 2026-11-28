@@ -21,8 +21,10 @@ import inspect
 import json
 import re
 import tempfile
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
+from time import sleep
+from typing import Any
 from unittest import skipUnless
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -102,6 +104,7 @@ from agentx_ai.test_utils import (
     docker_services_running,
     embeddings_compatible,
     has_configured_provider,
+    neo4j_running,
     postgres_running,
 )
 
@@ -7944,6 +7947,15 @@ class MemoryViewsUseTheStoreTest(TestCase):
         self.assertEqual(res.json()["deleted"]["turns"], 3)
         self.assertEqual(res.json()["deleted"]["conversation"], 1)
 
+    def test_conversation_delete_names_the_owner(self):
+        # The graph deletes by id alone; the PostgreSQL twin deletes only the named
+        # user's conversation, so the handler has to say whose it is.
+        with patch('agentx_ai.kit.agent_memory.memory.episodic.EpisodicMemory.delete_conversation',
+                   return_value={"turns": 0, "conversation": 0}) as delete_conversation, \
+             patch('agentx_ai.agent.conversation_meta.delete_meta'):
+            self.client.delete("/api/memory/conversations/c9")
+        delete_conversation.assert_called_once_with("c9", user_id="default")
+
     def test_storage_metrics_take_the_graph_size_from_the_store(self):
         from agentx_ai.views import _get_storage_metrics
         with patch('agentx_ai.kit.agent_memory.memory.cross_user.CrossUserStore.graph_size_mb', return_value=12.5):
@@ -8442,3 +8454,486 @@ class EmbeddingDimensionTest(TestCase):
         older = MagicMock(spec=["get_sentence_embedding_dimension"])
         older.get_sentence_embedding_dimension.return_value = 768
         self.assertEqual(self._provider(older).output_dimensions, 768)
+
+
+class MemoryBackendTest(TestCase):
+    """memory/backend.py: one place decides which store the memory classes run on."""
+
+    def setUp(self):
+        from agentx_ai.kit.agent_memory.memory import backend
+
+        self.backend = backend
+        backend.memory_store.cache_clear()
+        self.addCleanup(backend.memory_store.cache_clear)
+
+    def _settings(self, store: str) -> Settings:
+        return get_settings().model_copy(update={"memory_store": store})
+
+    def test_the_store_defaults_to_the_graph_and_is_read_once_per_process(self):
+        self.assertEqual(Settings().memory_store, "neo4j")
+        with pin_memory_settings(self._settings("neo4j")):
+            self.assertEqual(self.backend.memory_store(), "neo4j")
+        # Boot-frozen: a later change of settings does not move a running process.
+        with pin_memory_settings(self._settings("something-else")):
+            self.assertEqual(self.backend.memory_store(), "neo4j")
+
+    def test_an_unknown_store_is_refused(self):
+        with pin_memory_settings(self._settings("sqlite")), self.assertRaises(ValueError):
+            self.backend.memory_store()
+
+    def test_postgres_is_refused_until_every_class_has_its_twin(self):
+        self.assertTrue(self.backend.TWINS_MISSING, "delete this test with the last twin's pull request")
+        with pin_memory_settings(self._settings("postgres")), self.assertRaises(RuntimeError) as refused:
+            self.backend.memory_store()
+        for missing in self.backend.TWINS_MISSING:
+            self.assertIn(missing, str(refused.exception))
+
+    def test_the_factory_builds_the_class_of_the_selected_store(self):
+        from agentx_ai.kit.agent_memory.memory.postgres.episodic import PgEpisodicMemory
+
+        with pin_memory_settings(self._settings("neo4j")):
+            self.assertIs(type(self.backend.episodic_memory()), EpisodicMemory)
+        self.backend.memory_store.cache_clear()
+        with pin_memory_settings(self._settings(" Postgres ")), patch.object(self.backend, "TWINS_MISSING", ()):
+            self.assertIs(type(self.backend.episodic_memory()), PgEpisodicMemory)
+
+    def test_the_missing_list_matches_the_twins_that_exist(self):
+        # The list can only be shortened by adding the twin it names.
+        import importlib
+
+        twins = {
+            "EpisodicMemory": "episodic", "SemanticMemory": "semantic",
+            "ProceduralMemory": "procedural", "GoalMemory": "goal",
+            "ConsolidationStore": "consolidation_store", "CrossUserStore": "cross_user",
+            "PortabilityStore": "portability_store", "MemoryOverview": "overview",
+        }
+        package = "agentx_ai.kit.agent_memory.memory"
+        missing = []
+        for name, module in twins.items():
+            graph_class = getattr(importlib.import_module(f"{package}.{module}"), name)
+            try:
+                twin = getattr(importlib.import_module(f"{package}.postgres.{module}"), f"Pg{name}")
+            except (ImportError, AttributeError):
+                missing.append(name)
+                continue
+            self.assertTrue(issubclass(twin, graph_class), f"Pg{name} must subclass {name}")
+        self.assertEqual(tuple(missing), self.backend.TWINS_MISSING)
+
+
+class MemoryTwinBoundaryTest(TestCase):
+    """The PostgreSQL twins never reach the graph, and leave no method of the
+    class they replace running on it (ADR-21, Slice 3)."""
+
+    PACKAGE = Path(__file__).resolve().parent / "kit" / "agent_memory" / "memory" / "postgres"
+    # Methods a twin inherits on purpose, because they never touched the graph.
+    INHERITED = {"EpisodicMemory": {"store_turn_log", "get_conversation_agent_ids"}}
+
+    def test_no_twin_module_holds_a_graph_query_or_opens_a_graph_session(self):
+        import io
+        import tokenize
+
+        offenders = {}
+        for path in sorted(self.PACKAGE.glob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            cypher, _ = MemoryStoreBoundaryTest._measure(source)
+            names = sum(
+                tok.type == tokenize.NAME and tok.string == "Neo4jConnection"
+                for tok in tokenize.generate_tokens(io.StringIO(source).readline)
+            )
+            if cypher or names:
+                offenders[path.name] = (cypher, names)
+        self.assertEqual(offenders, {}, "(graph queries, Neo4jConnection references) per module")
+
+    def test_a_twin_overrides_every_method_that_ran_on_the_graph(self):
+        from agentx_ai.kit.agent_memory.memory.postgres.episodic import PgEpisodicMemory
+
+        for graph_class, twin in ((EpisodicMemory, PgEpisodicMemory),):
+            public = {
+                name for name, member in vars(graph_class).items()
+                if callable(member) and not name.startswith("_")
+            }
+            left = public - set(vars(twin)) - self.INHERITED[graph_class.__name__]
+            self.assertEqual(
+                left, set(),
+                f"{twin.__name__} inherits these from {graph_class.__name__}, so they would "
+                "still run on the graph. Override them, or list them as inherited on purpose.",
+            )
+
+
+class EpisodicContract:
+    """What episodic memory does, whichever store it runs on. Each store's test
+    class supplies the class under test and a way to remove a user's rows.
+
+    Vectors are made up, so no embedding model is needed: one direction per turn.
+    """
+
+    episodic: Any
+    assertEqual: Any
+    assertIsNone: Any
+    assertAlmostEqual: Any
+    assertIsInstance: Any
+    addCleanup: Any
+
+    def _wipe(self, user_id: str) -> None:
+        raise NotImplementedError
+
+    def _contract_setup(self) -> None:
+        tag = uuid4().hex[:8]
+        self.ada, self.grace = f"contract-{tag}-ada", f"contract-{tag}-grace"
+        self.conversation = str(uuid4())
+        for user in (self.ada, self.grace):
+            self.addCleanup(self._wipe, user)
+
+    @staticmethod
+    def _direction(axis: int) -> list[float]:
+        vector = [0.0] * get_settings().embedding_dimensions
+        vector[axis] = 1.0
+        return vector
+
+    def _turn(self, index: int, content: str, *, conversation: str | None = None, role: str = "user",
+              agent_id: str | None = None, agent_name: str | None = None, axis: int | None = None) -> Turn:
+        return Turn(
+            conversation_id=conversation or self.conversation,
+            index=index, role=role, content=content,
+            # A minute apart, the last one a minute ago: an order to assert on.
+            timestamp=datetime.now(UTC) - timedelta(minutes=10 - index),
+            embedding=self._direction(index if axis is None else axis),
+            agent_id=agent_id,
+            metadata={"agent_name": agent_name} if agent_name else {},
+        )
+
+    def _store_three(self, user: str | None = None, channel: str = "minutes") -> list[Turn]:
+        turns = [
+            self._turn(0, "When does the committee meet?"),
+            self._turn(1, "On Tuesdays, in the east room.", role="assistant", agent_id="ash", agent_name="Ash"),
+            self._turn(2, "And who chairs it?"),
+        ]
+        for turn in turns:
+            self.episodic.store_turn(turn, user_id=user or self.ada, channel=channel, agent_id="ash")
+        return turns
+
+    def test_the_last_or_first_turns_of_a_conversation(self):
+        self._store_three()
+        last = self.episodic.get_conversation_turns(self.conversation, self.ada, limit=2, order="desc")
+        self.assertEqual([t["index"] for t in last], [2, 1])
+        self.assertEqual(last[0]["content"], "And who chairs it?")
+        self.assertEqual({t["conversation_id"] for t in last}, {self.conversation})
+        first = self.episodic.get_conversation_turns(self.conversation, self.ada, limit=2, order="asc")
+        self.assertEqual([(t["index"], t["role"], t["channel"]) for t in first],
+                         [(0, "user", "minutes"), (1, "assistant", "minutes")])
+        self.assertEqual(self.episodic.get_conversation_turns(self.conversation, self.grace), [])
+
+    def test_a_turn_by_its_id_belongs_to_its_user(self):
+        turns = self._store_three()
+        found = self.episodic.get_turn_by_id(turns[1].id, self.ada)
+        self.assertEqual(
+            (found["content"], found["conversation_id"], found["index"]),
+            ("On Tuesdays, in the east room.", self.conversation, 1),
+        )
+        self.assertIsInstance(found["timestamp"], str)  # ISO, ready for JSON
+        self.assertIsNone(self.episodic.get_turn_by_id(turns[1].id, self.grace))
+        self.assertIsNone(self.episodic.get_turn_by_id("no-such-turn", self.ada))
+
+    def test_the_turns_around_a_position_come_oldest_first(self):
+        self._store_three()
+        around = self.episodic.get_turns_around(self.conversation, self.ada, center_index=1, radius=1)
+        self.assertEqual([t["index"] for t in around], [0, 1, 2])
+        self.assertIsInstance(around[0]["timestamp"], str)
+        only = self.episodic.get_turns_around(self.conversation, self.ada, center_index=2, radius=0)
+        self.assertEqual([t["content"] for t in only], ["And who chairs it?"])
+
+    def test_recent_turns_are_the_users_own_newest_first_and_a_channel_includes_global(self):
+        self._store_three()
+        elsewhere = str(uuid4())
+        self.episodic.store_turn(
+            self._turn(5, "A note kept for every project.", conversation=elsewhere),
+            user_id=self.ada, channel="_global",
+        )
+        self.episodic.store_turn(
+            self._turn(6, "Another user's turn.", conversation=str(uuid4())),
+            user_id=self.grace, channel="minutes",
+        )
+        recent = self.episodic.get_recent_turns(self.ada, hours=24, limit=10, channel="minutes")
+        self.assertEqual([t["content"] for t in recent], [
+            "A note kept for every project.", "And who chairs it?",
+            "On Tuesdays, in the east room.", "When does the committee meet?",
+        ])
+        self.assertEqual(set(recent[0]), {"content", "role", "timestamp", "channel", "conversation_id"})
+        only_global = self.episodic.get_recent_turns(self.ada, hours=24, limit=10, channel="_global")
+        self.assertEqual([t["content"] for t in only_global], ["A note kept for every project."])
+        self.assertEqual(len(self.episodic.get_recent_turns(self.ada, hours=24, limit=2)), 2)
+
+    def test_search_returns_the_users_nearest_turns_best_first(self):
+        turns = self._store_three()
+        # Another user's turn points exactly where the query does. It must not be
+        # found, and must not take a place in the results.
+        self.episodic.store_turn(
+            self._turn(0, "Another user's turn.", conversation=str(uuid4()), axis=1),
+            user_id=self.grace, channel="minutes",
+        )
+        query = self._direction(1)
+
+        def search() -> list[dict[str, Any]]:
+            return self.episodic.vector_search(query, top_k=2, user_id=self.ada, channel="minutes")
+
+        found = search()
+        for _ in range(30):  # the graph's vector index takes a moment to catch up
+            if found and found[0]["id"] == turns[1].id:
+                break
+            sleep(0.2)
+            found = search()
+        self.assertEqual(found[0]["id"], turns[1].id)
+        self.assertEqual(found[0]["content"], "On Tuesdays, in the east room.")
+        self.assertAlmostEqual(found[0]["score"], 1.0, places=3)
+        self.assertEqual(len(found), 2)
+        self.assertAlmostEqual(found[1]["score"], 0.5, places=3)  # at right angles
+        self.assertEqual(
+            set(found[0]), {"id", "content", "role", "timestamp", "channel", "conversation_id", "score"},
+        )
+        self.assertEqual({t["conversation_id"] for t in found}, {self.conversation})
+
+    def test_the_roster_names_each_agent_once_by_its_latest_name(self):
+        self._store_three()
+        self.episodic.store_turn(
+            self._turn(3, "It rotates each quarter.", role="assistant", agent_id="ash", agent_name="Ash II"),
+            user_id=self.ada, channel="minutes",
+        )
+        self.episodic.store_turn(
+            self._turn(4, "I can confirm that.", role="assistant", agent_id="kim"),
+            user_id=self.ada, channel="minutes",
+        )
+        roster = self.episodic.get_conversation_roster(self.conversation, user_id=self.ada)
+        self.assertEqual(
+            sorted((r["agent_id"], r["name"]) for r in roster), [("ash", "Ash II"), ("kim", "kim")],
+        )
+
+    def test_deleting_a_conversation_removes_its_turns_and_counts_them(self):
+        self._store_three()
+        self.assertEqual(
+            self.episodic.delete_conversation(self.conversation, user_id=self.ada),
+            {"turns": 3, "conversation": 1},
+        )
+        self.assertEqual(self.episodic.get_conversation_turns(self.conversation, self.ada), [])
+        self.assertEqual(
+            self.episodic.delete_conversation(self.conversation, user_id=self.ada),
+            {"turns": 0, "conversation": 0},
+        )
+
+
+@skipUnless(neo4j_running(), "Neo4j not running")
+class EpisodicNeo4jContractTest(EpisodicContract, TestCase):
+    """The contract, on the graph: the behaviour the PostgreSQL twin has to match."""
+
+    def setUp(self):
+        self.episodic = EpisodicMemory()
+        self._contract_setup()
+
+    def _wipe(self, user_id: str) -> None:
+        with Neo4jConnection.session() as session:
+            session.run("MATCH (n) WHERE n.user_id = $u DETACH DELETE n", u=user_id).consume()
+            session.run("MATCH (u:User {id: $u}) DETACH DELETE u", u=user_id).consume()
+
+
+@skipUnless(postgres_running(), "PostgreSQL not running")
+class EpisodicPostgresContractTest(EpisodicContract, TestCase):
+    """The contract, on PostgreSQL, and what the twin does differently on purpose."""
+
+    def setUp(self):
+        from agentx_ai.kit.agent_memory.memory import scope
+        from agentx_ai.kit.agent_memory.memory.postgres.episodic import PgEpisodicMemory
+
+        self.scope = scope
+        self.episodic = PgEpisodicMemory()
+        self._contract_setup()
+
+    def _wipe(self, user_id: str) -> None:
+        with self.scope.user_scope(user_id) as session:
+            session.execute(text("DELETE FROM memory_conversations"))  # the user's own; turns cascade
+
+    def _rows(self, user_id: str, sql: str, **params) -> list[tuple]:
+        with self.scope.user_scope(user_id) as session:
+            return [tuple(row) for row in session.execute(text(sql), params)]
+
+    def test_every_call_names_a_user(self):
+        turn = self._turn(0, "Whose is this?")
+        calls = (
+            lambda: self.episodic.store_turn(turn),
+            lambda: self.episodic.vector_search(self._direction(0)),
+            lambda: self.episodic.get_conversation(self.conversation),
+            lambda: self.episodic.delete_conversation(self.conversation),
+            lambda: self.episodic.get_conversation_roster(self.conversation),
+            lambda: self.episodic.get_conversation_turns(self.conversation, ""),
+            lambda: self.episodic.get_turn_by_id("t", ""),
+            lambda: self.episodic.get_turns_around(self.conversation, "", 0),
+            lambda: self.episodic.get_recent_turns(""),
+        )
+        for call in calls:
+            with self.assertRaises(ValueError):
+                call()
+
+    def test_storing_at_a_taken_position_replaces_the_turn_and_keeps_its_id(self):
+        first = self._store_three()[2]
+        marked = "UPDATE memory_turns SET consolidated = NOW() WHERE turn_index = 2 RETURNING id"
+        self.assertEqual(self._rows(self.ada, marked), [(first.id,)])
+
+        # The same text again (a retry): nothing to read again, the mark stays.
+        retry = self._turn(2, "And who chairs it?")
+        self.episodic.store_turn(retry, user_id=self.ada, channel="minutes")
+        self.assertEqual(retry.id, first.id)
+        state = "SELECT id, content, consolidated IS NOT NULL FROM memory_turns WHERE turn_index = 2"
+        self.assertEqual(self._rows(self.ada, state), [(first.id, "And who chairs it?", True)])
+
+        # Different text: one turn at that position still, and it is unread.
+        changed = self._turn(2, "And who keeps the minutes?")
+        self.episodic.store_turn(changed, user_id=self.ada, channel="minutes")
+        self.assertEqual(changed.id, first.id)
+        self.assertEqual(self._rows(self.ada, state), [(first.id, "And who keeps the minutes?", False)])
+
+    def test_a_conversation_keeps_its_first_agent_and_a_vector_names_its_model(self):
+        from agentx_ai.kit.agent_memory.memory.postgres import embedder_name
+
+        self.episodic.store_turn(self._turn(0, "First."), user_id=self.ada, channel="minutes", agent_id=None)
+        self.episodic.store_turn(self._turn(1, "Second."), user_id=self.ada, channel="minutes", agent_id="ash")
+        self.episodic.store_turn(self._turn(2, "Third."), user_id=self.ada, channel="minutes", agent_id="kim")
+        self.assertEqual(
+            self._rows(self.ada, "SELECT agent_id, channel FROM memory_conversations"), [("ash", "minutes")],
+        )
+        self.assertEqual(
+            self._rows(self.ada, "SELECT DISTINCT embedder FROM memory_turns"), [(embedder_name(),)],
+        )
+        bare = self._turn(3, "No vector yet.")
+        bare.embedding = None
+        self.episodic.store_turn(bare, user_id=self.ada, channel="minutes")
+        self.assertEqual(
+            self._rows(self.ada, "SELECT embedding IS NULL, embedder FROM memory_turns WHERE turn_index = 3"),
+            [(True, None)],
+        )
+
+    def test_another_users_conversation_cannot_be_deleted_or_read(self):
+        self._store_three()
+        self.assertEqual(
+            self.episodic.delete_conversation(self.conversation, user_id=self.grace),
+            {"turns": 0, "conversation": 0},
+        )
+        self.assertEqual(len(self.episodic.get_conversation(self.conversation, user_id=self.ada)), 3)
+        self.assertEqual(self.episodic.get_conversation(self.conversation, user_id=self.grace), [])
+
+    def test_a_conversation_reads_back_as_turn_models_in_order(self):
+        stored = self._store_three()
+        turns = self.episodic.get_conversation(self.conversation, user_id=self.ada)
+        self.assertEqual([(t.id, t.index, t.role, t.content) for t in turns],
+                         [(s.id, s.index, s.role, s.content) for s in stored])
+        self.assertEqual((turns[1].agent_id, turns[1].metadata), ("ash", {"agent_name": "Ash"}))
+        self.assertEqual(turns[0].conversation_id, self.conversation)
+        # A named channel includes `_global`; another channel's turns are left out.
+        self.assertEqual(self.episodic.get_conversation(self.conversation, user_id=self.ada, channel="other"), [])
+
+    def test_search_honours_the_time_window_and_never_returns_a_vector(self):
+        old = self._turn(0, "Long ago.")
+        old.timestamp = datetime.now(UTC) - timedelta(days=3)
+        self.episodic.store_turn(old, user_id=self.ada, channel="minutes")
+        self.episodic.store_turn(self._turn(1, "Just now.", axis=0), user_id=self.ada, channel="minutes")
+        recent = self.episodic.vector_search(self._direction(0), user_id=self.ada, time_window_hours=24)
+        self.assertEqual([t["content"] for t in recent], ["Just now."])
+        everything = self.episodic.vector_search(self._direction(0), user_id=self.ada)
+        self.assertEqual({t["content"] for t in everything}, {"Long ago.", "Just now."})
+        self.assertNotIn("embedding", self.episodic.get_conversation_turns(self.conversation, self.ada)[0])
+
+
+class NearestRowsTest(TestCase):
+    """memory/postgres: a nearest-neighbour query is never short because the index
+    stopped looking. The index applies row-level security and every other condition
+    after it has ranked, so a user holding a small share of a table can be handed
+    nothing. Few admitted rows are ranked exactly; a short answer from the index is
+    ranked exactly after all."""
+
+    @staticmethod
+    def _session(admitted: int, *answers: list[dict]):
+        """A session that reports `admitted` rows, then gives `answers` in turn.
+        A MagicMock stands in for the scan setting, which returns nothing used."""
+        count = MagicMock()
+        count.scalar_one.return_value = admitted
+        results = []
+        for answer in answers:
+            result = MagicMock()
+            result.mappings.return_value = answer
+            results.append(result)
+        session = MagicMock()
+        session.execute.side_effect = [count, *results]
+        return session
+
+    def _nearest(self, session, limit: int) -> list[dict]:
+        from agentx_ai.kit.agent_memory.memory.postgres import nearest_rows
+
+        return nearest_rows(
+            session, table="memory_turns", columns="id", where="AND channel = :channel",
+            params={"channel": "minutes"}, embedding=[0.5, 0.25], limit=limit,
+        )
+
+    @staticmethod
+    def _sql(session) -> list[str]:
+        return [str(call.args[0]) for call in session.execute.call_args_list]
+
+    def test_few_admitted_rows_are_ranked_exactly_without_the_index(self):
+        from agentx_ai.kit.agent_memory.memory.postgres import EXACT_SCAN_ROWS
+
+        session = self._session(EXACT_SCAN_ROWS, [{"id": "t1", "distance": 0.1}])
+        self.assertEqual([r["id"] for r in self._nearest(session, 5)], ["t1"])
+        counted, exact = self._sql(session)
+        # The count stops one past the limit, so a large table costs it nothing.
+        self.assertEqual(
+            session.execute.call_args_list[0].args[1], {"channel": "minutes", "cap": EXACT_SCAN_ROWS + 1},
+        )
+        self.assertIn("LIMIT :cap", counted)
+        # Behind a materialized filter, so the planner cannot choose the index.
+        self.assertIn("WITH admitted AS MATERIALIZED", exact)
+        self.assertIn("AND channel = :channel", exact)
+        self.assertEqual(
+            session.execute.call_args_list[1].args[1],
+            {"channel": "minutes", "embedding": "[0.5,0.25]", "limit": 5},
+        )
+
+    def test_many_admitted_rows_go_to_the_index_and_are_sorted_again(self):
+        from agentx_ai.kit.agent_memory.memory.postgres import EXACT_SCAN_ROWS
+
+        count = MagicMock()
+        count.scalar_one.return_value = EXACT_SCAN_ROWS + 1
+        answer = MagicMock()
+        answer.mappings.return_value = [{"id": "t1", "distance": 0.1}, {"id": "t2", "distance": 0.2}]
+        session = MagicMock()
+        session.execute.side_effect = [count, MagicMock(), answer]  # count, scan setting, query
+
+        self.assertEqual([r["id"] for r in self._nearest(session, 2)], ["t1", "t2"])
+        _, setting, query = self._sql(session)
+        self.assertEqual(setting, "SET LOCAL hnsw.iterative_scan = relaxed_order")
+        # Relaxed order can hand rows back out of order: they are sorted again.
+        self.assertIn("WITH nearest AS MATERIALIZED", query)
+        self.assertTrue(query.rstrip().endswith("ORDER BY distance"))
+
+    def test_a_short_answer_from_the_index_is_ranked_again_exactly(self):
+        from agentx_ai.kit.agent_memory.memory.postgres import EXACT_SCAN_ROWS
+
+        count = MagicMock()
+        count.scalar_one.return_value = EXACT_SCAN_ROWS + 1
+        short, full = MagicMock(), MagicMock()
+        short.mappings.return_value = [{"id": "t9", "distance": 0.4}]
+        full.mappings.return_value = [{"id": "t1", "distance": 0.1}, {"id": "t9", "distance": 0.4}]
+        session = MagicMock()
+        session.execute.side_effect = [count, MagicMock(), short, full]
+
+        self.assertEqual([r["id"] for r in self._nearest(session, 5)], ["t1", "t9"])
+        self.assertIn("WITH admitted AS MATERIALIZED", self._sql(session)[3])
+
+    def test_an_old_pgvector_is_named_as_the_problem(self):
+        from sqlalchemy.exc import ProgrammingError
+        from agentx_ai.kit.agent_memory.memory.postgres import EXACT_SCAN_ROWS
+
+        count = MagicMock()
+        count.scalar_one.return_value = EXACT_SCAN_ROWS + 1
+        session = MagicMock()
+        session.execute.side_effect = [
+            count, ProgrammingError("SET LOCAL", {}, Exception("unrecognized configuration parameter")),
+        ]
+        with self.assertRaises(RuntimeError) as refused:
+            self._nearest(session, 1)
+        self.assertIn("pgvector 0.8", str(refused.exception))

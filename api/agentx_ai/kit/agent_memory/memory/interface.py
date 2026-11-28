@@ -23,7 +23,7 @@ from ..events import (
     EntityDeletedPayload,
     RetrievalCompletePayload,
 )
-from .episodic import EpisodicMemory
+from .backend import episodic_memory
 from .semantic import SemanticMemory
 from .procedural import ProceduralMemory
 from .working import WorkingMemory
@@ -83,7 +83,7 @@ class AgentMemory:
         self._audit_logger = MemoryAuditLogger()
 
         # Sub-modules (with audit logger injection)
-        self.episodic = EpisodicMemory(audit_logger=self._audit_logger)
+        self.episodic = episodic_memory(audit_logger=self._audit_logger)
         self.semantic = SemanticMemory(audit_logger=self._audit_logger)
         self.procedural = ProceduralMemory(audit_logger=self._audit_logger)
         self.goal = GoalMemory(audit_logger=self._audit_logger)
@@ -197,7 +197,7 @@ class AgentMemory:
         Pass-through to :meth:`EpisodicMemory.get_conversation_roster`; used by
         consolidation to attribute facts to specific agents by name (Phase 16).
         """
-        return self.episodic.get_conversation_roster(conversation_id)
+        return self.episodic.get_conversation_roster(conversation_id, user_id=self.user_id)
 
     def learn_fact(
         self,

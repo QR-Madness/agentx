@@ -5,7 +5,8 @@
 > **Status: IN PROGRESS.** Ratified 2026-11-12 (decisions D1–D5, recorded as ADR-21 in
 > [Decisions.md](../../Decisions.md)); amended 2026-11-28 by ADR-22, which makes the conversion a
 > hard cut (memory starts empty on the new store; no copy command, no deprecation window).
-> Built so far: Slices 0, 1 and 2. Next: Slice 3, the PostgreSQL twins.
+> Built so far: Slices 0, 1 and 2, and the first twin of Slice 3 (episodic). Next: the semantic
+> twin (3b).
 > Supersedes the audit in [phase-19 §19.5](../phases/phase-19-cloud-operation.md), whose numbers
 > were partly wrong (corrected under [What Neo4j does today](#what-neo4j-does-today)).
 
@@ -246,7 +247,22 @@ runs the suite against both backends.
       each built on `memory/scope.py`. The contract is the existing suite, run on both backends,
       except where [Slice 3 inherits](#what-slice-3-inherits) says the twin does better on
       purpose. Since the cut resets memory (ADR-22), a twin owes the graph's behaviour, not the
-      graph's leftovers.
+      graph's leftovers. How the twins are built and tested: [the twins](#slice-3--the-twins).
+  - [x] **3a — the seam and episodic memory** (2026-11-28): `memory/backend.py`,
+        `memory/postgres/` and `PgEpisodicMemory` (conversations and turns), with the contract
+        tests run on both stores.
+  - [ ] **3b — semantic memory**: entities, facts and `memory_edges`; the two vector searches,
+        the keyword search (`recall.py`), the neighbourhood expansion.
+  - [ ] **3c — procedural memory and goals**: procedures, strategies, tools and tool
+        invocations; goals.
+  - [ ] **3d — the sweep and the cross-user store**: `ConsolidationStore`, `CrossUserStore`
+        (discovery, marking, decay, promotion, pattern detection, channels, wipe), with its
+        `EntityMaintenance` and `EvalHarness`, `MemoryOverview` and `get_user_context`. The first
+        user of `system_scope()`.
+  - [ ] **3e — portability**: `PortabilityStore` (export, import, Extract).
+  - [ ] **3f — the log-first turn write and switching on**: `conversation_logs` gains `turn_id`
+        and `user_id`, the transcript and the projection are written in one transaction, the
+        fallback in `views.py` goes, and CI's live job runs the whole suite on both stores.
 - [ ] **Slice 4 — parity gate** (1–2 days). `eval_recall` on both backends over the golden set,
       each store seeded from the same corpus by the same embedder: recall@k and MRR within an agreed
       tolerance, p95 latency no worse. A miss is tuned or explained before going on. This is the
@@ -399,6 +415,63 @@ for (reason 2 above); how it behaves at scale is Slice 4's to measure.
 and the conversation delete that doesn't check its owner (found in Slice 1b) cannot leak or
 destroy another user's rows through a user scope. Their handlers still have to stop asking the
 cross-user store for what is one user's business.
+
+### Slice 3 — the twins
+
+**The seam.** `memory/backend.py` decides which store a process runs on, once, from
+`MEMORY_STORE` (`neo4j` by default). Callers build a memory class through its factory
+(`episodic_memory()`), never by name. `postgres` is refused while `TWINS_MISSING` lists a class:
+a half-moved store would keep turns in one database and the facts drawn from them in another, so
+consolidation would find nothing to read. Until the list is empty the twins are exercised on their
+own. A test holds the list to the twins that exist, so it cannot be shortened by hand.
+
+**A twin** is a subclass in `memory/postgres/` with the same public methods, built on
+`user_scope()`. Two guards (`tests_memory.MemoryTwinBoundaryTest`): no twin module holds a graph
+query or names the graph connection, and a twin overrides every public method of its class except
+the ones listed as inherited on purpose, so nothing is left running on the graph by omission.
+
+**The contract** is a set of assertions written against the public methods and run twice, once
+per store (`EpisodicContract`, with `EpisodicNeo4jContractTest` and `EpisodicPostgresContractTest`).
+What the twin does differently on purpose is tested on the PostgreSQL class alone. The contract
+found a fault in the graph class on its first run: deleting a conversation always reported one
+turn removed, whatever its length. Fixed there, so both stores report the count.
+
+**Search** (`memory/postgres/__init__.py::nearest_rows`, shared by every twin that ranks by
+vector). The index knows distances, not owners: row-level security and every other condition
+filter what it returns. Measured on these tables (pgvector 0.8.2, 1024 dimensions, 20,000 turns,
+one user holding 60 of them):
+
+| One query for that user's ten nearest turns | Rows returned | Of the true ten |
+|---|---|---|
+| Index, as the planner chose it | 0 | 0 |
+| Index, iterative scan in strict order | 10 | 9 |
+| Index, iterative scan in relaxed order, sorted again | 10 | 10 |
+| Exact, over the rows the filters admit | 10 | 10 |
+
+Over 20 random queries through the twin, the relaxed index path recalled 0.94 of the true ten at
+39 ms a query; the exact pass recalled all of them at 12 ms (0.3 ms of it in the database).
+
+So the twin counts the admitted rows (stopping at 2,001), ranks exactly when there are 2,000 or
+fewer, and otherwise asks the index with relaxed iterative scans, falling back to the exact pass
+if the index answers short. A short answer then always means there were no more rows. An exact
+pass costs about 6 ms per 1,000 admitted rows; the index took 3 ms for the user holding nearly
+the whole table. The threshold is a first setting from one machine: Slice 4 tunes it, along with
+what the scope's round trips cost each query.
+
+**From the research of 2026-11-28** (a commissioned survey; what was checked here is marked):
+
+| Finding | Status | Where it lands |
+|---|---|---|
+| Filters apply after the index ranks; small tenants get short or empty answers at default settings | Reproduced here (table above) | 3a, `nearest_rows` |
+| Relaxed order recalls better than strict; sort again afterwards | Reproduced here | 3a |
+| Small tenants are better served by an exact scan | Reproduced here | 3a; threshold to Slice 4 |
+| pgvector 0.8.3 and 0.8.4 fixed HNSW corruption and errors during vacuum; 0.8.7 an IVFFlat build overflow | Confirmed in the upstream changelog | The stack's image is the floating `pgvector/pgvector:pg16` (0.8.2 in the copy on the development machine). Pin `0.8.7-pg16` and run `ALTER EXTENSION vector UPDATE` before the cut |
+| `ts_rank` has no corpus statistics, so on one-sentence facts it cannot tell a rare name from a common word | From the survey, not measured | 3b: use the keyword match to find candidates and leave the order to fusion; measure in Slice 4 |
+| Under row-level security a keyword match that is not leakproof may not be usable as an index condition | From the survey, mechanism documented | 3b: read the plan of the fact keyword query for a large user before relying on the GIN index |
+| Neo4j builds its index with `m` 16 and `ef_construction` 100; pgvector defaults to 64 | From the survey | Slice 4: rebuild with a matching or higher value and measure; the tables are empty until the cut, so a rebuild is free |
+| Neo4j quantises its vector index by default | Doubtful for this stack, which runs 5.15 | Slice 4: check the index's settings before treating the graph's recall as a quantised baseline |
+| An acceptance test for parity: recall against exact ground truth with the user filter applied, per size of user, non-inferior within a stated margin | A proposal from the survey | Slice 4, with open question 2 |
+| Keep vectors in a side table keyed by model, so a change of model can be backfilled and switched | A proposal from the survey | Not adopted. `embedder` on each row finds what to redo; a second model at a different width needs its own revision. Revisit with Memory-Roadmap §1.3 |
 
 ### What Slice 3 inherits
 
