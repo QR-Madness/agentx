@@ -1681,7 +1681,9 @@ def mcp_oauth_callback(request):
             "Invalid callback", "Missing code or state parameter.", status=400,
         )
 
-    flow = oauth_flow.resolve_callback(state, code)
+    # RFC 9207: pass the issuer through for the SDK to check. A server that
+    # advertises it fails the flow without it.
+    flow = oauth_flow.resolve_callback(state, code, request.GET.get("iss") or None)
     if flow is None:
         return _oauth_result_page(
             "Unknown or expired authorization",

@@ -240,7 +240,7 @@
 
 ### Overlay layering — follow-ups from the palette fix (2026-11-27, PR #174)
 
-> Found while making the command palette the top app layer `[v0.21.305]`. The ladder and the
+> Found while making the command palette the top app layer `[v0.21.307]`. The ladder and the
 > Escape rule are in Development-Notes → Client Surface Map → Layering. Each item is a small,
 > standalone client PR.
 

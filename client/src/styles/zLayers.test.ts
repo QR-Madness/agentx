@@ -2,7 +2,7 @@
  * zLayers — the app's overlay ladder (Development-Notes → Client Surface Map →
  * Layering). Every z-index in the client is compared in one stacking context,
  * so a value picked in isolation can bury a layer that must stay on top. Before
- * v0.21.305 the command palette sat at 1000, under the full-screen surfaces at
+ * v0.21.307 the command palette sat at 1000, under the full-screen surfaces at
  * 2000. Over Memory it still took focus and typing, and Enter ran the command,
  * but nothing of it showed.
  *

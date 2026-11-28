@@ -101,8 +101,12 @@ def publish_authorization_url(flow: PendingFlow, url: str) -> None:
     flow.url_ready.set()
 
 
-def resolve_callback(state: str, code: str) -> PendingFlow | None:
+def resolve_callback(state: str, code: str, iss: str | None = None) -> PendingFlow | None:
     """Resolve the flow for an OAuth callback (Django view thread).
+
+    The flow's future receives ``(code, state, iss)``. ``iss`` is the
+    authorization server's issuer from the redirect (RFC 9207), passed through
+    for the SDK to check; None when the redirect carries none.
 
     Returns the flow on success, None for an unknown/expired state.
     """
@@ -116,7 +120,7 @@ def resolve_callback(state: str, code: str) -> PendingFlow | None:
 
     def _set() -> None:
         if not flow.future.done():
-            flow.future.set_result((code, state))
+            flow.future.set_result((code, state, iss))
 
     flow.loop.call_soon_threadsafe(_set)
     return flow
