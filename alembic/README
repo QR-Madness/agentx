@@ -37,6 +37,25 @@ Rules (enforced by scripts/check_alembic.py in `task docs:check`)
 2. Single head — keep history linear (no forks). Author against current head.
 3. New PG table/column/index = a revision. Never reach for a "bootstrap" file.
 
+Memory tables (0009, 0010 — Decisions.md ADR-21)
+------------------------------------------------
+The ten `memory_*` tables of 0009 force row-level security (0010): a transaction
+sees the rows of the user it named with `SET LOCAL agentx.user_id`, and nothing
+if it named nobody. The app enters a scope only through
+`api/agentx_ai/kit/agent_memory/memory/scope.py`.
+
+A new memory table needs, in its revision: a NOT NULL `user_id` that leads its
+primary key and is part of its foreign keys; ENABLE and FORCE ROW LEVEL
+SECURITY; the `memory_tenant` and `memory_system` policies; and the grants to
+`agentx_memory` and `agentx_memory_system` (copy them from 0010). Then add it to
+`MEMORY_TABLES` in scope.py: the live test fails on a memory table missing from
+either place.
+
+0010 creates two roles that cannot log in. Roles belong to the whole server, so
+a downgrade keeps them while another database still uses them. Migrating as a
+role that is not a superuser needs CREATEROLE, or the two roles created and
+granted to it first.
+
 Caveat: the baseline adopts an existing schema in place (CREATE … IF NOT EXISTS),
 so it does NOT re-run intermediate ALTERs — a DB must be fresh or already at the
 pre-Alembic head before first `upgrade head`.

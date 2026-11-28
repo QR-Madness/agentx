@@ -692,11 +692,12 @@ master sat red for nine days in November 2026 before anyone looked, hence the is
 **Decision (ratified 2026-11-12):** the memory store — nodes, relationships, vectors and full-text
 search — moves from Neo4j into PostgreSQL as plain tables with pgvector and built-in text search,
 behind the existing memory classes (`EpisodicMemory`, `SemanticMemory`, `ProceduralMemory`, the goal
-store), selected by one boot-frozen `memory_store` setting. Neo4j stays selectable for a deprecation
-window and is then removed. The schema depends on two extensions only, `vector` and `pg_trgm`, so
-the provider stays a pricing choice. Tenant isolation becomes row-level security (`FORCE ROW LEVEL
-SECURITY`, the scope set per transaction; cross-user jobs under one named system role). Existing
-installs move with a copy command that carries the vectors. Measurements, design and slices:
+store), selected by one boot-frozen `memory_store` setting while both exist. The schema depends on
+two extensions only, `vector` and `pg_trgm`, so the provider stays a pricing choice. Tenant isolation
+becomes row-level security (`FORCE ROW LEVEL SECURITY`, the scope set per transaction; cross-user
+jobs under one named system role). **Amended by ADR-22 (2026-11-28):** the conversion is a hard cut.
+Neo4j is removed in the release that makes PostgreSQL the store, not after a deprecation window,
+and memory starts empty there, with no copy command. Measurements, design and slices:
 [`todo/backlog/memory-store-consolidation.md`](todo/backlog/memory-store-consolidation.md).
 **Why:** Neo4j is used here as a document store with vector and keyword indexes, not as a graph
 engine: 188 Cypher strings, one bounded traversal (depth ≤ 3), no path or graph algorithms. Its
@@ -710,15 +711,57 @@ vector nor full-text search, stores properties as `agtype` (awkward for RLS and 
 custom image when self-hosted, and narrows the managed providers. Keeping both backends for good —
 every memory change would be written twice. A new store-abstraction layer — the memory classes
 already are one.
-**Does not change:** INV-4 (exports stay text-only; the copy command is a one-time move between two
-stores on the same embedder, not an export format) and ADR-9 (PostgreSQL changes are Alembic
-revisions; the Neo4j runner lives until the removal slice).
-**Status:** in progress. Slices 0 (live-database tests in CI) and 1 (one door: every Cypher query
-behind the memory classes) have shipped. The default flips only after the recall-parity gate
-(`eval_recall` on both backends); if parity cannot be reached, the work stops here with Neo4j in
-place and nothing lost.
+**Does not change:** INV-4 (exports stay text-only) and ADR-9 (PostgreSQL changes are Alembic
+revisions; the Neo4j runner lives until the cut).
+**Status:** in progress. Slices 0 (live-database tests in CI), 1 (one door: every Cypher query
+behind the memory classes) and 2 (the schema: ten tables with forced row-level security, Alembic
+`0009` and `0010`, read by nothing yet) have shipped. The cut happens only after the recall-parity
+gate (`eval_recall` on both backends); if parity cannot be reached, the work stops before it with
+Neo4j in place and nothing lost.
+**Row-level security, as built (Slice 2):** memory queries run as one of two roles that cannot log
+in, entered with `SET LOCAL ROLE` through `kit/agent_memory/memory/scope.py` and nowhere else:
+`agentx_memory` for one named user's rows (`user_scope`), `agentx_memory_system` for every user's
+(`system_scope`). The first exists because the bundled stack logs in as a superuser, and a
+superuser bypasses row-level security even when it is forced. Identity is `(user_id, id)` and
+foreign keys carry `user_id`, because foreign-key checks bypass row-level security too.
 **Guard:** `tests_memory.MemoryStoreBoundaryTest` — no Cypher string or Neo4j session opening
 outside the memory classes (the ratchet's baseline reached zero with Slice 1; schema-init and
 migration commands exempt). Cross-user work enters only through `CrossUserStore` (its
-`entity_maintenance()` and `eval_harness()` included), the one future user of the RLS system role.
-Planned: from Slice 3, CI's `backend-live` job runs the suite on both backends.
+`entity_maintenance()` and `eval_harness()` included), the one future user of the RLS system role:
+`tests_memory.MemoryScopeBoundaryTest` fails on a role, the `agentx.user_id` setting or a role
+switch spelled out outside `scope.py`, and on the system scope named outside the cross-user store.
+`tests_memory.MemoryStoreSchemaLiveTest` (CI's live job) checks the policies against a real
+database: every memory table forced, a transaction confined to the user it named, nothing for one
+that named nobody. Planned: from Slice 3, CI's `backend-live` job runs the suite on both backends.
+
+### ADR-22 — The memory store conversion is a hard cut: memory resets, nothing is copied
+**Decision (ruled 2026-11-28; amends ADR-21):** the release that makes PostgreSQL the memory store
+is a breaking one. Memory starts empty on the new store. There is no copy command out of Neo4j
+(ADR-21's D4 is withdrawn) and no window in which Neo4j stays selectable (the second half of D1 is
+withdrawn): Neo4j, its classes and its image leave in that same release. This is a deliberate,
+one-time exception to the rule that changes after v0.20 must be migratable for existing
+platforms, and it covers the memory store only. Transcripts (`conversation_logs`), settings,
+profiles and the rest keep migrating as before.
+**Why:** nobody has memory saved that they need to keep, so copy tooling, a second backend to keep
+in step and a schema bent around the prototype's graph would be data complication with no
+beneficiary. The experimental store has done its job; what replaces it should be designed for
+where the product is going (tenant isolation, one transaction, one store), not transliterated.
+**Consequences:**
+- The PostgreSQL schema is designed for the end state. Where the graph and good design disagree,
+  design wins: every row has an owner, identity is per user, a turn position is stored once. The
+  differences the twins take on are listed in the plan under "What Slice 3 inherits".
+- The `memory_store` switch exists only while the twins are being built, so they can land one at
+  a time and CI can run the suite on both backends. It is removed at the cut, never shipped as a
+  choice.
+- The parity gate stays: it protects recall quality, which a reset does not excuse. Both stores
+  are seeded from the same corpus, since neither is copied into the other.
+- Anyone who wants to carry memory across exports before upgrading and imports after. That is the
+  existing text envelope (INV-4), not a migration path the project maintains.
+- **This expires.** It holds while nobody has saved memory. Once a release has users who do, it no
+  longer licenses a reset and the question has to be decided again, so the cut should not drift.
+**Rejected:** the copy command (days of work, and a standing obligation to preserve the graph's
+leftovers as data: ownerless `_global` nodes, duplicated turns, relationships only Cypher
+explains). A deprecation window (two backends to keep in step for every memory change, for data
+nobody has).
+**Status:** decided; takes effect at the cut (Slice 5 of
+[`todo/backlog/memory-store-consolidation.md`](todo/backlog/memory-store-consolidation.md)).

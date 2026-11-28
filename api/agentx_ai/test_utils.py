@@ -45,6 +45,16 @@ def docker_services_running() -> bool:
     return True
 
 
+def postgres_running() -> bool:
+    """Check if PostgreSQL is reachable, for tests that touch no other store."""
+    try:
+        with socket.create_connection(("localhost", 5432), timeout=1):
+            pass
+    except (TimeoutError, OSError):
+        return _unavailable("localhost:5432 is not reachable — run `task db:up`")
+    return True
+
+
 def has_configured_provider() -> bool:
     """Check if any model provider is configured."""
     return bool(

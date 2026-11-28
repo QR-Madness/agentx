@@ -2,8 +2,10 @@
 
 > Part of the AgentX TODO — index: [Todo.md](../../Todo.md)
 >
-> **Status: RATIFIED (2026-11-12).** Decisions D1–D5 were accepted as recommended and are recorded
-> as ADR-21 in [Decisions.md](../../Decisions.md). Built so far: Slice 0. Next: Slice 1.
+> **Status: IN PROGRESS.** Ratified 2026-11-12 (decisions D1–D5, recorded as ADR-21 in
+> [Decisions.md](../../Decisions.md)); amended 2026-11-28 by ADR-22, which makes the conversion a
+> hard cut (memory starts empty on the new store; no copy command, no deprecation window).
+> Built so far: Slices 0, 1 and 2. Next: Slice 3, the PostgreSQL twins.
 > Supersedes the audit in [phase-19 §19.5](../phases/phase-19-cloud-operation.md), whose numbers
 > were partly wrong (corrected under [What Neo4j does today](#what-neo4j-does-today)).
 
@@ -13,8 +15,14 @@
 
 Move the whole memory store into PostgreSQL — plain tables, pgvector and built-in text search —
 behind the existing memory classes, prove it with the live test suite and a recall-parity gate, and
-retire Neo4j after a deprecation window. No graph extension (Apache AGE) and no new abstraction
-layer.
+then cut over in one breaking release that removes Neo4j. No graph extension (Apache AGE) and no
+new abstraction layer.
+
+The cut resets memory: nothing is copied out of Neo4j (ADR-22). The project has no users with
+saved memory, so the schema is designed for where the store is going, not around what the
+prototype's graph happens to hold. Transcripts (`conversation_logs`) are already in PostgreSQL and
+are not touched; anyone who wants to carry memory across can export before upgrading and import
+after, since the envelope is text and re-embeds on import (INV-4).
 
 ### What Neo4j does today
 
@@ -70,26 +78,31 @@ has a working pgvector retrieval path and a working `tsvector` search to model o
 
 ### What it costs
 
-- **About 3–5 weeks of focused work** (slice estimates below; the range is honest uncertainty, not
-  padding).
+- **About 3–5 weeks of focused work** as estimated at ratification (slice estimates below; the
+  range is honest uncertainty, not padding). After Slice 2, with the copy command withdrawn, what
+  remains is 9–15 days: the twins, the parity gate and the cut.
 - **Tests coupled to Cypher.** `tests_memory.py` has about 90 references to the Neo4j connection
   or a mocked session, and about 27 assertions on call arguments, many of them on query text. They
   move to asserting on store calls and results.
 - **Recall-parity risk.** Same vectors, different index and ranking behaviour (HNSW parameters,
   filtered scans, Lucene BM25 vs `ts_rank` on the one keyword query). Gated by `eval_recall`, not by
   inspection.
-- **Opportunity cost.** It delays feature work. Nothing here is user-visible until the default flips.
+- **Opportunity cost.** It delays feature work. Nothing here is user-visible until the cut.
+- **The cut resets memory** (ADR-22). Acceptable now, while nobody has memory saved; it would not
+  be once somebody does, so the cut should not be left to drift behind a release with users.
 
 ### Decisions
 
-Ratified 2026-11-12 as recommended.
+Ratified 2026-11-12 as recommended. D1 and D4 were amended on 2026-11-28 (ADR-22): the user ruled
+that the conversion may be a breaking, hard-cut release, because nobody has saved memory yet and
+data-migration machinery would be complication without a beneficiary.
 
 | # | Decision | Ruling |
 |---|----------|----------------|
-| D1 | End state | **PostgreSQL only.** Neo4j stays selectable for a deprecation window, then is removed. Keeping two backends forever doubles every memory change. |
+| D1 | End state | **PostgreSQL only.** ~~Neo4j stays selectable for a deprecation window, then is removed.~~ **Amended (ADR-22):** Neo4j is removed in the same release that makes PostgreSQL the store. Until that release the backend switch exists only so the twins can land one at a time and the suite can run on both. |
 | D2 | Graph representation | **Plain tables + SQL.** AGE would preserve Cypher syntax for the relationship queries only; it provides neither vector nor full-text search (most of what Neo4j does here), stores properties as `agtype` (awkward for RLS and indexes), needs a custom self-hosted image, and limits managed providers. Neon does not list it (2026-11-04; private builds on request only). Snowflake Postgres does. |
 | D3 | Provider | **Stay neutral.** Depend only on `vector` and `pg_trgm`. Then Neon, Snowflake Postgres, Supabase, RDS and a self-hosted container are all candidates, and the choice is a pricing decision made later. |
-| D4 | Existing installs | **A direct copy command that carries the vectors** (id-preserving, verified by counts and content hashes, resumable, dry-run first). The text-only portability envelope re-embeds on import, which is slow and makes parity harder to judge. INV-4 is untouched: the envelope stays text-only, and the copy command is a one-time move between two stores on the same embedder, not an export format. |
+| D4 | Existing installs | ~~A direct copy command that carries the vectors.~~ **Amended (ADR-22): none.** Memory starts empty on the new store. Export before the upgrade and import after it is the route for anyone who wants to keep theirs; that is the existing text envelope (INV-4), not new machinery. The parity gate (Slice 4) seeds both stores from the same corpus instead of copying one into the other. |
 | D5 | Sequencing | **Slice 1 first, whatever else is decided.** It changes no behaviour and is worth having even if the move stops there. The release does not need to wait for any of this. |
 
 ### Design
@@ -99,21 +112,22 @@ Ratified 2026-11-12 as recommended.
   (Slice 1); PostgreSQL twins implement the same public methods (Slice 3). `AgentMemory` picks the
   set from one boot-frozen setting, `memory_store = neo4j | postgres`, read at startup like
   `embedding_provider`.
-- **Ids are preserved.** Every node already has a unique `id`; PostgreSQL rows keep it, so the
-  audit mirror, exports and client links stay valid across the move.
-- **Schema.** `memory_entities`, `memory_facts`, `memory_goals`, `memory_procedures`,
-  `memory_strategies`, `memory_turns` (or `conversation_logs`, see open question 1),
-  `memory_edges (src_type, src_id, rel, dst_type, dst_id, props)`. Each has `user_id` and
-  `channel`, an `embedding vector(n)` with an HNSW cosine index where it is searched, and a
-  generated `tsvector` where it is keyword-searched. Via Alembic revisions; the baseline stays frozen
-  (ADR-9). The vector width follows the configured embedder, substituted at migration time as
-  `0002_workspaces` already does.
+- **Ids belong to a user.** A row's identity is `(user_id, id)`: the ids the memory classes hand
+  out stay what they are (so the audit mirror, exports and client links keep working), but two
+  users may hold the same id, which is what an imported pack needs.
+- **Schema.** Ten tables, built in Slice 2 ([the schema](#slice-2--the-schema)): one per kind of
+  node that has a life of its own, and `memory_edges` for the many-to-many relationships. Each has
+  `user_id` and `channel`, an `embedding vector(n)` with an HNSW cosine index where it is searched,
+  and a generated `tsvector` where it is keyword-searched. Via Alembic revisions; the baseline
+  stays frozen (ADR-9). The vector width follows the configured embedder, substituted at migration
+  time as `0002_workspaces` already does.
 - **Row-level security.** `ENABLE` + `FORCE ROW LEVEL SECURITY` on every memory table, with the
   policy `user_id = current_setting('agentx.user_id')`. The session helper sets it with
   `SET LOCAL` per transaction; a query that never set it sees nothing. Channel scope stays an
   application filter. Jobs that legitimately cross users (consolidation discovery, admin and eval
   commands) run under one explicit, named system scope — a separate database role — and nothing
-  else may use it.
+  else may use it. Slice 2 found that this needs a second role, for ordinary queries
+  ([row-level security](#slice-2--row-level-security)).
 - **Cross-user operations have their own memory class** (decided 2026-11-17, Slice 1):
   `memory/cross_user.py::CrossUserStore`. Everything else in the memory classes works within a user;
   anything that spans users (cluster counts, wipes and snapshots, agent renames that reach every
@@ -223,19 +237,196 @@ runs the suite against both backends.
         migrations, instead of opening a session itself. A throwaway-stack smoke passed (7 checks).
         **The guard's baseline is now empty: no module outside the memory classes holds Cypher
         or opens a Neo4j session**, schema tooling aside. Slice 1 is done.
-- [ ] **Slice 2 — schema and RLS** (1–2 days). Alembic revisions for the tables, indexes and
-      policies. Empty tables; nothing reads them yet.
-- [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`.
-      The contract is the existing suite, run on both backends.
-- [ ] **Slice 4 — parity gate** (1–2 days). `eval_recall` on both backends over the golden set, same
-      vectors: recall@k and MRR within an agreed tolerance, p95 latency no worse. A miss is tuned or
-      explained before going on.
-- [ ] **Slice 5 — copy command** (2–3 days). `manage.py copy_memory_store`: Neo4j → PostgreSQL with
-      vectors, id-preserving, verified, resumable, with a dry-run. Run on every known install.
-- [ ] **Slice 6 — flip the default** (1–2 days). New installs start on PostgreSQL; existing ones
-      upgrade through the copy command; Neo4j moves to an opt-in compose profile. Docs, measured
-      footprint, release note.
-- [ ] **Slice 7 — removal.** Delete the Neo4j classes, image and APOC after the deprecation window.
+- [x] **Slice 2 — schema and RLS** (done 2026-11-28). Alembic `0009_memory_store_tables` and
+      `0010_memory_store_rls`: ten empty tables, their indexes, two roles and forced row-level
+      security. Nothing reads them yet. Open question 1 (turns) is settled: two tables. The design
+      and what it leaves for Slice 3 are recorded under [the schema](#slice-2--the-schema) and
+      [row-level security](#slice-2--row-level-security).
+- [ ] **Slice 3 — PostgreSQL twins** (6–10 days). One memory class per PR, behind `memory_store`,
+      each built on `memory/scope.py`. The contract is the existing suite, run on both backends,
+      except where [Slice 3 inherits](#what-slice-3-inherits) says the twin does better on
+      purpose. Since the cut resets memory (ADR-22), a twin owes the graph's behaviour, not the
+      graph's leftovers.
+- [ ] **Slice 4 — parity gate** (1–2 days). `eval_recall` on both backends over the golden set,
+      each store seeded from the same corpus by the same embedder: recall@k and MRR within an agreed
+      tolerance, p95 latency no worse. A miss is tuned or explained before going on. This is the
+      last point at which stopping leaves Neo4j in place and nothing lost.
+- [ ] **Slice 5 — the cut** (2–3 days; was Slices 5–7). One breaking release: PostgreSQL is the
+      memory store, memory starts empty, and Neo4j goes in the same change (its classes, the
+      `memory_store` switch, the image and APOC, `queries/neo4j_*`, `migrate_schema`). With it go
+      the duplicates the two-store design needed: `conversation_logs.embedding` and its index (the
+      vector then lives once, in `memory_turns`), the `tool_invocations` audit table
+      (`memory_tool_invocations` carries its columns), and the never-written `memory_timeline`.
+      Docs, measured footprint, and a release note that says plainly that memory resets and how to
+      carry it over (export before, import after).
+
+~~Slice 5 — copy command~~ and ~~Slice 7 — removal after a deprecation window~~ are withdrawn
+(ADR-22): there is nothing to copy and no window to wait out.
+
+### Slice 2 — the schema
+
+**Open question 1, settled: two tables.** `conversation_logs` stays the transcript and
+`memory_turns` is memory's own projection of a turn. Reasons, from the code as it stands:
+
+- **They are two contracts already.** The transcript is written even when the embedder or the
+  graph fails (`views.py` falls back to a log-only write so a conversation can always be
+  restored), and it is what history, restore, conversation search and the Ambassador read. A
+  memory turn exists only once it has a vector, and is what recall searches and consolidation
+  sweeps. "No Memorization" is a transcript row with no projection (ADR-6).
+- **The transcript is not a memory table.** It has no `user_id`, and about forty call sites
+  outside the memory classes read or write it unscoped. Forcing row-level security on it would
+  change all of them at once; tenant isolation for transcripts is real work, but it belongs to
+  the multi-user track, not to a store swap.
+- **This is the direction already resolved** in Memory-Roadmap §1.1: the log is the record, and
+  everything memory holds is a projection that can be rebuilt from it.
+
+What makes the projection rebuildable rather than a second copy to keep in step:
+
+- `memory_turns` is unique on `(user_id, conversation_id, turn_index)`, the transcript's own key.
+  Re-storing a turn replaces it (the graph appended a duplicate), and a projection row maps to
+  exactly one transcript row.
+- It keeps its own text, so recall and consolidation depend on neither the transcript's shape nor
+  its lifetime; the text is small next to the vector.
+- The vector lives in the projection only. `conversation_logs.embedding` is written today and
+  read by nothing; it and its index go at the cut.
+
+**The tables** (Alembic `0009_memory_store_tables`). Column names are the model's field names, so
+a row maps onto the pydantic models without a translation table; the two exceptions are
+`memory_turns.turn_index` (the model's `index`, named as the transcript names it) and
+`memory_procedures.channel` (the model's `scope`; the graph stored both, always equal).
+
+| Table | Holds | Notes |
+|-------|-------|-------|
+| `memory_conversations` | A conversation as memory sees it: scope, consolidation markers, archive flag | Also the outcome (`outcome_success`, `outcome_task_type`) that was an `Outcome` node |
+| `memory_turns` | The projection of a turn: text, vector, consolidation markers, archive flag | Cascades with its conversation. Partial indexes hold only the turns still to consolidate |
+| `memory_entities` | Entities | HNSW; `(user_id, lower(name))` for the name lookup |
+| `memory_facts` | Facts | HNSW; generated `claim_tsv` (`simple`) with GIN; `(user_id, claim_hash)` for the duplicate check |
+| `memory_goals` | Goals | `parent_goal_id` is a foreign key that clears when the parent goes. Vector stored, not searched, so no index |
+| `memory_strategies` | Strategies | HNSW. `tool_sequence` is the array; there are no `USES_TOOL` rows |
+| `memory_procedures` | Procedures | HNSW |
+| `memory_tools` | A user's running statistics for a tool | Per user; the graph's `Tool` nodes were shared by every user |
+| `memory_tool_invocations` | Tool calls | Cascades with its conversation. Carries the audit table's columns so `tool_invocations` can retire at the cut |
+| `memory_edges` | Many-to-many relationships | `(src_type, src_id, rel, label, dst_type, dst_id)`, with `confidence`, `props` and an optional `channel` |
+
+Every embedded table also has `embedder`, the model that produced the vector (Memory-Roadmap
+§1.3), so a change of model can find the rows it has to redo.
+
+**Kinds of node with no table**, and why:
+
+- `User`: it is the `user_id` column.
+- `AgentParticipant`: who took part in a conversation is a `SELECT DISTINCT agent_id` over its
+  turns, and the latest non-empty `agent_name` is the display name, which is what the node held.
+- `Outcome`: two columns on the conversation. Only the eval harness writes one today.
+- `Preference` and `Topic`: read by `get_user_context`, written by nothing. The twin returns the
+  empty shape.
+- `Document` and `Artifact`: declared by a Neo4j migration, used by no query.
+
+**Relationships.** Ownership and parentage are columns; the rest are rows in `memory_edges`.
+
+| In the graph | In PostgreSQL |
+|--------------|---------------|
+| `HAS_CONVERSATION`, `HAS_ENTITY`, `HAS_FACT`, `HAS_GOAL`, `HAS_STRATEGY`, `HAS_PROCEDURE` | The `user_id` column |
+| `HAS_TURN`, `USED_TOOL`, `PARTICIPATED_IN`, `RESULTED_IN` | `conversation_id`, as a foreign key where there is a row to point from |
+| `FOLLOWED_BY` | Nothing stored: it is `turn_index + 1` in the same conversation |
+| `SUBGOAL_OF` | `memory_goals.parent_goal_id` |
+| `INVOKED`, `USES_TOOL` | `tool_name`; `tool_sequence` |
+| `DERIVED_FROM` a turn | `memory_facts.source_turn_id` (not a foreign key: a fact outlives its turn) |
+| `ABOUT`, `RELATES_TO` and any typed entity relationship, `MENTIONS`, `DERIVED_FROM` a conversation, `DISTILLED_FROM`, `SUCCEEDED_IN`, `FAILED_IN`, `SUPERSEDES` | `memory_edges` |
+
+Two things the edge table has to get right, both from how the graph is written:
+
+- **Two entities can be related in more than one way.** Consolidation merges on
+  `RELATES_TO {type}`, so the meaning ("works for", "part of") is part of the key. It is the
+  `label` column, and it is in the primary key.
+- **A deleted node takes its edges with it** (`DETACH DELETE`). A polymorphic table cannot have
+  foreign keys, so a trigger does it (`memory_detach_edges`), for the five kinds of node an edge
+  may join; a check constraint keeps any other kind out.
+
+**References stay inside a user.** Foreign keys are composite, `(user_id, …)`. Row-level security
+does not cover this on its own, because foreign-key checks bypass it: without the composite key a
+turn could be attached to another user's conversation by anyone who knew its id.
+
+### Slice 2 — row-level security
+
+Alembic `0010_memory_store_rls`; the app enters a scope only through
+`kit/agent_memory/memory/scope.py`.
+
+**Finding: one role is not enough.** The plan named one system role. But the bundled stack logs
+in to PostgreSQL as the image's superuser, and a superuser bypasses row-level security even when
+it is forced (verified: a superuser session with no scope sees every user's rows). So ordinary
+queries need a role of their own to drop into:
+
+- `agentx_memory`: what every memory query runs as. `user_scope(user_id)` does
+  `SET LOCAL ROLE agentx_memory` and names the user in `agentx.user_id`.
+- `agentx_memory_system`: every user's rows. `system_scope()`, for `CrossUserStore` only.
+
+Neither can log in. Both are entered with `SET LOCAL`, so they end with the transaction and work
+behind a transaction-mode pooler. A scope re-enters at the start of every transaction its
+session begins, so a commit part-way through does not leave the next statement running as the
+login role. Where the login role is not a superuser, `FORCE` binds it as the
+tables' owner and it gets nothing by owning them (verified by running the whole migration chain
+and the tests as such a role).
+
+**The policies**, on every table:
+
+- `memory_tenant`: `user_id` equals the named user. The setting is read through `NULLIF(…, '')`,
+  because a custom setting reads as an empty string, not as unset, once an earlier transaction on
+  the connection has set it; `user_id` may never be empty (a check constraint), so an empty
+  setting matches nothing. It sits in a scalar sub-select so it is evaluated once per statement.
+- `memory_system`: everything, granted `TO agentx_memory_system`. Granting it to the role keeps
+  it out of an ordinary query's filter, which stays a plain `user_id = …` that an index can serve.
+  It also tests `current_user`, because a policy granted to a role reaches every role that
+  inherits from it: a login role given membership with inheritance would otherwise see everything.
+
+Measured on PostgreSQL 16.14 with pgvector 0.8.2, 4,000 entities across two users: a lookup by id
+is an index scan on `(user_id, id)`, and a nearest-neighbour query is an HNSW index scan with
+`user_id` as its filter, returning only the user's rows. That is the filtered search the move was
+for (reason 2 above); how it behaves at scale is Slice 4's to measure.
+
+**Guards.**
+
+- `tests_memory.MemoryScopeBoundaryTest`: no module but `scope.py` spells out the roles, the
+  setting or a role switch, and only `memory/cross_user.py` may name the system scope (its twin's
+  module joins that list in Slice 3).
+- `tests_memory.MemoryStoreSchemaLiveTest`, in CI's live job: every table in
+  `scope.MEMORY_TABLES` forces row-level security with both policies, and no other table holds
+  memory rows; a transaction sees only the user it named, nothing if it named nobody, everything
+  as the system role; a user cannot write into or move a row to another user; a reference cannot
+  leave its user; a deleted node's edges go with it. Each test rolls back, so it is safe on a
+  developer's database.
+
+**Tenancy gaps this closes, once the twins are in:** the channel endpoints that span every user
+and the conversation delete that doesn't check its owner (found in Slice 1b) cannot leak or
+destroy another user's rows through a user scope. Their handlers still have to stop asking the
+cross-user store for what is one user's business.
+
+### What Slice 3 inherits
+
+Things the twins should do on purpose, not reproduce from the graph. Each is a decision to
+confirm when its class is built.
+
+1. **Every row has an owner.** The graph has rows without one: `_global` entities and facts
+   minted by promotion (no `user_id`, no vector), and strategies minted by pattern detection (no
+   `user_id`, no channel). The tables refuse them. The twin gives a promoted copy its source's
+   owner, and a detected strategy the owner of the conversation it was detected in.
+2. **The turn write becomes log-first** (Memory-Roadmap §1.1). Transcript row and projection in
+   one transaction, the transcript first; a turn that cannot be embedded is still written and
+   projected later. For a rebuild to keep ids stable the transcript needs to carry `turn_id` and
+   `user_id` (§1.1, step 0), which is an additive revision of its own; the fallback in
+   `views.py` then has nothing left to do.
+3. **Tool invocations are recorded for a conversation's first turn too.** The graph matches the
+   conversation and silently records nothing when it does not exist yet, which is every tool
+   call of a first turn. The twin creates the conversation row first.
+4. **Tool statistics are per user.** `record_invocation` needs the user it is recording for.
+5. **Neighbourhood expansion says what it follows.** The graph's `(e)-[*1..3]-(related:Entity)`
+   follows any relationship through any node, the user node included, so at depth 2 every entity
+   a user has is "related" to every other. The twin's recursive query should follow entity
+   relationships, and co-mention through facts if Slice 4 shows recall needs it.
+6. **`embedder` is written with every vector.**
+7. **pgvector 0.8 or later**, for iterative index scans. The bundled image has it; the twin
+   should say so clearly at startup if a database does not.
+8. **The cross-user maintenance methods get live tests** gated on a sterile store (the Slice 1
+   gap), now that `system_scope()` gives them one way in.
 
 ### Provider notes
 
@@ -257,7 +448,7 @@ Checked 2026-11-11; prices are list, on demand, and will drift.
 High on the direction and on the slice order. Lower on two things: the Slice 3 estimate (the
 consolidation job is the largest and least uniform consumer), and parity for filtered vector search
 and the one keyword query, which only Slice 4 can settle. If Slice 4 shows a gap that tuning does
-not close, the fallback is to stop after Slice 1 with Neo4j still in place and nothing lost.
+not close, the fallback is to stop before the cut with Neo4j still in place and nothing lost.
 
 ### Parked
 
@@ -268,12 +459,18 @@ not close, the fallback is to stop after Slice 1 with Neo4j still in place and n
 
 ### Open questions
 
-None of these blocks Slice 1; each names the slice that has to settle it.
+Each names the slice that has to settle it.
 
-1. **Turns** (before Slice 2). `Turn` nodes (with embeddings and consolidation flags) duplicate much
-   of `conversation_logs`. One table or two?
+1. ~~**Turns** (before Slice 2). `Turn` nodes (with embeddings and consolidation flags) duplicate
+   much of `conversation_logs`. One table or two?~~ **Settled 2026-11-28: two**, the transcript
+   and a projection keyed to it ([the schema](#slice-2--the-schema)).
 2. **Parity tolerance** (Slice 4). What difference in recall@k counts as "the same"? Propose: within
    the run-to-run noise of the current backend, measured first.
-3. **Deprecation window** (Slice 6). How many releases does the Neo4j backend stay selectable?
+3. ~~**Deprecation window** (Slice 6). How many releases does the Neo4j backend stay
+   selectable?~~ **Withdrawn 2026-11-28 (ADR-22): none.** Neo4j goes at the cut.
 4. **Managed target** (with phase-19 §19.4). Per-tenant instances that suspend, or one shared
    instance with RLS? The schema supports both; the pricing differs by an order of magnitude.
+5. **The login role** (before the shared stack, phase-19 §19.4). The bundled stack connects as
+   the database superuser, which is why memory queries drop to `agentx_memory`. A shared
+   deployment should connect as a role that is not a superuser, so that a query that forgets its
+   scope sees nothing rather than everything; the migrations and the tests already run that way.

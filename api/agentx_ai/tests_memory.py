@@ -102,6 +102,7 @@ from agentx_ai.test_utils import (
     docker_services_running,
     embeddings_compatible,
     has_configured_provider,
+    postgres_running,
 )
 
 
@@ -6915,6 +6916,570 @@ class MemoryStoreBoundaryTest(TestCase):
             "A module now holds less Cypher than its baseline row allows. Lower the row "
             "(delete it at (0, 0)) so the gain can't be spent again.",
         )
+
+
+class MemoryScopeBoundaryTest(TestCase):
+    """Row-level security on the PostgreSQL memory tables is entered in one module,
+    `memory/scope.py` (ADR-21, Slice 2). No other module may spell out the roles, the
+    user setting or a role switch, and only the cross-user store may reach for the
+    system scope, which sees every user's rows.
+
+    Token-based like the store guard above: string literals are checked for the raw
+    SQL, names for the system-scope helpers. Tests are out of scope, and so are the
+    Alembic revisions, which live outside this package and define the roles.
+    """
+
+    BASE = Path(__file__).resolve().parent
+    SCOPE_MODULE = "kit/agent_memory/memory/scope.py"
+    # Who may enter the system scope. Cross-user work goes through CrossUserStore
+    # (its entity_maintenance() and eval_harness() included). The module of its
+    # PostgreSQL twin joins this list when Slice 3 adds it, and nothing else does.
+    SYSTEM_SCOPE_CALLERS = ("kit/agent_memory/memory/cross_user.py",)
+
+    # A role switch, or a way out of one. `SET role = …` is an UPDATE of a column
+    # called role, which turns have, so an equals sign rules a match out.
+    _RAW_SQL = re.compile(
+        r"agentx_memory|agentx\.user_id"
+        r"|\b(?:SET\s+(?:LOCAL\s+|SESSION\s+)?|RESET\s+)ROLE\b(?!\s*=)"
+        r"|\bSESSION\s+AUTHORIZATION\b",
+        re.IGNORECASE,
+    )
+    _SYSTEM_NAMES = frozenset({"system_scope", "enter_system_scope", "SYSTEM_ROLE"})
+
+    @classmethod
+    def _measure(cls, source: str) -> tuple[int, int]:
+        """(string literals holding scope SQL, references to a system-scope name)."""
+        import io
+        import tokenize
+
+        raw = system = 0
+        fstring: list[str] | None = None
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+            if tok.type == tokenize.STRING:
+                raw += bool(cls._RAW_SQL.search(tok.string))
+            elif tok.type == tokenize.FSTRING_START:
+                fstring = [tok.string]
+            elif tok.type == tokenize.FSTRING_MIDDLE and fstring is not None:
+                fstring.append(tok.string)
+            elif tok.type == tokenize.FSTRING_END and fstring is not None:
+                raw += bool(cls._RAW_SQL.search("".join(fstring)))
+                fstring = None
+            elif tok.type == tokenize.NAME and tok.string in cls._SYSTEM_NAMES:
+                system += 1
+        return raw, system
+
+    def _counts(self) -> dict[str, tuple[int, int]]:
+        counts = {}
+        for path in sorted(self.BASE.rglob("*.py")):
+            if path.name.startswith("tests") or path.name == "test_utils.py":
+                continue
+            found = self._measure(path.read_text(encoding="utf-8"))
+            if any(found):
+                counts[path.relative_to(self.BASE).as_posix()] = found
+        return counts
+
+    def test_measure_counts_scope_sql_and_system_names_not_comments(self):
+        source = (
+            '# SET LOCAL ROLE agentx_memory_system in a comment is not a statement\n'
+            'from .scope import system_scope, user_scope\n'
+            'def f(session, role):\n'
+            '    session.execute("SET LOCAL ROLE agentx_memory")\n'
+            '    session.execute(f"set role {role}")\n'
+            '    session.execute("SELECT set_config(\'agentx.user_id\', :u, true)")\n'
+            '    session.execute("RESET ROLE")\n'
+            '    session.execute("UPDATE memory_turns SET role = :role WHERE id = :id")\n'
+            '    with system_scope() as s:\n'
+            '        return s, "a role is set elsewhere"\n'
+        )
+        # Four statements count; the UPDATE of a column named role does not.
+        self.assertEqual(self._measure(source), (4, 2))
+
+    def test_scope_sql_lives_in_the_scope_module(self):
+        counts = self._counts()
+        self.assertGreaterEqual(
+            counts.get(self.SCOPE_MODULE, (0, 0))[0], 3,
+            "the scan no longer recognises the scope module's own statements",
+        )
+        elsewhere = {m: raw for m, (raw, _) in counts.items() if raw and m != self.SCOPE_MODULE}
+        self.assertEqual(
+            elsewhere, {},
+            "A memory role, the agentx.user_id setting or a role switch is spelled out "
+            "outside memory/scope.py. Use user_scope() (or, in the cross-user store "
+            "only, system_scope()) instead, so the scopes stay in one place (ADR-21).",
+        )
+
+    def test_only_the_cross_user_store_reaches_for_the_system_scope(self):
+        allowed = {self.SCOPE_MODULE, *self.SYSTEM_SCOPE_CALLERS}
+        others = sorted(m for m, (_, system) in self._counts().items() if system and m not in allowed)
+        self.assertEqual(
+            others, [],
+            "The system scope sees every user's memory. Work that crosses users is a "
+            "method on CrossUserStore, the only caller it may have (ADR-21).",
+        )
+
+
+class MemoryScopeTest(TestCase):
+    """memory/scope.py: what a scope sends, in order, before any query runs."""
+
+    @staticmethod
+    def _sent(session) -> list[tuple[str, dict]]:
+        return [
+            (str(call.args[0]), call.args[1] if len(call.args) > 1 else {})
+            for call in session.execute.call_args_list
+        ]
+
+    def test_user_scope_drops_to_the_memory_role_then_names_the_user(self):
+        from agentx_ai.kit.agent_memory.memory import scope
+
+        session = MagicMock()
+        scope.enter_user_scope(session, "ada")
+        self.assertEqual(self._sent(session), [
+            ("SET LOCAL ROLE agentx_memory", {}),
+            ("SELECT set_config('agentx.user_id', :user_id, true)", {"user_id": "ada"}),
+        ])
+
+    def test_the_user_id_is_bound_not_spliced_into_the_statement(self):
+        from agentx_ai.kit.agent_memory.memory import scope
+
+        session = MagicMock()
+        hostile = "ada'; SET ROLE postgres; --"
+        scope.enter_user_scope(session, hostile)
+        statement, params = self._sent(session)[1]
+        self.assertNotIn("postgres", statement)
+        self.assertEqual(params, {"user_id": hostile})
+
+    def test_a_scope_that_names_nobody_is_refused_before_anything_is_sent(self):
+        from agentx_ai.kit.agent_memory.memory import scope
+
+        for nobody in ("", "   ", None, 7):
+            session = MagicMock()
+            with self.assertRaises(ValueError):
+                scope.enter_user_scope(session, nobody)
+            session.execute.assert_not_called()
+
+    def test_system_scope_switches_to_the_system_role(self):
+        from agentx_ai.kit.agent_memory.memory import scope
+
+        session = MagicMock()
+        scope.enter_system_scope(session)
+        self.assertEqual(self._sent(session), [("SET LOCAL ROLE agentx_memory_system", {})])
+
+    def test_a_scope_enters_every_transaction_its_session_begins(self):
+        # SET LOCAL ends with the transaction, so a commit inside the block would
+        # leave the next statement outside the scope: as the login role, which on
+        # the bundled stack is a superuser and sees every row. The scope therefore
+        # re-enters whenever the session begins a transaction.
+        from agentx_ai.kit.agent_memory.memory import scope
+
+        cases = (
+            (lambda: scope.user_scope("ada"), [
+                ("SET LOCAL ROLE agentx_memory", {}),
+                ("SELECT set_config('agentx.user_id', :user_id, true)", {"user_id": "ada"}),
+            ]),
+            (scope.system_scope, [("SET LOCAL ROLE agentx_memory_system", {})]),
+        )
+        for enter, expected in cases:
+            session = MagicMock()
+            opened = MagicMock()
+            opened.__enter__.return_value = session
+            opened.__exit__.return_value = False
+            with (
+                patch.object(scope, "get_postgres_session", return_value=opened),
+                patch.object(scope.event, "listen") as listen,
+                enter() as handed,
+            ):
+                self.assertIs(handed, session)
+                (target, name, on_begin), _ = listen.call_args
+                self.assertIs(target, session)
+                self.assertEqual(name, "after_begin")
+                # Two transactions: each one is entered, on its own connection.
+                for _ in range(2):
+                    connection = MagicMock()
+                    on_begin(session, MagicMock(), connection)
+                    self.assertEqual(self._sent(connection), expected)
+            # The session's own context manager commits or rolls back, and closes.
+            opened.__exit__.assert_called_once()
+
+    def test_a_user_scope_that_names_nobody_opens_no_session(self):
+        from agentx_ai.kit.agent_memory.memory import scope
+
+        with patch.object(scope, "get_postgres_session") as opened, self.assertRaises(ValueError), scope.user_scope(""):
+            self.fail("the scope was entered")
+        opened.assert_not_called()
+
+    def test_the_roles_match_the_statements(self):
+        from agentx_ai.kit.agent_memory.memory import scope
+
+        self.assertEqual(str(scope._SET_MEMORY_ROLE), f"SET LOCAL ROLE {scope.MEMORY_ROLE}")
+        self.assertEqual(str(scope._SET_SYSTEM_ROLE), f"SET LOCAL ROLE {scope.SYSTEM_ROLE}")
+        self.assertIn(f"'{scope.USER_SETTING}'", str(scope._NAME_USER))
+
+
+@skipUnless(postgres_running(), "PostgreSQL not running")
+class MemoryStoreSchemaLiveTest(TestCase):
+    """The PostgreSQL memory tables and their row-level security, on a real database
+    (Alembic 0009 and 0010; ADR-21, Slice 2).
+
+    Each test works in one transaction and rolls it back, so it leaves nothing
+    behind and is safe to run against a developer's database. The login role may be
+    a superuser, which row-level security never binds: every test enters a scope
+    first, as the memory classes will.
+    """
+
+    def setUp(self):
+        from agentx_ai.kit.agent_memory.connections import PostgresConnection
+        from agentx_ai.kit.agent_memory.memory import scope
+
+        self.scope = scope
+        self.session = PostgresConnection.get_session_factory()()
+        self.addCleanup(self.session.close)
+        self.addCleanup(self.session.rollback)  # cleanups run last-in, first-out
+        tag = uuid4().hex[:8]
+        self.ada, self.grace = f"rls-{tag}-ada", f"rls-{tag}-grace"
+
+    # -- helpers ---------------------------------------------------------------
+
+    def _run(self, sql: str, **params):
+        return self.session.execute(text(sql), params)
+
+    def _as(self, user_id: str) -> None:
+        self.scope.enter_user_scope(self.session, user_id)
+
+    def _as_system(self) -> None:
+        self.scope.enter_system_scope(self.session)
+
+    def _refused(self, sql: str, **params) -> str:
+        """Run `sql` in a savepoint; return the database's refusal, lower-cased."""
+        from sqlalchemy.exc import DBAPIError
+
+        savepoint = self.session.begin_nested()
+        try:
+            self._run(sql, **params)
+        except DBAPIError as refused:
+            savepoint.rollback()
+            return str(refused.orig).lower()
+        savepoint.rollback()
+        self.fail(f"the database accepted what it should refuse: {sql}")
+
+    def _conversation(self, user_id: str, conv_id: str = "c1") -> None:
+        self._run("INSERT INTO memory_conversations (user_id, id) VALUES (:u, :id)", u=user_id, id=conv_id)
+
+    def _entity(self, user_id: str, entity_id: str, embedding: str | None = None) -> None:
+        self._run(
+            "INSERT INTO memory_entities (user_id, id, name, type, embedding) "
+            "VALUES (:u, :id, :name, 'Concept', CAST(:embedding AS vector))",
+            u=user_id, id=entity_id, name=f"entity {entity_id}", embedding=embedding,
+        )
+
+    def _edge(self, user_id: str, src: tuple[str, str], rel: str, dst: tuple[str, str], label: str = "") -> None:
+        self._run(
+            "INSERT INTO memory_edges (user_id, src_type, src_id, rel, label, dst_type, dst_id) "
+            "VALUES (:u, :st, :sid, :rel, :label, :dt, :did)",
+            u=user_id, st=src[0], sid=src[1], rel=rel, label=label, dt=dst[0], did=dst[1],
+        )
+
+    def _mine(self, table: str) -> list[tuple]:
+        """This test's rows of `table` that the current scope can see."""
+        rows = self._run(
+            f"SELECT user_id, id FROM {table} WHERE user_id IN (:a, :g) ORDER BY 1, 2",  # noqa: S608 — a constant
+            a=self.ada, g=self.grace,
+        )
+        return [tuple(row) for row in rows]
+
+    def _count(self, table: str) -> int:
+        return int(self._run(
+            f"SELECT count(*) FROM {table} WHERE user_id IN (:a, :g)",  # noqa: S608 — a constant
+            a=self.ada, g=self.grace,
+        ).scalar() or 0)
+
+    # -- the tables are the ones the scope module lists, all of them forced ------
+
+    def test_every_memory_table_forces_row_level_security(self):
+        tables = list(self.scope.MEMORY_TABLES)
+        rows = self._run(
+            """
+            SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
+                   (SELECT array_agg(p.polname::text ORDER BY p.polname)
+                      FROM pg_policy p WHERE p.polrelid = c.oid)
+              FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = current_schema() AND c.relkind = 'r' AND c.relname = ANY(:tables)
+            """,
+            tables=tables,
+        ).all()
+        self.assertEqual({row[0] for row in rows}, set(tables), "run `task db:migrate:pg`")
+        for name, enabled, forced, policies in rows:
+            self.assertTrue(enabled and forced, f"{name}: row-level security is not forced")
+            self.assertEqual(policies, ["memory_system", "memory_tenant"], name)
+
+    def test_no_memory_table_holds_user_rows_outside_that_list(self):
+        # A later revision that adds a memory table has to add it to MEMORY_TABLES,
+        # where the test above then demands its policies. The audit log predates
+        # this (the baseline) and is not memory content.
+        found = {
+            row[0] for row in self._run(
+                """
+                SELECT table_name FROM information_schema.columns
+                 WHERE table_schema = current_schema() AND column_name = 'user_id'
+                   AND table_name LIKE 'memory\\_%' AND table_name NOT LIKE 'memory\\_audit\\_log%'
+                """
+            )
+        }
+        self.assertEqual(found, set(self.scope.MEMORY_TABLES))
+
+    def test_the_two_roles_cannot_log_in_or_bypass_row_level_security(self):
+        rows = self._run(
+            "SELECT rolname, rolcanlogin, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = ANY(:roles)",
+            roles=[self.scope.MEMORY_ROLE, self.scope.SYSTEM_ROLE],
+        ).all()
+        self.assertEqual(
+            sorted(tuple(row) for row in rows),
+            [(self.scope.MEMORY_ROLE, False, False, False), (self.scope.SYSTEM_ROLE, False, False, False)],
+        )
+
+    # -- row-level security ------------------------------------------------------
+
+    def test_a_transaction_sees_only_the_user_it_named(self):
+        self._as(self.ada)
+        self._conversation(self.ada)
+        self._as(self.grace)
+        self._conversation(self.grace)  # the same id: identity is per user
+        self.assertEqual(self._mine("memory_conversations"), [(self.grace, "c1")])
+        self._as(self.ada)
+        self.assertEqual(self._mine("memory_conversations"), [(self.ada, "c1")])
+
+    def test_a_transaction_that_stops_naming_a_user_sees_and_writes_nothing(self):
+        self._as(self.ada)
+        self._conversation(self.ada)
+        # What a pooled connection holds after an earlier transaction named a user:
+        # the setting reads as an empty string, not as unset.
+        self._run("SELECT set_config('agentx.user_id', '', true)")
+        self.assertEqual(self._count("memory_conversations"), 0)
+        refusal = self._refused(
+            "INSERT INTO memory_conversations (user_id, id) VALUES (:u, 'c2')", u=self.ada,
+        )
+        self.assertIn("row-level security", refusal)
+
+    def test_a_connection_that_never_named_a_user_sees_nothing(self):
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import NullPool
+
+        engine = create_engine(get_settings().postgres_uri, poolclass=NullPool)
+        self.addCleanup(engine.dispose)
+        with engine.connect() as fresh:
+            try:
+                fresh.execute(text("SET LOCAL ROLE agentx_memory_system"))
+                fresh.execute(
+                    text("INSERT INTO memory_conversations (user_id, id) VALUES (:u, 'c1')"),
+                    {"u": self.ada},
+                )
+                fresh.execute(text("SET LOCAL ROLE agentx_memory"))
+                self.assertIsNone(
+                    fresh.execute(text("SELECT current_setting('agentx.user_id', true)")).scalar()
+                )
+                seen = fresh.execute(
+                    text("SELECT count(*) FROM memory_conversations WHERE user_id = :u"), {"u": self.ada},
+                ).scalar()
+                self.assertEqual(seen, 0)
+            finally:
+                fresh.rollback()
+
+    def test_a_user_cannot_write_into_or_move_rows_to_another_user(self):
+        self._as(self.ada)
+        self._conversation(self.ada)
+        self.assertIn("row-level security", self._refused(
+            "INSERT INTO memory_conversations (user_id, id) VALUES (:u, 'c2')", u=self.grace,
+        ))
+        self.assertIn("row-level security", self._refused(
+            "UPDATE memory_conversations SET user_id = :g WHERE id = 'c1'", g=self.grace,
+        ))
+
+    def test_an_empty_owner_is_refused_even_by_the_system_role(self):
+        self._as_system()
+        self.assertIn("check constraint", self._refused(
+            "INSERT INTO memory_conversations (user_id, id) VALUES ('', 'c1')",
+        ))
+
+    def test_the_system_scope_sees_every_user_and_a_user_scope_after_it_does_not(self):
+        self._as(self.ada)
+        self._conversation(self.ada)
+        self._as(self.grace)
+        self._conversation(self.grace)
+        self._as_system()
+        self.assertEqual(self._mine("memory_conversations"), [(self.ada, "c1"), (self.grace, "c1")])
+        self._as(self.ada)
+        self.assertEqual(self._mine("memory_conversations"), [(self.ada, "c1")])
+
+    def test_a_scope_outlives_a_commit_inside_it_and_ends_with_its_session(self):
+        # Reads only: nothing is written, so there is nothing to clean up.
+        where = "SELECT current_user, current_setting('agentx.user_id', true)"
+        login = self._run("SELECT current_user").scalar()
+        self.session.rollback()
+
+        with self.scope.user_scope(self.ada) as scoped:
+            self.assertEqual(tuple(scoped.execute(text(where)).one()), (self.scope.MEMORY_ROLE, self.ada))
+            scoped.commit()
+            self.assertEqual(tuple(scoped.execute(text(where)).one()), (self.scope.MEMORY_ROLE, self.ada))
+            scoped.rollback()
+            self.assertEqual(tuple(scoped.execute(text(where)).one()), (self.scope.MEMORY_ROLE, self.ada))
+
+        with self.scope.system_scope() as scoped:
+            self.assertEqual(scoped.execute(text("SELECT current_user")).scalar(), self.scope.SYSTEM_ROLE)
+            scoped.commit()
+            self.assertEqual(scoped.execute(text("SELECT current_user")).scalar(), self.scope.SYSTEM_ROLE)
+
+        # Whatever connection the pool hands out next is back to the login role.
+        self.assertEqual(self._run("SELECT current_user").scalar(), login)
+        self.assertIn(self._run("SELECT current_setting('agentx.user_id', true)").scalar(), (None, ""))
+
+    # -- the shape: references, turn positions, edges ---------------------------
+
+    def test_a_reference_cannot_leave_its_user(self):
+        # Row-level security does not check foreign keys, so the keys carry the
+        # user themselves: not even the system role can point a turn at another
+        # user's conversation.
+        self._as_system()
+        self._conversation(self.grace)
+        refusal = self._refused(
+            "INSERT INTO memory_turns (user_id, id, conversation_id, turn_index, role, content) "
+            "VALUES (:u, 't1', 'c1', 0, 'user', 'a question')",
+            u=self.ada,
+        )
+        self.assertIn("foreign key", refusal)
+
+    def test_a_turn_position_is_stored_once(self):
+        self._as(self.ada)
+        self._conversation(self.ada)
+        turn = (
+            "INSERT INTO memory_turns (user_id, id, conversation_id, turn_index, role, content) "
+            "VALUES (:u, :id, 'c1', 0, 'user', 'a question')"
+        )
+        self._run(turn, u=self.ada, id="t1")
+        self.assertIn("duplicate key", self._refused(turn, u=self.ada, id="t2"))
+
+    def test_deleting_a_node_takes_its_edges_and_no_others(self):
+        self._as(self.ada)
+        self._entity(self.ada, "e1")
+        self._entity(self.ada, "e2")
+        self._run(
+            "INSERT INTO memory_facts (user_id, id, claim, source) "
+            "VALUES (:u, 'f1', 'the committee meets on Tuesdays', 'user_stated')",
+            u=self.ada,
+        )
+        self._edge(self.ada, ("fact", "f1"), "ABOUT", ("entity", "e1"))
+        self._edge(self.ada, ("fact", "f1"), "ABOUT", ("entity", "e2"))
+        # Two entities can be related in more than one way: the label is in the key.
+        self._edge(self.ada, ("entity", "e1"), "RELATES_TO", ("entity", "e2"), label="chairs")
+        self._edge(self.ada, ("entity", "e1"), "RELATES_TO", ("entity", "e2"), label="founded")
+        self._edge(self.ada, ("entity", "e2"), "RELATES_TO", ("entity", "e1"), label="reports to")
+        self.assertEqual(self._count("memory_edges"), 5)
+
+        self._run("DELETE FROM memory_entities WHERE id = 'e1'")
+        left = self._run(
+            "SELECT src_id, rel, dst_id FROM memory_edges WHERE user_id = :u", u=self.ada,
+        ).all()
+        self.assertEqual([tuple(row) for row in left], [("f1", "ABOUT", "e2")])
+
+    def test_an_edge_joins_known_node_types_only(self):
+        self._as(self.ada)
+        self.assertIn("check constraint", self._refused(
+            "INSERT INTO memory_edges (user_id, src_type, src_id, rel, dst_type, dst_id) "
+            "VALUES (:u, 'entity', 'e1', 'RELATES_TO', 'elephant', 'e2')",
+            u=self.ada,
+        ))
+
+    def test_deleting_a_conversation_takes_what_hangs_off_it(self):
+        self._as(self.ada)
+        self._conversation(self.ada)
+        self._entity(self.ada, "e1")
+        self._run(
+            "INSERT INTO memory_turns (user_id, id, conversation_id, turn_index, role, content) "
+            "VALUES (:u, 't1', 'c1', 0, 'user', 'a question')",
+            u=self.ada,
+        )
+        self._run(
+            "INSERT INTO memory_tool_invocations (user_id, conversation_id, turn_index, tool_name, success) "
+            "VALUES (:u, 'c1', 0, 'consult_almanac', true)",
+            u=self.ada,
+        )
+        self._edge(self.ada, ("conversation", "c1"), "MENTIONS", ("entity", "e1"))
+
+        self._run("DELETE FROM memory_conversations WHERE id = 'c1'")
+        self.assertEqual(
+            {t: self._count(t) for t in ("memory_turns", "memory_tool_invocations", "memory_edges")},
+            {"memory_turns": 0, "memory_tool_invocations": 0, "memory_edges": 0},
+        )
+        self.assertEqual(self._mine("memory_entities"), [(self.ada, "e1")])
+
+    def test_a_subgoal_outlives_its_parent(self):
+        self._as(self.ada)
+        goal = (
+            "INSERT INTO memory_goals (user_id, id, description, parent_goal_id) "
+            "VALUES (:u, :id, :description, :parent)"
+        )
+        self._run(goal, u=self.ada, id="g1", description="write the report", parent=None)
+        self._run(goal, u=self.ada, id="g2", description="gather the figures", parent="g1")
+        self._run("DELETE FROM memory_goals WHERE id = 'g1'")
+        rows = self._run("SELECT id, parent_goal_id FROM memory_goals WHERE user_id = :u", u=self.ada).all()
+        self.assertEqual([tuple(row) for row in rows], [("g2", None)])
+
+    # -- search ------------------------------------------------------------------
+
+    def test_vectors_have_the_configured_width_and_an_index_where_recall_searches(self):
+        searched = {
+            "memory_turns", "memory_entities", "memory_facts", "memory_strategies", "memory_procedures",
+        }
+        tables = sorted(searched | {"memory_goals"})  # stored, not searched
+        widths = self._run(
+            """
+            SELECT c.relname, format_type(a.atttypid, a.atttypmod)
+              FROM pg_attribute a
+              JOIN pg_class c ON c.oid = a.attrelid
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = current_schema() AND a.attname = 'embedding' AND c.relname = ANY(:tables)
+            """,
+            tables=tables,
+        ).all()
+        width = f"vector({get_settings().embedding_dimensions})"
+        self.assertEqual({row[0]: row[1] for row in widths}, dict.fromkeys(tables, width))
+
+        indexed = {
+            row[0] for row in self._run(
+                "SELECT tablename FROM pg_indexes WHERE schemaname = current_schema() "
+                "AND indexdef LIKE '%USING hnsw%' AND tablename = ANY(:tables)",
+                tables=tables,
+            )
+        }
+        self.assertEqual(indexed, searched)
+
+    def test_a_vector_search_ranks_only_the_users_own_rows(self):
+        # The reason to move (ADR-21): the scope is part of the search, so another
+        # user's nearer vector can't take a place in this user's results.
+        dims = get_settings().embedding_dimensions
+        near = "[" + ",".join(["1"] * dims) + "]"
+        far = "[" + ",".join(["1"] + ["0"] * (dims - 1)) + "]"
+        self._as(self.grace)
+        self._entity(self.grace, "nearest", embedding=near)
+        self._as(self.ada)
+        self._entity(self.ada, "mine", embedding=far)
+        found = self._run(
+            "SELECT user_id, id FROM memory_entities ORDER BY embedding <=> CAST(:q AS vector) LIMIT 1",
+            q=near,
+        ).all()
+        self.assertEqual([tuple(row) for row in found], [(self.ada, "mine")])
+
+    def test_fact_claims_are_keyword_searchable(self):
+        self._as(self.ada)
+        self._run(
+            "INSERT INTO memory_facts (user_id, id, claim, source) VALUES "
+            "(:u, 'f1', 'The committee meets on Tuesdays', 'user_stated'), "
+            "(:u, 'f2', 'The archive closes at noon', 'user_stated')",
+            u=self.ada,
+        )
+        found = self._run(
+            "SELECT id FROM memory_facts WHERE claim_tsv @@ websearch_to_tsquery('simple', :q)",
+            q="committee tuesdays",
+        ).all()
+        self.assertEqual([row[0] for row in found], ["f1"])
 
 
 class CrossUserStoreTest(TestCase):
