@@ -2523,6 +2523,55 @@ class ToolDiscoveryErrorTest(TestCase):
         self.assertIsNone(executor.get_discovery_error("srv"))
 
 
+class MCPSdkModelReadTest(TestCase):
+    """What the SDK returns is read off real mcp 2 models here, never mocks. A
+    mock answers any attribute name, which is how lookups by the mcp 1 names
+    (`isError`, `mimeType`) kept passing while they returned their fallback."""
+
+    def test_a_failed_tool_call_is_reported_as_failed(self) -> None:
+        from mcp.types import CallToolResult, TextContent
+        from agentx_ai.mcp.tool_executor import ToolExecutor
+
+        executor = ToolExecutor()
+        recorded: list[bool] = []
+        executor.set_usage_recorder(
+            lambda _name, _args, _out, success, _ms, _err: recorded.append(success)
+        )
+        session = MagicMock()
+        session.call_tool = AsyncMock(return_value=CallToolResult(
+            content=[TextContent(type="text", text="the ledger is locked")], isError=True,
+        ))
+        failed = asyncio.run(executor.execute(session, "post_entry", {}))
+        self.assertTrue(failed.is_error)
+        self.assertFalse(failed.success)
+
+        session.call_tool = AsyncMock(return_value=CallToolResult(
+            content=[TextContent(type="text", text="posted")],
+        ))
+        posted = asyncio.run(executor.execute(session, "post_entry", {}))
+        self.assertFalse(posted.is_error)
+        self.assertTrue(posted.success)
+        # The usage recorder is told the same thing, in order.
+        self.assertEqual(recorded, [False, True])
+
+    def test_discovered_resources_keep_their_mime_type(self) -> None:
+        from mcp.types import ListResourcesResult, Resource
+        from agentx_ai.mcp.client import MCPClientManager
+
+        session = MagicMock()
+        session.list_resources = AsyncMock(return_value=ListResourcesResult(resources=[
+            Resource(
+                uri="file:///minutes.md", name="minutes",
+                description="Minutes of the last meeting", mimeType="text/markdown",
+            ),
+        ]))
+        resources = asyncio.run(MCPClientManager()._discover_resources(session, "srv"))
+        self.assertEqual(
+            [(r.uri, r.description, r.mime_type) for r in resources],
+            [("file:///minutes.md", "Minutes of the last meeting", "text/markdown")],
+        )
+
+
 class MemoryRecorderTest(TestCase):
     """MemoryRecorder translates agent lifecycle events into memory writes (Pass 4)."""
 

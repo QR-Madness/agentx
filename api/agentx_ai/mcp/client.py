@@ -747,8 +747,10 @@ class MCPClientManager:
                 ResourceInfo(
                     uri=str(res.uri),
                     name=res.name,
-                    description=getattr(res, 'description', None),
-                    mime_type=getattr(res, 'mimeType', None),
+                    # Typed reads: getattr by the mcp 1 name (`mimeType`) fell
+                    # back to None under mcp 2 and dropped every MIME type.
+                    description=res.description,
+                    mime_type=res.mime_type,
                     server_name=server_name,
                 )
                 for res in result.resources

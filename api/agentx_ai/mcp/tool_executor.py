@@ -174,7 +174,10 @@ class ToolExecutor:
                 else:
                     content.append({"type": "unknown", "data": str(item)})
             
-            is_error = getattr(result, 'isError', False)
+            # A typed read, not getattr by name: mcp 2 renamed `isError` to
+            # `is_error`, and the old lookup fell back to False, so a tool the
+            # server reported as failed would have been returned as a success.
+            is_error = bool(result.is_error)
             latency_ms = int((time.time() - start_time) * 1000)
             
             # Record tool usage if recorder is set

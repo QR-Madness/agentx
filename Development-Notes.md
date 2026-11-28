@@ -507,9 +507,11 @@ view `GET /api/mcp/oauth/callback` (PUBLIC — exempted in `AgentXAuthMiddleware
 browser carries no token; strict state validation instead) resolves the future thread-safely with
 `(code, state, iss)`. The callback handler returns the SDK's `AuthorizationCodeResult`, so the
 redirect's RFC 9207 `iss` reaches the SDK's issuer check: since mcp 2, a server that advertises
-issuer identification fails the flow without it. **mcp 2 (v0.21.304)** also made the SDK's models
-snake_case attributes over camelCase wire aliases (`mime_type`, `input_schema`; lookups by the old
-names fall back silently, so `content_blocks.py` and `ToolInfo` read the new ones), and
+issuer identification fails the flow without it. **mcp 2 (v0.21.305)** also made the SDK's models
+snake_case attributes over camelCase wire aliases (`mime_type`, `input_schema`, `is_error`). A
+`getattr`/`hasattr` by the old name falls back silently (a failed tool call read as a success), so
+SDK models are read as typed attributes, which pyright checks, and `tests.MCPSdkModelReadTest`
+pins the reads on real models, since a mock answers any name; and
 `session.initialize_result.capabilities` replaces `get_server_capabilities()`.
 **Connect state machine**: `manager.connect_interactive(name)` — stored-tokens-still-good connects
 synchronously; consent-needed returns `{"status": "auth_required", "authorization_url"}` (endpoint
