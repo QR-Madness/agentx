@@ -124,16 +124,18 @@ def block_from_mcp(item: Any) -> Any | None:
 
     if isinstance(item, TextContent):
         return TextBlock(text=item.text)
+    # mcp 2 models are snake_case attributes over camelCase wire aliases
+    # (`mime_type` reads the wire's `mimeType`); our blocks keep the wire names.
     if isinstance(item, ImageContent):
-        return ImageBlock(data=item.data, mimeType=item.mimeType)
+        return ImageBlock(data=item.data, mimeType=item.mime_type)
     if isinstance(item, AudioContent):
-        return AudioBlock(data=item.data, mimeType=item.mimeType)
+        return AudioBlock(data=item.data, mimeType=item.mime_type)
     if isinstance(item, ResourceLink):
         return ResourceLinkBlock(
             uri=str(item.uri),
             name=item.name,
             description=item.description,
-            mimeType=item.mimeType,
+            mimeType=item.mime_type,
         )
     if isinstance(item, EmbeddedResource):
         res = item.resource
@@ -142,7 +144,7 @@ def block_from_mcp(item: Any) -> Any | None:
                 uri=str(res.uri),
                 text=getattr(res, "text", None),
                 blob=getattr(res, "blob", None),
-                mimeType=getattr(res, "mimeType", None),
+                mimeType=res.mime_type,
             )
         )
     return None

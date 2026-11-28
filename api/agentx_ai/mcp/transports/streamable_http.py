@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from collections.abc import AsyncGenerator
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
+
+# The SDK's own HTTP client factory (also `sse_client`'s default): MCP timeouts
+# of 30 s, 300 s to read a held stream, and redirects left to the transport,
+# which follows them only within the endpoint's origin.
+from mcp.shared._httpx_utils import create_mcp_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +56,18 @@ class StreamableHTTPTransport:
             name: Unique name for this connection
             url: HTTP endpoint URL
             headers: HTTP headers to include in requests
-            auth: Optional httpx.Auth (e.g. the SDK's OAuthClientProvider)
+            auth: Optional httpx2.Auth (e.g. the SDK's OAuthClientProvider)
 
         Yields:
             ClientSession: The connected MCP client session
         """
         logger.info(f"Connecting to MCP server '{name}' via streamable HTTP: {url}")
 
-        async with streamablehttp_client(url, headers=headers, auth=auth) as (read, write, _get_session_id):
+        # mcp 2 takes headers and auth on the HTTP client, not the transport.
+        async with (
+            create_mcp_http_client(headers=headers, auth=auth) as http_client,
+            streamable_http_client(url, http_client=http_client) as (read, write),
+        ):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 

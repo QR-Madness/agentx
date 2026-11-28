@@ -37,7 +37,9 @@ class ToolInfo:
         return cls(
             name=tool.name,
             description=tool.description or "",
-            input_schema=tool.inputSchema if hasattr(tool, 'inputSchema') else {},
+            # mcp 2 renamed the attribute (the wire keeps `inputSchema`). The old
+            # hasattr guard would have silently sent every tool with no schema.
+            input_schema=tool.input_schema or {},
             server_name=server_name,
         )
     
@@ -172,7 +174,10 @@ class ToolExecutor:
                 else:
                     content.append({"type": "unknown", "data": str(item)})
             
-            is_error = getattr(result, 'isError', False)
+            # A typed read, not getattr by name: mcp 2 renamed `isError` to
+            # `is_error`, and the old lookup fell back to False, so a tool the
+            # server reported as failed would have been returned as a success.
+            is_error = bool(result.is_error)
             latency_ms = int((time.time() - start_time) * 1000)
             
             # Record tool usage if recorder is set
