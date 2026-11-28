@@ -1,7 +1,7 @@
 /**
  * graphGeometry — how Memory → Explore routes its edges and lays out its ring.
  *
- * Until v0.21.305 every edge left the centre node's right side and entered the
+ * Until v0.21.306 every edge left the centre node's right side and entered the
  * neighbour's left side. Edges to neighbours on the left, above or below looped
  * round behind the nodes, and their labels could end up under a node. Edges now
  * run straight between the borders that face each other. These tests check
